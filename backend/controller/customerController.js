@@ -1,0 +1,627 @@
+const { getSharedPrismaClient, initializeSharedDatabase, executeWithRetry } = require('../services/sharedDatabase');
+const prisma = getSharedPrismaClient();
+const axios = require('axios');
+
+const getAllCustomer = async(req , res)=>{
+      try {
+    // التحقق من المصادقة والشركة
+    const companyId = req.user?.companyId;
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+      });
+    }
+
+    //console.log('👥 Fetching customers for company:', companyId);
+
+    const customers = await prisma.customer.findMany({
+      where: { companyId }, // فلترة بـ companyId
+      orderBy: { createdAt: 'desc' },
+      take: 50
+    });
+
+    res.json({
+      success: true,
+      data: customers,
+      message: `تم جلب ${customers.length} عميل للشركة`
+    });
+  } catch (error) {
+    console.error('Error fetching customers:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في جلب العملاء'
+    });
+  }
+};
+
+const deleteAllConversations = async (req, res) => {
+  try {
+    const deleted = await prisma.conversation.deleteMany({});
+
+    res.json({
+      success: true,
+      deletedCount: deleted.count,
+      message: `تم مسح ${deleted.count} محادثة`
+    });
+  } catch (error) {
+    console.error('❌ Error deleting conversations:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في مسح المحادثات'
+    });
+  }
+};
+
+// 🗑️ مسح كل العملاء بدون فلترة
+const deleteAllCustomers = async (req, res) => {
+  try {
+    const deleted = await prisma.customer.deleteMany({});
+
+    res.json({
+      success: true,
+      deletedCount: deleted.count,
+      message: `تم مسح ${deleted.count} عميل`
+    });
+  } catch (error) {
+    console.error('❌ Error deleting customers:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في مسح العملاء'
+    });
+  }
+};
+
+
+// 🚫 حظر عميل على صفحة فيس بوك معينة
+const blockCustomerOnPage = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+    const userId = req.user?.id;
+    
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+      });
+    }
+
+    const { customerId, pageId, reason } = req.body;
+
+    if (!customerId || !pageId) {
+      return res.status(400).json({
+        success: false,
+        message: 'معرف العميل ومعرف الصفحة مطلوبان'
+      });
+    }
+
+    // التحقق من وجود العميل والشركة
+    const customer = await prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { id: true, companyId: true, facebookId: true }
+    });
+
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'العميل غير موجود'
+      });
+    }
+
+    if (customer.companyId !== companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول لهذا العميل'
+      });
+    }
+
+    // التحقق من وجود صفحة الفيس بوك
+    const facebookPage = await prisma.facebookPage.findUnique({
+      where: { pageId: pageId },
+      select: { id: true, companyId: true, pageAccessToken: true }
+    });
+
+    if (!facebookPage) {
+      return res.status(404).json({
+        success: false,
+        message: 'صفحة الفيس بوك غير موجودة'
+      });
+    }
+
+    if (facebookPage.companyId !== companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول لهذه الصفحة'
+      });
+    }
+
+    // التحقق من عدم وجود حظر سابق
+    const existingBlock = await prisma.blockedCustomerOnPage.findFirst({
+      where: {
+        facebookPageId: facebookPage.id,
+        customerId: customerId
+      }
+    });
+
+    if (existingBlock) {
+      return res.status(400).json({
+        success: false,
+        message: 'العميل محظور بالفعل على هذه الصفحة'
+      });
+    }
+
+    // 🚫 التواصل مع Facebook API لحظر المستخدم من الصفحة مباشرة
+    let facebookBlockResult = null;
+    const facebookUserId = customer.facebookId || null;
+    
+    if (facebookUserId && facebookPage.pageAccessToken) {
+      try {
+        console.log(`🚫 [FB-API] Blocking user ${facebookUserId} on Facebook page ${pageId} via Graph API...`);
+        
+        // استخدام Facebook Graph API لحظر المستخدم
+        const fbResponse = await axios.post(
+          `https://graph.facebook.com/v18.0/${pageId}/blocked`,
+          {
+            user: facebookUserId
+          },
+          {
+            params: {
+              access_token: facebookPage.pageAccessToken
+            },
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            timeout: 10000
+          }
+        );
+        
+        facebookBlockResult = {
+          success: true,
+          facebookResponse: fbResponse.data
+        };
+        console.log(`✅ [FB-API] User blocked successfully on Facebook page:`, fbResponse.data);
+      } catch (fbError) {
+        console.error(`❌ [FB-API] Error blocking user on Facebook:`, fbError.response?.data || fbError.message);
+        facebookBlockResult = {
+          success: false,
+          error: fbError.response?.data || fbError.message
+        };
+        // نستمر في حفظ الحظر في قاعدة البيانات حتى لو فشل Facebook API
+      }
+    } else {
+      console.log(`⚠️ [FB-API] Cannot block on Facebook: missing facebookId (${!!facebookUserId}) or pageAccessToken (${!!facebookPage.pageAccessToken})`);
+    }
+
+    // إنشاء الحظر في قاعدة البيانات
+    const blocked = await prisma.blockedCustomerOnPage.create({
+      data: {
+        facebookPageId: facebookPage.id,
+        pageId: pageId,
+        customerId: customer.id,
+        facebookId: customer.facebookId || '',
+        blockedBy: userId || null,
+        reason: reason || null,
+        metadata: facebookBlockResult ? JSON.stringify(facebookBlockResult) : null // حفظ نتيجة Facebook API
+      },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            facebookId: true
+          }
+        },
+        facebookPage: {
+          select: {
+            pageId: true,
+            pageName: true
+          }
+        }
+      }
+    });
+
+    console.log(`🚫 [BLOCK] Customer ${customer.id} blocked on page ${pageId} by user ${userId}`);
+
+    res.json({
+      success: true,
+      data: blocked,
+      message: 'تم حظر العميل على الصفحة بنجاح'
+    });
+  } catch (error) {
+    console.error('❌ Error blocking customer:', error);
+    
+    // معالجة أخطاء Prisma
+    if (error.code === 'P2002') {
+      return res.status(400).json({
+        success: false,
+        message: 'العميل محظور بالفعل على هذه الصفحة'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في حظر العميل',
+      error: error.message
+    });
+  }
+};
+
+// ✅ إلغاء حظر عميل على صفحة فيس بوك معينة
+const unblockCustomerOnPage = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+    
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+      });
+    }
+
+    const { customerId, pageId } = req.body;
+
+    if (!customerId || !pageId) {
+      return res.status(400).json({
+        success: false,
+        message: 'معرف العميل ومعرف الصفحة مطلوبان'
+      });
+    }
+
+    // التحقق من وجود صفحة الفيس بوك
+    const facebookPage = await prisma.facebookPage.findUnique({
+      where: { pageId: pageId },
+      select: { id: true, companyId: true, pageAccessToken: true }
+    });
+
+    if (!facebookPage) {
+      return res.status(404).json({
+        success: false,
+        message: 'صفحة الفيس بوك غير موجودة'
+      });
+    }
+
+    if (facebookPage.companyId !== companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول لهذه الصفحة'
+      });
+    }
+
+    // البحث عن الحظر وحذفه
+    const blocked = await prisma.blockedCustomerOnPage.findFirst({
+      where: {
+        facebookPageId: facebookPage.id,
+        customerId: customerId
+      },
+      include: {
+        customer: {
+          select: {
+            facebookId: true
+          }
+        }
+      }
+    });
+
+    if (!blocked) {
+      return res.status(404).json({
+        success: false,
+        message: 'العميل غير محظور على هذه الصفحة'
+      });
+    }
+
+    // ✅ التواصل مع Facebook API لإلغاء حظر المستخدم من الصفحة مباشرة
+    const facebookUserId = blocked.customer?.facebookId || blocked.facebookId;
+    let facebookUnblockResult = null;
+    
+    if (facebookUserId && facebookPage.pageAccessToken) {
+      try {
+        console.log(`✅ [FB-API] Unblocking user ${facebookUserId} on Facebook page ${pageId} via Graph API...`);
+        
+        // استخدام Facebook Graph API لإلغاء حظر المستخدم
+        const fbResponse = await axios.delete(
+          `https://graph.facebook.com/v18.0/${pageId}/blocked/${facebookUserId}`,
+          {
+            params: {
+              access_token: facebookPage.pageAccessToken
+            },
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            timeout: 10000
+          }
+        );
+        
+        facebookUnblockResult = {
+          success: true,
+          facebookResponse: fbResponse.data
+        };
+        console.log(`✅ [FB-API] User unblocked successfully on Facebook page`);
+      } catch (fbError) {
+        console.error(`❌ [FB-API] Error unblocking user on Facebook:`, fbError.response?.data || fbError.message);
+        facebookUnblockResult = {
+          success: false,
+          error: fbError.response?.data || fbError.message
+        };
+        // نستمر في حذف الحظر من قاعدة البيانات حتى لو فشل Facebook API
+      }
+    } else {
+      console.log(`⚠️ [FB-API] Cannot unblock on Facebook: missing facebookId (${!!facebookUserId}) or pageAccessToken (${!!facebookPage.pageAccessToken})`);
+    }
+
+    // حذف الحظر من قاعدة البيانات
+    await prisma.blockedCustomerOnPage.delete({
+      where: { id: blocked.id }
+    });
+
+    console.log(`✅ [UNBLOCK] Customer ${customerId} unblocked on page ${pageId}`);
+
+    res.json({
+      success: true,
+      message: 'تم إلغاء حظر العميل على الصفحة بنجاح'
+    });
+  } catch (error) {
+    console.error('❌ Error unblocking customer:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في إلغاء حظر العميل',
+      error: error.message
+    });
+  }
+};
+
+// 📋 جلب قائمة العملاء المحظورين على صفحة معينة
+const getBlockedCustomersOnPage = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+    
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+      });
+    }
+
+    const { pageId } = req.params;
+
+    if (!pageId) {
+      return res.status(400).json({
+        success: false,
+        message: 'معرف الصفحة مطلوب'
+      });
+    }
+
+    // التحقق من وجود صفحة الفيس بوك
+    const facebookPage = await prisma.facebookPage.findUnique({
+      where: { pageId: pageId },
+      select: { id: true, companyId: true }
+    });
+
+    if (!facebookPage) {
+      return res.status(404).json({
+        success: false,
+        message: 'صفحة الفيس بوك غير موجودة'
+      });
+    }
+
+    if (facebookPage.companyId !== companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول لهذه الصفحة'
+      });
+    }
+
+    // جلب العملاء المحظورين
+    const blockedCustomers = await prisma.blockedCustomerOnPage.findMany({
+      where: {
+        facebookPageId: facebookPage.id
+      },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            facebookId: true,
+            avatar: true
+          }
+        }
+      },
+      orderBy: {
+        blockedAt: 'desc'
+      }
+    });
+
+    res.json({
+      success: true,
+      data: blockedCustomers,
+      count: blockedCustomers.length,
+      message: `تم جلب ${blockedCustomers.length} عميل محظور`
+    });
+  } catch (error) {
+    console.error('❌ Error fetching blocked customers:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في جلب العملاء المحظورين',
+      error: error.message
+    });
+  }
+};
+
+// 🔍 التحقق من حالة حظر عميل على صفحة معينة
+const checkCustomerBlockStatus = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+    
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+      });
+    }
+
+    const { customerId, pageId } = req.query;
+
+    if (!customerId || !pageId) {
+      return res.status(400).json({
+        success: false,
+        message: 'معرف العميل ومعرف الصفحة مطلوبان'
+      });
+    }
+
+    // التحقق من وجود صفحة الفيس بوك
+    const facebookPage = await prisma.facebookPage.findUnique({
+      where: { pageId: pageId },
+      select: { id: true, companyId: true }
+    });
+
+    if (!facebookPage) {
+      return res.status(404).json({
+        success: false,
+        message: 'صفحة الفيس بوك غير موجودة'
+      });
+    }
+
+    if (facebookPage.companyId !== companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول لهذه الصفحة'
+      });
+    }
+
+    // البحث عن الحظر
+    const blocked = await prisma.blockedCustomerOnPage.findFirst({
+      where: {
+        facebookPageId: facebookPage.id,
+        customerId: customerId
+      },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            facebookId: true
+          }
+        }
+      }
+    });
+
+    res.json({
+      success: true,
+      isBlocked: !!blocked,
+      data: blocked || null
+    });
+  } catch (error) {
+    console.error('❌ Error checking block status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في التحقق من حالة الحظر',
+      error: error.message
+    });
+  }
+};
+
+// جلب طلبات العميل
+const getCustomerOrders = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+    
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+      });
+    }
+
+    const { customerId } = req.params;
+
+    if (!customerId) {
+      return res.status(400).json({
+        success: false,
+        message: 'معرف العميل مطلوب'
+      });
+    }
+
+    // التحقق من أن العميل ينتمي للشركة
+    const customer = await prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { id: true, companyId: true }
+    });
+
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'العميل غير موجود'
+      });
+    }
+
+    if (customer.companyId !== companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول لهذا العميل'
+      });
+    }
+
+    // جلب طلبات العميل
+    const orders = await prisma.order.findMany({
+      where: {
+        customerId: customerId,
+        companyId: companyId
+      },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                images: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20
+    });
+
+    // تحويل البيانات للصيغة المطلوبة
+    const formattedOrders = orders.map(order => ({
+      id: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status.toLowerCase(),
+      total: parseFloat(order.total),
+      createdAt: order.createdAt,
+      items: order.items.map(item => ({
+        name: item.product?.name || 'منتج غير معروف',
+        quantity: item.quantity,
+        price: parseFloat(item.price),
+        image: item.product?.images ? JSON.parse(item.product.images)[0] : null
+      }))
+    }));
+
+    res.json({
+      success: true,
+      data: formattedOrders
+    });
+  } catch (error) {
+    console.error('❌ Error fetching customer orders:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في جلب طلبات العميل',
+      error: error.message
+    });
+  }
+};
+
+module.exports = {
+  getAllCustomer,
+  deleteAllConversations,
+  deleteAllCustomers,
+  blockCustomerOnPage,
+  unblockCustomerOnPage,
+  getBlockedCustomersOnPage,
+  checkCustomerBlockStatus,
+  getCustomerOrders
+}
