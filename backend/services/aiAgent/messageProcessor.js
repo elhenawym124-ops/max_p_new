@@ -845,6 +845,63 @@ class MessageProcessor {
       
       let finalResponse = enhancedResponse || aiContent;
 
+      // ✅ FIX: Validate shipping prices before returning response
+      if (finalResponse && typeof finalResponse === 'string') {
+        try {
+          const shippingService = require('../shippingService');
+          const extractedGov = await shippingService.extractGovernorateFromMessage(content, finalCompanyId);
+          
+          if (extractedGov && extractedGov.found) {
+            const shippingInfo = await shippingService.findShippingInfo(extractedGov.governorate, finalCompanyId);
+            
+            if (shippingInfo && shippingInfo.found) {
+              const correctPrice = shippingInfo.price;
+              const responseText = finalResponse;
+              
+              // البحث عن أي أرقام في الرد قد تكون أسعار شحن خاطئة
+              const pricePattern = /(\d+)\s*جنيه/gi;
+              const matches = responseText.match(pricePattern);
+              
+              if (matches) {
+                // التحقق من وجود سعر خاطئ (غير السعر الصحيح)
+                const wrongPrices = matches.filter(match => {
+                  const price = parseInt(match.replace(/\D/g, ''));
+                  return price !== correctPrice && price >= 30 && price <= 200; // نطاق أسعار الشحن المعقول
+                });
+                
+                if (wrongPrices.length > 0) {
+                  console.warn(`⚠️ [PRICE-VALIDATION] تم اكتشاف سعر شحن خاطئ في الرد: ${wrongPrices.join(', ')}`);
+                  console.warn(`   ✅ السعر الصحيح من قاعدة البيانات: ${correctPrice} جنيه`);
+                  
+                  // استبدال الأسعار الخاطئة بالسعر الصحيح
+                  wrongPrices.forEach(wrongPrice => {
+                    const wrongPriceNum = wrongPrice.replace(/\D/g, '');
+                    const wrongPricePattern = new RegExp(`\\b${wrongPriceNum}\\s*جنيه`, 'gi');
+                    finalResponse = finalResponse.replace(wrongPricePattern, `${correctPrice} جنيه`);
+                    console.log(`   ✅ تم استبدال "${wrongPrice}" بـ "${correctPrice} جنيه"`);
+                  });
+                }
+              }
+            }
+          }
+        } catch (priceValidationError) {
+          console.error('❌ [PRICE-VALIDATION] خطأ في التحقق من الأسعار:', priceValidationError.message);
+          // نتابع بدون تعديل في حالة الخطأ
+        }
+      }
+
+      // ✅ FIX: Remove any image mentions from response text
+      if (finalResponse && typeof finalResponse === 'string') {
+        // Remove patterns like [صورة المنتج], [صورة كوتشي], etc.
+        finalResponse = finalResponse.replace(/\[صورة[^\]]*\]/gi, '');
+        // Remove phrases like "هبعتلك الصور", "الصور جاية", etc.
+        finalResponse = finalResponse.replace(/(هبعتلك|هبعت|سأرسل|سأبعث|سأرسل لك|سأبعث لك)\s*(الصور?|صور?|صورة)/gi, '');
+        finalResponse = finalResponse.replace(/الصور?\s*(جاية|جاي|جايين|ستُرسل|سترسل|ستُبعث|ستبعث)/gi, '');
+        // Clean up extra spaces
+        finalResponse = finalResponse.replace(/\s+/g, ' ').trim();
+        console.log('🧹 [CLEANUP] Removed image mentions from response text');
+      }
+
       // ✅ FIX: Retry logic للردود الفارغة أو القصيرة جداً
       const responseLength = finalResponse ? finalResponse.trim().length : 0;
       const isResponseTooShort = responseLength > 0 && responseLength < 10;

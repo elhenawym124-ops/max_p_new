@@ -2453,6 +2453,10 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
         
         if (validImages.length === 0) {
           console.log('❌ [IMAGE-FILTER] No valid images after filtering! Check image URLs.');
+          // ✅ CRITICAL: If no valid images, we need to inform the AI response system
+          // This prevents AI from mentioning images that won't be sent
+          console.log('🚨 [IMAGE-VALIDATION] Setting aiResponse.images to empty array to prevent AI from mentioning images');
+          aiResponse.images = []; // Clear images array to prevent AI text from mentioning them
         }
 
         if (validImages.length > 0) {

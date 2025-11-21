@@ -306,7 +306,7 @@ class MultimodalService {
         temperature: 0.2, // رفع قليلاً للحصول على ردود أكثر تنوعاً
         topK: 40,          // زيادة الخيارات
         topP: 0.95,        // تحسين جودة النتائج
-        maxOutputTokens: 1024, // ✅ تحسين: تقليل من 3048 إلى 1024 لتوفير tokens
+        maxOutputTokens: 4096, // ✅ FIX: زيادة من 2048 إلى 4096 لضمان اكتمال تحليل الصور
       };
 
       //console.log('🛡️ [MULTIMODAL] Using safety settings to allow product analysis');
@@ -381,6 +381,7 @@ class MultimodalService {
       }
 
       //console.log('📝 [MULTIMODAL] Extracting text from response...');
+      
       const analysis = await response.text();
       //console.log('🔍 [MULTIMODAL] Raw analysis type:', typeof analysis);
       //console.log('🔍 [MULTIMODAL] Raw analysis value:', JSON.stringify(analysis));
@@ -395,6 +396,10 @@ class MultimodalService {
         console.error('❌ [MULTIMODAL] CRITICAL: Analysis is empty or null!');
         console.error('🔍 [MULTIMODAL] Analysis value:', JSON.stringify(analysis));
         console.error('🔍 [MULTIMODAL] Response object:', JSON.stringify(response, null, 2));
+        console.error('🔍 [MULTIMODAL] Finish reason:', finishReason);
+        
+        // Return fallback if analysis is empty
+        return 'صورة منتج - يحتاج تحليل إضافي';
       } else {
         //console.log('📝 [MULTIMODAL] Analysis result (first 200 chars):', analysis.substring(0, 200) + '...');
         //console.log('📊 [MULTIMODAL] Full analysis length:', analysis.length);
@@ -405,8 +410,34 @@ class MultimodalService {
       // ملاحظة: حفظ الذاكرة سيتم في aiAgentService بعد إنشاء الرد النهائي
       //console.log('📝 Image analysis completed - memory will be saved by aiAgentService with final response');
 
-      // استخراج المعلومات المهمة باستخدام RAG الذكي
-      const productMatch = await this.findProductWithRAG(analysis, companyId);
+      // ✅ FIX: استخراج المعلومات المهمة باستخدام RAG الذكي
+      // يجب تعريف productMatch قبل استخدامه
+      let productMatch = {
+        found: false,
+        isProduct: false,
+        reason: 'لم يتم تحليل الصورة بعد',
+        confidence: 0
+      };
+
+      try {
+        // استخدام RAG للبحث عن المنتج المطابق
+        productMatch = await this.findProductWithRAG(analysis, companyId);
+        console.log('✅ [RAG-MATCH] Product match result:', {
+          found: productMatch.found,
+          isProduct: productMatch.isProduct,
+          confidence: productMatch.confidence,
+          productName: productMatch.productName || 'N/A'
+        });
+      } catch (ragError) {
+        console.error('❌ [RAG-MATCH] Error finding product with RAG:', ragError.message);
+        // استخدام fallback
+        productMatch = {
+          found: false,
+          isProduct: true, // نفترض أنها صورة منتج
+          reason: 'خطأ في البحث عن المنتج',
+          confidence: 0
+        };
+      }
 
       // تحسين معالجة النتائج بناءً على مستوى الثقة
       const processedContent = this.buildProcessedContent(productMatch, analysis);

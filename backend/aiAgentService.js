@@ -549,12 +549,38 @@ class AIAgentService {
       
       let finalResponse = enhancedResponse || aiContent; // ✅ let instead of const - can be updated for order confirmation
 
-      // ⚡ Fallback 1: If AI response is empty and we have images, provide a simple text
+      // ✅ FIX: Remove any image mentions from response text
+      if (finalResponse && typeof finalResponse === 'string') {
+        // Remove patterns like [صورة المنتج], [صورة كوتشي], etc.
+        finalResponse = finalResponse.replace(/\[صورة[^\]]*\]/gi, '');
+        // Remove phrases like "هبعتلك الصور", "الصور جاية", etc.
+        finalResponse = finalResponse.replace(/(هبعتلك|هبعت|سأرسل|سأبعث|سأرسل لك|سأبعث لك)\s*(الصور?|صور?|صورة)/gi, '');
+        finalResponse = finalResponse.replace(/الصور?\s*(جاية|جاي|جايين|ستُرسل|سترسل|ستُبعث|ستبعث)/gi, '');
+        // Clean up extra spaces
+        finalResponse = finalResponse.replace(/\s+/g, ' ').trim();
+        console.log('🧹 [CLEANUP] Removed image mentions from response text');
+      }
+
+      // ⚡ IMPROVED Fallback 1: Only mention images if we're sure they will be sent
       if ((!finalResponse || finalResponse.trim().length === 0) && images && images.length > 0) {
-        console.log(`🖼️ [FALLBACK] AI response empty but ${images.length} images available - adding default text`);
-        finalResponse = images.length === 1 
-          ? 'تفضل صورة المنتج 📸' 
-          : `تفضل ${images.length} صور للمنتج 📸`;
+        console.log(`🖼️ [FALLBACK] AI response empty but ${images.length} images available - checking if images are valid`);
+        
+        // ✅ Validate images before mentioning them in text
+        const validImages = images.filter(image => {
+          return image && image.payload && image.payload.url && 
+                 image.payload.url.startsWith('http') && 
+                 image.payload.url.length > 10;
+        });
+        
+        if (validImages.length > 0) {
+          console.log(`✅ [FALLBACK] ${validImages.length} valid images confirmed - adding fallback text`);
+          finalResponse = validImages.length === 1 
+            ? 'تفضل صورة المنتج 📸' 
+            : `تفضل ${validImages.length} صور للمنتج 📸`;
+        } else {
+          console.log(`❌ [FALLBACK] No valid images found - not mentioning images in text`);
+          finalResponse = 'كيف يمكنني مساعدتك؟ 😊';
+        }
       }
 
       // ⚡ Fallback 2: If AI response is empty and user provided a governorate, reply with shipping info directly

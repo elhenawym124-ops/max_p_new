@@ -403,6 +403,61 @@ ${conversationContext}
   }
 
   /**
+   * ✅ ENHANCED: Find specific product from conversation context with improved memory extraction
+   * @param {string} message - رسالة العميل
+   * @param {Array} conversationMemory - ذاكرة المحادثة السابقة
+   * @param {string} companyId - معرف الشركة
+   * @returns {Promise<Object|null>} - المنتج المحدد أو null
+   */
+  async findSpecificProductFromContext(message, conversationMemory, companyId) {
+    try {
+      // ✅ استخدام productExtractor المحسن
+      const productExtractor = require('./productExtractor');
+      const productInfo = productExtractor.extractProduct(message, conversationMemory, []);
+      
+      if (productInfo && productInfo.productName) {
+        this.logger.debug('Product extracted from context:', productInfo.productName);
+        
+        // البحث عن المنتج في قاعدة البيانات
+        const product = await this.prisma.product.findFirst({
+          where: {
+            companyId: companyId,
+            OR: [
+              { name: { contains: productInfo.productName, mode: 'insensitive' } },
+              { description: { contains: productInfo.productName, mode: 'insensitive' } }
+            ]
+          },
+          select: {
+            id: true,
+            name: true,
+            price: true,
+            description: true,
+            images: true
+          }
+        });
+
+        if (product) {
+          this.logger.debug('✅ Found matching product in database:', product.name);
+          return {
+            id: product.id,
+            name: product.name,
+            price: product.price,
+            description: product.description,
+            images: product.images
+          };
+        } else {
+          this.logger.debug('⚠️ Product mentioned in conversation but not found in database:', productInfo.productName);
+        }
+      }
+
+      return null;
+    } catch (error) {
+      this.logger.error('Error finding specific product from context:', error);
+      return null;
+    }
+  }
+
+  /**
    * Extract product ID from RAG data
    * @param {Object} ragItem - عنصر RAG data
    * @returns {Promise<string|null>} - معرف المنتج أو null

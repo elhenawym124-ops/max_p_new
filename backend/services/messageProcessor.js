@@ -506,6 +506,18 @@ class MessageProcessor {
       
       let finalResponse = enhancedResponse || aiContent;
 
+      // ✅ FIX: Remove any image mentions from response text
+      if (finalResponse && typeof finalResponse === 'string') {
+        // Remove patterns like [صورة المنتج], [صورة كوتشي], etc.
+        finalResponse = finalResponse.replace(/\[صورة[^\]]*\]/gi, '');
+        // Remove phrases like "هبعتلك الصور", "الصور جاية", etc.
+        finalResponse = finalResponse.replace(/(هبعتلك|هبعت|سأرسل|سأبعث|سأرسل لك|سأبعث لك)\s*(الصور?|صور?|صورة)/gi, '');
+        finalResponse = finalResponse.replace(/الصور?\s*(جاية|جاي|جايين|ستُرسل|سترسل|ستُبعث|ستبعث)/gi, '');
+        // Clean up extra spaces
+        finalResponse = finalResponse.replace(/\s+/g, ' ').trim();
+        console.log('🧹 [CLEANUP] Removed image mentions from response text');
+      }
+
       // ✅ FIX: Retry logic للردود الفارغة أو القصيرة جداً
       const responseLength = finalResponse ? finalResponse.trim().length : 0;
       const isResponseTooShort = responseLength > 0 && responseLength < 10;
