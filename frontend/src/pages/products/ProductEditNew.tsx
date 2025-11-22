@@ -200,7 +200,8 @@ const ProductEditNew: React.FC = () => {
     enableCheckoutForm: true,
     showAddToCartButton: true, // 🛒 إظهار زر إضافة للسلة
     saleStartDate: '', // 📅 تاريخ بداية العرض
-    saleEndDate: '' // 📅 تاريخ انتهاء العرض
+    saleEndDate: '', // 📅 تاريخ انتهاء العرض
+    sizeGuide: '' // 📏 دليل المقاسات
   });
 
   // Images and Variants states
@@ -269,7 +270,8 @@ const ProductEditNew: React.FC = () => {
           enableCheckoutForm: Boolean(productData.enableCheckoutForm !== false),
           showAddToCartButton: Boolean(productData.showAddToCartButton !== false), // 🛒 إظهار زر إضافة للسلة
           saleStartDate: productData.saleStartDate ? new Date(productData.saleStartDate).toISOString().slice(0, 16) : '', // 📅 تاريخ بداية العرض
-          saleEndDate: productData.saleEndDate ? new Date(productData.saleEndDate).toISOString().slice(0, 16) : '' // 📅 تاريخ انتهاء العرض
+          saleEndDate: productData.saleEndDate ? new Date(productData.saleEndDate).toISOString().slice(0, 16) : '', // 📅 تاريخ انتهاء العرض
+          sizeGuide: String(productData.sizeGuide || '') // 📏 دليل المقاسات
         };
 
         setFormData(newFormData);
@@ -501,6 +503,7 @@ const ProductEditNew: React.FC = () => {
         cost: formData.cost ? parseFloat(formData.cost) : null, // 💰 سعر التكلفة
         saleStartDate: formData.saleStartDate ? new Date(formData.saleStartDate).toISOString() : null, // 📅 تاريخ بداية العرض
         saleEndDate: formData.saleEndDate ? new Date(formData.saleEndDate).toISOString() : null, // 📅 تاريخ انتهاء العرض
+        sizeGuide: formData.sizeGuide.trim() || null, // 📏 دليل المقاسات
         tags: '[]'
       };
       
@@ -1121,6 +1124,23 @@ const ProductEditNew: React.FC = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                 placeholder="وصف المنتج"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                دليل المقاسات
+              </label>
+              <textarea
+                name="sizeGuide"
+                value={formData.sizeGuide}
+                onChange={handleInputChange}
+                rows={8}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                placeholder="أدخل دليل المقاسات هنا... يمكنك استخدام Markdown أو HTML"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                يمكنك إدخال دليل المقاسات بصيغة Markdown أو نص عادي. سيتم عرضه في نافذة منبثقة عند الضغط على زر "دليل المقاسات" في صفحة المنتج.
+              </p>
             </div>
 
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">

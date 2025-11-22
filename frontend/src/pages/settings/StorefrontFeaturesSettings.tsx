@@ -548,6 +548,68 @@ const StorefrontFeaturesSettings: React.FC = () => {
             onChange={(value) => updateSetting('stickyShowOnDesktop', value)}
             disabled={!settings.stickyAddToCartEnabled}
           />
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              مسافة التمرير قبل الظهور (بكسل)
+            </label>
+            <input
+              type="number"
+              min="0"
+              max="2000"
+              value={settings.stickyScrollThreshold || 300}
+              onChange={(e) => updateSetting('stickyScrollThreshold', parseInt(e.target.value) || 300)}
+              disabled={!settings.stickyAddToCartEnabled}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              المسافة بالبكسل التي يجب على المستخدم التمرير إليها قبل ظهور الشريط الثابت (افتراضي: 300)
+            </p>
+          </div>
+          <ToggleSetting
+            label="إظهار زر 'شراء الآن'"
+            value={settings.stickyShowBuyNow !== false}
+            onChange={(value) => updateSetting('stickyShowBuyNow', value)}
+            disabled={!settings.stickyAddToCartEnabled}
+          />
+          <ToggleSetting
+            label="إظهار زر 'أضف للسلة'"
+            value={settings.stickyShowAddToCartButton !== false}
+            onChange={(value) => updateSetting('stickyShowAddToCartButton', value)}
+            disabled={!settings.stickyAddToCartEnabled}
+          />
+          <ToggleSetting
+            label="إظهار اختيار الكمية"
+            value={settings.stickyShowQuantity !== false}
+            onChange={(value) => updateSetting('stickyShowQuantity', value)}
+            disabled={!settings.stickyAddToCartEnabled}
+          />
+          <ToggleSetting
+            label="إظهار صورة المنتج"
+            value={settings.stickyShowProductImage !== false}
+            onChange={(value) => updateSetting('stickyShowProductImage', value)}
+            disabled={!settings.stickyAddToCartEnabled}
+          />
+          <ToggleSetting
+            label="إظهار اسم المنتج"
+            value={settings.stickyShowProductName !== false}
+            onChange={(value) => updateSetting('stickyShowProductName', value)}
+            disabled={!settings.stickyAddToCartEnabled}
+          />
+          <ToggleSetting
+            label="تتبع التحليلات"
+            value={settings.stickyTrackAnalytics !== false}
+            onChange={(value) => updateSetting('stickyTrackAnalytics', value)}
+            disabled={!settings.stickyAddToCartEnabled}
+          />
+          <ToggleSetting
+            label="التمرير التلقائي لصفحة الشراء"
+            value={settings.stickyAutoScrollToCheckout === true}
+            onChange={(value) => updateSetting('stickyAutoScrollToCheckout', value)}
+            disabled={!settings.stickyAddToCartEnabled}
+          />
+          <p className="mt-2 text-xs text-gray-500">
+            عند تفعيل "التمرير التلقائي"، سيتم التمرير تلقائياً لصفحة الشراء عند الضغط على "شراء الآن"
+          </p>
         </SettingsSection>
 
         {/* SEO Section */}

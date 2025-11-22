@@ -14,6 +14,8 @@ import {
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { storefrontSettingsService } from '../../services/storefrontSettingsService';
+import { apiClient } from '../../services/apiClient';
+import { useAuth } from '../../hooks/useAuthSimple';
 
 interface FacebookPixelSettings {
   // Pixel Settings
@@ -78,6 +80,13 @@ const FacebookPixelSettings: React.FC = () => {
   const [showToken, setShowToken] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [loading, setLoading] = useState(true);
+  
+  // 🆕 Easy Connect States
+  const [pixels, setPixels] = useState<any[]>([]);
+  const [showPixelSelector, setShowPixelSelector] = useState(false);
+  const [fetchingPixels, setFetchingPixels] = useState(false);
+  const [showManualSetup, setShowManualSetup] = useState(false);
+  const { user } = useAuth();
 
   // Load settings on mount
   useEffect(() => {
@@ -213,6 +222,104 @@ const FacebookPixelSettings: React.FC = () => {
     }
   };
 
+  // 🆕 Easy Connect Functions
+  const handleEasyConnect = async () => {
+    try {
+      setFetchingPixels(true);
+      
+      // Try to fetch pixels directly
+      await fetchPixels();
+    } catch (error: any) {
+      console.error('Error in easy connect:', error);
+      
+      // If error, try OAuth
+      try {
+        const authResponse = await apiClient.get('/facebook-oauth/authorize', {
+          params: { companyId: user?.companyId }
+        });
+        window.location.href = authResponse.data.authUrl;
+      } catch (authError) {
+        toast.error('فشل الربط مع Facebook');
+        setShowManualSetup(true);
+      }
+    } finally {
+      setFetchingPixels(false);
+    }
+  };
+
+  const fetchPixels = async () => {
+    try {
+      setFetchingPixels(true);
+      const response = await apiClient.get('/facebook-oauth/pixels', {
+        params: { companyId: user?.companyId }
+      });
+
+      if (response.data.success && response.data.pixels.length > 0) {
+        setPixels(response.data.pixels);
+        setShowPixelSelector(true);
+        toast.success(`✅ تم العثور على ${response.data.pixels.length} Pixel`);
+      } else if (response.data.needsAuth) {
+        // Need to authenticate
+        const authResponse = await apiClient.get('/facebook-oauth/authorize', {
+          params: { companyId: user?.companyId }
+        });
+        window.location.href = authResponse.data.authUrl;
+      } else {
+        toast.info('لم يتم العثور على Pixels. استخدم الطريقة اليدوية.');
+        setShowManualSetup(true);
+      }
+    } catch (error: any) {
+      console.error('Error fetching pixels:', error);
+      toast.error('فشل جلب Pixels');
+      setShowManualSetup(true);
+    } finally {
+      setFetchingPixels(false);
+    }
+  };
+
+  const handleSelectPixel = async (pixel: any) => {
+    try {
+      const loadingToast = toast.loading('جاري ربط Pixel...');
+      
+      // Generate access token
+      let accessToken = '';
+      try {
+        const tokenResponse = await apiClient.post(
+          '/facebook-oauth/generate-pixel-token',
+          { pixelId: pixel.pixelId, businessId: pixel.businessId },
+          { params: { companyId: user?.companyId } }
+        );
+        
+        if (tokenResponse.data.success) {
+          accessToken = tokenResponse.data.accessToken;
+        }
+      } catch (tokenError) {
+        console.warn('Could not generate token automatically');
+      }
+
+      // Update settings
+      const newSettings = {
+        ...settings,
+        facebookPixelId: pixel.pixelId,
+        facebookPixelEnabled: true,
+        facebookConvApiEnabled: !!accessToken,
+        facebookConvApiToken: accessToken || settings.facebookConvApiToken
+      };
+
+      await storefrontSettingsService.updateSettings(newSettings);
+      setSettings(newSettings);
+      setShowPixelSelector(false);
+      
+      toast.dismiss(loadingToast);
+      toast.success('✅ تم ربط Pixel بنجاح!');
+      
+      await loadSettings();
+    } catch (error: any) {
+      console.error('Error selecting pixel:', error);
+      toast.error('فشل ربط Pixel');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
@@ -271,6 +378,94 @@ const FacebookPixelSettings: React.FC = () => {
               هذا يضمن تتبع الأحداث حتى مع Ad Blockers و iOS 14.5+
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* 🆕 Easy Connect Section */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-lg p-6 mb-6">
+          <div className="flex items-start">
+            <div className="flex-shrink-0">
+              <RocketLaunchIcon className="h-12 w-12 text-blue-600" />
+            </div>
+            <div className="mr-4 flex-1">
+              <h3 className="text-xl font-bold text-gray-900 mb-2">
+                🚀 الطريقة السهلة (موصى بها)
+              </h3>
+              <p className="text-gray-700 mb-4">
+                اربط حسابك مع Facebook وسيتم جلب Pixel ID و Access Token تلقائياً
+              </p>
+              
+              <div className="space-y-2 mb-4 text-sm text-gray-600">
+                <div className="flex items-center">
+                  <CheckCircleIcon className="h-5 w-5 text-green-500 ml-2" />
+                  <span>سهل وسريع (2-3 دقائق فقط)</span>
+                </div>
+                <div className="flex items-center">
+                  <CheckCircleIcon className="h-5 w-5 text-green-500 ml-2" />
+                  <span>لا يحتاج نسخ ولصق</span>
+                </div>
+                <div className="flex items-center">
+                  <CheckCircleIcon className="h-5 w-5 text-green-500 ml-2" />
+                  <span>Access Token يُنشأ تلقائياً</span>
+                </div>
+              </div>
+
+              <button
+                onClick={handleEasyConnect}
+                disabled={fetchingPixels}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 font-semibold"
+              >
+                {fetchingPixels ? (
+                  <>
+                    <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                    جاري الربط...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                    </svg>
+                    🔗 ربط مع Facebook تلقائياً
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+
+      {/* Pixel Selector */}
+      {showPixelSelector && (
+        <div className="bg-white border-2 border-blue-300 rounded-lg p-6 mb-6">
+          <h3 className="text-lg font-semibold mb-4">اختر Facebook Pixel:</h3>
+          <div className="space-y-3">
+            {pixels.map(pixel => (
+              <button
+                key={pixel.pixelId}
+                onClick={() => handleSelectPixel(pixel)}
+                className="w-full text-right p-4 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all"
+              >
+                <div className="font-semibold text-gray-900">{pixel.pixelName}</div>
+                <div className="text-sm text-gray-600 mt-1">
+                  ID: {pixel.pixelId}
+                </div>
+                {pixel.businessName && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    Business: {pixel.businessName}
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Divider */}
+      <div className="relative my-8">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-gray-300"></div>
+        </div>
+        <div className="relative flex justify-center text-sm">
+          <span className="px-4 bg-gray-50 text-gray-500">أو</span>
         </div>
       </div>
 

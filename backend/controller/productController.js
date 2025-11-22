@@ -436,6 +436,12 @@ const updateSingleProduct = async(req , res)=>{
       updateData.saleEndDate = updateData.saleEndDate ? new Date(updateData.saleEndDate) : null;
     }
 
+    // Handle sizeGuide field - 📏 دليل المقاسات
+    if (updateData.sizeGuide !== undefined) {
+      updateData.sizeGuide = updateData.sizeGuide ? String(updateData.sizeGuide).trim() : null;
+      //console.log(`📏 [server] Size guide: ${updateData.sizeGuide ? 'provided' : 'empty'}`);
+    }
+
     // Handle category field - convert to categoryId for Prisma
     if (updateData.category !== undefined) {
       if (updateData.category && updateData.category.trim() !== '') {

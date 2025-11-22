@@ -23,7 +23,7 @@ const ProductImageZoom: React.FC<ProductImageZoomProps> = ({
   const zoomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!enabled || zoomType === 'click') return;
+    if (!enabled) return;
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!imageRef.current) return;
@@ -48,7 +48,9 @@ const ProductImageZoom: React.FC<ProductImageZoomProps> = ({
       }
     };
 
-    const handleClick = () => {
+    const handleClick = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
       if (zoomType === 'click' || zoomType === 'both') {
         setShowZoom(!showZoom);
       }
@@ -56,6 +58,7 @@ const ProductImageZoom: React.FC<ProductImageZoomProps> = ({
 
     const element = imageRef.current;
     if (element) {
+      // إضافة event listeners حسب نوع التكبير
       if (zoomType === 'hover' || zoomType === 'both') {
         element.addEventListener('mousemove', handleMouseMove);
         element.addEventListener('mouseenter', handleMouseEnter);
@@ -143,21 +146,24 @@ const ProductImageZoom: React.FC<ProductImageZoomProps> = ({
       {/* Full Screen Zoom Modal (for click) */}
       {showZoom && (zoomType === 'click' || zoomType === 'both') && (
         <div
-          className="fixed inset-0 z-50 bg-black bg-opacity-90 flex items-center justify-center"
+          className="fixed inset-0 z-50 bg-black bg-opacity-90 flex items-center justify-center p-4"
           onClick={() => setShowZoom(false)}
         >
-          <div className="relative max-w-7xl max-h-[90vh] p-4">
+          <div className="relative max-w-7xl max-h-[90vh] w-full">
             <img
               src={currentImage}
               alt={alt}
-              className="max-w-full max-h-[90vh] object-contain"
+              className="max-w-full max-h-[90vh] object-contain mx-auto"
               onClick={(e) => e.stopPropagation()}
             />
             <button
               onClick={() => setShowZoom(false)}
-              className="absolute top-4 left-4 bg-white bg-opacity-20 hover:bg-opacity-30 text-white p-2 rounded-full"
+              className="absolute top-4 right-4 bg-white bg-opacity-20 hover:bg-opacity-30 text-white p-3 rounded-full transition-all hover:scale-110"
+              aria-label="إغلاق"
             >
-              ✕
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
             </button>
           </div>
         </div>

@@ -21,6 +21,7 @@ import SocialSharing from '../../components/storefront/SocialSharing';
 import ProductBadges from '../../components/storefront/ProductBadges';
 import ProductTabs from '../../components/storefront/ProductTabs';
 import StickyAddToCart from '../../components/storefront/StickyAddToCart';
+import SizeGuide from '../../components/storefront/SizeGuide';
 import { addToComparison } from '../../components/storefront/ProductComparison';
 import { updateSEO, generateProductStructuredData, addStructuredData } from '../../utils/seo';
 import { trackViewContent, trackAddToCart, trackInitiateCheckout, trackPurchase } from '../../utils/facebookPixel';
@@ -38,6 +39,7 @@ interface Product {
   showAddToCartButton?: boolean;
   saleStartDate?: string; // 📅 تاريخ بداية العرض
   saleEndDate?: string; // 📅 تاريخ انتهاء العرض
+  sizeGuide?: string; // 📏 دليل المقاسات
   createdAt?: string;
   isFeatured?: boolean;
   specifications?: string;
@@ -769,6 +771,18 @@ const ProductDetails: React.FC = () => {
           {/* Volume Discounts */}
           {product && <VolumeDiscountBadge productId={product.id} quantity={quantity} />}
 
+          {/* Size Guide */}
+          {storefrontSettings?.sizeGuideEnabled && storefrontSettings?.sizeGuideShowOnProduct && (
+            <div className="mb-6">
+              <SizeGuide
+                enabled={storefrontSettings.sizeGuideEnabled}
+                showOnProduct={storefrontSettings.sizeGuideShowOnProduct}
+                sizeGuide={product.sizeGuide}
+                productName={product.name}
+              />
+            </div>
+          )}
+
           {/* Actions - Show "Add to Cart" button if enabled and checkout form is disabled */}
           {product.showAddToCartButton !== false && product.enableCheckoutForm === false && (
             <div className="flex gap-3 mb-6">
@@ -1087,15 +1101,25 @@ const ProductDetails: React.FC = () => {
           enabled={storefrontSettings.stickyAddToCartEnabled}
           showOnMobile={storefrontSettings.stickyShowOnMobile}
           showOnDesktop={storefrontSettings.stickyShowOnDesktop}
+          scrollThreshold={storefrontSettings.stickyScrollThreshold || 300}
+          showBuyNow={storefrontSettings.stickyShowBuyNow !== false}
+          showAddToCartButton={storefrontSettings.stickyShowAddToCartButton !== false}
+          showQuantity={storefrontSettings.stickyShowQuantity !== false}
+          showProductImage={storefrontSettings.stickyShowProductImage !== false}
+          showProductName={storefrontSettings.stickyShowProductName !== false}
+          trackAnalytics={storefrontSettings.stickyTrackAnalytics !== false}
+          autoScrollToCheckout={storefrontSettings.stickyAutoScrollToCheckout === true}
           product={{
             id: product.id,
             name: product.name,
             price: currentPrice,
             stock: currentStock,
-            images: product.images
+            images: product.images,
+            enableCheckoutForm: product.enableCheckoutForm
           }}
           selectedVariant={selectedVariant}
           onQuantityChange={setQuantity}
+          storefrontSettings={storefrontSettings}
         />
       )}
       </div>

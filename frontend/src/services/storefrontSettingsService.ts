@@ -92,6 +92,14 @@ export interface StorefrontSettings {
   stickyAddToCartEnabled: boolean;
   stickyShowOnMobile: boolean;
   stickyShowOnDesktop: boolean;
+  stickyScrollThreshold?: number;
+  stickyShowBuyNow?: boolean;
+  stickyShowAddToCartButton?: boolean;
+  stickyShowQuantity?: boolean;
+  stickyShowProductImage?: boolean;
+  stickyShowProductName?: boolean;
+  stickyTrackAnalytics?: boolean;
+  stickyAutoScrollToCheckout?: boolean;
   
   // SEO Settings
   seoEnabled: boolean;
@@ -421,6 +429,14 @@ export const storefrontSettingsService = {
           stickyAddToCartEnabled: false,
           stickyShowOnMobile: false,
           stickyShowOnDesktop: false,
+          stickyScrollThreshold: 300,
+          stickyShowBuyNow: true,
+          stickyShowAddToCartButton: true,
+          stickyShowQuantity: true,
+          stickyShowProductImage: true,
+          stickyShowProductName: true,
+          stickyTrackAnalytics: true,
+          stickyAutoScrollToCheckout: false,
           seoEnabled: false,
           seoMetaDescription: false,
           seoStructuredData: false,

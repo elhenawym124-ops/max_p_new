@@ -17,6 +17,7 @@ model Company {
   logo                   String?
   address                String?
   currency               String                  @default("EGP")
+  facebookUserAccessToken String?                // 🔑 Facebook User Access Token for Pixel API
   plan                   SubscriptionPlan        @default(BASIC)
   planConfigurationId    String?
   isActive               Boolean                 @default(true)
@@ -292,6 +293,7 @@ model Product {
   showAddToCartButton Boolean               @default(true) // 🛒 إظهار زر إضافة للسلة في صفحة المنتج
   saleStartDate      DateTime?              // 📅 تاريخ بداية العرض/الخصم
   saleEndDate        DateTime?              // 📅 تاريخ انتهاء العرض/الخصم
+  sizeGuide          String?                @db.Text // 📏 دليل المقاسات
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
   inventory          Inventory[]
@@ -1966,9 +1968,17 @@ model StorefrontSettings {
   tabShipping       Boolean @default(true)
 
   // Sticky Add to Cart Settings
-  stickyAddToCartEnabled Boolean @default(true)
-  stickyShowOnMobile     Boolean @default(true)
-  stickyShowOnDesktop    Boolean @default(true)
+  stickyAddToCartEnabled     Boolean @default(true)
+  stickyShowOnMobile         Boolean @default(true)
+  stickyShowOnDesktop        Boolean @default(true)
+  stickyScrollThreshold      Int     @default(300) // المسافة بالبكسل قبل الظهور
+  stickyShowBuyNow           Boolean @default(true) // إظهار زر "شراء الآن"
+  stickyShowAddToCartButton  Boolean @default(true) // إظهار زر "أضف للسلة"
+  stickyShowQuantity         Boolean @default(true) // إظهار اختيار الكمية
+  stickyShowProductImage     Boolean @default(true) // إظهار صورة المنتج
+  stickyShowProductName      Boolean @default(true) // إظهار اسم المنتج
+  stickyTrackAnalytics       Boolean @default(true) // تتبع التحليلات
+  stickyAutoScrollToCheckout Boolean @default(false) // التمرير التلقائي لصفحة الشراء
 
   // SEO Settings
   seoEnabled         Boolean @default(true)

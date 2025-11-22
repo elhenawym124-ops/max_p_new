@@ -26,7 +26,8 @@ const getFacebookRedirectUri = () => {
 const FACEBOOK_REDIRECT_URI = getFacebookRedirectUri();
 
 // Facebook OAuth Scopes
-const FACEBOOK_SCOPES = 'public_profile,email,pages_show_list,pages_manage_posts,pages_read_engagement,pages_manage_metadata,pages_messaging,instagram_basic,instagram_manage_comments,pages_read_user_content,pages_manage_engagement,business_management';
+// 🆕 Added ads_management and ads_read for Pixel access
+const FACEBOOK_SCOPES = 'public_profile,email,pages_show_list,pages_manage_posts,pages_read_engagement,pages_manage_metadata,pages_messaging,instagram_basic,instagram_manage_comments,pages_read_user_content,pages_manage_engagement,business_management,ads_management,ads_read';
 
 // 🎯 NEW: Function to subscribe page to app webhooks
 const subscribePageToApp = async (pageId, pageAccessToken) => {
@@ -198,6 +199,13 @@ router.get('/callback', async (req, res) => {
 
     const { access_token: userAccessToken } = tokenResponse.data;
     console.log('✅ Got user access token');
+
+    // 💾 حفظ User Access Token في Company
+    await prisma.company.update({
+      where: { id: companyId },
+      data: { facebookUserAccessToken: userAccessToken }
+    });
+    console.log('✅ Saved user access token to company');
 
     // ✅ الحصول على كل الصفحات المرتبطة بالحساب مع دعم paging
     let allPages = [];
@@ -861,6 +869,218 @@ router.get('/debug', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * 🆕 Get Facebook Pixels for authenticated user
+ * GET /api/v1/facebook-oauth/pixels
+ * ✅ REQUIRES AUTHENTICATION
+ */
+router.get('/pixels', requireAuth, async (req, res) => {
+  try {
+    const { companyId } = req.query;
 
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Company ID is required',
+        message: 'معرف الشركة مطلوب'
+      });
+    }
+
+    // Verify user has access to this company
+    if (req.user.companyId !== companyId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Unauthorized access to company',
+        message: 'غير مصرح لك بالوصول لهذه الشركة'
+      });
+    }
+
+    console.log('🎯 [PIXELS] Fetching pixels for company:', companyId);
+
+    // Get company with Facebook User Access Token
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { facebookUserAccessToken: true }
+    });
+
+    if (!company || !company.facebookUserAccessToken) {
+      return res.json({
+        success: false,
+        message: 'يرجى ربط حسابك مع Facebook أولاً',
+        needsAuth: true
+      });
+    }
+
+    const userAccessToken = company.facebookUserAccessToken;
+
+    // 1. Get user's businesses
+    console.log('📊 [PIXELS] Fetching businesses...');
+    const businessesResponse = await axios.get(
+      'https://graph.facebook.com/v18.0/me/businesses',
+      {
+        params: {
+          access_token: userAccessToken,
+          fields: 'id,name'
+        }
+      }
+    );
+
+    const businesses = businessesResponse.data.data || [];
+    console.log(`✅ [PIXELS] Found ${businesses.length} businesses`);
+
+    // 2. Get pixels for each business
+    const allPixels = [];
+
+    for (const business of businesses) {
+      try {
+        console.log(`🔍 [PIXELS] Fetching pixels for business: ${business.name}`);
+        
+        const pixelsResponse = await axios.get(
+          `https://graph.facebook.com/v18.0/${business.id}/adspixels`,
+          {
+            params: {
+              access_token: userAccessToken,
+              fields: 'id,name,code'
+            }
+          }
+        );
+
+        const pixels = pixelsResponse.data.data || [];
+        console.log(`  ✅ Found ${pixels.length} pixels`);
+
+        pixels.forEach(pixel => {
+          allPixels.push({
+            pixelId: pixel.id,
+            pixelName: pixel.name,
+            businessId: business.id,
+            businessName: business.name
+          });
+        });
+      } catch (error) {
+        console.error(`❌ [PIXELS] Error fetching pixels for business ${business.id}:`, error.response?.data || error.message);
+        // Continue with other businesses
+      }
+    }
+
+    console.log(`✅ [PIXELS] Total pixels found: ${allPixels.length}`);
+
+    res.json({
+      success: true,
+      pixels: allPixels,
+      count: allPixels.length,
+      message: allPixels.length > 0 
+        ? `تم العثور على ${allPixels.length} Pixel`
+        : 'لم يتم العثور على Pixels'
+    });
+
+  } catch (error) {
+    console.error('❌ [PIXELS] Error fetching pixels:', error.response?.data || error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      message: 'فشل جلب Pixels من Facebook'
+    });
+  }
+});
+
+/**
+ * 🆕 Generate Access Token for specific Pixel
+ * POST /api/v1/facebook-oauth/generate-pixel-token
+ * ✅ REQUIRES AUTHENTICATION
+ */
+router.post('/generate-pixel-token', requireAuth, async (req, res) => {
+  try {
+    const { companyId } = req.query;
+    const { pixelId, businessId } = req.body;
+
+    if (!companyId || !pixelId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Company ID and Pixel ID are required',
+        message: 'معرف الشركة و Pixel ID مطلوبان'
+      });
+    }
+
+    // Verify user has access to this company
+    if (req.user.companyId !== companyId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Unauthorized access to company',
+        message: 'غير مصرح لك بالوصول لهذه الشركة'
+      });
+    }
+
+    console.log('🔑 [TOKEN] Generating access token for pixel:', pixelId);
+
+    // Get Facebook page access token
+    const pages = await prisma.facebookPage.findMany({
+      where: {
+        companyId: companyId,
+        status: 'connected'
+      },
+      select: {
+        pageAccessToken: true
+      },
+      take: 1
+    });
+
+    if (!pages || pages.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'لم يتم العثور على صفحات Facebook مربوطة'
+      });
+    }
+
+    const userAccessToken = pages[0].pageAccessToken;
+
+    // Try to get a long-lived token for the pixel
+    // Note: This requires business_management permission
+    try {
+      // Method 1: Try to get System User Token (best for long-term)
+      if (businessId) {
+        const systemUsersResponse = await axios.get(
+          `https://graph.facebook.com/v18.0/${businessId}/system_users`,
+          {
+            params: {
+              access_token: userAccessToken
+            }
+          }
+        );
+
+        console.log('✅ [TOKEN] System users found:', systemUsersResponse.data);
+      }
+
+      // For now, return the user access token
+      // In production, you should create a System User Token
+      res.json({
+        success: true,
+        accessToken: userAccessToken,
+        tokenType: 'user_token',
+        message: 'تم توليد Access Token بنجاح',
+        note: 'هذا User Access Token - يُنصح بإنشاء System User Token للإنتاج'
+      });
+
+    } catch (tokenError) {
+      console.error('⚠️ [TOKEN] Could not generate system token:', tokenError.response?.data || tokenError.message);
+      
+      // Fallback: return user token
+      res.json({
+        success: true,
+        accessToken: userAccessToken,
+        tokenType: 'user_token',
+        message: 'تم توليد Access Token بنجاح',
+        warning: 'تم استخدام User Token - قد تحتاج لتجديده لاحقاً'
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ [TOKEN] Error generating token:', error.response?.data || error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      message: 'فشل توليد Access Token'
+    });
+  }
+});
 
 module.exports = router;
