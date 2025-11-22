@@ -268,9 +268,33 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
     // للينكات الخارجية (المتجر العام)
     if (external) {
-      // استخدم slug إذا موجود، وإلا استخدم companyId كـ fallback
-      const identifier = user?.company?.slug || user?.companyId;
-      const shopUrl = identifier ? buildStoreUrl(identifier, to) : to;
+      // ✅ FIX: استخدم slug فقط (ليس companyId) لبناء subdomain URL
+      // إذا كان slug غير موجود، استخدم companyId في query parameter كـ fallback
+      const slug = user?.company?.slug;
+      const companyId = user?.companyId;
+      
+      // Debug logging
+      console.log('🔍 [LAYOUT] Building shop URL:', {
+        slug,
+        companyId,
+        hasSlug: !!slug,
+        path: to
+      });
+      
+      let shopUrl: string;
+      if (slug && slug.trim().length > 0) {
+        // ✅ استخدم slug لبناء subdomain URL
+        shopUrl = buildStoreUrl(slug, to);
+        console.log('✅ [LAYOUT] Using slug for subdomain:', shopUrl);
+      } else if (companyId) {
+        // ⚠️ Fallback: إذا لم يكن slug موجوداً، استخدم companyId في query parameter
+        const separator = to.includes('?') ? '&' : '?';
+        shopUrl = `${to}${separator}companyId=${companyId}`;
+        console.warn('⚠️ [LAYOUT] Slug not found, using companyId fallback:', shopUrl);
+      } else {
+        shopUrl = to;
+        console.error('❌ [LAYOUT] No slug or companyId found!');
+      }
       
       return (
         <a

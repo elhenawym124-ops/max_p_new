@@ -11,6 +11,7 @@ interface User {
   company: {
     id: string;
     name: string;
+    slug: string | null; // ✅ FIX: إضافة slug للـ interface
     plan: string;
   };
 }

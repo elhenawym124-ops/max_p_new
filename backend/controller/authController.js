@@ -315,6 +315,7 @@ const me = async (req, res) => {
           select: {
             id: true,
             name: true,
+            slug: true, // ✅ FIX: إضافة slug لبناء subdomain URL
             plan: true,
             currency: true,
             isActive: true
