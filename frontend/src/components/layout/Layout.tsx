@@ -46,6 +46,9 @@ import {
   MagnifyingGlassIcon,
   Bars3Icon,
   XMarkIcon,
+  MegaphoneIcon,
+  RocketLaunchIcon,
+  StarIcon,
 } from '@heroicons/react/24/outline';
 
 interface LayoutProps {
@@ -113,12 +116,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       items: [
         { to: '/shop', icon: <BuildingStorefrontIcon className="h-5 w-5" />, label: t('sidebar.visitStore'), badge: 'جديد', external: true },
         { to: '/products', icon: <ShoppingBagIcon className="h-5 w-5" />, label: t('sidebar.products') },
+        { to: '/products/reviews', icon: <StarIcon className="h-5 w-5" />, label: t('sidebar.productReviews') },
         { to: '/categories', icon: <TagIcon className="h-5 w-5" />, label: t('sidebar.categories') },
         { to: '/orders', icon: <ArchiveBoxIcon className="h-5 w-5" />, label: t('sidebar.orders') },
         { to: '/inventory', icon: <ClipboardDocumentListIcon className="h-5 w-5" />, label: t('sidebar.inventory') },
         { to: '/coupons', icon: <TicketIcon className="h-5 w-5" />, label: t('sidebar.coupons') },
         { to: '/posts/ai-tracking', icon: <ChartBarIcon className="h-5 w-5" />, label: 'تتبع تحديد المنتجات' },
         { to: '/store-settings', icon: <Cog6ToothIcon className="h-5 w-5" />, label: t('sidebar.storeSettings') },
+        { to: '/settings/store-pages', icon: <DocumentTextIcon className="h-5 w-5" />, label: 'صفحات المتجر', badge: 'جديد' },
       ]
     },
     {
@@ -136,6 +141,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       icon: '📢',
       items: [
         { to: '/broadcast', icon: <SpeakerWaveIcon className="h-5 w-5" />, label: t('sidebar.broadcast') },
+      ]
+    },
+    {
+      id: 'advertising',
+      title: 'إدارة الإعلانات',
+      icon: '🎯',
+      items: [
+        { to: '/advertising/facebook-pixel', icon: <ChartBarIcon className="h-5 w-5" />, label: 'Facebook Pixel & CAPI', badge: 'جديد' },
+        { to: '/advertising/campaigns', icon: <MegaphoneIcon className="h-5 w-5" />, label: 'الحملات الإعلانية' },
+        { to: '/advertising/analytics', icon: <PresentationChartLineIcon className="h-5 w-5" />, label: 'تحليلات الإعلانات' },
       ]
     },
     {
@@ -175,6 +190,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         { to: '/notifications', icon: <BellIcon className="h-5 w-5" />, label: t('sidebar.notifications') },
         { to: '/reminders', icon: <BellAlertIcon className="h-5 w-5" />, label: t('sidebar.reminders') },
         { to: '/notification-settings', icon: <CogIcon className="h-5 w-5" />, label: t('sidebar.notificationSettings') },
+        { to: '/page-builder', icon: <DocumentTextIcon className="h-5 w-5" />, label: 'محرر الصفحات', badge: 'جديد' },
       ]
     },
     {
