@@ -74,6 +74,7 @@ const FacebookPixelSettings: React.FC = () => {
   });
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [testingPixel, setTestingPixel] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -142,8 +143,8 @@ const FacebookPixelSettings: React.FC = () => {
         return;
       }
       
-      if (settings.facebookPixelId && !/^\d{15}$/.test(settings.facebookPixelId)) {
-        toast.error('Pixel ID يجب أن يكون 15 رقم');
+      if (settings.facebookPixelId && !/^\d{16}$/.test(settings.facebookPixelId)) {
+        toast.error('Pixel ID يجب أن يكون 16 رقم');
         setSaving(false);
         return;
       }
@@ -169,6 +170,26 @@ const FacebookPixelSettings: React.FC = () => {
       console.error('❌ Save error:', error);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTestPixel = async () => {
+    try {
+      setTestingPixel(true);
+      
+      // Test Pixel
+      const response = await storefrontSettingsService.testFacebookPixel();
+      
+      if (response.success) {
+        toast.success('✅ Pixel ID صحيح وتم تفعيله بنجاح!');
+        await loadSettings(); // Reload to get updated status
+      } else {
+        toast.error(`❌ فشل الاختبار: ${response.message || 'Pixel ID غير صحيح'}`);
+      }
+    } catch (error: any) {
+      toast.error(`❌ خطأ: ${error.message || 'فشل الاختبار'}`);
+    } finally {
+      setTestingPixel(false);
     }
   };
 
@@ -282,17 +303,36 @@ const FacebookPixelSettings: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   معرف البكسل (Pixel ID) <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="text"
-                  value={settings.facebookPixelId || ''}
-                  onChange={(e) => setSettings({...settings, facebookPixelId: e.target.value})}
-                  placeholder="123456789012345"
-                  maxLength={15}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={settings.facebookPixelId || ''}
+                    onChange={(e) => setSettings({...settings, facebookPixelId: e.target.value})}
+                    placeholder="1234567890123456"
+                    maxLength={16}
+                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                  />
+                  <button
+                    onClick={handleTestPixel}
+                    disabled={testingPixel || !settings.facebookPixelId || settings.facebookPixelId.length !== 16}
+                    className="px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors whitespace-nowrap"
+                  >
+                    {testingPixel ? (
+                      <>
+                        <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                        جاري الاختبار...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircleIcon className="h-5 w-5" />
+                        اختبار Pixel
+                      </>
+                    )}
+                  </button>
+                </div>
                 <p className="mt-2 text-xs text-gray-500 flex items-center">
                   <InformationCircleIcon className="h-4 w-4 ml-1" />
-                  15 رقم - يمكنك الحصول عليه من Facebook Events Manager
+                  16 رقم - يمكنك الحصول عليه من Facebook Events Manager
                 </p>
               </div>
 
@@ -326,27 +366,41 @@ const FacebookPixelSettings: React.FC = () => {
                 </div>
               </div>
 
-              {settings.pixelStatus && (
-                <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      {settings.pixelStatus === 'active' ? (
-                        <CheckCircleIcon className="h-5 w-5 text-green-500 ml-2" />
-                      ) : (
-                        <XCircleIcon className="h-5 w-5 text-red-500 ml-2" />
-                      )}
-                      <span className="text-sm text-gray-700">
-                        الحالة: <span className="font-semibold">{settings.pixelStatus === 'active' ? 'نشط' : 'خطأ'}</span>
-                      </span>
-                    </div>
-                    {settings.lastPixelTest && (
-                      <span className="text-xs text-gray-500">
-                        آخر اختبار: {new Date(settings.lastPixelTest).toLocaleString('ar-EG')}
-                      </span>
+              <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    {settings.pixelStatus === 'active' ? (
+                      <CheckCircleIcon className="h-5 w-5 text-green-500 ml-2" />
+                    ) : settings.pixelStatus === 'error' ? (
+                      <XCircleIcon className="h-5 w-5 text-red-500 ml-2" />
+                    ) : (
+                      <InformationCircleIcon className="h-5 w-5 text-yellow-500 ml-2" />
                     )}
+                    <span className="text-sm text-gray-700">
+                      الحالة: <span className="font-semibold">
+                        {settings.pixelStatus === 'active' ? 'نشط ✅' : 
+                         settings.pixelStatus === 'error' ? 'خطأ ❌' : 
+                         'غير مُكوّن ⚠️'}
+                      </span>
+                    </span>
                   </div>
+                  {settings.lastPixelTest && (
+                    <span className="text-xs text-gray-500">
+                      آخر اختبار: {new Date(settings.lastPixelTest).toLocaleString('ar-EG')}
+                    </span>
+                  )}
                 </div>
-              )}
+                {settings.pixelStatus === 'not_configured' && (
+                  <p className="mt-2 text-xs text-gray-600">
+                    💡 أدخل Pixel ID واضغط على "اختبار Pixel" للتحقق من صحته
+                  </p>
+                )}
+                {settings.pixelStatus === 'error' && (
+                  <p className="mt-2 text-xs text-red-600">
+                    ⚠️ Pixel ID غير صحيح - يرجى التحقق من الرقم وإعادة المحاولة
+                  </p>
+                )}
+              </div>
             </>
           )}
         </div>

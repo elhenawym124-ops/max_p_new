@@ -166,6 +166,14 @@ export const storefrontSettingsService = {
   },
 
   /**
+   * اختبار Facebook Pixel
+   */
+  testFacebookPixel: async () => {
+    const response = await apiClient.post('/storefront-settings/test-facebook-pixel', {});
+    return response.data;
+  },
+
+  /**
    * اختبار اتصال Facebook Conversions API
    */
   testFacebookCapi: async () => {
@@ -191,6 +199,7 @@ export const storefrontSettingsService = {
     const isDevelopment = import.meta.env.DEV || import.meta.env.MODE === 'development';
 
     // محاولة جلب البيانات من Cache أولاً (إلا إذا كان forceRefresh = true)
+    // لكن نتخطى الـ cache للـ Facebook Pixel settings للتأكد من الحصول على أحدث البيانات
     if (!forceRefresh) {
       try {
         const cached = localStorage.getItem(CACHE_KEY);
@@ -204,20 +213,23 @@ export const storefrontSettingsService = {
             // إذا كان `recentlyViewedEnabled` غير موجود، نعتبر الـ cache قديماً
             const hasRecentlyViewed = 'recentlyViewedEnabled' in data && data.recentlyViewedEnabled !== undefined;
             
-            if (!hasRecentlyViewed) {
-              if (isDevelopment) {
-                console.warn('⚠️ [STOREFRONT-SETTINGS] Cache missing recentlyViewedEnabled, fetching fresh data', {
-                  hasKey: 'recentlyViewedEnabled' in data,
-                  value: data.recentlyViewedEnabled
-                });
-              }
+            // التحقق من أن Facebook Pixel settings موجودة وصحيحة
+            const hasValidPixelSettings = 'facebookPixelEnabled' in data && 'facebookPixelId' in data;
+            
+            if (!hasRecentlyViewed || !hasValidPixelSettings) {
+              console.warn('⚠️ [STOREFRONT-SETTINGS] Cache missing required fields, fetching fresh data', {
+                hasRecentlyViewed,
+                hasValidPixelSettings,
+                facebookPixelEnabled: data.facebookPixelEnabled,
+                facebookPixelId: data.facebookPixelId
+              });
               // نتابع لجلب بيانات جديدة - لا نرجع الـ cache
             } else {
-              if (isDevelopment) {
-                console.log('✅ [STOREFRONT-SETTINGS] Using cached settings', {
-                  recentlyViewedEnabled: data.recentlyViewedEnabled
-                });
-              }
+              console.log('✅ [STOREFRONT-SETTINGS] Using cached settings', {
+                recentlyViewedEnabled: data.recentlyViewedEnabled,
+                facebookPixelEnabled: data.facebookPixelEnabled,
+                facebookPixelId: data.facebookPixelId
+              });
               return {
                 success: true,
                 data: data as StorefrontSettings
@@ -225,17 +237,15 @@ export const storefrontSettingsService = {
             }
           } else {
             // Cache منتهي - سيتم جلب بيانات جديدة
-            if (isDevelopment) {
-              console.log('⏰ [STOREFRONT-SETTINGS] Cache expired, fetching fresh data');
-            }
+            console.log('⏰ [STOREFRONT-SETTINGS] Cache expired, fetching fresh data');
           }
         }
       } catch (error) {
         // في حالة خطأ في قراءة الـ cache، نتابع لجلب بيانات جديدة
-        if (isDevelopment) {
-          console.warn('⚠️ [STOREFRONT-SETTINGS] Cache read error, fetching fresh data');
-        }
+        console.warn('⚠️ [STOREFRONT-SETTINGS] Cache read error, fetching fresh data');
       }
+    } else {
+      console.log('🔄 [STOREFRONT-SETTINGS] Force refresh requested, skipping cache');
     }
 
     // جلب البيانات من API
@@ -286,6 +296,14 @@ export const storefrontSettingsService = {
       
       // التحقق من أن البيانات موجودة وصحيحة
       if (data.success && data.data) {
+        // Debug logging for Facebook Pixel
+        console.log('📊 [STOREFRONT-SETTINGS] Raw response data:', {
+          facebookPixelEnabled: data.data.facebookPixelEnabled,
+          facebookPixelId: data.data.facebookPixelId,
+          pixelStatus: data.data.pixelStatus,
+          pixelTrackPageView: data.data.pixelTrackPageView
+        });
+        
         // حفظ البيانات في Cache
         try {
           localStorage.setItem(CACHE_KEY, JSON.stringify({
@@ -309,6 +327,8 @@ export const storefrontSettingsService = {
             wishlistEnabled: data.data.wishlistEnabled,
             recentlyViewedEnabled: data.data.recentlyViewedEnabled,
             recentlyViewedCount: data.data.recentlyViewedCount,
+            facebookPixelEnabled: data.data.facebookPixelEnabled,
+            facebookPixelId: data.data.facebookPixelId
           });
         }
         return data;

@@ -2,7 +2,6 @@
 require('dotenv').config();
 
 const express = require('express');
-const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const path = require('path');
 const { PrismaClient } = require('@prisma/client');
@@ -249,13 +248,89 @@ async function loadHeavyServices() {
 const app = express();
 const server = http.createServer(app);
 
-// CORS Configuration - استخدام النظام الذكي
-app.use(cors({
-  origin: envConfig.corsOrigins,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-request-id', 'x-cart-id', 'x-session-id', 'X-Company-Subdomain', 'X-Company-Id']
-}));
+// CORS Configuration - حل بسيط وموثوق
+// ✅ MUST be before all routes to ensure CORS headers are always set
+app.use((req, res, next) => {
+  // Get origin from multiple possible headers (nginx may pass it differently)
+  const origin = req.get('origin') || req.get('Origin') || req.headers.origin || req.get('referer');
+  
+  // Determine allowed origin
+  let allowedOrigin = null;
+  
+  if (origin) {
+    const allowedPatterns = [
+      'https://mokhtarelhenawy.online',
+      'https://www.mokhtarelhenawy.online',
+      /^https:\/\/[a-zA-Z0-9-]+\.mokhtarelhenawy\.online$/, // All subdomains
+      /^https?:\/\/localhost:[0-9]+$/ // localhost for development
+    ];
+    
+    const isAllowed = allowedPatterns.some(pattern => {
+      if (pattern instanceof RegExp) {
+        return pattern.test(origin);
+      }
+      return pattern === origin;
+    });
+    
+    if (isAllowed) {
+      allowedOrigin = origin;
+    }
+  }
+  
+  // Fallback: use referer or host if origin is missing
+  if (!allowedOrigin) {
+    const referer = req.get('referer') || req.get('Referer');
+    if (referer) {
+      try {
+        const refererUrl = new URL(referer);
+        if (refererUrl.hostname.includes('mokhtarelhenawy.online') || refererUrl.hostname.includes('localhost')) {
+          allowedOrigin = refererUrl.origin;
+        }
+      } catch (e) {
+        // Invalid referer URL
+      }
+    }
+  }
+  
+  // ✅ ALWAYS set CORS headers for ALL requests - this ensures CORS works even if origin is missing
+  // Use allowedOrigin if found, otherwise use wildcard or construct from request
+  let corsOrigin = allowedOrigin;
+  
+  if (!corsOrigin) {
+    // Try to construct origin from request headers
+    const host = req.get('host');
+    const protocol = req.get('x-forwarded-proto') || req.protocol || 'https';
+    if (host && (host.includes('mokhtarelhenawy.online') || host.includes('localhost'))) {
+      corsOrigin = `${protocol}://${host}`;
+    } else {
+      // Fallback to wildcard (less secure but ensures CORS works)
+      corsOrigin = '*';
+    }
+  }
+  
+  // Remove any existing CORS headers first to prevent duplicates
+  try {
+    res.removeHeader('Access-Control-Allow-Origin');
+  } catch (e) {
+    // Ignore if header doesn't exist
+  }
+  
+  // Set CORS headers - ALWAYS set them for every request
+  res.setHeader('Access-Control-Allow-Origin', corsOrigin);
+  if (corsOrigin !== '*') {
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, x-request-id, x-cart-id, x-session-id, X-Company-Subdomain, X-Company-Id');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  
+  // Handle preflight OPTIONS requests
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+  
+  next();
+});
 
 app.use(express.json());
 app.use(cookieParser()); // ✅ Add cookie parser middleware
@@ -625,6 +700,55 @@ process.on('SIGINT', async () => {
     console.error('Error disconnecting:', error.message);
   }
   process.exit(0);
+});
+
+// ✅ Ensure CORS headers are set for all responses (backup middleware)
+app.use((req, res, next) => {
+  // Override res.json, res.send, res.end to ensure CORS headers are always present
+  const originalJson = res.json.bind(res);
+  const originalSend = res.send.bind(res);
+  const originalEnd = res.end.bind(res);
+  
+  const ensureCORS = () => {
+    if (!res.getHeader('Access-Control-Allow-Origin')) {
+      const origin = req.get('origin') || req.get('Origin') || req.headers.origin;
+      let corsOrigin = origin;
+      
+      if (!corsOrigin || (!corsOrigin.includes('mokhtarelhenawy.online') && !corsOrigin.includes('localhost'))) {
+        const host = req.get('host');
+        const protocol = req.get('x-forwarded-proto') || req.protocol || 'https';
+        if (host && (host.includes('mokhtarelhenawy.online') || host.includes('localhost'))) {
+          corsOrigin = `${protocol}://${host}`;
+        } else {
+          corsOrigin = '*';
+        }
+      }
+      
+      res.setHeader('Access-Control-Allow-Origin', corsOrigin);
+      if (corsOrigin !== '*') {
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+      }
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, x-request-id, x-cart-id, x-session-id, X-Company-Subdomain, X-Company-Id');
+    }
+  };
+  
+  res.json = function(...args) {
+    ensureCORS();
+    return originalJson.apply(this, args);
+  };
+  
+  res.send = function(...args) {
+    ensureCORS();
+    return originalSend.apply(this, args);
+  };
+  
+  res.end = function(...args) {
+    ensureCORS();
+    return originalEnd.apply(this, args);
+  };
+  
+  next();
 });
 
 app.use("/api/v1/companies/", companyRoutes)

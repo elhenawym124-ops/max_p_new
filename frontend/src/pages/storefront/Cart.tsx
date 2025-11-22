@@ -6,6 +6,8 @@ import { storefrontApi, getCompanyId } from '../../utils/storefrontApi';
 import axios from 'axios';
 import { getApiUrl } from '../../config/environment';
 import StorefrontNav from '../../components/StorefrontNav';
+import { trackAddToCart, trackInitiateCheckout } from '../../utils/facebookPixel';
+import { storefrontSettingsService } from '../../services/storefrontSettingsService';
 
 interface CartItem {
   productId: string;
@@ -27,6 +29,7 @@ const Cart: React.FC = () => {
   const [items, setItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [freeShippingSettings, setFreeShippingSettings] = useState<FreeShippingSettings | null>(null);
+  const [storefrontSettings, setStorefrontSettings] = useState<any>(null);
   const companyId = getCompanyId(); // Get companyId from URL or localStorage
 
   useEffect(() => {
@@ -38,7 +41,19 @@ const Cart: React.FC = () => {
     }
     fetchCart();
     fetchFreeShippingSettings();
+    fetchStorefrontSettings();
   }, []);
+
+  const fetchStorefrontSettings = async () => {
+    try {
+      const response = await storefrontSettingsService.getPublicSettings(companyId);
+      if (response.success && response.data) {
+        setStorefrontSettings(response.data);
+      }
+    } catch (error) {
+      console.error('Error fetching storefront settings:', error);
+    }
+  };
 
   const fetchCart = async () => {
     try {
@@ -109,8 +124,26 @@ const Cart: React.FC = () => {
       });
       
       if (data.success) {
-        setItems(data.data.items);
+        const updatedItems = data.data.items;
+        setItems(updatedItems);
         window.dispatchEvent(new Event('cartUpdated'));
+
+        // Track AddToCart event if quantity increased
+        const oldItem = items.find(item => item.productId === productId && item.variantId === variantId);
+        if (oldItem && newQuantity > oldItem.quantity && storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackAddToCart !== false) {
+          try {
+            const quantityDiff = newQuantity - oldItem.quantity;
+            trackAddToCart({
+              id: productId,
+              name: oldItem.name,
+              price: oldItem.price,
+              quantity: quantityDiff
+            });
+            console.log('📊 [Facebook Pixel] AddToCart tracked (quantity update)');
+          } catch (error) {
+            console.error('❌ [Facebook Pixel] Error tracking AddToCart:', error);
+          }
+        }
       } else {
         toast.error(data.message || 'حدث خطأ');
       }
@@ -326,6 +359,24 @@ const Cart: React.FC = () => {
                   toast.error('⚠️ السلة فارغة. أضف منتجات قبل إتمام الطلب');
                   return;
                 }
+
+                // Track InitiateCheckout event
+                if (storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackInitiateCheckout !== false) {
+                  try {
+                    trackInitiateCheckout({
+                      items: items.map(item => ({
+                        id: item.productId,
+                        quantity: item.quantity,
+                        price: item.price
+                      })),
+                      total: calculateTotal()
+                    });
+                    console.log('📊 [Facebook Pixel] InitiateCheckout tracked from Cart');
+                  } catch (error) {
+                    console.error('❌ [Facebook Pixel] Error tracking InitiateCheckout:', error);
+                  }
+                }
+
                 console.log('✅ [CART] Navigating to checkout:', `/shop/checkout?companyId=${companyId}`);
                 navigate(`/shop/checkout?companyId=${companyId}`);
               }}

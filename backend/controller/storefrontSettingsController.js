@@ -372,6 +372,29 @@ exports.updateStorefrontSettings = async (req, res) => {
       updateData.supportedLanguages = ["ar"];
     }
 
+    // تحديث pixelStatus تلقائياً بناءً على Pixel ID
+    if (updateData.facebookPixelId !== undefined) {
+      if (updateData.facebookPixelId && /^\d{16}$/.test(updateData.facebookPixelId)) {
+        // Pixel ID صحيح - تحديث الحالة إلى active
+        updateData.pixelStatus = 'active';
+        console.log('✅ [STOREFRONT-SETTINGS] Pixel ID valid, setting status to active');
+      } else if (!updateData.facebookPixelId || updateData.facebookPixelId === '') {
+        // Pixel ID محذوف - تحديث الحالة إلى not_configured
+        updateData.pixelStatus = 'not_configured';
+        console.log('ℹ️ [STOREFRONT-SETTINGS] Pixel ID removed, setting status to not_configured');
+      } else {
+        // Pixel ID غير صحيح - تحديث الحالة إلى error
+        updateData.pixelStatus = 'error';
+        console.log('❌ [STOREFRONT-SETTINGS] Pixel ID invalid, setting status to error');
+      }
+    }
+
+    // إذا تم تعطيل Pixel، تحديث الحالة إلى not_configured
+    if (updateData.facebookPixelEnabled === false) {
+      updateData.pixelStatus = 'not_configured';
+      console.log('ℹ️ [STOREFRONT-SETTINGS] Pixel disabled, setting status to not_configured');
+    }
+
     // تحديث أو إنشاء الإعدادات
     // Ensure supportedLanguages is always present (required Json field)
     const createData = {
@@ -409,7 +432,7 @@ exports.updateStorefrontSettings = async (req, res) => {
  */
 exports.getPublicStorefrontSettings = async (req, res) => {
   try {
-    const { companyId } = req.params;
+    let { companyId } = req.params;
     const prisma = getPrisma();
 
     console.log('🔍 [STOREFRONT-SETTINGS-PUBLIC] Getting settings for company:', companyId);
@@ -421,9 +444,53 @@ exports.getPublicStorefrontSettings = async (req, res) => {
       });
     }
 
+    // Check if companyId is a slug (subdomain) instead of actual ID
+    // Prisma IDs usually start with 'c' followed by alphanumeric characters
+    // Slugs are usually lowercase letters, numbers, and hyphens
+    const isSlug = !/^c[a-z0-9]{20,}$/.test(companyId);
+    
+    if (isSlug) {
+      console.log('🔍 [STOREFRONT-SETTINGS-PUBLIC] companyId looks like a slug, finding company by slug...');
+      
+      // Find company by slug
+      const company = await prisma.company.findFirst({
+        where: {
+          slug: companyId,
+          isActive: true
+        },
+        select: {
+          id: true,
+          slug: true
+        }
+      });
+
+      if (company) {
+        console.log('✅ [STOREFRONT-SETTINGS-PUBLIC] Company found by slug:', {
+          slug: company.slug,
+          companyId: company.id
+        });
+        companyId = company.id; // Use the real companyId
+      } else {
+        console.warn('⚠️ [STOREFRONT-SETTINGS-PUBLIC] Company not found by slug:', companyId);
+        return res.status(404).json({
+          success: false,
+          message: 'الشركة غير موجودة'
+        });
+      }
+    }
+
     // البحث عن الإعدادات
     let settings = await prisma.storefrontSettings.findUnique({
       where: { companyId }
+    });
+
+    // Debug logging
+    console.log('📊 [STOREFRONT-SETTINGS-PUBLIC] Settings from DB:', {
+      found: !!settings,
+      companyId: companyId,
+      facebookPixelEnabled: settings?.facebookPixelEnabled,
+      facebookPixelId: settings?.facebookPixelId,
+      pixelStatus: settings?.pixelStatus
     });
 
     // إذا لم توجد إعدادات، إرجاع القيم الافتراضية من Schema
@@ -492,8 +559,76 @@ exports.getPublicStorefrontSettings = async (req, res) => {
         seoOpenGraph: true,
         multiLanguageEnabled: false,
         defaultLanguage: 'ar',
-        supportedLanguages: ['ar']
+        supportedLanguages: ['ar'],
+        // Facebook Pixel Settings
+        facebookPixelEnabled: false,
+        facebookPixelId: null,
+        pixelTrackPageView: true,
+        pixelTrackViewContent: true,
+        pixelTrackAddToCart: true,
+        pixelTrackInitiateCheckout: true,
+        pixelTrackPurchase: true,
+        pixelTrackSearch: true,
+        pixelTrackAddToWishlist: false,
+        // Facebook Conversions API Settings
+        facebookConvApiEnabled: false,
+        facebookConvApiToken: null,
+        facebookConvApiTestCode: null,
+        capiTrackPageView: true,
+        capiTrackViewContent: true,
+        capiTrackAddToCart: true,
+        capiTrackInitiateCheckout: true,
+        capiTrackPurchase: true,
+        capiTrackSearch: true,
+        // Advanced Settings
+        eventDeduplicationEnabled: true,
+        eventMatchQualityTarget: 8,
+        gdprCompliant: true,
+        hashUserData: true,
+        pixelStatus: 'not_configured',
+        capiStatus: 'not_configured'
       };
+    } else {
+      // Ensure boolean values are properly serialized
+      settings = {
+        ...settings,
+        // Facebook Pixel Settings
+        facebookPixelEnabled: Boolean(settings.facebookPixelEnabled),
+        facebookPixelId: settings.facebookPixelId || null, // Ensure Pixel ID is returned
+        pixelTrackPageView: Boolean(settings.pixelTrackPageView ?? true),
+        pixelTrackViewContent: Boolean(settings.pixelTrackViewContent ?? true),
+        pixelTrackAddToCart: Boolean(settings.pixelTrackAddToCart ?? true),
+        pixelTrackInitiateCheckout: Boolean(settings.pixelTrackInitiateCheckout ?? true),
+        pixelTrackPurchase: Boolean(settings.pixelTrackPurchase ?? true),
+        pixelTrackSearch: Boolean(settings.pixelTrackSearch ?? true),
+        pixelTrackAddToWishlist: Boolean(settings.pixelTrackAddToWishlist ?? false),
+        // Facebook Conversions API Settings
+        facebookConvApiEnabled: Boolean(settings.facebookConvApiEnabled ?? false),
+        facebookConvApiToken: settings.facebookConvApiToken || null,
+        facebookConvApiTestCode: settings.facebookConvApiTestCode || null,
+        capiTrackPageView: Boolean(settings.capiTrackPageView ?? true),
+        capiTrackViewContent: Boolean(settings.capiTrackViewContent ?? true),
+        capiTrackAddToCart: Boolean(settings.capiTrackAddToCart ?? true),
+        capiTrackInitiateCheckout: Boolean(settings.capiTrackInitiateCheckout ?? true),
+        capiTrackPurchase: Boolean(settings.capiTrackPurchase ?? true),
+        capiTrackSearch: Boolean(settings.capiTrackSearch ?? true),
+        // Advanced Settings
+        eventDeduplicationEnabled: Boolean(settings.eventDeduplicationEnabled ?? true),
+        gdprCompliant: Boolean(settings.gdprCompliant ?? true),
+        hashUserData: Boolean(settings.hashUserData ?? true),
+        eventMatchQualityTarget: settings.eventMatchQualityTarget ? parseInt(settings.eventMatchQualityTarget) : 8,
+        pixelStatus: settings.pixelStatus || 'not_configured',
+        capiStatus: settings.capiStatus || 'not_configured',
+        lastPixelTest: settings.lastPixelTest || null,
+        lastCapiTest: settings.lastCapiTest || null
+      };
+      
+      // Debug logging
+      console.log('📊 [STOREFRONT-SETTINGS-PUBLIC] Returning settings with Pixel:', {
+        facebookPixelEnabled: settings.facebookPixelEnabled,
+        facebookPixelId: settings.facebookPixelId,
+        pixelStatus: settings.pixelStatus
+      });
     }
 
     return res.status(200).json({
@@ -639,6 +774,97 @@ exports.testFacebookCapi = async (req, res) => {
 };
 
 /**
+ * اختبار Facebook Pixel
+ * POST /api/v1/storefront-settings/test-facebook-pixel
+ */
+exports.testFacebookPixel = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+    const prisma = getPrisma();
+
+    console.log('🧪 [FACEBOOK-PIXEL] Testing Pixel for company:', companyId);
+
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: 'معرف الشركة مطلوب'
+      });
+    }
+
+    // جلب الإعدادات
+    const settings = await prisma.storefrontSettings.findUnique({
+      where: { companyId }
+    });
+
+    if (!settings) {
+      return res.status(404).json({
+        success: false,
+        message: 'لم يتم العثور على إعدادات المتجر'
+      });
+    }
+
+    if (!settings.facebookPixelEnabled) {
+      return res.status(400).json({
+        success: false,
+        message: 'Facebook Pixel غير مفعل'
+      });
+    }
+
+    if (!settings.facebookPixelId) {
+      return res.status(400).json({
+        success: false,
+        message: 'يرجى إدخال Pixel ID'
+      });
+    }
+
+    // التحقق من صحة Pixel ID
+    if (!/^\d{16}$/.test(settings.facebookPixelId)) {
+      // تحديث الحالة إلى error
+      await prisma.storefrontSettings.update({
+        where: { companyId },
+        data: {
+          pixelStatus: 'error',
+          lastPixelTest: new Date()
+        }
+      });
+
+      return res.status(400).json({
+        success: false,
+        message: 'Pixel ID غير صحيح - يجب أن يكون 16 رقم'
+      });
+    }
+
+    // Pixel ID صحيح - تحديث الحالة إلى active
+    await prisma.storefrontSettings.update({
+      where: { companyId },
+      data: {
+        pixelStatus: 'active',
+        lastPixelTest: new Date()
+      }
+    });
+
+    console.log('✅ [FACEBOOK-PIXEL] Pixel test successful:', settings.facebookPixelId);
+
+    return res.json({
+      success: true,
+      message: 'Pixel ID صحيح وتم تفعيله بنجاح',
+      data: {
+        pixelId: settings.facebookPixelId,
+        status: 'active',
+        testDate: new Date()
+      }
+    });
+  } catch (error) {
+    console.error('❌ [FACEBOOK-PIXEL] Error testing Pixel:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'فشل اختبار Pixel',
+      error: error.message
+    });
+  }
+};
+
+/**
  * التحقق من صحة Pixel ID
  * POST /api/v1/storefront-settings/validate-pixel-id
  */
@@ -653,11 +879,11 @@ exports.validatePixelId = async (req, res) => {
       });
     }
 
-    // Pixel ID يجب أن يكون 15 رقم
-    if (!/^\d{15}$/.test(pixelId)) {
+    // Pixel ID يجب أن يكون 16 رقم
+    if (!/^\d{16}$/.test(pixelId)) {
       return res.status(400).json({
         success: false,
-        message: 'Pixel ID يجب أن يكون 15 رقم'
+        message: 'Pixel ID يجب أن يكون 16 رقم'
       });
     }
 

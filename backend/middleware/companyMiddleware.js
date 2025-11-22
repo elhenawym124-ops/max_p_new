@@ -333,13 +333,21 @@ const addPublicCORS = (req, res, next) => {
       const isMokhtarDomain = origin.includes('mokhtarelhenawy.online');
       
       if (isLocalhost || isMokhtarDomain) {
-        res.header('Access-Control-Allow-Origin', origin);
-        res.header('Access-Control-Allow-Credentials', 'true');
+        // ✅ التأكد من عدم وجود header مسبقاً لتجنب التكرار
+        if (!res.getHeader('Access-Control-Allow-Origin')) {
+          res.header('Access-Control-Allow-Origin', origin);
+          res.header('Access-Control-Allow-Credentials', 'true');
+        }
       }
     }
 
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-cart-id, x-session-id, X-Company-Subdomain, X-Company-Id');
+    // ✅ التأكد من عدم وجود headers مسبقاً
+    if (!res.getHeader('Access-Control-Allow-Methods')) {
+      res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    }
+    if (!res.getHeader('Access-Control-Allow-Headers')) {
+      res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-cart-id, x-session-id, X-Company-Subdomain, X-Company-Id');
+    }
     
     // Handle preflight requests
     if (req.method === 'OPTIONS') {

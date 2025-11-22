@@ -13,6 +13,7 @@ router.put('/', requireAuth, storefrontSettingsController.updateStorefrontSettin
 router.post('/reset', requireAuth, storefrontSettingsController.resetStorefrontSettings);
 
 // Facebook Pixel & Conversions API routes
+router.post('/test-facebook-pixel', requireAuth, storefrontSettingsController.testFacebookPixel);
 router.post('/test-facebook-capi', requireAuth, storefrontSettingsController.testFacebookCapi);
 router.post('/validate-pixel-id', requireAuth, storefrontSettingsController.validatePixelId);
 

@@ -10,8 +10,14 @@
 
 const crypto = require('crypto');
 
-// سيتم تثبيت المكتبة لاحقاً: npm install facebook-nodejs-business-sdk
-// const bizSdk = require('facebook-nodejs-business-sdk');
+// Facebook Business SDK
+let bizSdk;
+try {
+  bizSdk = require('facebook-nodejs-business-sdk');
+} catch (error) {
+  console.warn('⚠️ [Facebook CAPI] facebook-nodejs-business-sdk not installed. Run: npm install facebook-nodejs-business-sdk');
+  bizSdk = null;
+}
 
 class FacebookConversionsService {
   constructor(pixelId, accessToken, testEventCode = null) {
@@ -19,12 +25,23 @@ class FacebookConversionsService {
     this.accessToken = accessToken;
     this.testEventCode = testEventCode;
     
-    // TODO: Uncomment when facebook-nodejs-business-sdk is installed
-    // bizSdk.FacebookAdsApi.init(accessToken);
-    // this.ServerEvent = bizSdk.ServerEvent;
-    // this.EventRequest = bizSdk.EventRequest;
-    // this.UserData = bizSdk.UserData;
-    // this.CustomData = bizSdk.CustomData;
+    // Initialize Facebook SDK if available
+    if (bizSdk) {
+      try {
+        bizSdk.FacebookAdsApi.init(accessToken);
+        this.ServerEvent = bizSdk.ServerEvent;
+        this.EventRequest = bizSdk.EventRequest;
+        this.UserData = bizSdk.UserData;
+        this.CustomData = bizSdk.CustomData;
+        this.sdkAvailable = true;
+        console.log('✅ [Facebook CAPI] SDK initialized successfully');
+      } catch (error) {
+        console.error('❌ [Facebook CAPI] Error initializing SDK:', error);
+        this.sdkAvailable = false;
+      }
+    } else {
+      this.sdkAvailable = false;
+    }
   }
 
   /**
@@ -289,42 +306,119 @@ class FacebookConversionsService {
    */
   async sendEvent(event) {
     try {
-      // TODO: Implement actual Facebook API call when SDK is installed
-      // For now, just log the event
       console.log('📊 [Facebook CAPI] Sending event:', {
         pixelId: this.pixelId,
         eventName: event.event_name,
         eventId: event.event_id,
-        testMode: !!this.testEventCode
+        testMode: !!this.testEventCode,
+        url: `https://graph.facebook.com/v18.0/${this.pixelId}/events`
       });
 
-      // Simulate API call
-      const response = {
-        success: true,
-        events_received: 1,
-        messages: [],
-        fbtrace_id: `fb_trace_${Date.now()}`
-      };
+      // If SDK is not available, use direct HTTP call
+      if (!this.sdkAvailable || !this.EventRequest) {
+        console.warn('⚠️ [Facebook CAPI] SDK not available, using direct HTTP call');
+        return await this.sendEventViaHTTP(event);
+      }
 
-      console.log('✅ [Facebook CAPI] Event sent successfully');
-      return response;
+      // Build ServerEvent using SDK
+      const serverEvent = new this.ServerEvent()
+        .setEventName(event.event_name)
+        .setEventTime(event.event_time)
+        .setEventId(event.event_id)
+        .setEventSourceUrl(event.event_source_url)
+        .setActionSource(event.action_source || 'website');
 
-      /* 
-      // Real implementation (uncomment when SDK is installed):
-      const eventRequest = new this.EventRequest(
-        this.accessToken, 
-        this.pixelId
-      ).setEvents([event]);
+      // Add user data
+      if (event.user_data) {
+        const userData = new this.UserData();
+        if (event.user_data.em) userData.setEmail(event.user_data.em);
+        if (event.user_data.ph) userData.setPhone(event.user_data.ph);
+        if (event.user_data.fn) userData.setFirstName(event.user_data.fn);
+        if (event.user_data.ln) userData.setLastName(event.user_data.ln);
+        if (event.user_data.ct) userData.setCity(event.user_data.ct);
+        if (event.user_data.country) userData.setCountryCode(event.user_data.country);
+        if (event.user_data.zp) userData.setZipCode(event.user_data.zp);
+        if (event.user_data.client_ip_address) userData.setClientIpAddress(event.user_data.client_ip_address);
+        if (event.user_data.client_user_agent) userData.setClientUserAgent(event.user_data.client_user_agent);
+        if (event.user_data.fbc) userData.setFbc(event.user_data.fbc);
+        if (event.user_data.fbp) userData.setFbp(event.user_data.fbp);
+        serverEvent.setUserData(userData);
+      }
+
+      // Add custom data
+      if (event.custom_data) {
+        const customData = new this.CustomData();
+        if (event.custom_data.content_ids) customData.setContentIds(event.custom_data.content_ids);
+        if (event.custom_data.content_name) customData.setContentName(event.custom_data.content_name);
+        if (event.custom_data.content_type) customData.setContentType(event.custom_data.content_type);
+        if (event.custom_data.content_category) customData.setContentCategory(event.custom_data.content_category);
+        if (event.custom_data.value !== undefined) customData.setValue(event.custom_data.value);
+        if (event.custom_data.currency) customData.setCurrency(event.custom_data.currency);
+        if (event.custom_data.num_items !== undefined) customData.setNumItems(event.custom_data.num_items);
+        if (event.custom_data.order_id) customData.setOrderId(event.custom_data.order_id);
+        if (event.custom_data.contents) customData.setContents(event.custom_data.contents);
+        if (event.custom_data.search_string) customData.setSearchString(event.custom_data.search_string);
+        serverEvent.setCustomData(customData);
+      }
+
+      // Create EventRequest
+      const eventRequest = new this.EventRequest(this.accessToken, this.pixelId)
+        .setEvents([serverEvent]);
 
       if (this.testEventCode) {
         eventRequest.setTestEventCode(this.testEventCode);
       }
 
+      // Execute request
       const response = await eventRequest.execute();
-      return response;
-      */
+      
+      console.log('✅ [Facebook CAPI] Event sent successfully:', {
+        eventsReceived: response.getEventsReceived(),
+        messages: response.getMessages(),
+        fbtraceId: response.getFbtraceId()
+      });
+
+      return {
+        success: true,
+        events_received: response.getEventsReceived(),
+        messages: response.getMessages(),
+        fbtrace_id: response.getFbtraceId()
+      };
     } catch (error) {
       console.error('❌ [Facebook CAPI] Error sending event:', {
+        message: error.message,
+        stack: error.stack,
+        response: error.response?.data || error.response
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * إرسال الحدث عبر HTTP مباشرة (fallback إذا لم يكن SDK متاح)
+   */
+  async sendEventViaHTTP(event) {
+    const axios = require('axios');
+    const url = `https://graph.facebook.com/v18.0/${this.pixelId}/events`;
+    
+    const payload = {
+      data: [event],
+      access_token: this.accessToken
+    };
+
+    if (this.testEventCode) {
+      payload.test_event_code = this.testEventCode;
+    }
+
+    try {
+      const response = await axios.post(url, payload);
+      console.log('✅ [Facebook CAPI] Event sent via HTTP:', {
+        eventsReceived: response.data.events_received,
+        fbtraceId: response.data.fbtrace_id
+      });
+      return response.data;
+    } catch (error) {
+      console.error('❌ [Facebook CAPI] HTTP request failed:', {
         message: error.message,
         response: error.response?.data
       });

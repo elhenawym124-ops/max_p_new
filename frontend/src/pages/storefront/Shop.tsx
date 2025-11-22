@@ -5,6 +5,7 @@ import { toast } from 'react-hot-toast';
 import { storefrontApi, getCompanyId } from '../../utils/storefrontApi';
 import { storefrontSettingsService } from '../../services/storefrontSettingsService';
 import { updateSEO } from '../../utils/seo';
+import { trackSearch, trackViewContent, trackAddToCart } from '../../utils/facebookPixel';
 import StorefrontNav from '../../components/StorefrontNav';
 import QuickViewModal from '../../components/storefront/QuickViewModal';
 import RecentlyViewed from '../../components/storefront/RecentlyViewed';
@@ -181,7 +182,18 @@ const Shop: React.FC = () => {
 
   useEffect(() => {
     fetchProducts();
-  }, [searchParams, activeFilters, storefrontSettings?.advancedFiltersEnabled]);
+    
+    // Track Facebook Pixel Search event when search query changes
+    const searchQuery = searchParams.get('search');
+    if (searchQuery && storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackSearch !== false) {
+      try {
+        trackSearch(searchQuery);
+        console.log('📊 [Facebook Pixel] Search tracked:', searchQuery);
+      } catch (error) {
+        console.error('❌ [Facebook Pixel] Error tracking Search:', error);
+      }
+    }
+  }, [searchParams, activeFilters, storefrontSettings?.advancedFiltersEnabled, storefrontSettings?.facebookPixelEnabled, storefrontSettings?.pixelTrackSearch]);
 
   useEffect(() => {
     // Listen for add to comparison events and update local state
@@ -320,6 +332,22 @@ const Shop: React.FC = () => {
         if (data.data?.cartId) {
           localStorage.setItem('cart_session_id', data.data.cartId);
         }
+        
+        // Track AddToCart event
+        if (storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackAddToCart !== false) {
+          try {
+            trackAddToCart({
+              id: product.id,
+              name: product.name,
+              price: product.price,
+              quantity: 1
+            });
+            console.log('📊 [Facebook Pixel] AddToCart tracked (Shop page)');
+          } catch (error) {
+            console.error('❌ [Facebook Pixel] Error tracking AddToCart:', error);
+          }
+        }
+        
         toast.success('تمت إضافة المنتج للسلة');
         
         // تحديث عدد المنتجات في الـ header
@@ -536,6 +564,22 @@ const Shop: React.FC = () => {
                               e.preventDefault();
                               e.stopPropagation();
                               console.log('🔍 [Shop] Quick View button clicked for product:', product.id);
+                              
+                              // Track ViewContent event
+                              if (storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackViewContent !== false) {
+                                try {
+                                  trackViewContent({
+                                    id: product.id,
+                                    name: product.name,
+                                    price: product.price,
+                                    category: product.category?.name
+                                  });
+                                  console.log('📊 [Facebook Pixel] ViewContent tracked (QuickView)');
+                                } catch (error) {
+                                  console.error('❌ [Facebook Pixel] Error tracking ViewContent:', error);
+                                }
+                              }
+                              
                               setQuickViewProductId(product.id);
                             }}
                             className="absolute top-2 left-2 bg-white bg-opacity-90 hover:bg-opacity-100 p-2 rounded-full shadow-lg opacity-100 group-hover:opacity-100 transition-opacity z-10"
@@ -549,7 +593,25 @@ const Shop: React.FC = () => {
                     </Link>
                     
                     <div className="p-4">
-                      <Link to={`/shop/products/${product.id}?companyId=${companyId}`}>
+                      <Link 
+                        to={`/shop/products/${product.id}?companyId=${companyId}`}
+                        onClick={() => {
+                          // Track ViewContent event when clicking on product
+                          if (storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackViewContent !== false) {
+                            try {
+                              trackViewContent({
+                                id: product.id,
+                                name: product.name,
+                                price: product.price,
+                                category: product.category?.name
+                              });
+                              console.log('📊 [Facebook Pixel] ViewContent tracked (product click)');
+                            } catch (error) {
+                              console.error('❌ [Facebook Pixel] Error tracking ViewContent:', error);
+                            }
+                          }
+                        }}
+                      >
                         <h3 className="font-semibold text-gray-900 mb-2 hover:text-blue-600 transition-colors line-clamp-2">
                           {product.name}
                         </h3>

@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { storefrontApi, getCompanyId } from '../../utils/storefrontApi';
 import WishlistButton from './WishlistButton';
+import { trackViewContent, trackAddToCart } from '../../utils/facebookPixel';
+import { storefrontSettingsService } from '../../services/storefrontSettingsService';
 
 interface QuickViewProduct {
   id: string;
@@ -49,12 +51,28 @@ const QuickViewModal: React.FC<QuickViewModalProps> = ({
   const [selectedImage, setSelectedImage] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
+  const [storefrontSettings, setStorefrontSettings] = useState<any>(null);
 
   useEffect(() => {
     if (isOpen && productId) {
       fetchProduct();
+      fetchStorefrontSettings();
     }
   }, [isOpen, productId]);
+
+  const fetchStorefrontSettings = async () => {
+    try {
+      const companyId = getCompanyId();
+      if (companyId) {
+        const response = await storefrontSettingsService.getPublicSettings(companyId);
+        if (response.success && response.data) {
+          setStorefrontSettings(response.data);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching storefront settings:', error);
+    }
+  };
 
   const fetchProduct = async () => {
     try {
@@ -62,6 +80,21 @@ const QuickViewModal: React.FC<QuickViewModalProps> = ({
       const data = await storefrontApi.getProductQuick(productId);
       if (data.success) {
         setProduct(data.data);
+        
+        // Track ViewContent event when product is loaded in QuickView
+        if (storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackViewContent !== false && data.data) {
+          try {
+            trackViewContent({
+              id: data.data.id,
+              name: data.data.name,
+              price: data.data.price,
+              category: data.data.category?.name
+            });
+            console.log('📊 [Facebook Pixel] ViewContent tracked (QuickView loaded)');
+          } catch (error) {
+            console.error('❌ [Facebook Pixel] Error tracking ViewContent:', error);
+          }
+        }
       } else {
         toast.error('فشل تحميل المنتج');
         onClose();
@@ -84,6 +117,22 @@ const QuickViewModal: React.FC<QuickViewModalProps> = ({
         quantity,
         ...(selectedVariant && { variantId: selectedVariant })
       });
+      
+      // Track AddToCart event
+      if (storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackAddToCart !== false) {
+        try {
+          trackAddToCart({
+            id: product.id,
+            name: product.name,
+            price: product.price,
+            quantity
+          });
+          console.log('📊 [Facebook Pixel] AddToCart tracked (QuickView)');
+        } catch (error) {
+          console.error('❌ [Facebook Pixel] Error tracking AddToCart:', error);
+        }
+      }
+      
       toast.success('تمت إضافة المنتج للسلة');
       if (onAddToCart) onAddToCart();
     } catch (error) {

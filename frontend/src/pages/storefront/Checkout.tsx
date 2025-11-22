@@ -6,6 +6,8 @@ import { checkoutFormSettingsService } from '../../services/checkoutFormSettings
 import logger from '../../utils/logger';
 import { getApiUrl } from '../../config/environment';
 import { TicketIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { trackInitiateCheckout, trackPurchase } from '../../utils/facebookPixel';
+import { storefrontSettingsService } from '../../services/storefrontSettingsService';
 
 interface CartItem {
   productId: string;
@@ -33,6 +35,7 @@ const Checkout: React.FC = () => {
   const [deliveryOptions, setDeliveryOptions] = useState<DeliveryOption[]>([]);
   const [selectedDeliveryOption, setSelectedDeliveryOption] = useState<string>('');
   const [formSettings, setFormSettings] = useState<any>(null);
+  const [storefrontSettings, setStorefrontSettings] = useState<any>(null);
   const companyId = getCompanyId(); // Get companyId from URL or localStorage
 
   const [formData, setFormData] = useState({
@@ -61,7 +64,39 @@ const Checkout: React.FC = () => {
     fetchCart();
     fetchFormSettings();
     fetchDeliveryOptions();
+    fetchStorefrontSettings();
   }, []);
+
+  const fetchStorefrontSettings = async () => {
+    try {
+      const response = await storefrontSettingsService.getPublicSettings(companyId);
+      if (response.success && response.data) {
+        setStorefrontSettings(response.data);
+      }
+    } catch (error) {
+      console.error('Error fetching storefront settings:', error);
+    }
+  };
+
+  // Track InitiateCheckout when page loads
+  useEffect(() => {
+    if (items.length > 0 && storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackInitiateCheckout !== false) {
+      try {
+        const cartTotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        trackInitiateCheckout({
+          items: items.map(item => ({
+            id: item.productId,
+            quantity: item.quantity,
+            price: item.price
+          })),
+          total: cartTotal
+        });
+        console.log('📊 [Facebook Pixel] InitiateCheckout tracked on Checkout page load');
+      } catch (error) {
+        console.error('❌ [Facebook Pixel] Error tracking InitiateCheckout:', error);
+      }
+    }
+  }, [items, storefrontSettings]);
 
   const fetchFormSettings = async () => {
     try {
@@ -315,6 +350,15 @@ const Checkout: React.FC = () => {
         paymentMethod: formData.paymentMethod
       });
       
+      // Generate event ID for deduplication (will be used by both Pixel and CAPI)
+      let purchaseEventId: string | undefined;
+      if (storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackPurchase !== false) {
+        purchaseEventId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      }
+
+      const cartTotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const finalTotal = cartTotal + shippingCost - discount;
+
       const data = await storefrontApi.createOrder({
         guestName: formData.guestName,
         guestPhone: formData.guestPhone,
@@ -328,10 +372,29 @@ const Checkout: React.FC = () => {
           apartment: ''
         },
         paymentMethod: formData.paymentMethod,
-        notes: formData.notes || ''
+        notes: formData.notes || '',
+        pixelEventId: purchaseEventId // Pass event ID for CAPI deduplication
       });
 
       if (data.success) {
+        // Track Purchase event
+        if (storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackPurchase !== false && purchaseEventId) {
+          try {
+            trackPurchase({
+              orderNumber: data.data.orderNumber,
+              items: items.map(item => ({
+                id: item.productId,
+                quantity: item.quantity,
+                price: item.price
+              })),
+              total: finalTotal
+            }, purchaseEventId);
+            console.log('✅ [Facebook Pixel] Purchase tracked for order:', data.data.orderNumber, 'Event ID:', purchaseEventId);
+          } catch (error) {
+            console.error('❌ [Facebook Pixel] Error tracking Purchase:', error);
+          }
+        }
+
         // Clear cart from database
         try {
           await storefrontApi.clearCart();
@@ -348,7 +411,7 @@ const Checkout: React.FC = () => {
         
         toast.success('تم إنشاء الطلب بنجاح!');
         const companyId = getCompanyId();
-        navigate(`/shop/order-confirmation/${data.data.orderNumber}?trackingToken=${data.data.trackingToken}&companyId=${companyId}`);
+        navigate(`/shop/order-confirmation/${data.data.orderNumber}?trackingToken=${data.data.trackingToken}&phone=${encodeURIComponent(formData.guestPhone)}&companyId=${companyId}`);
       } else {
         toast.error(data.message || 'حدث خطأ في إنشاء الطلب');
       }

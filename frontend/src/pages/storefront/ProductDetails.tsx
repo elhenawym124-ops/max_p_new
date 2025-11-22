@@ -23,6 +23,7 @@ import ProductTabs from '../../components/storefront/ProductTabs';
 import StickyAddToCart from '../../components/storefront/StickyAddToCart';
 import { addToComparison } from '../../components/storefront/ProductComparison';
 import { updateSEO, generateProductStructuredData, addStructuredData } from '../../utils/seo';
+import { trackViewContent, trackAddToCart, trackInitiateCheckout, trackPurchase } from '../../utils/facebookPixel';
 
 interface Product {
   id: string;
@@ -216,6 +217,21 @@ const ProductDetails: React.FC = () => {
           });
         }
 
+        // Track Facebook Pixel ViewContent event
+        if (storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackViewContent !== false) {
+          try {
+            trackViewContent({
+              id: data.data.id,
+              name: data.data.name,
+              price: data.data.price,
+              category: data.data.category?.name
+            });
+            console.log('📊 [Facebook Pixel] ViewContent tracked for product:', data.data.id);
+          } catch (error) {
+            console.error('❌ [Facebook Pixel] Error tracking ViewContent:', error);
+          }
+        }
+
         // Update SEO
         if (storefrontSettings?.seoEnabled) {
           const productImages = Array.isArray(data.data.images) 
@@ -266,6 +282,22 @@ const ProductDetails: React.FC = () => {
         if (data.data?.cartId) {
           localStorage.setItem('cart_session_id', data.data.cartId);
         }
+        
+        // Track Facebook Pixel AddToCart event
+        if (storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackAddToCart !== false) {
+          try {
+            trackAddToCart({
+              id: product.id,
+              name: product.name,
+              price: product.price,
+              quantity: quantity
+            });
+            console.log('📊 [Facebook Pixel] AddToCart tracked for product:', product.id);
+          } catch (error) {
+            console.error('❌ [Facebook Pixel] Error tracking AddToCart:', error);
+          }
+        }
+        
         toast.success('تمت إضافة المنتج للسلة');
         window.dispatchEvent(new Event('cartUpdated'));
       } else {
@@ -310,6 +342,30 @@ const ProductDetails: React.FC = () => {
     try {
       setSubmitting(true);
       
+      // Track Facebook Pixel InitiateCheckout event
+      if (storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackInitiateCheckout !== false) {
+        try {
+          trackInitiateCheckout({
+            items: [{
+              id: product.id,
+              quantity: quantity,
+              price: product.price
+            }],
+            total: product.price * quantity
+          });
+          console.log('📊 [Facebook Pixel] InitiateCheckout tracked');
+        } catch (error) {
+          console.error('❌ [Facebook Pixel] Error tracking InitiateCheckout:', error);
+        }
+      }
+      
+      // Generate event ID for deduplication (will be used by both Pixel and CAPI)
+      let purchaseEventId: string | undefined;
+      if (storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackPurchase !== false) {
+        // Generate event ID before creating order to pass to backend
+        purchaseEventId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      }
+
       // Create order directly with single product
       const orderData = {
         items: [{
@@ -331,12 +387,31 @@ const ProductDetails: React.FC = () => {
           apartment: ''
         },
         paymentMethod: formData.paymentMethod,
-        notes: formData.notes || ''
+        notes: formData.notes || '',
+        pixelEventId: purchaseEventId // Pass event ID for CAPI deduplication
       };
 
       const data = await storefrontApi.createOrder(orderData);
 
       if (data.success) {
+        // Track Facebook Pixel Purchase event (with same event ID for deduplication)
+        if (storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackPurchase !== false && purchaseEventId) {
+          try {
+            trackPurchase({
+              orderNumber: data.data.orderNumber,
+              items: [{
+                id: product.id,
+                quantity: quantity,
+                price: product.price
+              }],
+              total: product.price * quantity
+            }, purchaseEventId); // Pass event ID to Pixel
+            console.log('📊 [Facebook Pixel] Purchase tracked for order:', data.data.orderNumber, 'Event ID:', purchaseEventId);
+          } catch (error) {
+            console.error('❌ [Facebook Pixel] Error tracking Purchase:', error);
+          }
+        }
+        
         // Clear cart from database
         try {
           await storefrontApi.clearCart();

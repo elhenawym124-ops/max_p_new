@@ -40,7 +40,8 @@ router.post('/orders', async (req, res) => {
       paymentMethod,
       couponCode,
       notes,
-      items // ✅ Support direct items array (for testing or direct checkout)
+      items, // ✅ Support direct items array (for testing or direct checkout)
+      pixelEventId // Event ID from frontend Pixel for deduplication
     } = req.body;
 
     if (!guestPhone || !guestName || !shippingAddress) {
@@ -198,6 +199,65 @@ router.post('/orders', async (req, res) => {
       });
       // Clear cookie
       res.clearCookie('cart_id');
+    }
+
+    // Track Purchase event via Facebook Conversions API (Server-side)
+    try {
+      const storefrontSettings = await prisma.storefrontSettings.findUnique({
+        where: { companyId: company.id }
+      });
+
+      if (storefrontSettings && 
+          storefrontSettings.facebookConvApiEnabled && 
+          storefrontSettings.facebookPixelId && 
+          storefrontSettings.facebookConvApiToken &&
+          storefrontSettings.capiTrackPurchase !== false) {
+        
+        const FacebookConversionsService = require('../services/facebookConversionsService');
+        const fbService = new FacebookConversionsService(
+          storefrontSettings.facebookPixelId,
+          storefrontSettings.facebookConvApiToken,
+          storefrontSettings.facebookConvApiTestCode
+        );
+
+        // Use event ID from frontend Pixel for deduplication, or generate new one
+        // This ensures the same event is not counted twice (Pixel + CAPI)
+        const eventId = pixelEventId || `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        console.log('🔄 [Facebook CAPI] Using event ID for deduplication:', eventId);
+
+        // Extract user data from request
+        const userData = {
+          email: guestEmail,
+          phone: guestPhone,
+          firstName: guestName?.split(' ')[0] || null,
+          lastName: guestName?.split(' ').slice(1).join(' ') || null,
+          city: shippingAddress?.city || shippingAddress?.governorate || null,
+          country: 'eg',
+          zip: shippingAddress?.zipCode || null,
+          ip: req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          pageUrl: req.headers['referer'] || `${req.protocol}://${req.get('host')}${req.originalUrl}`
+        };
+
+        // Prepare order data
+        const orderData = {
+          orderNumber: order.orderNumber,
+          items: cartItems.map(item => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            price: item.price
+          })),
+          total: finalTotal
+        };
+
+        // Send Purchase event
+        await fbService.trackPurchase(userData, orderData, eventId);
+        console.log('✅ [Facebook CAPI] Purchase event tracked for order:', order.orderNumber);
+      }
+    } catch (capiError) {
+      // Don't fail the order creation if CAPI fails
+      console.error('❌ [Facebook CAPI] Error tracking Purchase event:', capiError);
     }
 
     res.json({ 
