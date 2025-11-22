@@ -179,7 +179,36 @@ exports.getStorefrontSettings = async (req, res) => {
       seoStructuredData: Boolean(settings.seoStructuredData),
       seoSitemap: Boolean(settings.seoSitemap),
       seoOpenGraph: Boolean(settings.seoOpenGraph),
-      multiLanguageEnabled: Boolean(settings.multiLanguageEnabled)
+      multiLanguageEnabled: Boolean(settings.multiLanguageEnabled),
+      // Facebook Pixel Settings
+      facebookPixelEnabled: Boolean(settings.facebookPixelEnabled),
+      facebookPixelId: settings.facebookPixelId || null,
+      pixelTrackPageView: Boolean(settings.pixelTrackPageView),
+      pixelTrackViewContent: Boolean(settings.pixelTrackViewContent),
+      pixelTrackAddToCart: Boolean(settings.pixelTrackAddToCart),
+      pixelTrackInitiateCheckout: Boolean(settings.pixelTrackInitiateCheckout),
+      pixelTrackPurchase: Boolean(settings.pixelTrackPurchase),
+      pixelTrackSearch: Boolean(settings.pixelTrackSearch),
+      pixelTrackAddToWishlist: Boolean(settings.pixelTrackAddToWishlist),
+      // Facebook Conversions API Settings
+      facebookConvApiEnabled: Boolean(settings.facebookConvApiEnabled),
+      facebookConvApiToken: settings.facebookConvApiToken || null,
+      facebookConvApiTestCode: settings.facebookConvApiTestCode || null,
+      capiTrackPageView: Boolean(settings.capiTrackPageView),
+      capiTrackViewContent: Boolean(settings.capiTrackViewContent),
+      capiTrackAddToCart: Boolean(settings.capiTrackAddToCart),
+      capiTrackInitiateCheckout: Boolean(settings.capiTrackInitiateCheckout),
+      capiTrackPurchase: Boolean(settings.capiTrackPurchase),
+      capiTrackSearch: Boolean(settings.capiTrackSearch),
+      // Advanced Settings
+      eventDeduplicationEnabled: Boolean(settings.eventDeduplicationEnabled),
+      eventMatchQualityTarget: settings.eventMatchQualityTarget ? parseInt(settings.eventMatchQualityTarget) : 8,
+      gdprCompliant: Boolean(settings.gdprCompliant),
+      hashUserData: Boolean(settings.hashUserData),
+      lastPixelTest: settings.lastPixelTest || null,
+      lastCapiTest: settings.lastCapiTest || null,
+      pixelStatus: settings.pixelStatus || 'not_configured',
+      capiStatus: settings.capiStatus || 'not_configured'
     };
 
     console.log('✅ [STOREFRONT-SETTINGS] Returning settings with booleans:', {
@@ -187,7 +216,8 @@ exports.getStorefrontSettings = async (req, res) => {
       quickViewEnabled: serializedSettings.quickViewEnabled,
       comparisonEnabled: serializedSettings.comparisonEnabled,
       wishlistEnabled: serializedSettings.wishlistEnabled,
-      reviewsEnabled: serializedSettings.reviewsEnabled
+      reviewsEnabled: serializedSettings.reviewsEnabled,
+      facebookPixelEnabled: serializedSettings.facebookPixelEnabled
     });
 
     return res.status(200).json({

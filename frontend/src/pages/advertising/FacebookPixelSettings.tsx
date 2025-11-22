@@ -88,8 +88,11 @@ const FacebookPixelSettings: React.FC = () => {
       setLoading(true);
       const response = await storefrontSettingsService.getSettings();
       console.log('📥 Raw response:', response);
-      if (response.data) {
-        // Important: response.data should override default values
+      // API returns { success: true, data: {...} }, so we need to extract data.data
+      const settingsData = response.data?.data || response.data;
+      console.log('📥 Settings data:', settingsData);
+      if (settingsData) {
+        // Important: settingsData should override default values
         const newSettings = {
           // Default values first
           facebookPixelEnabled: false,
@@ -112,9 +115,9 @@ const FacebookPixelSettings: React.FC = () => {
           capiTrackPurchase: true,
           capiTrackSearch: true,
           // Then override with actual data from server
-          ...response.data
+          ...settingsData
         };
-        console.log('✅ Settings loaded:', response.data);
+        console.log('✅ Settings loaded:', settingsData);
         console.log('🔄 Merged settings:', newSettings);
         console.log('📊 Pixel ID:', newSettings.facebookPixelId);
         console.log('📊 Pixel Enabled:', newSettings.facebookPixelEnabled);
