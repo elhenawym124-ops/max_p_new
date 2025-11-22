@@ -1,0 +1,21 @@
+[33m2c9de56[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Add Page Builder feature and add it to sidebar menu
+ frontend/src/components/layout/Layout.tsx          |  16 [32m++[m
+ .../page-builder/editor/SettingsPanel.tsx          | 201 [32m++++++++++++++++++++[m
+ .../src/components/page-builder/editor/Toolbox.tsx | 175 [32m++++++++++++++++++[m
+ .../src/components/page-builder/editor/Topbar.tsx  | 205 [32m+++++++++++++++++++++[m
+ .../src/components/page-builder/editor/index.ts    |   3 [32m+[m
+ .../src/components/page-builder/user/Button.tsx    | 110 [32m+++++++++++[m
+ .../page-builder/user/ButtonSettings.tsx           | 147 [32m+++++++++++++++[m
+ .../src/components/page-builder/user/Container.tsx |  77 [32m++++++++[m
+ .../page-builder/user/ContainerSettings.tsx        |  76 [32m++++++++[m
+ .../page-builder/user/CountdownTimer.tsx           | 123 [32m+++++++++++++[m
+ .../page-builder/user/CountdownTimerSettings.tsx   |  92 [32m+++++++++[m
+ .../src/components/page-builder/user/Image.tsx     |  87 [32m+++++++++[m
+ .../components/page-builder/user/ImageSettings.tsx | 123 [32m+++++++++++++[m
+ .../components/page-builder/user/ProductCard.tsx   | 172 [32m+++++++++++++++++[m
+ .../page-builder/user/ProductCardSettings.tsx      | 124 [32m+++++++++++++[m
+ frontend/src/components/page-builder/user/Text.tsx |  91 [32m+++++++++[m
+ .../components/page-builder/user/TextSettings.tsx  | 135 [32m++++++++++++++[m
+ frontend/src/components/page-builder/user/index.ts |  13 [32m++[m
+ frontend/src/pages/PageBuilder.tsx                 |  85 [32m+++++++++[m
+ 19 files changed, 2055 insertions(+)
