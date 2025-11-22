@@ -127,16 +127,16 @@ fbq('track', 'Purchase', {
 ```javascript
 // في facebookConversionsService.js
 const userData = {
-  em: hashData(email),           // ✅ Email مشفّر
-  ph: hashData(phone),           // ✅ Phone مشفّر
-  fn: hashData(firstName),       // ✅ First Name مشفّر
-  ln: hashData(lastName),        // ✅ Last Name مشفّر
-  ct: hashData(city),            // ✅ City مشفّر
-  country: hashData('eg'),       // ✅ Country مشفّر
-  client_ip_address: ip,         // ✅ IP
-  client_user_agent: userAgent,  // ✅ User Agent
-  fbc: fbc,                      // ✅ Facebook Click ID
-  fbp: fbp                       // ✅ Facebook Browser ID
+  em: hashData(email),                    // ✅ Email مشفّر
+  ph: hashData(phone),                    // ✅ Phone مشفّر
+  fn: hashData(firstName),                // ✅ First Name مشفّر
+  ln: hashData(lastName),                 // ✅ Last Name مشفّر
+  ct: hashData(city),                     // ✅ City مشفّر
+  country: hashData(country || 'eg'),     // ✅ Country مشفّر (من بيانات المستخدم، مع 'eg' كقيمة افتراضية)
+  client_ip_address: ip,                  // ✅ IP
+  client_user_agent: userAgent,           // ✅ User Agent
+  fbc: fbc,                               // ✅ Facebook Click ID
+  fbp: fbp                                // ✅ Facebook Browser ID
 };
 ```
 
