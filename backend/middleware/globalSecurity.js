@@ -186,11 +186,48 @@ setInterval(() => {
  * IP Blocking Middleware
  */
 const ipBlockingMiddleware = (req, res, next) => {
-  const ip = req.ip || req.connection.remoteAddress;
+  // Get IP from various sources
+  const ip = req.ip || 
+             req.connection?.remoteAddress || 
+             req.socket?.remoteAddress ||
+             (req.headers['x-forwarded-for'] ? req.headers['x-forwarded-for'].split(',')[0].trim() : null) ||
+             'unknown';
   
-  if (securityLogger.isIPBlocked(ip)) {
+  // Normalize IP address
+  const normalizedIP = ip.replace(/^::ffff:/, ''); // Remove IPv6 prefix for IPv4 addresses
+  
+  // Allow localhost and 127.0.0.1 in development
+  const isLocalhost = normalizedIP === '127.0.0.1' || 
+                      normalizedIP === '::1' || 
+                      normalizedIP === '::ffff:127.0.0.1' ||
+                      normalizedIP.startsWith('127.') ||
+                      normalizedIP === 'localhost' ||
+                      normalizedIP === '::ffff:127.0.0.1' ||
+                      ip === '::1' ||
+                      ip === 'localhost';
+  
+  // In development, always allow localhost and don't block anything
+  if (process.env.NODE_ENV !== 'production') {
+    if (isLocalhost) {
+      // Always allow localhost in development
+      return next();
+    }
+    // In development, don't block any IPs (for testing)
+    // But still log suspicious activity
+    if (securityLogger.isIPSuspicious(normalizedIP)) {
+      securityLogger.log('suspicious_ip_access', {
+        ip: normalizedIP,
+        path: req.path,
+        method: req.method
+      });
+    }
+    return next();
+  }
+  
+  // In production, check for blocked IPs
+  if (securityLogger.isIPBlocked(normalizedIP)) {
     securityLogger.log('blocked_ip_attempt', {
-      ip,
+      ip: normalizedIP,
       path: req.path,
       method: req.method,
       userAgent: req.get('User-Agent')
@@ -203,9 +240,9 @@ const ipBlockingMiddleware = (req, res, next) => {
     });
   }
   
-  if (securityLogger.isIPSuspicious(ip)) {
+  if (securityLogger.isIPSuspicious(normalizedIP)) {
     securityLogger.log('suspicious_ip_access', {
-      ip,
+      ip: normalizedIP,
       path: req.path,
       method: req.method
     });

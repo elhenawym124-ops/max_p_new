@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { TagIcon } from '@heroicons/react/24/outline';
-import axios from 'axios';
 import { getApiUrl } from '../config/environment';
 
 interface VolumeDiscount {
@@ -31,13 +30,31 @@ const VolumeDiscountBadge: React.FC<Props> = ({ productId, quantity }) => {
   const fetchDiscounts = async () => {
     try {
       const apiUrl = getApiUrl();
-      const response = await axios.get(`${apiUrl}/public/products/${productId}/volume-discounts`);
+      const response = await fetch(`${apiUrl}/public/products/${productId}/volume-discounts`);
       
-      if (response.data.success) {
-        setDiscounts(response.data.data);
+      // Handle 404 gracefully - endpoint might not exist or product has no volume discounts
+      if (response.status === 404) {
+        // Silently handle - this is expected if the endpoint doesn't exist or product has no discounts
+        setDiscounts([]);
+        return;
       }
-    } catch (error) {
-      console.error('Error fetching volume discounts:', error);
+      
+      if (!response.ok) {
+        // Only log non-404 errors
+        if (response.status !== 404) {
+          console.error('Error fetching volume discounts:', response.status, response.statusText);
+        }
+        setDiscounts([]);
+        return;
+      }
+      
+      const data = await response.json();
+      if (data.success) {
+        setDiscounts(data.data);
+      }
+    } catch (error: any) {
+      // Silently handle network errors - endpoint might not exist
+      setDiscounts([]);
     }
   };
 

@@ -43,6 +43,20 @@ const FrequentlyBoughtTogether: React.FC<FrequentlyBoughtTogetherProps> = ({
   const [loading, setLoading] = useState(true);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set([productId]));
 
+  const parseImages = (images: string | string[] | undefined): string[] => {
+    if (!images) return [];
+    if (Array.isArray(images)) return images;
+    if (typeof images === 'string') {
+      try {
+        const parsed = JSON.parse(images);
+        return Array.isArray(parsed) ? parsed : [images];
+      } catch {
+        return [images];
+      }
+    }
+    return [];
+  };
+
   useEffect(() => {
     fetchFrequentlyBought();
   }, [productId, companyId]);
@@ -59,8 +73,14 @@ const FrequentlyBoughtTogether: React.FC<FrequentlyBoughtTogetherProps> = ({
       );
 
       if (response.data.success) {
-        setProducts(response.data.data);
-        console.log('✅ [FREQUENTLY-BOUGHT] Loaded:', response.data.data.length);
+        // Parse images for each product
+        const productsWithParsedImages = response.data.data.map((product: any) => ({
+          ...product,
+          images: parseImages(product.images),
+          salePrice: product.salePrice || product.comparePrice || undefined
+        }));
+        setProducts(productsWithParsedImages);
+        console.log('✅ [FREQUENTLY-BOUGHT] Loaded:', productsWithParsedImages.length);
       }
     } catch (error) {
       console.error('❌ [FREQUENTLY-BOUGHT] Error:', error);
@@ -84,13 +104,15 @@ const FrequentlyBoughtTogether: React.FC<FrequentlyBoughtTogetherProps> = ({
     
     // المنتج الحالي
     if (selectedProducts.has(productId)) {
-      total += currentProduct.salePrice || currentProduct.price;
+      const currentPrice = currentProduct.salePrice || currentProduct.price || 0;
+      total = total + Number(currentPrice);
     }
 
     // المنتجات الأخرى
     products.forEach(product => {
       if (selectedProducts.has(product.id)) {
-        total += product.salePrice || product.price;
+        const productPrice = product.salePrice || product.price || 0;
+        total = total + Number(productPrice);
       }
     });
 
@@ -135,6 +157,8 @@ const FrequentlyBoughtTogether: React.FC<FrequentlyBoughtTogetherProps> = ({
           const isCurrentProduct = product.id === productId;
           const displayPrice = product.salePrice || product.price;
           const isSelected = selectedProducts.has(product.id);
+          const productImages = parseImages(product.images);
+          const productImage = productImages.length > 0 ? productImages[0] : '/placeholder.png';
 
           return (
             <React.Fragment key={product.id}>
@@ -168,8 +192,12 @@ const FrequentlyBoughtTogether: React.FC<FrequentlyBoughtTogetherProps> = ({
                           <CardMedia
                             component="img"
                             sx={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 1 }}
-                            image={product.images[0] || '/placeholder.png'}
+                            image={productImage}
                             alt={product.name}
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.src = '/placeholder.png';
+                            }}
                           />
                           <Box sx={{ flex: 1 }}>
                             <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
@@ -203,7 +231,7 @@ const FrequentlyBoughtTogether: React.FC<FrequentlyBoughtTogetherProps> = ({
           <Typography variant="body2" color="text.secondary">
             الإجمالي للمنتجات المحددة ({selectedProducts.size})
           </Typography>
-          <Typography variant="h5" color="primary" sx={{ fontWeight: 'bold' }}>
+          <Typography variant="h5" color="primary" sx={{ fontWeight: 'bold', mt: 0.5 }}>
             {formatPrice(calculateTotal())}
           </Typography>
         </Box>

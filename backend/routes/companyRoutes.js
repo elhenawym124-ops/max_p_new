@@ -3,6 +3,7 @@ const router = express.Router();
 const companiesController = require('../controller/companiesController');
 const verifyToken = require("../utils/verifyToken")
 const { cacheMiddleware } = require('../middleware/performanceOptimization');
+const uploadCompanyLogo = require('../middleware/companyLogoUpload');
 
 // Apply caching to frequently accessed company routes
 router.get('/current', cacheMiddleware(120000), companiesController.getCurrentCompany); // 2 minutes cache
@@ -48,5 +49,8 @@ router.get('/frontend-safe/:id/usage',companiesController.FrontendSpecificSafeEn
 // ==================== SUBDOMAIN / SLUG MANAGEMENT ====================
 router.put('/:companyId/slug',verifyToken.authenticateToken,verifyToken.requireCompanyAccess,verifyToken.requireRole(['COMPANY_ADMIN']),companiesController.updateCompanySlug);
 router.get('/slug/check-availability',companiesController.checkSlugAvailability);
+
+// ==================== COMPANY LOGO UPLOAD ====================
+router.post('/:companyId/logo',verifyToken.authenticateToken,verifyToken.requireCompanyAccess,uploadCompanyLogo.single('logo'),companiesController.uploadCompanyLogo);
 
 module.exports = router;

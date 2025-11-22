@@ -23,7 +23,18 @@ class CompanyAwareApiService {
           // Token is invalid or expired
           localStorage.removeItem('accessToken');
           localStorage.removeItem('user');
-          window.location.href = '/auth/login';
+          
+          // Only redirect if not on public routes
+          const currentPath = window.location.pathname;
+          const isPublicRoute = 
+            currentPath.startsWith('/shop') ||
+            currentPath.startsWith('/auth/') ||
+            currentPath.startsWith('/super-admin/login') ||
+            currentPath.startsWith('/payment/');
+          
+          if (!isPublicRoute) {
+            window.location.href = '/auth/login';
+          }
         }
         return Promise.reject(error);
       }

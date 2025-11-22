@@ -489,8 +489,8 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           }
         }
 
-        // تشخيص مؤقت
-        if (!msg.isFromCustomer) {
+        // تشخيص مؤقت - معطل لتقليل console logs
+        if (false && !msg.isFromCustomer && process.env.NODE_ENV === 'development') {
           console.log(`🔍 [MESSAGE-DEBUG] Message ${msg.id}:`, {
             content: msg.content.substring(0, 50) + '...',
             type: msg.type,
@@ -2493,7 +2493,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
   // دالة لإزالة الرسائل المكررة
   const removeDuplicateMessages = (messages: Message[]): Message[] => {
-    console.log('🔄 [DEDUP] Processing', messages.length, 'messages for deduplication');
+    // تعطيل console logs المفرطة في production
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔄 [DEDUP] Processing', messages.length, 'messages for deduplication');
+    }
 
     const seen = new Set<string>();
     const uniqueMessages: Message[] = [];
@@ -2508,7 +2511,9 @@ const ConversationsImprovedFixedContent: React.FC = () => {
     for (const message of sortedMessages) {
       // استخدام ID كمفتاح أساسي مع فحص إضافي للمحتوى
       if (seen.has(message.id)) {
-        console.warn(`🔄 [DUPLICATE-REMOVED] Removing duplicate message: ${message.id}`);
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`🔄 [DUPLICATE-REMOVED] Removing duplicate message: ${message.id}`);
+        }
         continue;
       }
 
@@ -2527,7 +2532,9 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       uniqueMessages.push(enhancedMessage);
     }
 
-    console.log(`✅ [DEDUP] Kept ${uniqueMessages.length}/${messages.length} unique messages (sorted by timestamp)`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`✅ [DEDUP] Kept ${uniqueMessages.length}/${messages.length} unique messages (sorted by timestamp)`);
+    }
     return uniqueMessages;
   };
 
@@ -3334,8 +3341,8 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                           })()}
                           
                           {/* عرض الرسائل حسب النوع */}
-                          {/* تسجيل تشخيصي لكل رسالة */}
-                          {process.env.NODE_ENV === 'development' && console.log('🔍 [MESSAGE-DEBUG] Message data:', {
+                          {/* تسجيل تشخيصي لكل رسالة - معطل لتقليل console logs */}
+                          {false && process.env.NODE_ENV === 'development' && console.log('🔍 [MESSAGE-DEBUG] Message data:', {
                             id: message.id,
                             type: message.type,
                             content: message.content,

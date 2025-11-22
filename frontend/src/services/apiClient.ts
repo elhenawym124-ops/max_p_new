@@ -117,6 +117,10 @@ class ApiClient {
             console.error('🚫 Access denied - insufficient permissions');
           } else if (error.response?.status === 500) {
             console.error('🔥 Server error occurred');
+            console.error('🔥 Error details:', error.response?.data);
+            if (error.response?.data?.details) {
+              console.error('🔥 Error details (dev):', error.response.data.details);
+            }
           }
         }
 
@@ -198,8 +202,15 @@ class ApiClient {
     // Dispatch auth error event
     window.dispatchEvent(new CustomEvent('auth:unauthorized'));
 
-    // Redirect to login (if not already there)
-    if (!window.location.pathname.includes('/auth/')) {
+    // Redirect to login (if not already there AND not on public storefront routes)
+    const currentPath = window.location.pathname;
+    const isPublicRoute = 
+      currentPath.startsWith('/shop') ||
+      currentPath.startsWith('/auth/') ||
+      currentPath.startsWith('/super-admin/login') ||
+      currentPath.startsWith('/payment/');
+    
+    if (!isPublicRoute) {
       window.location.href = '/auth/login';
     }
   }

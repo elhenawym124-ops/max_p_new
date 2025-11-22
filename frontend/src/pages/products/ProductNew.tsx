@@ -25,6 +25,9 @@ interface ProductFormData {
   lowStockThreshold: number;
   isActive: boolean;
   enableCheckoutForm: boolean; // ✨ تفعيل فورم الشيك أوت
+  showAddToCartButton: boolean; // 🛒 إظهار زر إضافة للسلة
+  saleStartDate: string; // 📅 تاريخ بداية العرض
+  saleEndDate: string; // 📅 تاريخ انتهاء العرض
   tags: string[];
   weight?: number | undefined;
   dimensions?: { length?: number; width?: number; height?: number; } | undefined;
@@ -75,6 +78,9 @@ const ProductNew: React.FC = () => {
     lowStockThreshold: 5,
     isActive: true,
     enableCheckoutForm: true, // ✨ تفعيل فورم الشيك أوت افتراضياً
+    showAddToCartButton: true, // 🛒 إظهار زر إضافة للسلة افتراضياً
+    saleStartDate: '', // 📅 تاريخ بداية العرض
+    saleEndDate: '', // 📅 تاريخ انتهاء العرض
     tags: [],
     weight: undefined,
     dimensions: undefined,
@@ -254,7 +260,7 @@ const ProductNew: React.FC = () => {
     if (formData.price <= 0) return 'سعر المنتج يجب أن يكون أكبر من صفر';
     if (formData.trackInventory && formData.stock < 0) return 'كمية المخزون لا يمكن أن تكون سالبة';
     if (formData.comparePrice && formData.comparePrice <= formData.price) {
-      return 'سعر المقارنة يجب أن يكون أكبر من السعر الأساسي';
+      return 'السعر القديم لازم يكون أكتر من السعر الحالي';
     }
 
     // Validate variants
@@ -295,6 +301,9 @@ const ProductNew: React.FC = () => {
         lowStockThreshold: formData.lowStockThreshold,
         isActive: formData.isActive,
         enableCheckoutForm: formData.enableCheckoutForm, // ✨ تفعيل فورم الشيك أوت
+        showAddToCartButton: formData.showAddToCartButton, // 🛒 إظهار زر إضافة للسلة
+        saleStartDate: formData.saleStartDate ? new Date(formData.saleStartDate).toISOString() : undefined, // 📅 تاريخ بداية العرض
+        saleEndDate: formData.saleEndDate ? new Date(formData.saleEndDate).toISOString() : undefined, // 📅 تاريخ انتهاء العرض
         tags: formData.tags,
         weight: formData.weight,
         dimensions: formData.dimensions,
@@ -484,7 +493,7 @@ const ProductNew: React.FC = () => {
                 </div>
                 <div>
                   <label htmlFor="comparePrice" className="block text-sm font-medium text-gray-700">
-                    سعر المقارنة ({displayCurrency})
+                    السعر القديم ({displayCurrency})
                   </label>
                   <input
                     type="number"
@@ -497,10 +506,11 @@ const ProductNew: React.FC = () => {
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                     placeholder="0.00"
                   />
+                  <p className="mt-1 text-xs text-gray-500">السعر الأصلي قبل الخصم (اختياري)</p>
                 </div>
                 <div>
                   <label htmlFor="cost" className="block text-sm font-medium text-gray-700">
-                    التكلفة ({displayCurrency})
+                    سعر الشراء ({displayCurrency})
                   </label>
                   <input
                     type="number"
@@ -513,6 +523,7 @@ const ProductNew: React.FC = () => {
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                     placeholder="0.00"
                   />
+                  <p className="mt-1 text-xs text-gray-500">تكلفة شراء المنتج من المورد (اختياري)</p>
                 </div>
               </div>
             </div>
@@ -808,6 +819,64 @@ const ProductNew: React.FC = () => {
               <span className="text-xs text-gray-500 mr-2">
                 (يسمح للعملاء بإتمام الطلب مباشرة من صفحة المنتج)
               </span>
+            </div>
+
+            <div className="flex items-center">
+              <input
+                id="showAddToCartButton"
+                name="showAddToCartButton"
+                type="checkbox"
+                checked={formData.showAddToCartButton}
+                onChange={handleInputChange}
+                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+              />
+              <label htmlFor="showAddToCartButton" className="mr-2 block text-sm text-gray-900">
+                إظهار زر إضافة للسلة في صفحة المنتج
+              </label>
+              <span className="text-xs text-gray-500 mr-2">
+                (عند إلغاء التفعيل، لن يظهر زر "أضف للسلة" في صفحة المنتج)
+              </span>
+            </div>
+
+            {/* Sale Dates Section */}
+            <div className="border-t border-gray-200 pt-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">📅 تواريخ العرض/الخصم</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="saleStartDate" className="block text-sm font-medium text-gray-700 mb-2">
+                    تاريخ بداية العرض
+                  </label>
+                  <input
+                    type="datetime-local"
+                    id="saleStartDate"
+                    name="saleStartDate"
+                    value={formData.saleStartDate || ''}
+                    onChange={handleInputChange}
+                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">تاريخ ووقت بداية العرض (اختياري)</p>
+                </div>
+                <div>
+                  <label htmlFor="saleEndDate" className="block text-sm font-medium text-gray-700 mb-2">
+                    تاريخ انتهاء العرض
+                  </label>
+                  <input
+                    type="datetime-local"
+                    id="saleEndDate"
+                    name="saleEndDate"
+                    value={formData.saleEndDate || ''}
+                    onChange={handleInputChange}
+                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">تاريخ ووقت انتهاء العرض (اختياري)</p>
+                </div>
+              </div>
+              {formData.saleStartDate && formData.saleEndDate && 
+               new Date(formData.saleStartDate) >= new Date(formData.saleEndDate) && (
+                <p className="mt-2 text-sm text-red-600">
+                  ⚠️ تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية
+                </p>
+              )}
             </div>
           </div>
 

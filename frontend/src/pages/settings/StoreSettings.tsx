@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   BuildingStorefrontIcon,
   TruckIcon,
@@ -6,21 +7,27 @@ import {
   GiftIcon,
   SparklesIcon,
   LightBulbIcon,
+  DocumentTextIcon,
+  GlobeAltIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { storeSettingsService, Branch, ShippingZone } from '../../services/storeSettingsService';
 import { checkoutFormSettingsService, CheckoutFormSettings } from '../../services/checkoutFormSettingsService';
+import { footerSettingsService, FooterSettings } from '../../services/footerSettingsService';
 import { BranchesSection } from '../../components/store/BranchesSection';
 import { ShippingSection } from '../../components/store/ShippingSection';
 import { CheckoutFormSection } from '../../components/store/CheckoutFormSection';
+import { FooterSettingsSection } from '../../components/store/FooterSettingsSection';
 import { BranchModal } from '../../components/store/BranchModal';
 import { ShippingModal } from '../../components/store/ShippingModal';
 
 const StoreSettings: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'branches' | 'shipping' | 'checkout' | 'promotion' | 'delivery' | 'recommendations'>('branches');
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<'branches' | 'shipping' | 'checkout' | 'footer' | 'promotion' | 'delivery' | 'recommendations' | 'features'>('branches');
   const [branches, setBranches] = useState<Branch[]>([]);
   const [shippingZones, setShippingZones] = useState<ShippingZone[]>([]);
   const [checkoutSettings, setCheckoutSettings] = useState<Partial<CheckoutFormSettings>>({});
+  const [footerSettings, setFooterSettings] = useState<Partial<FooterSettings>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showBranchModal, setShowBranchModal] = useState(false);
@@ -55,14 +62,16 @@ const StoreSettings: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [branchesRes, shippingRes, checkoutRes] = await Promise.all([
+      const [branchesRes, shippingRes, checkoutRes, footerRes] = await Promise.all([
         storeSettingsService.getBranches(),
         storeSettingsService.getShippingZones(),
         checkoutFormSettingsService.getSettings(),
+        footerSettingsService.getSettings(),
       ]);
       setBranches(branchesRes.data.data || []);
       setShippingZones(shippingRes.data.data || []);
       setCheckoutSettings(checkoutRes.data.data || {});
+      setFooterSettings(footerRes.data.data || {});
     } catch (error) {
       toast.error('فشل تحميل البيانات');
       console.error('Error loading data:', error);
@@ -233,6 +242,37 @@ const StoreSettings: React.FC = () => {
     }
   };
 
+  // Footer settings operations
+  const handleSaveFooterSettings = async () => {
+    try {
+      setSaving(true);
+      await footerSettingsService.updateSettings(footerSettings);
+      toast.success('تم حفظ إعدادات الفوتر بنجاح');
+      loadData();
+    } catch (error) {
+      toast.error('فشل حفظ إعدادات الفوتر');
+      console.error('Error saving footer settings:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleResetFooterSettings = async () => {
+    if (!confirm('هل أنت متأكد من إعادة تعيين إعدادات الفوتر للقيم الافتراضية؟')) return;
+
+    try {
+      setSaving(true);
+      await footerSettingsService.resetSettings();
+      toast.success('تم إعادة تعيين إعدادات الفوتر بنجاح');
+      loadData();
+    } catch (error) {
+      toast.error('فشل إعادة تعيين إعدادات الفوتر');
+      console.error('Error resetting footer settings:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -255,81 +295,102 @@ const StoreSettings: React.FC = () => {
         <p className="mt-2 text-gray-600">إدارة الفروع، الشحن، العروض الترويجية، وخيارات التوصيل</p>
       </div>
 
-      {/* Tabs */}
-      <div className="bg-white shadow rounded-lg">
-        <div className="border-b border-gray-200">
-          <nav className="flex -mb-px">
-            <button
-              onClick={() => setActiveTab('branches')}
-              className={`px-6 py-4 text-sm font-medium border-b-2 flex items-center ${
-                activeTab === 'branches'
-                  ? 'border-indigo-500 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <BuildingStorefrontIcon className="h-5 w-5 ml-2" />
-              الفروع
-            </button>
-            <button
-              onClick={() => setActiveTab('shipping')}
-              className={`px-6 py-4 text-sm font-medium border-b-2 flex items-center ${
-                activeTab === 'shipping'
-                  ? 'border-indigo-500 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <TruckIcon className="h-5 w-5 ml-2" />
-              الشحن
-            </button>
-            <button
-              onClick={() => setActiveTab('checkout')}
-              className={`px-6 py-4 text-sm font-medium border-b-2 flex items-center ${
-                activeTab === 'checkout'
-                  ? 'border-indigo-500 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <ClipboardDocumentCheckIcon className="h-5 w-5 ml-2" />
-              فورم الشيك أوت
-            </button>
-            <button
-              onClick={() => setActiveTab('promotion')}
-              className={`px-6 py-4 text-sm font-medium border-b-2 flex items-center ${
-                activeTab === 'promotion'
-                  ? 'border-indigo-500 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <GiftIcon className="h-5 w-5 ml-2" />
-              الترويج والعروض
-            </button>
-            <button
-              onClick={() => setActiveTab('delivery')}
-              className={`px-6 py-4 text-sm font-medium border-b-2 flex items-center ${
-                activeTab === 'delivery'
-                  ? 'border-indigo-500 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <SparklesIcon className="h-5 w-5 ml-2" />
-              خيارات التوصيل
-            </button>
-            <button
-              onClick={() => setActiveTab('recommendations')}
-              className={`px-6 py-4 text-sm font-medium border-b-2 flex items-center ${
-                activeTab === 'recommendations'
-                  ? 'border-indigo-500 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <LightBulbIcon className="h-5 w-5 ml-2" />
-              المنتجات المقترحة
-            </button>
-          </nav>
+      {/* Sidebar Layout */}
+      <div className="flex gap-6">
+        {/* Sidebar Navigation */}
+        <div className="w-64 flex-shrink-0">
+          <div className="bg-white shadow rounded-lg p-2">
+            <nav className="space-y-1">
+              <button
+                onClick={() => setActiveTab('branches')}
+                className={`w-full px-4 py-3 text-sm font-medium rounded-lg flex items-center transition-colors ${
+                  activeTab === 'branches'
+                    ? 'bg-indigo-50 text-indigo-600 border-r-4 border-indigo-600'
+                    : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                }`}
+              >
+                <BuildingStorefrontIcon className="h-5 w-5 ml-3" />
+                الفروع
+              </button>
+              <button
+                onClick={() => setActiveTab('shipping')}
+                className={`w-full px-4 py-3 text-sm font-medium rounded-lg flex items-center transition-colors ${
+                  activeTab === 'shipping'
+                    ? 'bg-indigo-50 text-indigo-600 border-r-4 border-indigo-600'
+                    : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                }`}
+              >
+                <TruckIcon className="h-5 w-5 ml-3" />
+                الشحن
+              </button>
+              <button
+                onClick={() => setActiveTab('checkout')}
+                className={`w-full px-4 py-3 text-sm font-medium rounded-lg flex items-center transition-colors ${
+                  activeTab === 'checkout'
+                    ? 'bg-indigo-50 text-indigo-600 border-r-4 border-indigo-600'
+                    : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                }`}
+              >
+                <ClipboardDocumentCheckIcon className="h-5 w-5 ml-3" />
+                فورم الشيك أوت
+              </button>
+              <button
+                onClick={() => setActiveTab('footer')}
+                className={`w-full px-4 py-3 text-sm font-medium rounded-lg flex items-center transition-colors ${
+                  activeTab === 'footer'
+                    ? 'bg-indigo-50 text-indigo-600 border-r-4 border-indigo-600'
+                    : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                }`}
+              >
+                <DocumentTextIcon className="h-5 w-5 ml-3" />
+                الفوتر
+              </button>
+              <button
+                onClick={() => setActiveTab('promotion')}
+                className={`w-full px-4 py-3 text-sm font-medium rounded-lg flex items-center transition-colors ${
+                  activeTab === 'promotion'
+                    ? 'bg-indigo-50 text-indigo-600 border-r-4 border-indigo-600'
+                    : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                }`}
+              >
+                <GiftIcon className="h-5 w-5 ml-3" />
+                الترويج والعروض
+              </button>
+              <button
+                onClick={() => setActiveTab('delivery')}
+                className={`w-full px-4 py-3 text-sm font-medium rounded-lg flex items-center transition-colors ${
+                  activeTab === 'delivery'
+                    ? 'bg-indigo-50 text-indigo-600 border-r-4 border-indigo-600'
+                    : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                }`}
+              >
+                <SparklesIcon className="h-5 w-5 ml-3" />
+                خيارات التوصيل
+              </button>
+              <button
+                onClick={() => navigate('/settings/storefront-features')}
+                className="w-full px-4 py-3 text-sm font-medium rounded-lg flex items-center transition-colors text-gray-700 hover:bg-gray-50 hover:text-gray-900"
+              >
+                <GlobeAltIcon className="h-5 w-5 ml-3" />
+                ميزات الواجهة
+              </button>
+              <button
+                onClick={() => setActiveTab('recommendations')}
+                className={`w-full px-4 py-3 text-sm font-medium rounded-lg flex items-center transition-colors ${
+                  activeTab === 'recommendations'
+                    ? 'bg-indigo-50 text-indigo-600 border-r-4 border-indigo-600'
+                    : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                }`}
+              >
+                <LightBulbIcon className="h-5 w-5 ml-3" />
+                المنتجات المقترحة
+              </button>
+            </nav>
+          </div>
         </div>
 
         {/* Content */}
-        <div className="p-6">
+        <div className="flex-1 bg-white shadow rounded-lg p-6">
           {activeTab === 'branches' ? (
             <BranchesSection
               branches={branches}
@@ -350,6 +411,14 @@ const StoreSettings: React.FC = () => {
               onChange={setCheckoutSettings}
               onSave={handleSaveCheckoutSettings}
               onReset={handleResetCheckoutSettings}
+              loading={saving}
+            />
+          ) : activeTab === 'footer' ? (
+            <FooterSettingsSection
+              settings={footerSettings}
+              onChange={setFooterSettings}
+              onSave={handleSaveFooterSettings}
+              onReset={handleResetFooterSettings}
               loading={saving}
             />
           ) : activeTab === 'promotion' ? (

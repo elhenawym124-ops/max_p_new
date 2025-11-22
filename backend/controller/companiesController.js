@@ -2572,6 +2572,66 @@ const checkSlugAvailability = async (req, res) => {
     }
 };
 
+/**
+ * 🖼️ Upload Company Logo
+ */
+const uploadCompanyLogo = async (req, res) => {
+    try {
+        const { companyId } = req.params;
+        
+        // Check if file was uploaded
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                error: 'لم يتم رفع أي ملف'
+            });
+        }
+        
+        // Verify company exists
+        const company = await prisma.company.findUnique({
+            where: { id: companyId }
+        });
+        
+        if (!company) {
+            return res.status(404).json({
+                success: false,
+                error: 'الشركة غير موجودة'
+            });
+        }
+        
+        // Build logo URL
+        const logoUrl = `/uploads/companies/${req.file.filename}`;
+        
+        // Update company with new logo
+        const updatedCompany = await prisma.company.update({
+            where: { id: companyId },
+            data: { logo: logoUrl }
+        });
+        
+        res.json({
+            success: true,
+            message: 'تم رفع اللوجو بنجاح',
+            data: {
+                logo: logoUrl,
+                fullUrl: `${req.protocol}://${req.get('host')}${logoUrl}`,
+                company: {
+                    id: updatedCompany.id,
+                    name: updatedCompany.name,
+                    logo: updatedCompany.logo
+                }
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Error uploading company logo:', error);
+        res.status(500).json({
+            success: false,
+            error: 'فشل في رفع اللوجو',
+            message: error.message
+        });
+    }
+};
+
 module.exports = {
     getCurrentCompany,
     REMOVEDDangerousFallbackEndpoint,
@@ -2602,5 +2662,6 @@ module.exports = {
     FrontendSpecificSafeEndpoint,
     updateCompanySlug,
     checkSlugAvailability,
-    getUsersStatistics
+    getUsersStatistics,
+    uploadCompanyLogo
 }

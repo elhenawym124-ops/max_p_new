@@ -127,6 +127,8 @@ interface Product {
   name: string;
   description: string;
   price: number;
+  comparePrice?: number; // 💰 سعر المقارنة (سعر قبل الخصم)
+  cost?: number; // 💰 سعر التكلفة
   sku: string;
   stock: number;
   isActive: boolean;
@@ -134,6 +136,8 @@ interface Product {
   categoryId: string;
   images: string;
   updatedAt?: string;
+  saleStartDate?: string; // 📅 تاريخ بداية العرض
+  saleEndDate?: string; // 📅 تاريخ انتهاء العرض
   category?: {
     id: string;
     name: string;
@@ -185,13 +189,18 @@ const ProductEditNew: React.FC = () => {
     name: '',
     description: '',
     price: 0,
+    comparePrice: '', // 💰 سعر المقارنة (سعر قبل الخصم)
+    cost: '', // 💰 سعر التكلفة
     sku: '',
     stock: 0,
     trackInventory: true,
     categoryId: '',
     isActive: true,
     hasPromotedAd: false,
-    enableCheckoutForm: true
+    enableCheckoutForm: true,
+    showAddToCartButton: true, // 🛒 إظهار زر إضافة للسلة
+    saleStartDate: '', // 📅 تاريخ بداية العرض
+    saleEndDate: '' // 📅 تاريخ انتهاء العرض
   });
 
   // Images and Variants states
@@ -249,13 +258,18 @@ const ProductEditNew: React.FC = () => {
           name: String(productData.name || ''),
           description: String(productData.description || ''),
           price: Number(productData.price) || 0,
+          comparePrice: productData.comparePrice ? String(productData.comparePrice) : '', // 💰 سعر المقارنة
+          cost: productData.cost ? String(productData.cost) : '', // 💰 سعر التكلفة
           sku: String(productData.sku || ''),
           stock: Number(productData.stock) || 0,
           trackInventory: Boolean(productData.trackInventory !== false),
           categoryId: String(productData.categoryId || ''),
           isActive: Boolean(productData.isActive !== false),
           hasPromotedAd: Boolean(productData.hasPromotedAd === true),
-          enableCheckoutForm: Boolean(productData.enableCheckoutForm !== false)
+          enableCheckoutForm: Boolean(productData.enableCheckoutForm !== false),
+          showAddToCartButton: Boolean(productData.showAddToCartButton !== false), // 🛒 إظهار زر إضافة للسلة
+          saleStartDate: productData.saleStartDate ? new Date(productData.saleStartDate).toISOString().slice(0, 16) : '', // 📅 تاريخ بداية العرض
+          saleEndDate: productData.saleEndDate ? new Date(productData.saleEndDate).toISOString().slice(0, 16) : '' // 📅 تاريخ انتهاء العرض
         };
 
         setFormData(newFormData);
@@ -482,6 +496,11 @@ const ProductEditNew: React.FC = () => {
         isActive: formData.isActive,
         hasPromotedAd: formData.hasPromotedAd,
         enableCheckoutForm: formData.enableCheckoutForm,
+        showAddToCartButton: formData.showAddToCartButton, // 🛒 إظهار زر إضافة للسلة
+        comparePrice: formData.comparePrice ? parseFloat(formData.comparePrice) : null, // 💰 سعر المقارنة
+        cost: formData.cost ? parseFloat(formData.cost) : null, // 💰 سعر التكلفة
+        saleStartDate: formData.saleStartDate ? new Date(formData.saleStartDate).toISOString() : null, // 📅 تاريخ بداية العرض
+        saleEndDate: formData.saleEndDate ? new Date(formData.saleEndDate).toISOString() : null, // 📅 تاريخ انتهاء العرض
         tags: '[]'
       };
       
@@ -1121,6 +1140,42 @@ const ProductEditNew: React.FC = () => {
                 />
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  السعر القديم ({displayCurrency})
+                </label>
+                <input
+                  type="number"
+                  name="comparePrice"
+                  value={formData.comparePrice}
+                  onChange={handleInputChange}
+                  min="0"
+                  step="0.01"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="السعر الأصلي قبل الخصم"
+                />
+                <p className="mt-1 text-xs text-gray-500">السعر الأصلي قبل الخصم (اختياري)</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  سعر الشراء ({displayCurrency})
+                </label>
+                <input
+                  type="number"
+                  name="cost"
+                  value={formData.cost}
+                  onChange={handleInputChange}
+                  min="0"
+                  step="0.01"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="تكلفة شراء المنتج من المورد"
+                />
+                <p className="mt-1 text-xs text-gray-500">تكلفة شراء المنتج من المورد (اختياري)</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
               {/* Track Inventory Toggle */}
               <div className="flex items-center justify-between">
                 <div>
@@ -1238,6 +1293,22 @@ const ProductEditNew: React.FC = () => {
                   🛒 تفعيل فورم الشيك أوت
                 </label>
               </div>
+
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  name="showAddToCartButton"
+                  checked={formData.showAddToCartButton}
+                  onChange={handleInputChange}
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                />
+                <label className="mr-2 block text-sm text-gray-900">
+                  🛒 إظهار زر إضافة للسلة
+                </label>
+                <span className="text-xs text-gray-500 mr-2">
+                  (عند إلغاء التفعيل، لن يظهر زر "أضف للسلة" في صفحة المنتج)
+                </span>
+              </div>
             </div>
             
             {formData.hasPromotedAd && (
@@ -1255,6 +1326,47 @@ const ProductEditNew: React.FC = () => {
                 </p>
               </div>
             )}
+
+            {/* Sale Dates Section */}
+            <div className="border-t border-gray-200 pt-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">📅 تواريخ العرض/الخصم</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="saleStartDate" className="block text-sm font-medium text-gray-700 mb-2">
+                    تاريخ بداية العرض
+                  </label>
+                  <input
+                    type="datetime-local"
+                    id="saleStartDate"
+                    name="saleStartDate"
+                    value={formData.saleStartDate || ''}
+                    onChange={handleInputChange}
+                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">تاريخ ووقت بداية العرض (اختياري)</p>
+                </div>
+                <div>
+                  <label htmlFor="saleEndDate" className="block text-sm font-medium text-gray-700 mb-2">
+                    تاريخ انتهاء العرض
+                  </label>
+                  <input
+                    type="datetime-local"
+                    id="saleEndDate"
+                    name="saleEndDate"
+                    value={formData.saleEndDate || ''}
+                    onChange={handleInputChange}
+                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">تاريخ ووقت انتهاء العرض (اختياري)</p>
+                </div>
+              </div>
+              {formData.saleStartDate && formData.saleEndDate && 
+               new Date(formData.saleStartDate) >= new Date(formData.saleEndDate) && (
+                <p className="mt-2 text-sm text-red-600">
+                  ⚠️ تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية
+                </p>
+              )}
+            </div>
 
             {/* Product Images Section */}
             <div className="border-t border-gray-200 pt-6">
@@ -1535,10 +1647,10 @@ const ProductEditNew: React.FC = () => {
                       <p><span className="font-medium">SKU:</span> {variant.sku || 'غير محدد'}</p>
                       <p><span className="font-medium">السعر:</span> {variant.price ? `${variant.price} ${displayCurrency}` : 'غير محدد'}</p>
                       {variant.comparePrice && (
-                        <p><span className="font-medium">سعر المقارنة:</span> {variant.comparePrice} {displayCurrency}</p>
+                        <p><span className="font-medium">السعر القديم:</span> {variant.comparePrice} {displayCurrency}</p>
                       )}
                       {variant.cost && (
-                        <p><span className="font-medium">التكلفة:</span> {variant.cost} {displayCurrency}</p>
+                        <p><span className="font-medium">سعر الشراء:</span> {variant.cost} {displayCurrency}</p>
                       )}
                       <p><span className="font-medium">المخزون:</span> {variant.stock || 0}</p>
                       {variant.images && variant.images !== '[]' && (
@@ -1682,7 +1794,7 @@ const ProductEditNew: React.FC = () => {
 
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          السعر المقارن ({displayCurrency})
+                          السعر القديم ({displayCurrency})
                         </label>
                         <input
                           type="number"
@@ -1697,7 +1809,7 @@ const ProductEditNew: React.FC = () => {
 
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          التكلفة ({displayCurrency})
+                          سعر الشراء ({displayCurrency})
                         </label>
                         <input
                           type="number"

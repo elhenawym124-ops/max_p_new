@@ -33,6 +33,20 @@ const RelatedProducts: React.FC<RelatedProductsProps> = ({ productId, companyId,
     fetchRelatedProducts();
   }, [productId, companyId]);
 
+  const parseImages = (images: string | string[] | undefined): string[] => {
+    if (!images) return [];
+    if (Array.isArray(images)) return images;
+    if (typeof images === 'string') {
+      try {
+        const parsed = JSON.parse(images);
+        return Array.isArray(parsed) ? parsed : [images];
+      } catch {
+        return [images];
+      }
+    }
+    return [];
+  };
+
   const fetchRelatedProducts = async () => {
     try {
       setLoading(true);
@@ -45,8 +59,16 @@ const RelatedProducts: React.FC<RelatedProductsProps> = ({ productId, companyId,
       );
 
       if (response.data.success) {
-        setProducts(response.data.data);
-        console.log('✅ [RELATED-PRODUCTS] Loaded:', response.data.data.length);
+        // Parse images and prices for each product
+        const productsWithParsedData = response.data.data.map((product: any) => ({
+          ...product,
+          images: parseImages(product.images),
+          price: Number(product.price) || 0,
+          salePrice: product.salePrice ? Number(product.salePrice) : undefined,
+          comparePrice: product.comparePrice ? Number(product.comparePrice) : undefined
+        }));
+        setProducts(productsWithParsedData);
+        console.log('✅ [RELATED-PRODUCTS] Loaded:', productsWithParsedData.length);
       }
     } catch (error) {
       console.error('❌ [RELATED-PRODUCTS] Error:', error);
@@ -88,11 +110,15 @@ const RelatedProducts: React.FC<RelatedProductsProps> = ({ productId, companyId,
 
       <Grid container spacing={3}>
         {products.map((product) => {
-          const displayPrice = product.salePrice || product.price;
-          const hasDiscount = product.salePrice && product.salePrice < product.price;
+          const productImages = parseImages(product.images);
+          const productImage = productImages.length > 0 ? productImages[0] : '/placeholder.png';
+          const displayPrice = product.salePrice || product.comparePrice || product.price;
+          const hasDiscount = (product.salePrice || product.comparePrice) && 
+                             (product.salePrice || product.comparePrice) < product.price;
+          const originalPrice = product.price || 0;
 
           return (
-            <Grid item xs={12} sm={6} md={4} lg={2} key={product.id}>
+            <Grid item xs={12} sm={6} md={4} lg={3} key={product.id}>
               <Card
                 sx={{
                   height: '100%',
@@ -110,9 +136,13 @@ const RelatedProducts: React.FC<RelatedProductsProps> = ({ productId, companyId,
                 <CardMedia
                   component="img"
                   height="200"
-                  image={product.images[0] || '/placeholder.png'}
+                  image={productImage}
                   alt={product.name}
                   sx={{ objectFit: 'cover' }}
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.src = '/placeholder.png';
+                  }}
                 />
                 <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                   <Typography
@@ -137,16 +167,17 @@ const RelatedProducts: React.FC<RelatedProductsProps> = ({ productId, companyId,
                   )}
 
                   <Box sx={{ mt: 'auto' }}>
-                    {hasDiscount && (
+                    {hasDiscount && originalPrice > 0 && (
                       <Typography
                         variant="body2"
                         sx={{
                           textDecoration: 'line-through',
                           color: 'text.secondary',
-                          fontSize: '0.875rem'
+                          fontSize: '0.875rem',
+                          mb: 0.5
                         }}
                       >
-                        {formatPrice(product.price)}
+                        {formatPrice(originalPrice)}
                       </Typography>
                     )}
                     <Typography
@@ -156,7 +187,7 @@ const RelatedProducts: React.FC<RelatedProductsProps> = ({ productId, companyId,
                         color: hasDiscount ? 'error.main' : 'primary.main'
                       }}
                     >
-                      {formatPrice(displayPrice)}
+                      {formatPrice(Number(displayPrice) || 0)}
                     </Typography>
                   </Box>
 

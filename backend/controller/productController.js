@@ -420,6 +420,22 @@ const updateSingleProduct = async(req , res)=>{
       //console.log(`📢 [server] Has promoted ad: ${updateData.hasPromotedAd}`);
     }
 
+    // Handle enableCheckoutForm and showAddToCartButton fields
+    if (updateData.enableCheckoutForm !== undefined) {
+      updateData.enableCheckoutForm = Boolean(updateData.enableCheckoutForm);
+    }
+    if (updateData.showAddToCartButton !== undefined) {
+      updateData.showAddToCartButton = Boolean(updateData.showAddToCartButton);
+    }
+
+    // Handle sale dates - convert to Date objects if provided
+    if (updateData.saleStartDate !== undefined) {
+      updateData.saleStartDate = updateData.saleStartDate ? new Date(updateData.saleStartDate) : null;
+    }
+    if (updateData.saleEndDate !== undefined) {
+      updateData.saleEndDate = updateData.saleEndDate ? new Date(updateData.saleEndDate) : null;
+    }
+
     // Handle category field - convert to categoryId for Prisma
     if (updateData.category !== undefined) {
       if (updateData.category && updateData.category.trim() !== '') {
@@ -568,7 +584,11 @@ const createProduct = async(req , res)=>{
         hasPromotedAd: hasPromotedAd !== undefined ? Boolean(hasPromotedAd) : false,
         companyId, // استخدام companyId من المستخدم المصادق عليه
         images: images ? JSON.stringify(images) : null,
-        tags: tags ? JSON.stringify(tags) : null
+        tags: tags ? JSON.stringify(tags) : null,
+        enableCheckoutForm: req.body.enableCheckoutForm !== undefined ? Boolean(req.body.enableCheckoutForm) : true,
+        showAddToCartButton: req.body.showAddToCartButton !== undefined ? Boolean(req.body.showAddToCartButton) : true,
+        saleStartDate: req.body.saleStartDate ? new Date(req.body.saleStartDate) : null,
+        saleEndDate: req.body.saleEndDate ? new Date(req.body.saleEndDate) : null
       }
     });
 

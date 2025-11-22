@@ -95,15 +95,22 @@ const shippingZoneRoutes = require('./routes/shippingZoneRoutes');
 const promptLibraryRoutes = require('./routes/promptLibraryRoutes');
 const geolocationRoutes = require('./routes/geolocation');
 const storeSettingsRoutes = require('./routes/storeSettingsRoutes');
+const footerSettingsRoutes = require('./routes/footerSettingsRoutes'); // 🏪 إعدادات الفوتر
 const checkoutFormSettingsRoutes = require('./routes/checkoutFormSettingsRoutes'); // 📋 إعدادات فورم الشيك أوت
 const publicCheckoutFormRoutes = require('./routes/publicCheckoutFormRoutes'); // 🌐 Public routes للفورم
 const promotionSettingsRoutes = require('./routes/promotionSettingsRoutes'); // 🎯 إعدادات الترويج
+const storefrontSettingsRoutes = require('./routes/storefrontSettingsRoutes'); // 🛍️ إعدادات واجهة المتجر
 const deliveryOptionRoutes = require('./routes/deliveryOptionRoutes'); // 🚚 خيارات التوصيل
 const publicPromotionRoutes = require('./routes/publicPromotionRoutes'); // 🌐 Public routes للترويج
 const publicProductsRoutes = require('./routes/publicProductsRoutes');
 const imageGalleryRoutes = require('./routes/imageGalleryRoutes'); // 🖼️ حافظة الصور
 const publicCartRoutes = require('./routes/publicCartRoutes');
 const publicOrdersRoutes = require('./routes/publicOrdersRoutes');
+const wishlistRoutes = require('./routes/wishlistRoutes'); // ❤️ قائمة الرغبات
+const productReviewRoutes = require('./routes/productReviewRoutes'); // ⭐ التقييمات والمراجعات
+const storePagesRoutes = require('./routes/storePagesRoutes'); // 📄 صفحات المتجر
+const couponsRoutes = require('./routes/couponsRoutes'); // 🎟️ الكوبونات والخصومات
+const publicCouponsRoutes = require('./routes/publicCouponsRoutes'); // 🌐 الكوبونات العامة
 
 
 
@@ -247,7 +254,7 @@ app.use(cors({
   origin: envConfig.corsOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-request-id', 'x-cart-id', 'X-Company-Subdomain', 'X-Company-Id']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-request-id', 'x-cart-id', 'x-session-id', 'X-Company-Subdomain', 'X-Company-Id']
 }));
 
 app.use(express.json());
@@ -323,19 +330,37 @@ app.post('/api/v1/security/clear-ip-blocks', clearIPBlocks);
 
 // Public Storefront Routes - MUST be before globalSecurity (no authentication required)
 console.log('🛍️ [SERVER] Registering public storefront routes...');
+// Register promotion routes FIRST to ensure they're matched before other routes
+// These routes don't need getCompanyFromSubdomain middleware as they get companyId from route params
+app.use("/api/v1/public", addPublicCORS, (req, res, next) => {
+  // Add logging to debug route matching
+  if (req.path.includes('promotion-settings') || req.path.includes('delivery-options')) {
+    console.log('🎯 [PROMOTION-ROUTE] Promotion route matched:', req.method, req.path);
+  }
+  next();
+}, publicPromotionRoutes); // 🎯 Promotion & Delivery Options (عامة) - Registered first
+app.use("/api/v1/public/checkout-form-settings", getCompanyFromSubdomain, addPublicCORS, publicCheckoutFormRoutes); // 📋 إعدادات فورم الشيك أوت (عامة)
 app.use("/api/v1/public", getCompanyFromSubdomain, addPublicCORS, publicProductsRoutes);
 app.use("/api/v1/public", getCompanyFromSubdomain, addPublicCORS, publicCartRoutes);
+app.use("/api/v1/public/wishlist", getCompanyFromSubdomain, addPublicCORS, wishlistRoutes); // ❤️ قائمة الرغبات
+app.use("/api/v1/public", getCompanyFromSubdomain, addPublicCORS, productReviewRoutes); // ⭐ التقييمات والمراجعات (Public)
+// ⚠️ Protected route moved after globalSecurity middleware (line 363)
+app.use("/api/v1/store-pages", storePagesRoutes); // 📄 صفحات المتجر
+app.use("/api/v1/coupons", couponsRoutes); // 🎟️ الكوبونات والخصومات
+app.use("/api/v1/public/coupons", addPublicCORS, publicCouponsRoutes); // 🌐 الكوبونات العامة (للعملاء)
+app.use("/api/v1/public/storefront-settings", addPublicCORS, storefrontSettingsRoutes); // 🛍️ إعدادات واجهة المتجر (عامة)
 app.use("/api/v1/public", (req, res, next) => {
   console.log('🔵 [PUBLIC-ORDERS-MIDDLEWARE] Request:', req.method, req.path);
   next();
 }, getCompanyFromSubdomain, addPublicCORS, publicOrdersRoutes);
-app.use("/api/v1/public/checkout-form-settings", getCompanyFromSubdomain, addPublicCORS, publicCheckoutFormRoutes); // 📋 إعدادات فورم الشيك أوت (عامة)
-app.use("/api/v1/public", addPublicCORS, publicPromotionRoutes); // 🎯 Promotion & Delivery Options (عامة)
 console.log('✅ [SERVER] Public storefront routes registered');
 
 // Apply Global Security Middleware to all routes AFTER public routes
 //console.log('🛡️ Applying Global Security Middleware...');
 app.use(globalSecurity);
+
+// Protected routes (require authentication)
+app.use("/api/v1/reviews", productReviewRoutes); // ⭐ إدارة التقييمات (Protected)
 
 
 
@@ -386,10 +411,13 @@ app.use("/api/v1/woocommerce/", wooCommerceRoutes)
 app.use("/api/v1/branches/", branchRoutes)
 app.use("/api/v1/shipping-zones/", shippingZoneRoutes)
 app.use("/api/v1/store-settings/", storeSettingsRoutes)
+app.use("/api/v1/footer-settings", footerSettingsRoutes) // 🏪 إعدادات الفوتر (محمية)
+app.use("/api/v1/public/footer-settings", addPublicCORS, footerSettingsRoutes) // 🏪 إعدادات الفوتر (عامة)
 app.use("/api/v1/checkout-form-settings", checkoutFormSettingsRoutes) // 📋 إعدادات فورم الشيك أوت (محمية)
 
 // 🎯 AOV Optimization Routes (زيادة متوسط قيمة الطلب)
 app.use("/api/v1/promotion-settings", promotionSettingsRoutes) // 📦 إعدادات الترويج (شحن مجاني)
+app.use("/api/v1/storefront-settings", storefrontSettingsRoutes) // 🛍️ إعدادات واجهة المتجر
 app.use("/api/v1/delivery-options", deliveryOptionRoutes) // 🚚 خيارات التوصيل
 
 app.use("/api/v1/conversations/", conversationRoutes)

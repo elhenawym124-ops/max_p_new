@@ -8,67 +8,75 @@ datasource db {
 }
 
 model Company {
-  id                    String                  @id @default(cuid())
-  name                  String
-  slug                  String?                 @unique // 🔗 اسم المتجر للـ subdomain
-  email                 String                  @unique
-  phone                 String?
-  website               String?
-  logo                  String?
-  address               String?
-  currency              String                  @default("EGP")
-  plan                  SubscriptionPlan        @default(BASIC)
-  planConfigurationId   String?
-  isActive              Boolean                 @default(true)
-  settings              String?                 @db.Text
-  createdAt             DateTime                @default(now())
-  updatedAt             DateTime                @updatedAt
-  aiInteractions        AiInteraction[]
-  aiSettings            AiSettings?
-  appliedImprovements   AppliedImprovement[]
-  categories            Category[]
-  conversations         Conversation[]
-  conversationMemories  ConversationMemory[] // ✅ إضافة العلاقة مع ذاكرة المحادثات
-  conversationOutcomes  ConversationOutcome[]
-  customers             Customer[]
-  discoveredPatterns    DiscoveredPattern[]
-  facebookPages         FacebookPage[]
-  facebookComments      FacebookComment[] // NEW: Add relation to Facebook comments
-  integrations          Integration[]
-  learningData          LearningData[]
-  learningSettings      LearningSettings?
-  notifications         Notification[]
-  orders                Order[]
-  products              Product[]
-  responseEffectiveness ResponseEffectiveness[]
-  successPatterns       SuccessPattern[]
-  patternPerformance    PatternPerformance[]
-  patternUsage          PatternUsage[]
-  users                 User[]
-  userInvitations       UserInvitation[]
-  warehouses            Warehouse[]
-  planConfiguration     PlanConfiguration?      @relation(fields: [planConfigurationId], references: [id])
-  subscriptions         Subscription[]
-  invoices              Invoice[]
-  payments              Payment[]
-  geminiKeys            GeminiKey[] // 🔑 مفاتيح Gemini خاصة بكل شركة
-  systemPrompts         SystemPrompt[] // 📝 البرومبت النظامية خاصة بكل شركة
-  tasks                 Task[] // 📋 المهام خاصة بكل شركة
-  projects              Project[] // 📁 المشاريع خاصة بكل شركة
-  broadcastCampaigns    BroadcastCampaign[] // 📢 حملات البرودكاست
-  broadcastSettings     BroadcastSettings? // ⚙️ إعدادات البرودكاست
-  customerLists         CustomerList[] // 📋 قوائم العملاء
-  postResponseSettings  PostResponseSettings[] // 📝 إعدادات الردود التلقائية على المنشورات
-  pageResponseSettings  PageResponseSettings[] // 📄 إعدادات الردود على مستوى الصفحة
-  branches              Branch[] // 🏪 فروع المتجر
-  shippingZones         ShippingZone[] // 🚚 مناطق الشحن
-  guestCarts            GuestCart[] // 🛒 سلات الزوار
-  guestOrders           GuestOrder[] // 📦 طلبات الزوار
-  checkoutFormSettings  CheckoutFormSettings? // 📋 إعدادات فورم الشيك أوت
-  imageGallery          ImageGallery[] // 🖼️ حافظة الصور
+  id                     String                  @id @default(cuid())
+  name                   String
+  slug                   String?                 @unique // 🔗 اسم المتجر للـ subdomain
+  email                  String                  @unique
+  phone                  String?
+  website                String?
+  logo                   String?
+  address                String?
+  currency               String                  @default("EGP")
+  plan                   SubscriptionPlan        @default(BASIC)
+  planConfigurationId    String?
+  isActive               Boolean                 @default(true)
+  settings               String?                 @db.Text
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  aiInteractions         AiInteraction[]
+  aiSettings             AiSettings?
+  appliedImprovements    AppliedImprovement[]
+  categories             Category[]
+  conversations          Conversation[]
+  conversationMemories   ConversationMemory[] // ✅ إضافة العلاقة مع ذاكرة المحادثات
+  conversationOutcomes   ConversationOutcome[]
+  customers              Customer[]
+  discoveredPatterns     DiscoveredPattern[]
+  facebookPages          FacebookPage[]
+  facebookComments       FacebookComment[] // NEW: Add relation to Facebook comments
+  integrations           Integration[]
+  learningData           LearningData[]
+  learningSettings       LearningSettings?
+  notifications          Notification[]
+  orders                 Order[]
+  products               Product[]
+  responseEffectiveness  ResponseEffectiveness[]
+  successPatterns        SuccessPattern[]
+  patternPerformance     PatternPerformance[]
+  patternUsage           PatternUsage[]
+  users                  User[]
+  userInvitations        UserInvitation[]
+  warehouses             Warehouse[]
+  planConfiguration      PlanConfiguration?      @relation(fields: [planConfigurationId], references: [id])
+  subscriptions          Subscription[]
+  invoices               Invoice[]
+  payments               Payment[]
+  geminiKeys             GeminiKey[] // 🔑 مفاتيح Gemini خاصة بكل شركة
+  systemPrompts          SystemPrompt[] // 📝 البرومبت النظامية خاصة بكل شركة
+  tasks                  Task[] // 📋 المهام خاصة بكل شركة
+  projects               Project[] // 📁 المشاريع خاصة بكل شركة
+  broadcastCampaigns     BroadcastCampaign[] // 📢 حملات البرودكاست
+  broadcastSettings      BroadcastSettings? // ⚙️ إعدادات البرودكاست
+  customerLists          CustomerList[] // 📋 قوائم العملاء
+  postResponseSettings   PostResponseSettings[] // 📝 إعدادات الردود التلقائية على المنشورات
+  pageResponseSettings   PageResponseSettings[] // 📄 إعدادات الردود على مستوى الصفحة
+  branches               Branch[] // 🏪 فروع المتجر
+  shippingZones          ShippingZone[] // 🚚 مناطق الشحن
+  guestCarts             GuestCart[] // 🛒 سلات الزوار
+  guestOrders            GuestOrder[] // 📦 طلبات الزوار
+  checkoutFormSettings   CheckoutFormSettings? // 📋 إعدادات فورم الشيك أوت
+  imageGallery           ImageGallery[] // 🖼️ حافظة الصور
   storePromotionSettings StorePromotionSettings? // 🎯 إعدادات الترويج
-  deliveryOptions       DeliveryOption[] // 🚚 خيارات التوصيل
-  postTracking          PostTracking[] // 📊 تتبع البوستات
+  storefrontSettings     StorefrontSettings? // 🛍️ إعدادات واجهة المتجر
+  deliveryOptions        DeliveryOption[] // 🚚 خيارات التوصيل
+  postTracking           PostTracking[] // 📊 تتبع البوستات
+  footerSettings         FooterSettings? // 🏪 إعدادات الفوتر
+  wishlists              Wishlist[] // ❤️ قوائم الرغبات
+  recentlyViewed         RecentlyViewed[] // 👁️ المنتجات المشاهدة مؤخراً
+  productReviews         ProductReview[] // ⭐ التقييمات والمراجعات
+  backInStockNotifications BackInStockNotification[] // 🔔 إشعارات العودة للمخزون
+  storePages             StorePage[] // 📄 صفحات المتجر
+  coupons                Coupon[] // 🎟️ كوبونات الخصم
 
   @@map("companies")
 }
@@ -139,7 +147,7 @@ enum InvitationStatus {
 }
 
 model Customer {
-  id                   String                @id @default(cuid())
+  id                   String                  @id @default(cuid())
   firstName            String
   lastName             String
   email                String?
@@ -148,19 +156,19 @@ model Customer {
   facebookId           String?
   whatsappId           String?
   telegramId           String?
-  status               CustomerStatus        @default(LEAD)
+  status               CustomerStatus          @default(LEAD)
   tags                 String?
   notes                String?
-  metadata             String?               @db.Text
+  metadata             String?                 @db.Text
   companyId            String
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
   activities           Activity[]
   aiInteractions       AiInteraction[]
   conversations        Conversation[]
   conversationOutcomes ConversationOutcome[]
   notes_rel            CustomerNote[]
-  company              Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company              Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
   orders               Order[]
   blockedOnPages       BlockedCustomerOnPage[] // 🚫 الصفحات التي تم حظر العميل عليها
 
@@ -255,42 +263,49 @@ model Category {
 }
 
 model Product {
-  id             String           @id @default(cuid())
-  name           String
-  description    String?
-  sku            String?          @unique
-  price          Decimal          @db.Decimal(10, 2)
-  comparePrice   Decimal?         @db.Decimal(10, 2)
-  cost           Decimal?         @db.Decimal(10, 2)
-  images         String?          @db.Text
-  stock          Int              @default(0)
-  trackInventory Boolean          @default(true)
-  weight         Decimal?         @db.Decimal(8, 2)
-  dimensions     String?          @db.Text
-  categoryId     String?
-  isActive       Boolean          @default(true)
-  isFeatured     Boolean          @default(false)
-  hasPromotedAd  Boolean          @default(false)
-  tags           String?
-  metadata       String?          @db.Text
-  companyId      String
-  barcode        String?
-  easyOrdersId   String?
-  easyOrdersUrl  String?
-  wooCommerceId  String?
-  wooCommerceUrl String?
-  source              String?          @default("manual")
-  enableCheckoutForm  Boolean          @default(true) // ✨ تفعيل فورم الشيك أوت للمنتج
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
-  inventory      Inventory[]
-  orderItems     OrderItem[]
-  variants       ProductVariant[]
-  category       Category?        @relation(fields: [categoryId], references: [id])
-  company        Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  alerts         StockAlert[]
-  movements      StockMovement[]
-  featuredInPosts PostResponseSettings[] // 🎯 البوستات التي تميز هذا المنتج
+  id                 String                 @id @default(cuid())
+  name               String
+  description        String?
+  sku                String?                @unique
+  price              Decimal                @db.Decimal(10, 2)
+  comparePrice       Decimal?               @db.Decimal(10, 2)
+  cost               Decimal?               @db.Decimal(10, 2)
+  images             String?                @db.Text
+  stock              Int                    @default(0)
+  trackInventory     Boolean                @default(true)
+  weight             Decimal?               @db.Decimal(8, 2)
+  dimensions         String?                @db.Text
+  categoryId         String?
+  isActive           Boolean                @default(true)
+  isFeatured         Boolean                @default(false)
+  hasPromotedAd      Boolean                @default(false)
+  tags               String?
+  metadata           String?                @db.Text
+  companyId          String
+  barcode            String?
+  easyOrdersId       String?
+  easyOrdersUrl      String?
+  wooCommerceId      String?
+  wooCommerceUrl     String?
+  source             String?                @default("manual")
+  enableCheckoutForm Boolean                @default(true) // ✨ تفعيل فورم الشيك أوت للمنتج
+  showAddToCartButton Boolean               @default(true) // 🛒 إظهار زر إضافة للسلة في صفحة المنتج
+  saleStartDate      DateTime?              // 📅 تاريخ بداية العرض/الخصم
+  saleEndDate        DateTime?              // 📅 تاريخ انتهاء العرض/الخصم
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  inventory          Inventory[]
+  orderItems         OrderItem[]
+  variants           ProductVariant[]
+  category           Category?              @relation(fields: [categoryId], references: [id])
+  company            Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  alerts             StockAlert[]
+  movements          StockMovement[]
+  featuredInPosts    PostResponseSettings[] // 🎯 البوستات التي تميز هذا المنتج
+  wishlists          Wishlist[] // ❤️ قوائم الرغبات التي تحتوي على هذا المنتج
+  recentlyViewed     RecentlyViewed[] // 👁️ المنتجات المشاهدة مؤخراً
+  reviews            ProductReview[] // ⭐ التقييمات والمراجعات
+  backInStockNotifications BackInStockNotification[] // 🔔 إشعارات العودة للمخزون
 
   @@index([categoryId], map: "products_categoryId_idx")
   @@index([companyId], map: "products_companyId_idx")
@@ -410,17 +425,17 @@ model Notification {
 }
 
 model AINotification {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   companyId String
-  type      String   // 'no_response', 'consecutive_failures', 'high_failure_rate', etc.
-  severity  String   @default("medium") // 'low', 'medium', 'high', 'critical'
+  type      String // 'no_response', 'consecutive_failures', 'high_failure_rate', etc.
+  severity  String    @default("medium") // 'low', 'medium', 'high', 'critical'
   title     String
-  message   String   @db.Text
-  metadata  String?  @db.Text // JSON data
-  isRead    Boolean  @default(false)
+  message   String    @db.Text
+  metadata  String?   @db.Text // JSON data
+  isRead    Boolean   @default(false)
   readAt    DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@index([companyId])
   @@index([isRead])
@@ -475,42 +490,42 @@ model AiSettings {
   ragEnabled               Boolean  @default(true)
   qualityEvaluationEnabled Boolean  @default(true)
   queueSettings            String?  @db.Text
-  
+
   // ✨ إعدادات AI المتقدمة الجديدة
-  aiTemperature            Float?   @default(0.7)
-  aiTopP                   Float?   @default(0.9)
-  
+  aiTemperature Float? @default(0.7)
+  aiTopP        Float? @default(0.9)
+
   // ✅ NEW: Reply Mode - تحديد متى يرد الـ AI
   // "new_only" = يرد على المحادثات الجديدة فقط
   // "all" = يرد على كل المحادثات
-  replyMode                String   @default("all")
-  aiTopK                   Int?     @default(40)
-  aiMaxTokens              Int?     @default(1024)
-  aiResponseStyle          String?  @default("balanced") // formal, casual, balanced
-  
+  replyMode       String  @default("all")
+  aiTopK          Int?    @default(40)
+  aiMaxTokens     Int?    @default(1024)
+  aiResponseStyle String? @default("balanced") // formal, casual, balanced
+
   // ✨ إعدادات السلوك الذكي
-  enableDiversityCheck     Boolean  @default(true)
-  enableToneAdaptation     Boolean  @default(true)
-  enableEmotionalResponse  Boolean  @default(true)
-  enableSmartSuggestions   Boolean  @default(false)
-  enableLongTermMemory     Boolean  @default(false)
-  
+  enableDiversityCheck    Boolean @default(true)
+  enableToneAdaptation    Boolean @default(true)
+  enableEmotionalResponse Boolean @default(true)
+  enableSmartSuggestions  Boolean @default(false)
+  enableLongTermMemory    Boolean @default(false)
+
   // ✨ إعدادات متقدمة
-  maxMessagesPerConversation Int?   @default(50)
-  memoryRetentionDays      Int?     @default(30)
-  enablePatternApplication Boolean  @default(true)
-  patternPriority          String?  @default("balanced") // prompt, balanced, patterns
-  
+  maxMessagesPerConversation Int?    @default(50)
+  memoryRetentionDays        Int?    @default(30)
+  enablePatternApplication   Boolean @default(true)
+  patternPriority            String? @default("balanced") // prompt, balanced, patterns
+
   // ✨ إعدادات الجودة
-  minQualityScore          Float?   @default(70)
-  enableLowQualityAlerts   Boolean  @default(true)
-  
+  minQualityScore        Float?  @default(70)
+  enableLowQualityAlerts Boolean @default(true)
+
   // ✅ إعدادات الذاكرة الإضافية (من Memory Tab)
-  maxConversationsPerUser  Int?     @default(100)
-  autoCleanup              Boolean  @default(true)
-  compressionEnabled       Boolean  @default(false)
-  
-  company                  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  maxConversationsPerUser Int?    @default(100)
+  autoCleanup             Boolean @default(true)
+  compressionEnabled      Boolean @default(false)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@map("ai_settings")
 }
@@ -623,17 +638,17 @@ model Activity {
 }
 
 model FacebookPage {
-  id              String    @id @default(cuid())
-  pageId          String    @unique
-  pageAccessToken String    @db.Text
-  pageName        String
-  companyId       String?
-  status          String    @default("connected")
-  connectedAt     DateTime  @default(now())
-  disconnectedAt  DateTime? // New field for tracking disconnection time
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  company         Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  id               String                  @id @default(cuid())
+  pageId           String                  @unique
+  pageAccessToken  String                  @db.Text
+  pageName         String
+  companyId        String?
+  status           String                  @default("connected")
+  connectedAt      DateTime                @default(now())
+  disconnectedAt   DateTime? // New field for tracking disconnection time
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  company          Company?                @relation(fields: [companyId], references: [id], onDelete: Cascade)
   blockedCustomers BlockedCustomerOnPage[] // 🚫 العملاء المحظورين على هذه الصفحة
 
   @@index([companyId], map: "facebook_pages_companyId_idx")
@@ -642,20 +657,20 @@ model FacebookPage {
 
 // 🚫 جدول لحظر العملاء على صفحات الفيس بوك المحددة
 model BlockedCustomerOnPage {
-  id              String       @id @default(cuid())
-  facebookPageId  String       // ID صفحة الفيس بوك (من جدول FacebookPage)
-  pageId          String       // Facebook Page ID (للبحث السريع)
-  customerId      String       // ID العميل
-  facebookId      String       // Facebook ID للعميل (للتسهيل في البحث)
-  blockedBy       String?      // ID المستخدم الذي قام بالحظر
-  reason          String?      @db.Text // سبب الحظر
-  metadata        String?      @db.Text // بيانات إضافية (نتيجة Facebook API)
-  blockedAt       DateTime     @default(now())
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  
-  facebookPage    FacebookPage @relation(fields: [facebookPageId], references: [id], onDelete: Cascade)
-  customer        Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  id             String   @id @default(cuid())
+  facebookPageId String // ID صفحة الفيس بوك (من جدول FacebookPage)
+  pageId         String // Facebook Page ID (للبحث السريع)
+  customerId     String // ID العميل
+  facebookId     String // Facebook ID للعميل (للتسهيل في البحث)
+  blockedBy      String? // ID المستخدم الذي قام بالحظر
+  reason         String?  @db.Text // سبب الحظر
+  metadata       String?  @db.Text // بيانات إضافية (نتيجة Facebook API)
+  blockedAt      DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  facebookPage FacebookPage @relation(fields: [facebookPageId], references: [id], onDelete: Cascade)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@unique([facebookPageId, customerId], name: "blocked_customer_page_unique")
   @@unique([pageId, facebookId], name: "blocked_facebook_page_unique")
@@ -667,16 +682,16 @@ model BlockedCustomerOnPage {
 }
 
 model SkippedFacebookPage {
-  id                    String   @id @default(cuid())
-  pageId                String
-  pageName              String
-  reason                String   // السبب: already_connected_to_another_company
-  attemptedCompanyId    String   // الشركة اللي حاولت تربط الصفحة
-  connectedToCompanyId  String?  // الشركة المربوطة بيها حالياً
-  isResolved            Boolean  @default(false) // هل تم حل المشكلة
-  resolvedAt            DateTime?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id                   String    @id @default(cuid())
+  pageId               String
+  pageName             String
+  reason               String // السبب: already_connected_to_another_company
+  attemptedCompanyId   String // الشركة اللي حاولت تربط الصفحة
+  connectedToCompanyId String? // الشركة المربوطة بيها حالياً
+  isResolved           Boolean   @default(false) // هل تم حل المشكلة
+  resolvedAt           DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   @@index([attemptedCompanyId])
   @@index([isResolved])
@@ -1693,7 +1708,7 @@ model PostResponseSettings {
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   featuredProduct Product? @relation(fields: [featuredProductId], references: [id], onDelete: SetNull)
 
   @@unique([postId, companyId])
@@ -1766,8 +1781,8 @@ model ShippingZone {
 model GuestCart {
   id        String   @id @default(cuid())
   cartId    String   @unique // UUID for cart identification
-  items     Json     // Array of cart items with product details
-  total     Decimal  @db.Decimal(10, 2) @default(0)
+  items     Json // Array of cart items with product details
+  total     Decimal  @default(0) @db.Decimal(10, 2)
   companyId String
   expiresAt DateTime // Cart expiration date
   createdAt DateTime @default(now())
@@ -1788,13 +1803,13 @@ model GuestOrder {
   guestEmail      String
   guestPhone      String
   guestName       String
-  items           Json     // Array of order items with product details
+  items           Json // Array of order items with product details
   total           Decimal  @db.Decimal(10, 2)
-  shippingCost    Decimal  @db.Decimal(10, 2) @default(0)
-  discountAmount  Decimal  @db.Decimal(10, 2) @default(0)
+  shippingCost    Decimal  @default(0) @db.Decimal(10, 2)
+  discountAmount  Decimal  @default(0) @db.Decimal(10, 2)
   finalTotal      Decimal  @db.Decimal(10, 2)
-  shippingAddress Json     // Shipping address details
-  paymentMethod   String   // e.g., "cash_on_delivery", "credit_card"
+  shippingAddress Json // Shipping address details
+  paymentMethod   String // e.g., "cash_on_delivery", "credit_card"
   status          String   @default("pending") // e.g., "pending", "confirmed", "shipped", "delivered", "cancelled"
   notes           String?  @db.Text
   companyId       String
@@ -1813,32 +1828,32 @@ model GuestOrder {
 
 // 📋 إعدادات فورم الشيك أوت
 model CheckoutFormSettings {
-  id                      String   @id @default(cuid())
-  companyId               String   @unique
-  
+  id        String @id @default(cuid())
+  companyId String @unique
+
   // حقول معلومات العميل
-  showGuestName           Boolean  @default(true)
-  requireGuestName        Boolean  @default(true)
-  showGuestPhone          Boolean  @default(true)
-  requireGuestPhone       Boolean  @default(true)
-  showGuestEmail          Boolean  @default(true)
-  requireGuestEmail       Boolean  @default(false)
-  
+  showGuestName     Boolean @default(true)
+  requireGuestName  Boolean @default(true)
+  showGuestPhone    Boolean @default(true)
+  requireGuestPhone Boolean @default(true)
+  showGuestEmail    Boolean @default(true)
+  requireGuestEmail Boolean @default(false)
+
   // حقول عنوان الشحن
-  showCity                Boolean  @default(true)
-  requireCity             Boolean  @default(true)
-  showShippingAddress     Boolean  @default(true)
-  requireShippingAddress  Boolean  @default(true)
-  
+  showCity               Boolean @default(true)
+  requireCity            Boolean @default(true)
+  showShippingAddress    Boolean @default(true)
+  requireShippingAddress Boolean @default(true)
+
   // حقول إضافية
-  showPaymentMethod       Boolean  @default(true)
-  showNotes               Boolean  @default(true)
-  
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
-  
-  company                 Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+  showPaymentMethod Boolean @default(true)
+  showNotes         Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   @@index([companyId])
   @@map("checkout_form_settings")
 }
@@ -1849,40 +1864,190 @@ model CheckoutFormSettings {
 
 // 📦 إعدادات الترويج للمتجر (الشحن المجاني)
 model StorePromotionSettings {
-  id                        String   @id @default(cuid())
-  companyId                 String   @unique
-  
+  id        String @id @default(cuid())
+  companyId String @unique
+
   // Free Shipping Settings
-  freeShippingEnabled       Boolean  @default(false)
-  freeShippingThreshold     Decimal  @db.Decimal(10, 2) @default(0)
-  freeShippingMessage       String?  @db.Text // "احصل على شحن مجاني عند الشراء بـ {amount} جنيه"
-  
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
-  
-  company                   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+  freeShippingEnabled   Boolean @default(false)
+  freeShippingThreshold Decimal @default(0) @db.Decimal(10, 2)
+  freeShippingMessage   String? @db.Text // "احصل على شحن مجاني عند الشراء بـ {amount} جنيه"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   @@index([companyId])
   @@map("store_promotion_settings")
 }
 
+// 🛍️ إعدادات واجهة المتجر (Storefront Features)
+model StorefrontSettings {
+  id        String @id @default(cuid())
+  companyId String @unique
+
+  // Quick View Settings
+  quickViewEnabled       Boolean @default(true)
+  quickViewShowAddToCart Boolean @default(true)
+  quickViewShowWishlist  Boolean @default(true)
+
+  // Product Comparison Settings
+  comparisonEnabled     Boolean @default(true)
+  maxComparisonProducts Int     @default(4)
+  comparisonShowPrice   Boolean @default(true)
+  comparisonShowSpecs   Boolean @default(true)
+
+  // Wishlist Settings
+  wishlistEnabled      Boolean @default(true)
+  wishlistRequireLogin Boolean @default(false)
+  wishlistMaxItems     Int     @default(100)
+
+  // Advanced Filters Settings
+  advancedFiltersEnabled Boolean @default(true)
+  filterByPrice          Boolean @default(true)
+  filterByRating         Boolean @default(true)
+  filterByBrand          Boolean @default(false)
+  filterByAttributes     Boolean @default(true)
+
+  // Reviews & Ratings Settings
+  reviewsEnabled           Boolean @default(true)
+  reviewsRequirePurchase   Boolean @default(false)
+  reviewsModerationEnabled Boolean @default(true)
+  reviewsShowRating        Boolean @default(true)
+  minRatingToDisplay       Int     @default(1)
+
+  // Countdown Timer Settings
+  countdownEnabled       Boolean @default(true)
+  countdownShowOnProduct Boolean @default(true)
+  countdownShowOnListing Boolean @default(false)
+
+  // Back in Stock Settings
+  backInStockEnabled     Boolean @default(true)
+  backInStockNotifyEmail Boolean @default(true)
+  backInStockNotifySMS   Boolean @default(false)
+
+  // Recently Viewed Settings
+  recentlyViewedEnabled Boolean @default(true)
+  recentlyViewedCount   Int     @default(8)
+  recentlyViewedDays    Int     @default(30)
+
+  // Image Zoom Settings
+  imageZoomEnabled Boolean @default(true)
+  imageZoomType    String  @default("hover") // "hover" | "click" | "both"
+
+  // Product Videos Settings
+  productVideosEnabled Boolean @default(true)
+  videoAutoplay        Boolean @default(false)
+  videoShowControls    Boolean @default(true)
+
+  // Size Guide Settings
+  sizeGuideEnabled       Boolean @default(true)
+  sizeGuideShowOnProduct Boolean @default(true)
+
+  // Social Sharing Settings
+  socialSharingEnabled Boolean @default(true)
+  shareFacebook        Boolean @default(true)
+  shareTwitter         Boolean @default(true)
+  shareWhatsApp        Boolean @default(true)
+  shareTelegram        Boolean @default(true)
+
+  // Product Badges Settings
+  badgesEnabled   Boolean @default(true)
+  badgeNew        Boolean @default(true)
+  badgeBestSeller Boolean @default(true)
+  badgeOnSale     Boolean @default(true)
+  badgeOutOfStock Boolean @default(true)
+
+  // Product Tabs Settings
+  tabsEnabled       Boolean @default(true)
+  tabDescription    Boolean @default(true)
+  tabSpecifications Boolean @default(true)
+  tabReviews        Boolean @default(true)
+  tabShipping       Boolean @default(true)
+
+  // Sticky Add to Cart Settings
+  stickyAddToCartEnabled Boolean @default(true)
+  stickyShowOnMobile     Boolean @default(true)
+  stickyShowOnDesktop    Boolean @default(true)
+
+  // SEO Settings
+  seoEnabled         Boolean @default(true)
+  seoMetaDescription Boolean @default(true)
+  seoStructuredData  Boolean @default(true)
+  seoSitemap         Boolean @default(true)
+  seoOpenGraph       Boolean @default(true)
+
+  // Multi-language Settings
+  multiLanguageEnabled Boolean @default(false)
+  defaultLanguage      String  @default("ar")
+  supportedLanguages   Json // ["ar", "en", "fr"]
+
+  // ==========================================
+  // 📊 Facebook Pixel Settings (Browser-side)
+  // ==========================================
+  facebookPixelEnabled       Boolean @default(false)
+  facebookPixelId            String?
+  pixelTrackPageView         Boolean @default(true)
+  pixelTrackViewContent      Boolean @default(true)
+  pixelTrackAddToCart        Boolean @default(true)
+  pixelTrackInitiateCheckout Boolean @default(true)
+  pixelTrackPurchase         Boolean @default(true)
+  pixelTrackSearch           Boolean @default(true)
+  pixelTrackAddToWishlist    Boolean @default(false)
+
+  // ==========================================
+  // 🚀 Facebook Conversions API (Server-side)
+  // ==========================================
+  facebookConvApiEnabled     Boolean @default(false)
+  facebookConvApiToken       String? @db.Text
+  facebookConvApiTestCode    String?
+  capiTrackPageView          Boolean @default(true)
+  capiTrackViewContent       Boolean @default(true)
+  capiTrackAddToCart         Boolean @default(true)
+  capiTrackInitiateCheckout  Boolean @default(true)
+  capiTrackPurchase          Boolean @default(true)
+  capiTrackSearch            Boolean @default(true)
+
+  // ==========================================
+  // ⚙️ Advanced Settings
+  // ==========================================
+  eventDeduplicationEnabled Boolean  @default(true)
+  eventMatchQualityTarget   Int      @default(8)
+  gdprCompliant             Boolean  @default(true)
+  hashUserData              Boolean  @default(true)
+  lastPixelTest             DateTime?
+  lastCapiTest              DateTime?
+  pixelStatus               String?  @default("not_configured") // not_configured, active, error
+  capiStatus                String?  @default("not_configured")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([facebookPixelEnabled])
+  @@index([facebookConvApiEnabled])
+  @@map("storefront_settings")
+}
+
 // 🚚 خيارات التوصيل المتعددة
 model DeliveryOption {
-  id              String   @id @default(cuid())
-  name            String   // "توصيل عادي", "توصيل سريع", "توصيل فوري"
-  description     String?  @db.Text
-  deliveryTime    String   // "3-5 أيام", "1-2 يوم", "نفس اليوم"
-  price           Decimal  @db.Decimal(10, 2)
-  isDefault       Boolean  @default(false)
-  isActive        Boolean  @default(true)
-  icon            String?  // أيقونة للعرض
-  sortOrder       Int      @default(0)
-  companyId       String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+  id           String   @id @default(cuid())
+  name         String // "توصيل عادي", "توصيل سريع", "توصيل فوري"
+  description  String?  @db.Text
+  deliveryTime String // "3-5 أيام", "1-2 يوم", "نفس اليوم"
+  price        Decimal  @db.Decimal(10, 2)
+  isDefault    Boolean  @default(false)
+  isActive     Boolean  @default(true)
+  icon         String? // أيقونة للعرض
+  sortOrder    Int      @default(0)
+  companyId    String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   @@index([companyId])
   @@index([isActive])
   @@map("delivery_options")
@@ -1890,19 +2055,19 @@ model DeliveryOption {
 
 // 🖼️ حافظة الصور للمستخدمين
 model ImageGallery {
-  id         String   @id @default(cuid())
-  userId     String
-  companyId  String
-  filename   String
-  fileUrl    String
-  fileType   String   // e.g., "image/jpeg", "image/png"
-  fileSize   Int      // size in bytes
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+  id        String   @id @default(cuid())
+  userId    String
+  companyId String
+  filename  String
+  fileUrl   String
+  fileType  String // e.g., "image/jpeg", "image/png"
+  fileSize  Int // size in bytes
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   @@index([userId])
   @@index([companyId])
   @@index([createdAt])
@@ -1911,14 +2076,14 @@ model ImageGallery {
 
 // 📊 Model for Post Tracking (تتبع البوستات)
 model PostTracking {
-  id            String   @id @default(cuid())
-  postId        String
-  companyId     String
-  visitCount    Int      @default(1) // عدد الزيارات
-  firstVisitAt  DateTime @default(now()) // تاريخ أول زيارة
-  lastVisitAt   DateTime @default(now()) // تاريخ آخر زيارة
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default(cuid())
+  postId       String
+  companyId    String
+  visitCount   Int      @default(1) // عدد الزيارات
+  firstVisitAt DateTime @default(now()) // تاريخ أول زيارة
+  lastVisitAt  DateTime @default(now()) // تاريخ آخر زيارة
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -1927,4 +2092,259 @@ model PostTracking {
   @@index([companyId])
   @@index([lastVisitAt])
   @@map("post_tracking")
+}
+
+// 🏪 Model for Footer Settings (إعدادات الفوتر)
+model FooterSettings {
+  id        String @id @default(cuid())
+  companyId String @unique
+
+  // About Store Section
+  aboutStore     String? @db.Text
+  showAboutStore Boolean @default(true)
+
+  // Contact Information
+  email       String?
+  showEmail   Boolean @default(true)
+  phone       String?
+  showPhone   Boolean @default(true)
+  address     String? @db.Text
+  showAddress Boolean @default(true)
+
+  // Quick Links Section
+  showQuickLinks Boolean @default(true)
+
+  // Copyright
+  copyrightText String? @db.Text
+  showCopyright Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@map("footer_settings")
+}
+
+// ❤️ قائمة الرغبات (Wishlist)
+model Wishlist {
+  id          String   @id @default(cuid())
+  sessionId   String
+  customerId  String?
+  productId   String
+  variantId   String?
+  companyId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  @@unique([sessionId, productId, variantId, companyId])
+  @@index([sessionId])
+  @@index([customerId])
+  @@index([companyId])
+  @@map("wishlists")
+}
+
+// 👁️ المنتجات المشاهدة مؤخراً (Recently Viewed)
+model RecentlyViewed {
+  id          String   @id @default(cuid())
+  sessionId   String
+  productId   String
+  companyId   String
+  viewedAt    DateTime @default(now())
+  
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  @@unique([sessionId, productId, companyId])
+  @@index([sessionId, companyId])
+  @@index([viewedAt])
+  @@map("recently_viewed")
+}
+
+// ⭐ التقييمات والمراجعات (Reviews & Ratings)
+model ProductReview {
+  id              String   @id @default(cuid())
+  productId       String
+  companyId       String
+  customerName    String
+  customerEmail   String?
+  customerPhone   String?
+  rating          Int      // 1-5
+  title           String?
+  comment         String?  @db.Text
+  isVerified      Boolean  @default(false) // تم التحقق من الشراء
+  isApproved      Boolean  @default(false) // تمت الموافقة من الإدارة
+  helpfulCount    Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  @@index([productId])
+  @@index([companyId])
+  @@index([isApproved])
+  @@index([rating])
+  @@map("product_reviews")
+}
+
+// 🔔 إشعارات العودة للمخزون (Back in Stock Notifications)
+model BackInStockNotification {
+  id          String   @id @default(cuid())
+  productId   String
+  companyId   String
+  customerName String
+  customerEmail String?
+  customerPhone String?
+  notifyEmail Boolean  @default(true)
+  notifySMS   Boolean  @default(false)
+  isNotified  Boolean  @default(false)
+  notifiedAt  DateTime?
+  createdAt   DateTime @default(now())
+  
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  @@index([productId])
+  @@index([companyId])
+  @@index([isNotified])
+  @@map("back_in_stock_notifications")
+}
+
+// 📄 صفحات المتجر القابلة للتخصيص (Store Pages)
+model StorePage {
+  id          String   @id @default(cuid())
+  companyId   String
+  
+  // Page Information
+  title       String
+  slug        String   // URL-friendly identifier (e.g., "shipping-policy")
+  content     String   @db.Text
+  
+  // Page Type
+  pageType    StorePageType @default(CUSTOM)
+  
+  // Display Settings
+  isActive    Boolean  @default(true)
+  showInFooter Boolean @default(true)
+  showInMenu  Boolean  @default(false)
+  order       Int      @default(0) // Display order
+  
+  // SEO
+  metaTitle       String?
+  metaDescription String? @db.Text
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  @@unique([companyId, slug])
+  @@index([companyId])
+  @@index([slug])
+  @@index([isActive])
+  @@map("store_pages")
+}
+
+enum StorePageType {
+  SHIPPING_POLICY      // سياسة الشحن
+  RETURN_POLICY        // سياسة الإرجاع
+  REFUND_POLICY        // سياسة الاسترجاع المالي
+  PRIVACY_POLICY       // سياسة الخصوصية
+  TERMS_CONDITIONS     // الشروط والأحكام
+  ABOUT_US             // عن المتجر
+  CONTACT_US           // اتصل بنا
+  FAQ                  // الأسئلة الشائعة
+  PAYMENT_METHODS      // طرق الدفع
+  CUSTOM               // صفحة مخصصة
+}
+
+// 🎟️ نظام الكوبونات والخصومات
+model Coupon {
+  id                String       @id @default(cuid())
+  companyId         String
+  
+  // معلومات الكوبون
+  code              String       // كود الكوبون (مثل: SUMMER2024)
+  name              String       // اسم الكوبون
+  description       String?      @db.Text
+  
+  // نوع الخصم
+  type              CouponType   @default(PERCENTAGE)
+  value             Decimal      @db.Decimal(10, 2) // القيمة (نسبة مئوية أو مبلغ ثابت)
+  
+  // شروط الاستخدام
+  minOrderAmount    Decimal?     @db.Decimal(10, 2) // الحد الأدنى لقيمة الطلب
+  maxDiscountAmount Decimal?     @db.Decimal(10, 2) // الحد الأقصى للخصم (للنسبة المئوية)
+  
+  // حدود الاستخدام
+  usageLimit        Int?         // عدد مرات الاستخدام الكلي
+  usageCount        Int          @default(0) // عدد مرات الاستخدام الفعلي
+  userUsageLimit    Int?         // عدد مرات الاستخدام لكل عميل
+  
+  // صلاحية الكوبون
+  validFrom         DateTime
+  validTo           DateTime
+  
+  // الحالة
+  isActive          Boolean      @default(true)
+  
+  // فئات العملاء المستهدفة
+  customerSegments  String?      @db.Text // JSON array: ["all", "new", "VIP", "regular"]
+  
+  // البيانات الوصفية
+  metadata          String?      @db.Text // بيانات إضافية
+  
+  // من أنشأ الكوبون
+  createdBy         String?
+  
+  // التواريخ
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  
+  company           Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  usages            CouponUsage[]
+  
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([code])
+  @@index([isActive])
+  @@index([validFrom, validTo])
+  @@map("coupons")
+}
+
+// 📊 سجل استخدام الكوبونات
+model CouponUsage {
+  id          String   @id @default(cuid())
+  couponId    String
+  companyId   String
+  customerId  String?
+  orderId     String?
+  
+  // معلومات الاستخدام
+  discountAmount Decimal @db.Decimal(10, 2)
+  orderAmount    Decimal @db.Decimal(10, 2)
+  
+  // التاريخ
+  usedAt      DateTime @default(now())
+  
+  coupon      Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  
+  @@index([couponId])
+  @@index([companyId])
+  @@index([customerId])
+  @@index([orderId])
+  @@index([usedAt])
+  @@map("coupon_usages")
+}
+
+enum CouponType {
+  PERCENTAGE     // نسبة مئوية (مثل: 10%)
+  FIXED          // مبلغ ثابت (مثل: 50 جنيه)
+  FREE_SHIPPING  // شحن مجاني
 }

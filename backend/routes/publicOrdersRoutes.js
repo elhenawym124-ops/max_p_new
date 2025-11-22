@@ -62,6 +62,12 @@ router.post('/orders', async (req, res) => {
       console.log('📦 [PUBLIC-ORDER] Using direct items mode');
       cartItems = items;
       cartTotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      
+      // ✅ FIX: Also clear cart if cartId exists (user might have items in cart)
+      if (cartId) {
+        shouldDeleteCart = true;
+        console.log('🛒 [PUBLIC-ORDER] Will also clear cart after direct order');
+      }
     } else if (cartId) {
       // Cart-based mode (normal flow)
       console.log('🛒 [PUBLIC-ORDER] Using cart mode');

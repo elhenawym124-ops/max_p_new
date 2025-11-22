@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useDateFormat } from '../../hooks/useDateFormat';
 import { useCurrency } from '../../hooks/useCurrency';
+import { getApiUrl } from '../../config/environment';
 import {
   TicketIcon,
   PlusIcon,
@@ -8,6 +9,7 @@ import {
   PencilIcon,
   TrashIcon,
   ClipboardDocumentIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 
 interface Coupon {
@@ -72,7 +74,18 @@ const Coupons: React.FC = () => {
       if (filters.type) queryParams.append('type', filters.type);
       if (filters.customerSegment) queryParams.append('customerSegment', filters.customerSegment);
 
-      const response = await fetch(`https://www.mokhtarelhenawy.online/api/v1/coupons?${queryParams}`);
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch(`${getApiUrl()}/coupons?${queryParams}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const data = await response.json();
 
       if (data.success) {
@@ -80,6 +93,7 @@ const Coupons: React.FC = () => {
       }
     } catch (error) {
       console.error('Error fetching coupons:', error);
+      alert('فشل في جلب الكوبونات. يرجى المحاولة مرة أخرى.');
     } finally {
       setLoading(false);
     }
@@ -87,13 +101,19 @@ const Coupons: React.FC = () => {
 
   const createCoupon = async () => {
     try {
-      const response = await fetch('https://www.mokhtarelhenawy.online/api/v1/coupons', {
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch(`${getApiUrl()}/coupons`, {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(newCoupon),
       });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
       const data = await response.json();
       if (data.success) {
@@ -368,6 +388,300 @@ const Coupons: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Create Coupon Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">إنشاء كوبون جديد</h3>
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="text-gray-400 hover:text-gray-500"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    كود الكوبون *
+                  </label>
+                  <input
+                    type="text"
+                    value={newCoupon.code}
+                    onChange={(e) => setNewCoupon({...newCoupon, code: e.target.value.toUpperCase()})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="SUMMER2024"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    اسم الكوبون *
+                  </label>
+                  <input
+                    type="text"
+                    value={newCoupon.name}
+                    onChange={(e) => setNewCoupon({...newCoupon, name: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="خصم الصيف"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  الوصف
+                </label>
+                <textarea
+                  value={newCoupon.description}
+                  onChange={(e) => setNewCoupon({...newCoupon, description: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  rows={2}
+                  placeholder="وصف الكوبون..."
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    نوع الخصم *
+                  </label>
+                  <select
+                    value={newCoupon.type}
+                    onChange={(e) => setNewCoupon({...newCoupon, type: e.target.value as any})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="percentage">نسبة مئوية</option>
+                    <option value="fixed">مبلغ ثابت</option>
+                    <option value="free_shipping">شحن مجاني</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    القيمة *
+                  </label>
+                  <input
+                    type="number"
+                    value={newCoupon.value}
+                    onChange={(e) => setNewCoupon({...newCoupon, value: parseFloat(e.target.value)})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="20"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    الحد الأدنى للطلب
+                  </label>
+                  <input
+                    type="number"
+                    value={newCoupon.minOrderAmount}
+                    onChange={(e) => setNewCoupon({...newCoupon, minOrderAmount: parseFloat(e.target.value)})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    الحد الأقصى للخصم
+                  </label>
+                  <input
+                    type="number"
+                    value={newCoupon.maxDiscountAmount}
+                    onChange={(e) => setNewCoupon({...newCoupon, maxDiscountAmount: parseFloat(e.target.value)})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="200"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    عدد مرات الاستخدام الكلي
+                  </label>
+                  <input
+                    type="number"
+                    value={newCoupon.usageLimit}
+                    onChange={(e) => setNewCoupon({...newCoupon, usageLimit: parseInt(e.target.value)})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    عدد مرات الاستخدام لكل عميل
+                  </label>
+                  <input
+                    type="number"
+                    value={newCoupon.userUsageLimit}
+                    onChange={(e) => setNewCoupon({...newCoupon, userUsageLimit: parseInt(e.target.value)})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="1"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    تاريخ البداية *
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={newCoupon.validFrom}
+                    onChange={(e) => setNewCoupon({...newCoupon, validFrom: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    تاريخ الانتهاء *
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={newCoupon.validTo}
+                    onChange={(e) => setNewCoupon({...newCoupon, validTo: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={newCoupon.isActive}
+                  onChange={(e) => setNewCoupon({...newCoupon, isActive: e.target.checked})}
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                />
+                <label className="mr-2 block text-sm text-gray-900">
+                  تفعيل الكوبون
+                </label>
+              </div>
+
+              <div className="flex justify-end space-x-3 space-x-reverse pt-4">
+                <button
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  إلغاء
+                </button>
+                <button
+                  onClick={createCoupon}
+                  className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
+                >
+                  إنشاء الكوبون
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Coupon Modal */}
+      {showCouponModal && selectedCoupon && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">تفاصيل الكوبون</h3>
+              <button
+                onClick={() => setShowCouponModal(false)}
+                className="text-gray-400 hover:text-gray-500"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-indigo-600 font-mono">
+                    {selectedCoupon.id}
+                  </div>
+                  <div className="text-xl font-semibold text-gray-900 mt-2">
+                    {selectedCoupon.name}
+                  </div>
+                  <div className="text-sm text-gray-500 mt-1">
+                    {selectedCoupon.description}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">النوع</label>
+                  <div className="mt-1 text-sm text-gray-900">{getTypeText(selectedCoupon.type)}</div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">القيمة</label>
+                  <div className="mt-1 text-sm text-gray-900">
+                    {selectedCoupon.type === 'percentage' ? `${selectedCoupon.value}%` :
+                     selectedCoupon.type === 'fixed' ? `${selectedCoupon.value} جنيه` :
+                     'شحن مجاني'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">الحد الأدنى للطلب</label>
+                  <div className="mt-1 text-sm text-gray-900">{formatPrice(selectedCoupon.minOrderAmount || 0)}</div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">الحد الأقصى للخصم</label>
+                  <div className="mt-1 text-sm text-gray-900">
+                    {selectedCoupon.maxDiscountAmount ? formatPrice(selectedCoupon.maxDiscountAmount) : 'غير محدد'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">عدد مرات الاستخدام</label>
+                  <div className="mt-1 text-sm text-gray-900">
+                    {selectedCoupon.usageCount} / {selectedCoupon.usageLimit || '∞'}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">الحالة</label>
+                  <div className="mt-1">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      selectedCoupon.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    }`}>
+                      {selectedCoupon.isActive ? 'نشط' : 'غير نشط'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">تاريخ البداية</label>
+                  <div className="mt-1 text-sm text-gray-900">{formatDate(selectedCoupon.validFrom)}</div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500">تاريخ الانتهاء</label>
+                  <div className="mt-1 text-sm text-gray-900">{formatDate(selectedCoupon.validTo)}</div>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-4">
+                <button
+                  onClick={() => setShowCouponModal(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  إغلاق
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -161,8 +161,12 @@ export const config = {
 
 // Validate required configuration
 const validateConfig = (): void => {
-  const requiredVars = [
-    'REACT_APP_API_URL',
+  // Note: REACT_APP_API_URL is optional - the app uses smart environment detection
+  // from environment.ts which automatically detects the API URL based on hostname
+  // Only validate truly required variables here
+  const requiredVars: string[] = [
+    // Add any truly required environment variables here
+    // REACT_APP_API_URL is not required due to smart detection
   ];
 
   const missingVars = requiredVars.filter(varName => !import.meta.env[varName]);

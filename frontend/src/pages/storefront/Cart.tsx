@@ -314,8 +314,27 @@ const Cart: React.FC = () => {
               متابعة التسوق
             </Link>
             <button
-              onClick={() => navigate(`/shop/checkout?companyId=${companyId}`)}
-              className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+              onClick={() => {
+                console.log('🔍 [CART] Checkout button clicked');
+                console.log('🔍 [CART] companyId:', companyId);
+                console.log('🔍 [CART] items count:', items.length);
+                if (!companyId) {
+                  toast.error('⚠️ يجب زيارة المتجر من رابط صحيح');
+                  return;
+                }
+                if (items.length === 0) {
+                  toast.error('⚠️ السلة فارغة. أضف منتجات قبل إتمام الطلب');
+                  return;
+                }
+                console.log('✅ [CART] Navigating to checkout:', `/shop/checkout?companyId=${companyId}`);
+                navigate(`/shop/checkout?companyId=${companyId}`);
+              }}
+              disabled={items.length === 0 || !companyId}
+              className={`flex-1 px-6 py-3 rounded-lg font-medium transition-colors ${
+                items.length === 0 || !companyId
+                  ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
             >
               إتمام الطلب
             </button>

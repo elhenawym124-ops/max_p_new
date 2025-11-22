@@ -129,6 +129,7 @@ const getCompanyFromSubdomain = async (req, res, next) => {
       const companyId = req.headers['x-company-id'];
       console.log('🔍 [Company Middleware] Fallback to companyId from header:', companyId);
       
+      // Try to find by ID first
       company = await prisma.company.findFirst({
         where: {
           id: companyId,
@@ -147,6 +148,29 @@ const getCompanyFromSubdomain = async (req, res, next) => {
           currency: true
         }
       });
+      
+      // If not found by ID, try by slug
+      if (!company) {
+        console.log('🔍 [Company Middleware] Not found by ID in header, trying slug...');
+        company = await prisma.company.findFirst({
+          where: {
+            slug: companyId,
+            isActive: true
+          },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            logo: true,
+            settings: true,
+            isActive: true,
+            email: true,
+            phone: true,
+            website: true,
+            currency: true
+          }
+        });
+      }
       
       if (company) {
         console.log('✅ [Company Middleware] Company found via companyId header:', company.name);
@@ -154,10 +178,12 @@ const getCompanyFromSubdomain = async (req, res, next) => {
     }
 
     // Method 4: Fallback to companyId from query parameter (for backward compatibility)
+    // Try both ID and slug since companyId might be either
     if (!company && req.query.companyId) {
       const companyId = req.query.companyId;
       console.log('🔍 [Company Middleware] Fallback to companyId from query:', companyId);
       
+      // Try to find by ID first
       company = await prisma.company.findFirst({
         where: {
           id: companyId,
@@ -177,8 +203,33 @@ const getCompanyFromSubdomain = async (req, res, next) => {
         }
       });
       
+      // If not found by ID, try by slug
+      if (!company) {
+        console.log('🔍 [Company Middleware] Not found by ID, trying slug...');
+        company = await prisma.company.findFirst({
+          where: {
+            slug: companyId,
+            isActive: true
+          },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            logo: true,
+            settings: true,
+            isActive: true,
+            email: true,
+            phone: true,
+            website: true,
+            currency: true
+          }
+        });
+      }
+      
       if (company) {
         console.log('✅ [Company Middleware] Company found via companyId query:', company.name);
+      } else {
+        console.log('❌ [Company Middleware] Company not found by ID or slug:', companyId);
       }
     }
 
@@ -190,6 +241,27 @@ const getCompanyFromSubdomain = async (req, res, next) => {
       console.log('❌ [Company Middleware] Tried subdomain from query:', req.query.subdomain);
       console.log('❌ [Company Middleware] Tried companyId from header:', req.headers['x-company-id']);
       console.log('❌ [Company Middleware] Tried companyId from query:', req.query.companyId);
+      
+      // In development mode, allow requests to continue even if company not found
+      // This allows testing without requiring a company in the database
+      const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
+      
+      if (isDevelopment && (req.query.companyId || req.headers['x-company-id'])) {
+        const companyId = req.query.companyId || req.headers['x-company-id'];
+        console.log('⚠️ [Company Middleware] Development mode: Allowing request with companyId:', companyId);
+        console.log('⚠️ [Company Middleware] Note: Company not found in database, but allowing request to proceed');
+        
+        // Create a mock company object for development
+        req.company = {
+          id: companyId,
+          name: 'Development Company',
+          slug: companyId,
+          isActive: true
+        };
+        req.companyId = companyId;
+        
+        return next();
+      }
       
       return res.status(404).json({ 
         success: false, 
@@ -267,7 +339,7 @@ const addPublicCORS = (req, res, next) => {
     }
 
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-cart-id, X-Company-Subdomain, X-Company-Id');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-cart-id, x-session-id, X-Company-Subdomain, X-Company-Id');
     
     // Handle preflight requests
     if (req.method === 'OPTIONS') {

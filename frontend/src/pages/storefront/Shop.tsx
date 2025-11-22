@@ -1,9 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ShoppingCartIcon, FunnelIcon } from '@heroicons/react/24/outline';
+import { ShoppingCartIcon, FunnelIcon, EyeIcon, ArrowsRightLeftIcon } from '@heroicons/react/24/outline';
 import { toast } from 'react-hot-toast';
 import { storefrontApi, getCompanyId } from '../../utils/storefrontApi';
+import { storefrontSettingsService } from '../../services/storefrontSettingsService';
+import { updateSEO } from '../../utils/seo';
 import StorefrontNav from '../../components/StorefrontNav';
+import QuickViewModal from '../../components/storefront/QuickViewModal';
+import RecentlyViewed from '../../components/storefront/RecentlyViewed';
+import AdvancedFilters, { FilterState } from '../../components/storefront/AdvancedFilters';
+import ProductComparison, { addToComparison } from '../../components/storefront/ProductComparison';
+import ProductBadges from '../../components/storefront/ProductBadges';
+import CountdownTimer from '../../components/storefront/CountdownTimer';
 
 interface Product {
   id: string;
@@ -13,6 +21,8 @@ interface Product {
   comparePrice?: number;
   images: string[];
   stock: number;
+  saleStartDate?: string; // 📅 تاريخ بداية العرض
+  saleEndDate?: string; // 📅 تاريخ انتهاء العرض
   category?: {
     id: string;
     name: string;
@@ -27,6 +37,7 @@ interface Category {
 
 const Shop: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const [comparisonProductIds, setComparisonProductIds] = useState<Set<string>>(new Set());
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,24 +52,160 @@ const Shop: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState(searchParams.get('category') || '');
   const [sortBy, setSortBy] = useState(searchParams.get('sortBy') || 'createdAt');
   const [showFilters, setShowFilters] = useState(false);
+  
+  // Quick View
+  const [quickViewProductId, setQuickViewProductId] = useState<string | null>(null);
+  const [storefrontSettings, setStorefrontSettings] = useState<any>(null);
+  
+  // Advanced Filters
+  const [activeFilters, setActiveFilters] = useState<FilterState | null>(null);
+  const [priceRange, setPriceRange] = useState<{ min: number; max: number } | undefined>();
 
   // التحقق من وجود companyId عند التحميل
   useEffect(() => {
-    const companyId = getCompanyId();
+    // جرب من searchParams أولاً (React Router)
+    let companyId = searchParams.get('companyId');
+    
+    // إذا لم يوجد في searchParams، جرب من window.location.search مباشرة
+    if (!companyId) {
+      const urlParams = new URLSearchParams(window.location.search);
+      companyId = urlParams.get('companyId');
+    }
+    
+    // إذا لم يوجد، جرب من getCompanyId (الذي يفحص localStorage أيضاً)
+    if (!companyId) {
+      companyId = getCompanyId();
+    }
+    
+    // Debug logging (only once per session in development)
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    if (isDevelopment) {
+      const logKey = 'shop_companyId_logged';
+      if (!sessionStorage.getItem(logKey)) {
+        console.log('🔍 [Shop] Checking companyId...');
+        console.log('🔍 [Shop] Final companyId:', companyId);
+        sessionStorage.setItem(logKey, 'true');
+      }
+    }
+    
     if (!companyId) {
       // عرض رسالة خطأ واضحة
       toast.error('⚠️ يجب زيارة المتجر من رابط صحيح يحتوي على معرف الشركة');
       console.error('❌ [Shop] No companyId found. Please visit with ?companyId=xxx or use subdomain');
+    } else {
+      // حفظ companyId في searchParams إذا لم يكن موجوداً
+      if (!searchParams.get('companyId')) {
+        const newParams = new URLSearchParams(searchParams);
+        newParams.set('companyId', companyId);
+        setSearchParams(newParams, { replace: true });
+      }
+      fetchStorefrontSettings();
     }
-  }, []);
+  }, [searchParams, setSearchParams]);
+
+  const fetchStorefrontSettings = async () => {
+    try {
+      const companyId = getCompanyId();
+      if (companyId) {
+        const data = await storefrontSettingsService.getPublicSettings(companyId);
+        if (data.success && data.data) {
+          // Only log in development and limit frequency
+          const isDevelopment = process.env.NODE_ENV === 'development';
+          if (isDevelopment) {
+            const logKey = 'shop_settings_logged';
+            const lastLog = sessionStorage.getItem(logKey);
+            const now = Date.now();
+            if (!lastLog || now - parseInt(lastLog) > 10000) { // Log at most once every 10 seconds
+              console.log('✅ [Shop] Storefront settings loaded:', {
+                quickViewEnabled: data.data.quickViewEnabled,
+                quickViewShowAddToCart: data.data.quickViewShowAddToCart,
+                quickViewShowWishlist: data.data.quickViewShowWishlist,
+                comparisonEnabled: data.data.comparisonEnabled,
+                wishlistEnabled: data.data.wishlistEnabled,
+                advancedFiltersEnabled: data.data.advancedFiltersEnabled,
+              });
+              sessionStorage.setItem(logKey, now.toString());
+            }
+          }
+          
+          // Reset filters if advanced filters are disabled
+          if (!data.data.advancedFiltersEnabled && activeFilters) {
+            console.log('⚠️ [Shop] Advanced filters disabled, resetting active filters');
+            setActiveFilters(null);
+          }
+          
+          setStorefrontSettings(data.data);
+          
+          // Update SEO
+          if (data.data.seoEnabled && data.data.seoMetaDescription) {
+            updateSEO({
+              title: 'المنتجات - متجرنا',
+              description: 'تصفح مجموعتنا الكاملة من المنتجات',
+              url: window.location.href
+            });
+          }
+        } else {
+          // Set to null to ensure features are hidden
+          setStorefrontSettings(null);
+        }
+      }
+    } catch (error: any) {
+      // Handle errors gracefully - server might be having issues (500)
+      const status = error?.status || error?.response?.status;
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      
+      // Only log non-500 errors in development (500 is server issue)
+      if (status !== 500 && isDevelopment) {
+        console.warn('⚠️ [Shop] Failed to load storefront settings, using disabled defaults');
+      }
+      
+      // Set to null to ensure features are hidden
+      setStorefrontSettings(null);
+      console.error('❌ [Shop] Error fetching storefront settings:', error);
+      // Set to null to ensure features are hidden on error
+      setStorefrontSettings(null);
+    }
+  };
 
   useEffect(() => {
     fetchCategories();
   }, []);
 
+  // Reset filters when advanced filters are disabled
+  useEffect(() => {
+    if (storefrontSettings && !storefrontSettings.advancedFiltersEnabled && activeFilters) {
+      console.log('⚠️ [Shop] Advanced filters disabled, clearing active filters');
+      setActiveFilters(null);
+    }
+  }, [storefrontSettings?.advancedFiltersEnabled]);
+
   useEffect(() => {
     fetchProducts();
-  }, [searchParams]);
+  }, [searchParams, activeFilters, storefrontSettings?.advancedFiltersEnabled]);
+
+  useEffect(() => {
+    // Listen for add to comparison events and update local state
+    const handleAddToComparison = (e: CustomEvent) => {
+      const product = e.detail;
+      if (product?.id) {
+        setComparisonProductIds(prev => new Set([...prev, product.id]));
+      }
+    };
+    
+    // Load existing comparison products from localStorage
+    const stored = localStorage.getItem('product_comparison');
+    if (stored) {
+      try {
+        const products = JSON.parse(stored);
+        setComparisonProductIds(new Set(products.map((p: Product) => p.id)));
+      } catch (e) {
+        console.error('Error loading comparison products:', e);
+      }
+    }
+    
+    window.addEventListener('addToComparison', handleAddToComparison as EventListener);
+    return () => window.removeEventListener('addToComparison', handleAddToComparison as EventListener);
+  }, []);
 
   const fetchCategories = async () => {
     try {
@@ -89,11 +236,39 @@ const Shop: React.FC = () => {
       if (search) params['search'] = search;
       if (category) params['category'] = category;
       
+      // Add advanced filters - only if enabled in settings
+      if (storefrontSettings?.advancedFiltersEnabled && activeFilters) {
+        if (activeFilters.priceRange.min > 0) {
+          params['minPrice'] = activeFilters.priceRange.min.toString();
+        }
+        if (activeFilters.priceRange.max < 10000) {
+          params['maxPrice'] = activeFilters.priceRange.max.toString();
+        }
+        if (activeFilters.rating) {
+          params['minRating'] = activeFilters.rating.toString();
+        }
+        if (activeFilters.inStock === true) {
+          params['inStock'] = 'true';
+        }
+      }
+      
       const data = await storefrontApi.getProducts(params);
       
       if (data.success) {
-        setProducts(data.data.products || []);
+        const fetchedProducts = data.data.products || [];
+        setProducts(fetchedProducts);
         setPagination(data.data.pagination || { page: 1, limit: 12, total: 0, pages: 0 });
+        
+        // Calculate price range from all products (first load only)
+        if (!priceRange && fetchedProducts.length > 0) {
+          const prices = fetchedProducts.map(p => p.price).filter(p => p != null);
+          if (prices.length > 0) {
+            setPriceRange({
+              min: Math.floor(Math.min(...prices)),
+              max: Math.ceil(Math.max(...prices))
+            });
+          }
+        }
       }
     } catch (error) {
       console.error('Error fetching products:', error);
@@ -167,6 +342,25 @@ const Shop: React.FC = () => {
           <h1 className="text-3xl font-bold text-gray-900">المنتجات</h1>
         
         <div className="flex items-center gap-4">
+          {/* Advanced Filters */}
+          {storefrontSettings?.advancedFiltersEnabled && (
+            <AdvancedFilters
+              enabled={storefrontSettings.advancedFiltersEnabled}
+              settings={{
+                filterByPrice: storefrontSettings.filterByPrice,
+                filterByRating: storefrontSettings.filterByRating,
+                filterByBrand: storefrontSettings.filterByBrand,
+                filterByAttributes: storefrontSettings.filterByAttributes
+              }}
+              onApply={(filters) => setActiveFilters(filters)}
+              onReset={() => setActiveFilters(null)}
+              priceRange={priceRange}
+              resultsCount={pagination.total}
+              brands={[]} // TODO: Extract from products
+              attributes={[]} // TODO: Extract from products
+            />
+          )}
+          
           {/* Sort */}
           <select
             value={sortBy}
@@ -261,7 +455,7 @@ const Shop: React.FC = () => {
                   }
                   
                   return (
-                  <div key={product.id} className="bg-white rounded-lg shadow hover:shadow-lg transition-shadow">
+                  <div key={product.id} className="bg-white rounded-lg shadow hover:shadow-lg transition-shadow relative group">
                     <Link to={`/shop/products/${product.id}?companyId=${companyId}`}>
                       <div className="relative h-48 bg-gray-100 rounded-t-lg overflow-hidden">
                         {productImages.length > 0 && productImages[0] ? (
@@ -281,10 +475,75 @@ const Shop: React.FC = () => {
                           </div>
                         )}
                         
-                        {product.comparePrice && product.comparePrice > product.price && (
-                          <div className="absolute top-2 right-2 bg-red-500 text-white px-2 py-1 rounded text-sm font-bold">
-                            خصم {Math.round(((product.comparePrice - product.price) / product.comparePrice) * 100)}%
-                          </div>
+                        {/* Product Badges */}
+                        {storefrontSettings?.badgesEnabled && (
+                          <ProductBadges
+                            enabled={storefrontSettings.badgesEnabled}
+                            product={{
+                              id: product.id,
+                              createdAt: product.createdAt || new Date().toISOString(),
+                              stock: product.stock,
+                              comparePrice: product.comparePrice,
+                              price: product.price,
+                              isFeatured: product.isFeatured
+                            }}
+                            settings={{
+                              badgeNew: storefrontSettings.badgeNew,
+                              badgeBestSeller: storefrontSettings.badgeBestSeller,
+                              badgeOnSale: storefrontSettings.badgeOnSale,
+                              badgeOutOfStock: storefrontSettings.badgeOutOfStock
+                            }}
+                          />
+                        )}
+                        
+                        {/* Countdown Timer on Product Card */}
+                        {(() => {
+                          const countdownEnabled = storefrontSettings?.countdownEnabled;
+                          const showOnListing = storefrontSettings?.countdownShowOnListing;
+                          const hasComparePrice = product.comparePrice && product.comparePrice > product.price;
+                          const hasSaleEndDate = product.saleEndDate;
+                          const saleEndDateValid = hasSaleEndDate && new Date(product.saleEndDate) > new Date();
+                          
+                          if (product.id === products[0]?.id) { // Log only for first product to avoid spam
+                            console.log('🔍 [Shop] Countdown Timer Debug:', {
+                              countdownEnabled,
+                              showOnListing,
+                              hasComparePrice,
+                              comparePrice: product.comparePrice,
+                              price: product.price,
+                              hasSaleEndDate,
+                              saleEndDate: product.saleEndDate,
+                              saleEndDateValid,
+                              willShow: countdownEnabled && showOnListing && hasComparePrice && saleEndDateValid
+                            });
+                          }
+                          
+                          return countdownEnabled && showOnListing && hasComparePrice && saleEndDateValid ? (
+                            <div className="absolute bottom-2 right-2 left-2">
+                              <CountdownTimer
+                                endDate={product.saleEndDate}
+                                enabled={storefrontSettings.countdownEnabled}
+                                className="bg-black bg-opacity-75 text-white px-2 py-1 rounded text-xs"
+                              />
+                            </div>
+                          ) : null;
+                        })()}
+                        
+                        {/* Quick View Button */}
+                        {storefrontSettings?.quickViewEnabled && (
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              console.log('🔍 [Shop] Quick View button clicked for product:', product.id);
+                              setQuickViewProductId(product.id);
+                            }}
+                            className="absolute top-2 left-2 bg-white bg-opacity-90 hover:bg-opacity-100 p-2 rounded-full shadow-lg opacity-100 group-hover:opacity-100 transition-opacity z-10"
+                            title="معاينة سريعة"
+                            aria-label="معاينة سريعة"
+                          >
+                            <EyeIcon className="h-5 w-5 text-gray-700" />
+                          </button>
                         )}
                       </div>
                     </Link>
@@ -313,18 +572,56 @@ const Shop: React.FC = () => {
                         </div>
                       </div>
                       
-                      <button
-                        onClick={() => addToCart(product)}
-                        disabled={product.stock === 0}
-                        className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
-                          product.stock === 0
-                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                            : 'bg-blue-600 text-white hover:bg-blue-700'
-                        }`}
-                      >
-                        <ShoppingCartIcon className="h-5 w-5" />
-                        <span>{product.stock === 0 ? 'غير متوفر' : 'أضف للسلة'}</span>
-                      </button>
+                      <div className="flex gap-2">
+                        {storefrontSettings?.comparisonEnabled && (
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              addToComparison({
+                                id: product.id,
+                                name: product.name,
+                                price: product.price,
+                                comparePrice: product.comparePrice,
+                                images: productImages,
+                                stock: product.stock,
+                                description: product.description,
+                                category: product.category
+                              });
+                            }}
+                            className={`group relative flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 active:scale-95 font-medium text-sm ${
+                              comparisonProductIds.has(product.id)
+                                ? 'bg-indigo-600 text-white border-2 border-indigo-600 hover:bg-indigo-700 shadow-md'
+                                : 'border-2 border-indigo-500 text-indigo-600 hover:bg-indigo-50 hover:border-indigo-600 hover:shadow-md'
+                            }`}
+                            title={comparisonProductIds.has(product.id) ? 'تمت الإضافة للمقارنة' : 'أضف للمقارنة'}
+                          >
+                            <ArrowsRightLeftIcon className={`h-5 w-5 transition-transform duration-300 ${
+                              comparisonProductIds.has(product.id) 
+                                ? 'rotate-180' 
+                                : 'group-hover:rotate-180'
+                            }`} />
+                            <span className="hidden sm:inline font-semibold">
+                              {comparisonProductIds.has(product.id) ? 'مضاف' : 'مقارنة'}
+                            </span>
+                            <span className="sm:hidden font-semibold">
+                              {comparisonProductIds.has(product.id) ? '✓' : 'مقارنة'}
+                            </span>
+                          </button>
+                        )}
+                        <button
+                          onClick={() => addToCart(product)}
+                          disabled={product.stock === 0}
+                          className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 active:scale-95 ${
+                            product.stock === 0
+                              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                              : 'bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg'
+                          }`}
+                        >
+                          <ShoppingCartIcon className="h-5 w-5" />
+                          <span>{product.stock === 0 ? 'غير متوفر' : 'أضف للسلة'}</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )})}
@@ -359,6 +656,40 @@ const Shop: React.FC = () => {
         </div>
       </div>
       </div>
+
+      {/* Quick View Modal */}
+      {quickViewProductId && storefrontSettings?.quickViewEnabled && (
+        <QuickViewModal
+          productId={quickViewProductId}
+          isOpen={!!quickViewProductId}
+          onClose={() => setQuickViewProductId(null)}
+          showAddToCart={storefrontSettings?.quickViewShowAddToCart}
+          showWishlist={storefrontSettings?.quickViewShowWishlist}
+          onAddToCart={() => {
+            window.dispatchEvent(new Event('cartUpdated'));
+          }}
+        />
+      )}
+
+      {/* Recently Viewed */}
+      {storefrontSettings?.recentlyViewedEnabled && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <RecentlyViewed
+            enabled={storefrontSettings.recentlyViewedEnabled}
+            count={storefrontSettings.recentlyViewedCount}
+          />
+        </div>
+      )}
+
+      {/* Product Comparison */}
+      {storefrontSettings?.comparisonEnabled && (
+        <ProductComparison
+          enabled={storefrontSettings.comparisonEnabled}
+          maxProducts={storefrontSettings.maxComparisonProducts}
+          showPrice={storefrontSettings.comparisonShowPrice}
+          showSpecs={storefrontSettings.comparisonShowSpecs}
+        />
+      )}
     </>
   );
 };

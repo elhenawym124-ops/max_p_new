@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ShoppingCartIcon, MinusIcon, PlusIcon, TruckIcon } from '@heroicons/react/24/outline';
+import { ShoppingCartIcon, MinusIcon, PlusIcon, TruckIcon, ArrowsRightLeftIcon } from '@heroicons/react/24/outline';
 import { toast } from 'react-hot-toast';
 import { storefrontApi, getCompanyId } from '../../utils/storefrontApi';
 import axios from 'axios';
@@ -9,6 +9,20 @@ import StorefrontNav from '../../components/StorefrontNav';
 import VolumeDiscountBadge from '../../components/VolumeDiscountBadge';
 import RelatedProducts from '../../components/RelatedProducts';
 import FrequentlyBoughtTogether from '../../components/FrequentlyBoughtTogether';
+import ProductImageZoom from '../../components/storefront/ProductImageZoom';
+import { storefrontSettingsService } from '../../services/storefrontSettingsService';
+import { recentlyViewedApi } from '../../utils/storefrontApi';
+import WishlistButton from '../../components/storefront/WishlistButton';
+import RecentlyViewed from '../../components/storefront/RecentlyViewed';
+import ProductReviews from '../../components/storefront/ProductReviews';
+import CountdownTimer from '../../components/storefront/CountdownTimer';
+import BackInStockNotification from '../../components/storefront/BackInStockNotification';
+import SocialSharing from '../../components/storefront/SocialSharing';
+import ProductBadges from '../../components/storefront/ProductBadges';
+import ProductTabs from '../../components/storefront/ProductTabs';
+import StickyAddToCart from '../../components/storefront/StickyAddToCart';
+import { addToComparison } from '../../components/storefront/ProductComparison';
+import { updateSEO, generateProductStructuredData, addStructuredData } from '../../utils/seo';
 
 interface Product {
   id: string;
@@ -20,6 +34,12 @@ interface Product {
   stock: number;
   sku?: string;
   enableCheckoutForm?: boolean;
+  showAddToCartButton?: boolean;
+  saleStartDate?: string; // 📅 تاريخ بداية العرض
+  saleEndDate?: string; // 📅 تاريخ انتهاء العرض
+  createdAt?: string;
+  isFeatured?: boolean;
+  specifications?: string;
   category?: {
     id: string;
     name: string;
@@ -52,6 +72,7 @@ const ProductDetails: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [freeShippingSettings, setFreeShippingSettings] = useState<FreeShippingSettings | null>(null);
   const [cartTotal, setCartTotal] = useState(0);
+  const [storefrontSettings, setStorefrontSettings] = useState<any>(null);
   const [formData, setFormData] = useState({
     guestName: '',
     guestPhone: '',
@@ -76,8 +97,40 @@ const ProductDetails: React.FC = () => {
       fetchProduct();
       fetchFreeShippingSettings();
       fetchCartTotal();
+      fetchStorefrontSettings();
     }
   }, [id, navigate]);
+
+  const fetchStorefrontSettings = async () => {
+    try {
+      const companyId = getCompanyId();
+      if (companyId) {
+        const data = await storefrontSettingsService.getPublicSettings(companyId);
+        if (data.success && data.data) {
+          console.log('✅ [ProductDetails] Storefront settings loaded:', {
+            quickViewEnabled: data.data.quickViewEnabled,
+            comparisonEnabled: data.data.comparisonEnabled,
+            wishlistEnabled: data.data.wishlistEnabled,
+            reviewsEnabled: data.data.reviewsEnabled,
+            countdownEnabled: data.data.countdownEnabled,
+            countdownShowOnProduct: data.data.countdownShowOnProduct,
+            countdownShowOnListing: data.data.countdownShowOnListing,
+            recentlyViewedEnabled: data.data.recentlyViewedEnabled,
+            recentlyViewedCount: data.data.recentlyViewedCount
+          });
+          setStorefrontSettings(data.data);
+        } else {
+          console.warn('⚠️ [ProductDetails] Failed to load storefront settings, using disabled defaults');
+          // Set to null to ensure features are hidden
+          setStorefrontSettings(null);
+        }
+      }
+    } catch (error) {
+      console.error('❌ [ProductDetails] Error fetching storefront settings:', error);
+      // Set to null to ensure features are hidden on error
+      setStorefrontSettings(null);
+    }
+  };
 
   const fetchFreeShippingSettings = async () => {
     try {
@@ -113,6 +166,17 @@ const ProductDetails: React.FC = () => {
       const data = await storefrontApi.getProduct(id!);
       
       if (data.success) {
+        console.log('🔍 [ProductDetails] Product data received:', {
+          id: data.data.id,
+          name: data.data.name,
+          comparePrice: data.data.comparePrice,
+          price: data.data.price,
+          saleStartDate: data.data.saleStartDate,
+          saleEndDate: data.data.saleEndDate,
+          hasSaleEndDate: !!data.data.saleEndDate,
+          saleEndDateValid: data.data.saleEndDate ? new Date(data.data.saleEndDate) > new Date() : false,
+          fullProductData: data.data // Log full product data to see all fields
+        });
         setProduct(data.data);
         
         // Parse images from JSON string
@@ -129,6 +193,51 @@ const ProductDetails: React.FC = () => {
         
         if (productImages.length > 0) {
           setSelectedImage(0);
+        }
+
+        // Record product view for recently viewed
+        // Check if recentlyViewedEnabled exists and is true
+        const isRecentlyViewedEnabled = storefrontSettings?.recentlyViewedEnabled === true;
+        if (isRecentlyViewedEnabled && id) {
+          try {
+            const result = await recentlyViewedApi.recordView(id);
+            console.log('✅ [ProductDetails] Product view recorded:', {
+              productId: id,
+              success: result.success
+            });
+          } catch (error) {
+            console.error('❌ [ProductDetails] Error recording product view:', error);
+          }
+        } else {
+          console.log('ℹ️ [ProductDetails] Recently viewed disabled or no product ID:', {
+            recentlyViewedEnabled: storefrontSettings?.recentlyViewedEnabled,
+            isEnabled: isRecentlyViewedEnabled,
+            productId: id
+          });
+        }
+
+        // Update SEO
+        if (storefrontSettings?.seoEnabled) {
+          const productImages = Array.isArray(data.data.images) 
+            ? data.data.images 
+            : typeof data.data.images === 'string' 
+              ? JSON.parse(data.data.images || '[]') 
+              : [];
+          
+          if (storefrontSettings.seoMetaDescription) {
+            updateSEO({
+              title: `${data.data.name} - متجرنا`,
+              description: data.data.description || data.data.name,
+              image: productImages[0],
+              url: window.location.href,
+              type: 'product'
+            });
+          }
+
+          if (storefrontSettings.seoStructuredData) {
+            const structuredData = generateProductStructuredData(data.data);
+            addStructuredData(structuredData);
+          }
         }
       } else {
         toast.error('المنتج غير موجود');
@@ -228,6 +337,20 @@ const ProductDetails: React.FC = () => {
       const data = await storefrontApi.createOrder(orderData);
 
       if (data.success) {
+        // Clear cart from database
+        try {
+          await storefrontApi.clearCart();
+        } catch (error) {
+          console.error('Error clearing cart:', error);
+          // لا نوقف العملية إذا فشل حذف السلة
+        }
+        
+        // Clear cart session from localStorage
+        localStorage.removeItem('cart_session_id');
+        
+        // Notify cart update
+        window.dispatchEvent(new Event('cartUpdated'));
+        
         toast.success('تم إنشاء الطلب بنجاح! 🎉');
         const companyId = getCompanyId();
         // Navigate to order confirmation with order number and phone for tracking
@@ -313,28 +436,38 @@ const ProductDetails: React.FC = () => {
             
             return (
               <>
-                {/* Main Image */}
-                <div className="relative h-96 bg-gray-100 rounded-lg overflow-hidden">
-                  {productImages.length > 0 && productImages[selectedImage] ? (
-                    <img
-                      src={productImages[selectedImage]}
-                      alt={product.name}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                        e.currentTarget.parentElement!.innerHTML = '<div class="w-full h-full flex items-center justify-center text-gray-400"><span class="text-6xl">📦</span></div>';
-                      }}
-                    />
-                  ) : (
-                    <div className="w-full h-96 flex items-center justify-center text-gray-400">
-                      <span className="text-6xl">📦</span>
-                    </div>
-                  )}
-                </div>
+                {/* Main Image with Zoom */}
+                {storefrontSettings?.imageZoomEnabled ? (
+                  <ProductImageZoom
+                    images={productImages}
+                    alt={product.name}
+                    enabled={storefrontSettings.imageZoomEnabled}
+                    zoomType={storefrontSettings.imageZoomType as 'hover' | 'click' | 'both'}
+                    className="h-96 bg-gray-100 rounded-lg overflow-hidden"
+                  />
+                ) : (
+                  <div className="relative h-96 bg-gray-100 rounded-lg overflow-hidden">
+                    {productImages.length > 0 && productImages[selectedImage] ? (
+                      <img
+                        src={productImages[selectedImage]}
+                        alt={product.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          e.currentTarget.parentElement!.innerHTML = '<div class="w-full h-full flex items-center justify-center text-gray-400"><span class="text-6xl">📦</span></div>';
+                        }}
+                      />
+                    ) : (
+                      <div className="w-full h-96 flex items-center justify-center text-gray-400">
+                        <span className="text-6xl">📦</span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-                {/* Thumbnails */}
-                {productImages.length > 1 && (
-                  <div className="grid grid-cols-4 gap-2">
+                {/* Thumbnails - Only show if zoom is disabled or for manual selection */}
+                {productImages.length > 1 && !storefrontSettings?.imageZoomEnabled && (
+                  <div className="grid grid-cols-4 gap-2 mt-4">
                     {productImages.map((image, index) => (
                       <button
                         key={index}
@@ -359,27 +492,56 @@ const ProductDetails: React.FC = () => {
 
         {/* Product Info */}
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-4">{product.name}</h1>
-          
-          {product.category && (
-            <p className="text-gray-600 mb-4">{product.category.name}</p>
-          )}
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">{product.name}</h1>
+              {product.category && (
+                <p className="text-gray-600">{product.category.name}</p>
+              )}
+            </div>
+            {/* Social Sharing */}
+            {storefrontSettings?.socialSharingEnabled && (
+              <SocialSharing
+                enabled={storefrontSettings.socialSharingEnabled}
+                product={product}
+                settings={{
+                  shareFacebook: storefrontSettings.shareFacebook,
+                  shareTwitter: storefrontSettings.shareTwitter,
+                  shareWhatsApp: storefrontSettings.shareWhatsApp,
+                  shareTelegram: storefrontSettings.shareTelegram
+                }}
+              />
+            )}
+          </div>
 
           {/* Price */}
           <div className="mb-6">
-            <div className="flex items-center gap-3">
-              <span className="text-3xl font-bold text-gray-900">
-                {currentPrice} جنيه
-              </span>
-              {product.comparePrice && product.comparePrice > currentPrice && (
+            <div className="flex flex-col gap-2">
+              {product.comparePrice && product.comparePrice > currentPrice ? (
                 <>
-                  <span className="text-xl text-gray-500 line-through">
-                    {product.comparePrice} جنيه
-                  </span>
-                  <span className="bg-red-500 text-white px-2 py-1 rounded text-sm font-bold">
-                    خصم {Math.round(((product.comparePrice - currentPrice) / product.comparePrice) * 100)}%
-                  </span>
+                  {/* السعر القديم */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl text-gray-400 line-through">
+                      {product.comparePrice} جنيه
+                    </span>
+                    <span className="bg-red-500 text-white px-3 py-1 rounded-lg text-sm font-bold">
+                      خصم {Math.round(((product.comparePrice - currentPrice) / product.comparePrice) * 100)}%
+                    </span>
+                  </div>
+                  {/* السعر الحالي */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-3xl font-bold text-red-600">
+                      {currentPrice} جنيه
+                    </span>
+                    <span className="text-sm text-gray-600">السعر الحالي</span>
+                  </div>
                 </>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="text-3xl font-bold text-gray-900">
+                    {currentPrice} جنيه
+                  </span>
+                </div>
               )}
             </div>
           </div>
@@ -396,6 +558,49 @@ const ProductDetails: React.FC = () => {
               </p>
             )}
           </div>
+
+          {/* Countdown Timer */}
+          {(() => {
+            const countdownEnabled = storefrontSettings?.countdownEnabled;
+            const showOnProduct = storefrontSettings?.countdownShowOnProduct;
+            const hasComparePrice = product.comparePrice && product.comparePrice > currentPrice;
+            const hasSaleEndDate = product.saleEndDate;
+            const saleEndDateValid = hasSaleEndDate && new Date(product.saleEndDate) > new Date();
+            
+            console.log('🔍 [ProductDetails] Countdown Timer Debug:', {
+              countdownEnabled,
+              showOnProduct,
+              hasComparePrice,
+              comparePrice: product.comparePrice,
+              currentPrice,
+              hasSaleEndDate,
+              saleEndDate: product.saleEndDate,
+              saleEndDateValid,
+              willShow: countdownEnabled && showOnProduct && hasComparePrice && saleEndDateValid
+            });
+            
+            return countdownEnabled && showOnProduct && hasComparePrice && saleEndDateValid ? (
+              <div className="mb-6">
+                <CountdownTimer
+                  endDate={product.saleEndDate}
+                  enabled={storefrontSettings.countdownEnabled}
+                />
+              </div>
+            ) : null;
+          })()}
+
+          {/* Back in Stock Notification */}
+          {storefrontSettings?.backInStockEnabled && currentStock === 0 && (
+            <div className="mb-6">
+              <BackInStockNotification
+                productId={product.id}
+                enabled={storefrontSettings.backInStockEnabled}
+                notifyEmail={storefrontSettings.backInStockNotifyEmail}
+                notifySMS={storefrontSettings.backInStockNotifySMS}
+                stock={currentStock}
+              />
+            </div>
+          )}
 
           {/* Free Shipping Banner */}
           {freeShippingSettings && freeShippingSettings.freeShippingEnabled && (() => {
@@ -489,8 +694,8 @@ const ProductDetails: React.FC = () => {
           {/* Volume Discounts */}
           {product && <VolumeDiscountBadge productId={product.id} quantity={quantity} />}
 
-          {/* Actions - Only show "Add to Cart" if checkout form is disabled */}
-          {product.enableCheckoutForm === false && (
+          {/* Actions - Show "Add to Cart" button if enabled and checkout form is disabled */}
+          {product.showAddToCartButton !== false && product.enableCheckoutForm === false && (
             <div className="flex gap-3 mb-6">
               <button
                 onClick={addToCart}
@@ -500,11 +705,69 @@ const ProductDetails: React.FC = () => {
                 <ShoppingCartIcon className="h-5 w-5" />
                 <span>أضف للسلة</span>
               </button>
+              {storefrontSettings?.comparisonEnabled && (
+                <button
+                  onClick={() => {
+                    addToComparison({
+                      id: product.id,
+                      name: product.name,
+                      price: currentPrice,
+                      comparePrice: product.comparePrice,
+                      images: product.images,
+                      stock: currentStock,
+                      description: product.description,
+                      category: product.category
+                    });
+                  }}
+                  className="p-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  title="أضف للمقارنة"
+                >
+                  <ArrowsRightLeftIcon className="h-5 w-5" />
+                </button>
+              )}
+              {storefrontSettings?.wishlistEnabled && (
+                <WishlistButton
+                  productId={product.id}
+                  variantId={selectedVariant || undefined}
+                  enabled={storefrontSettings.wishlistEnabled}
+                  className="p-3 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  size="lg"
+                />
+              )}
             </div>
           )}
 
-          {/* Description */}
-          {product.description && (
+          {/* Product Tabs */}
+          {storefrontSettings?.tabsEnabled && (
+            <ProductTabs
+              enabled={storefrontSettings.tabsEnabled}
+              product={{
+                description: product.description,
+                specifications: product.specifications,
+                shippingInfo: 'سيتم التوصيل خلال 3-5 أيام عمل'
+              }}
+              reviews={
+                storefrontSettings.tabReviews && storefrontSettings.reviewsEnabled ? (
+                  <ProductReviews
+                    productId={product.id}
+                    enabled={storefrontSettings.reviewsEnabled}
+                    requirePurchase={storefrontSettings.reviewsRequirePurchase}
+                    showRating={storefrontSettings.reviewsShowRating}
+                    minRatingToDisplay={storefrontSettings.minRatingToDisplay}
+                  />
+                ) : undefined
+              }
+              settings={{
+                tabDescription: storefrontSettings.tabDescription,
+                tabSpecifications: storefrontSettings.tabSpecifications,
+                tabReviews: storefrontSettings.tabReviews,
+                tabShipping: storefrontSettings.tabShipping
+              }}
+            />
+          )}
+
+          {/* Fallback Description if tabs disabled */}
+          {!storefrontSettings?.tabsEnabled && product.description && (
             <div className="border-t border-gray-200 pt-6">
               <h3 className="font-semibold text-gray-900 mb-3">الوصف:</h3>
               <p className="text-gray-700 leading-relaxed whitespace-pre-line">
@@ -670,16 +933,26 @@ const ProductDetails: React.FC = () => {
               images: product.images,
               stock: product.stock
             }}
-            onAddToCart={(productIds) => {
+            onAddToCart={async (productIds) => {
               // إضافة كل المنتجات المحددة للسلة
-              productIds.forEach(id => {
-                if (id === product.id) {
-                  addToCart();
-                } else {
-                  // TODO: إضافة المنتجات الأخرى
-                  toast.success('تم إضافة المنتجات للسلة');
+              try {
+                for (const id of productIds) {
+                  if (id === product.id) {
+                    await addToCart();
+                  } else {
+                    // إضافة المنتجات الأخرى للسلة
+                    await storefrontApi.addToCart({
+                      productId: id,
+                      variantId: null,
+                      quantity: 1
+                    });
+                  }
                 }
-              });
+                toast.success('تم إضافة المنتجات للسلة');
+              } catch (error) {
+                console.error('Error adding products to cart:', error);
+                toast.error('حدث خطأ أثناء إضافة المنتجات للسلة');
+              }
             }}
           />
         </div>
@@ -694,6 +967,61 @@ const ProductDetails: React.FC = () => {
             limit={6}
           />
         </div>
+      )}
+
+      {/* Recently Viewed */}
+      {storefrontSettings?.recentlyViewedEnabled && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <RecentlyViewed
+            enabled={storefrontSettings.recentlyViewedEnabled}
+            count={storefrontSettings.recentlyViewedCount}
+          />
+        </div>
+      )}
+
+      {/* Product Reviews (if not in tabs) */}
+      {(() => {
+        if (product) {
+          console.log('🔍 [ProductDetails] Reviews Debug:', {
+            hasProduct: !!product,
+            hasSettings: !!storefrontSettings,
+            reviewsEnabled: storefrontSettings?.reviewsEnabled,
+            tabsEnabled: storefrontSettings?.tabsEnabled,
+            tabReviews: storefrontSettings?.tabReviews,
+            willShowInTabs: storefrontSettings?.tabsEnabled && storefrontSettings?.tabReviews && storefrontSettings?.reviewsEnabled,
+            willShowOutside: storefrontSettings?.reviewsEnabled && !storefrontSettings?.tabsEnabled
+          });
+        }
+        return null;
+      })()}
+      {product && storefrontSettings?.reviewsEnabled && !storefrontSettings?.tabsEnabled && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <ProductReviews
+            productId={product.id}
+            enabled={storefrontSettings.reviewsEnabled}
+            requirePurchase={storefrontSettings.reviewsRequirePurchase}
+            showRating={storefrontSettings.reviewsShowRating}
+            minRatingToDisplay={storefrontSettings.minRatingToDisplay}
+          />
+        </div>
+      )}
+
+      {/* Sticky Add to Cart */}
+      {product && storefrontSettings?.stickyAddToCartEnabled && (
+        <StickyAddToCart
+          enabled={storefrontSettings.stickyAddToCartEnabled}
+          showOnMobile={storefrontSettings.stickyShowOnMobile}
+          showOnDesktop={storefrontSettings.stickyShowOnDesktop}
+          product={{
+            id: product.id,
+            name: product.name,
+            price: currentPrice,
+            stock: currentStock,
+            images: product.images
+          }}
+          selectedVariant={selectedVariant}
+          onQuantityChange={setQuantity}
+        />
       )}
       </div>
     </>

@@ -15,9 +15,23 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 }) => {
   const { user, isLoading, isAuthenticated } = useAuth();
   const location = useLocation();
+  const [showRedirectMessage, setShowRedirectMessage] = React.useState(false);
+
+  // Debug logging
+  const currentPath = location.pathname;
+  if (currentPath === '/products/reviews') {
+    console.log('🔍 [ProtectedRoute] /products/reviews accessed');
+    console.log('🔍 [ProtectedRoute] isLoading:', isLoading);
+    console.log('🔍 [ProtectedRoute] isAuthenticated:', isAuthenticated);
+    console.log('🔍 [ProtectedRoute] user:', user ? 'exists' : 'null');
+    console.log('🔍 [ProtectedRoute] token:', localStorage.getItem('accessToken') ? 'exists' : 'missing');
+  }
 
   // Show loading spinner while checking authentication
   if (isLoading) {
+    if (currentPath === '/products/reviews') {
+      console.log('⏳ [ProtectedRoute] Still loading, showing spinner...');
+    }
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <LoadingSpinner size="lg" />
@@ -27,6 +41,32 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
   // Redirect to login if not authenticated
   if (!isAuthenticated) {
+    if (currentPath === '/products/reviews') {
+      console.error('❌ [ProtectedRoute] Not authenticated, redirecting to login');
+      console.error('❌ [ProtectedRoute] User:', user);
+      console.error('❌ [ProtectedRoute] Token:', localStorage.getItem('accessToken') ? 'exists' : 'missing');
+      
+      // Show message for 3 seconds before redirecting
+      React.useEffect(() => {
+        setShowRedirectMessage(true);
+        const timer = setTimeout(() => {
+          console.log('⏱️ [ProtectedRoute] Redirecting now...');
+        }, 3000);
+        return () => clearTimeout(timer);
+      }, []);
+      
+      if (showRedirectMessage) {
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-yellow-50">
+            <div className="text-center p-8 bg-white rounded-lg shadow-lg max-w-md">
+              <h2 className="text-2xl font-bold text-yellow-800 mb-4">⚠️ مطلوب تسجيل الدخول</h2>
+              <p className="text-gray-700 mb-4">سيتم تحويلك إلى صفحة تسجيل الدخول...</p>
+              <p className="text-sm text-gray-500">تحقق من Console (F12) لمعرفة التفاصيل</p>
+            </div>
+          </div>
+        );
+      }
+    }
     return <Navigate to="/auth/login" state={{ from: location }} replace />;
   }
 

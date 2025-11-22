@@ -24,7 +24,8 @@
     "test:analyze-fix": "node scripts/analyzeAndFixAITest.js",
     "test:quick-analyze": "node scripts/quickAnalyze.js",
     "test:run-and-analyze": "node scripts/runTestAndAnalyze.js",
-    "test:run": "node scripts/runTestDirect.js"
+    "test:run": "node scripts/runTestDirect.js",
+    "test:reviews": "node test-reviews-page.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

@@ -54,6 +54,16 @@ const register = async (req, res) => {
       }
     });
 
+    // Initialize default store pages for the new company
+    try {
+      const { initializeDefaultStorePages } = require('../utils/initializeCompanyDefaults');
+      await initializeDefaultStorePages(company.id);
+      console.log('✅ [REGISTER] Default store pages initialized for company:', company.id);
+    } catch (error) {
+      console.error('⚠️ [REGISTER] Failed to initialize default store pages:', error);
+      // Don't fail registration if pages initialization fails
+    }
+
     // Create user
     const user = await prisma.user.create({
       data: {
@@ -68,7 +78,6 @@ const register = async (req, res) => {
     });
 
     // Generate JWT token
-    const jwt = require('jsonwebtoken');
     const token = jwt.sign(
       {
         userId: user.id,
@@ -158,7 +167,7 @@ const login = async (req, res) => {
             select: {
               id: true,
               name: true,
-              slug: true,  // 🆕 أضف slug
+              slug: true,
               plan: true,
               currency: true,
               isActive: true
@@ -306,7 +315,6 @@ const me = async (req, res) => {
           select: {
             id: true,
             name: true,
-            slug: true,  // 🆕 أضف slug
             plan: true,
             currency: true,
             isActive: true

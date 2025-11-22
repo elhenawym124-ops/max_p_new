@@ -4,6 +4,8 @@ import { toast } from 'react-hot-toast';
 import { storefrontApi, getCompanyId } from '../../utils/storefrontApi';
 import { checkoutFormSettingsService } from '../../services/checkoutFormSettingsService';
 import logger from '../../utils/logger';
+import { getApiUrl } from '../../config/environment';
+import { TicketIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
 interface CartItem {
   productId: string;
@@ -42,6 +44,12 @@ const Checkout: React.FC = () => {
     paymentMethod: 'CASH',
     notes: ''
   });
+
+  // Coupon state
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [discount, setDiscount] = useState(0);
 
   useEffect(() => {
     // Verify companyId exists
@@ -96,17 +104,16 @@ const Checkout: React.FC = () => {
   const fetchCart = async () => {
     try {
       setLoading(true);
-      const sessionId = localStorage.getItem('cart_session_id');
       
-      if (!sessionId) {
-        navigate(`/shop/cart?companyId=${companyId}`);
-        return;
-      }
-
+      // Backend uses cookies for cart, no need for sessionId check
+      // Just fetch the cart directly
+      console.log('🛒 [CHECKOUT] Fetching cart...');
       const data = await storefrontApi.getCart();
       
       if (data.success) {
-        if (data.data.items.length === 0) {
+        if (!data.data.items || data.data.items.length === 0) {
+          console.warn('⚠️ [CHECKOUT] Cart is empty, redirecting to cart page');
+          toast.error('السلة فارغة. أضف منتجات قبل إتمام الطلب');
           navigate(`/shop/cart?companyId=${companyId}`);
           return;
         }
@@ -219,7 +226,56 @@ const Checkout: React.FC = () => {
   };
 
   const calculateTotal = () => {
-    return calculateSubtotal() + shippingCost;
+    const subtotal = calculateSubtotal();
+    const total = subtotal + shippingCost - discount;
+    return Math.max(0, total); // لا يمكن أن يكون المجموع سالباً
+  };
+
+  // التحقق من الكوبون
+  const validateCoupon = async () => {
+    if (!couponCode.trim()) {
+      toast.error('يرجى إدخال كود الكوبون');
+      return;
+    }
+
+    try {
+      setCouponLoading(true);
+      const subtotal = calculateSubtotal();
+      
+      const response = await fetch(`${getApiUrl()}/public/coupons/${companyId}/validate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          code: couponCode,
+          orderAmount: subtotal
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setAppliedCoupon(data.data.coupon);
+        setDiscount(data.data.discountAmount);
+        toast.success(`تم تطبيق الكوبون: ${data.data.coupon.name}`);
+      } else {
+        toast.error(data.error || 'الكوبون غير صحيح');
+      }
+    } catch (error) {
+      console.error('Error validating coupon:', error);
+      toast.error('فشل في التحقق من الكوبون');
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  // إلغاء الكوبون
+  const removeCoupon = () => {
+    setAppliedCoupon(null);
+    setDiscount(0);
+    setCouponCode('');
+    toast.success('تم إلغاء الكوبون');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -536,6 +592,54 @@ const Checkout: React.FC = () => {
                 ))}
               </div>
 
+              {/* Coupon Section */}
+              <div className="border-t border-gray-200 pt-4 mb-4">
+                <h3 className="text-sm font-medium text-gray-900 mb-3 flex items-center gap-2">
+                  <TicketIcon className="h-5 w-5 text-blue-600" />
+                  كود الخصم
+                </h3>
+                
+                {!appliedCoupon ? (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={couponCode}
+                      onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                      placeholder="أدخل كود الكوبون"
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      disabled={couponLoading}
+                    />
+                    <button
+                      type="button"
+                      onClick={validateCoupon}
+                      disabled={couponLoading || !couponCode.trim()}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm"
+                    >
+                      {couponLoading ? 'جاري التحقق...' : 'تطبيق'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <TicketIcon className="h-4 w-4 text-green-600" />
+                          <span className="text-sm font-medium text-green-900">{appliedCoupon.code}</span>
+                        </div>
+                        <p className="text-xs text-green-700 mt-1">{appliedCoupon.name}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={removeCoupon}
+                        className="text-red-600 hover:text-red-800"
+                      >
+                        <XMarkIcon className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Totals */}
               <div className="border-t border-gray-200 pt-4 space-y-2">
                 <div className="flex justify-between text-gray-700">
@@ -548,6 +652,12 @@ const Checkout: React.FC = () => {
                     {shippingCost > 0 ? `${shippingCost} جنيه` : 'يُحسب عند إدخال المدينة'}
                   </span>
                 </div>
+                {discount > 0 && (
+                  <div className="flex justify-between text-green-600">
+                    <span>الخصم:</span>
+                    <span className="font-semibold">- {discount} جنيه</span>
+                  </div>
+                )}
                 <div className="border-t border-gray-300 pt-2 flex justify-between text-xl font-bold text-gray-900">
                   <span>الإجمالي:</span>
                   <span>{calculateTotal()} جنيه</span>

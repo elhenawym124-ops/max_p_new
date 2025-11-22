@@ -47,19 +47,44 @@ const getSubdomain = (): string | null => {
 // الأولوية: 1) URL parameter 2) Subdomain 3) localStorage
 export const getCompanyId = (): string => {
   // 1. محاولة الحصول عليه من URL parameter (للتطوير)
-  const urlCompanyId = new URLSearchParams(window.location.search).get('companyId');
+  // جرب من window.location.search أولاً
+  let urlCompanyId = new URLSearchParams(window.location.search).get('companyId');
+  
+  // إذا لم يوجد، جرب من hash (في حالة React Router)
+  if (!urlCompanyId && window.location.hash) {
+    const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+    urlCompanyId = hashParams.get('companyId');
+  }
+  
+  // Debug logging (only in development)
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  
+  if (isDevelopment) {
+    // Only log once per session to avoid spam
+    const logKey = 'storefront_companyId_logged';
+    if (!sessionStorage.getItem(logKey)) {
+      console.log('🔍 [Storefront] window.location.search:', window.location.search);
+      console.log('🔍 [Storefront] window.location.href:', window.location.href);
+      sessionStorage.setItem(logKey, 'true');
+    }
+  }
   
   if (urlCompanyId) {
     // حفظه في localStorage للاستخدام لاحقاً
     localStorage.setItem('storefront_companyId', urlCompanyId);
-    console.log('🔍 [Storefront] Using companyId from URL:', urlCompanyId);
+    if (isDevelopment && !sessionStorage.getItem('storefront_companyId_logged')) {
+      console.log('✅ [Storefront] Using companyId from URL:', urlCompanyId);
+    }
     return urlCompanyId;
   }
   
   // 2. محاولة الحصول عليه من subdomain
   const subdomain = getSubdomain();
   if (subdomain) {
-    console.log('🌐 [Storefront] Detected subdomain:', subdomain);
+    if (isDevelopment && !sessionStorage.getItem('storefront_subdomain_logged')) {
+      console.log('🌐 [Storefront] Detected subdomain:', subdomain);
+      sessionStorage.setItem('storefront_subdomain_logged', 'true');
+    }
     // سنرسل الـ subdomain للـ backend وهو سيحوله لـ companyId
     // نحفظه كـ flag أننا نستخدم subdomain mode
     localStorage.setItem('storefront_mode', 'subdomain');
@@ -70,11 +95,16 @@ export const getCompanyId = (): string => {
   // 3. إذا لم يكن في URL أو subdomain، جرب localStorage
   const storedCompanyId = localStorage.getItem('storefront_companyId');
   if (storedCompanyId) {
-    console.log('💾 [Storefront] Using companyId from localStorage:', storedCompanyId);
+    if (isDevelopment && !sessionStorage.getItem('storefront_stored_logged')) {
+      console.log('💾 [Storefront] Using companyId from localStorage:', storedCompanyId);
+      sessionStorage.setItem('storefront_stored_logged', 'true');
+    }
     return storedCompanyId;
   }
   
-  console.warn('⚠️ [Storefront] No companyId found in URL, subdomain, or localStorage');
+  if (isDevelopment) {
+    console.warn('⚠️ [Storefront] No companyId found in URL, subdomain, or localStorage');
+  }
   return '';
 };
 
@@ -108,7 +138,18 @@ export const storefrontFetch = async (endpoint: string, options?: RequestInit) =
     }
   }
   
-  console.log('🔍 [Storefront API] Request:', url.toString());
+  // Only log in development and limit frequency
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  if (isDevelopment) {
+    // Use a debounce mechanism to avoid spam
+    const logKey = `api_log_${endpoint}`;
+    const lastLog = sessionStorage.getItem(logKey);
+    const now = Date.now();
+    if (!lastLog || now - parseInt(lastLog) > 5000) { // Log at most once every 5 seconds per endpoint
+      console.log('🔍 [Storefront API] Request:', url.toString());
+      sessionStorage.setItem(logKey, now.toString());
+    }
+  }
   
   // Get cart session ID from localStorage
   const cartSessionId = localStorage.getItem('cart_session_id');
@@ -126,13 +167,123 @@ export const storefrontFetch = async (endpoint: string, options?: RequestInit) =
     credentials: 'include' // Enable cookies for cart functionality
   });
   
-  console.log('📡 [Storefront API] Response:', response.status, response.statusText);
+  // Only log errors or important responses (not 401/403/404/500)
+  // 500 errors are server issues that should be handled gracefully
+  if (isDevelopment) {
+    if (!response.ok && ![401, 403, 404, 500].includes(response.status)) {
+      console.log('📡 [Storefront API] Response:', response.status, response.statusText, 'for', endpoint);
+    }
+  }
   
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`);
   }
   
   return response.json();
+};
+
+// Product Reviews API (defined first to be used in storefrontApi)
+export const reviewsApi = {
+  /**
+   * جلب التقييمات لمنتج
+   */
+  getProductReviews: async (productId: string, params?: { page?: number; limit?: number; minRating?: number }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.set('page', params.page.toString());
+    if (params?.limit) queryParams.set('limit', params.limit.toString());
+    if (params?.minRating) queryParams.set('minRating', params.minRating.toString());
+    
+    return storefrontFetch(`/products/${productId}/reviews?${queryParams}`);
+  },
+
+  /**
+   * إضافة تقييم جديد
+   */
+  createReview: async (productId: string, data: {
+    customerName: string;
+    customerEmail?: string;
+    customerPhone?: string;
+    rating: number;
+    title?: string;
+    comment?: string;
+  }) => {
+    return storefrontFetch(`/products/${productId}/reviews`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(data)
+    });
+  },
+
+  /**
+   * وضع علامة مفيد على تقييم
+   */
+  markReviewHelpful: async (reviewId: string) => {
+    return storefrontFetch(`/reviews/${reviewId}/helpful`, {
+      method: 'PUT'
+    });
+  }
+};
+
+// Get or create session ID for recently viewed
+const getSessionId = (): string => {
+  let sessionId = localStorage.getItem('recently_viewed_session_id');
+  if (!sessionId) {
+    sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    localStorage.setItem('recently_viewed_session_id', sessionId);
+  }
+  return sessionId;
+};
+
+// Recently Viewed API
+export const recentlyViewedApi = {
+  /**
+   * تسجيل مشاهدة منتج
+   */
+  recordView: async (productId: string) => {
+    const sessionId = getSessionId();
+    return storefrontFetch(`/products/${productId}/view`, {
+      method: 'POST',
+      headers: {
+        'x-session-id': sessionId
+      }
+    });
+  },
+
+  /**
+   * جلب المنتجات المشاهدة مؤخراً
+   */
+  getRecentlyViewed: async (limit: number = 8) => {
+    const sessionId = getSessionId();
+    return storefrontFetch(`/products/recently-viewed?limit=${limit}`, {
+      headers: {
+        'x-session-id': sessionId
+      }
+    });
+  }
+};
+
+// Back in Stock API
+export const backInStockApi = {
+  /**
+   * الاشتراك في إشعارات العودة للمخزون
+   */
+  subscribe: async (productId: string, data: {
+    customerName: string;
+    customerEmail?: string;
+    customerPhone?: string;
+    notifyEmail: boolean;
+    notifySMS: boolean;
+  }) => {
+    return storefrontFetch(`/products/${productId}/back-in-stock`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(data)
+    });
+  }
 };
 
 // استدعاءات محددة
@@ -145,6 +296,10 @@ export const storefrontApi = {
   
   getProduct: (id: string) => {
     return storefrontFetch(`/products/${id}`);
+  },
+  
+  getProductQuick: (id: string) => {
+    return storefrontFetch(`/products/${id}/quick`);
   },
   
   getFeaturedProducts: (limit: number = 8) => {
@@ -215,5 +370,14 @@ export const storefrontApi = {
   
   getPaymentMethods: () => {
     return storefrontFetch('/payment-methods');
-  }
+  },
+  
+  // Reviews (aliases)
+  getProductReviews: reviewsApi.getProductReviews,
+  createReview: reviewsApi.createReview,
+  markReviewHelpful: reviewsApi.markReviewHelpful,
+  
+  // Recently Viewed (aliases)
+  recordView: recentlyViewedApi.recordView,
+  getRecentlyViewed: recentlyViewedApi.getRecentlyViewed
 };

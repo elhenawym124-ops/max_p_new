@@ -147,6 +147,10 @@ exports.getPublicPromotionSettings = async (req, res) => {
     const { companyId } = req.params;
     const prisma = getPrisma();
 
+    console.log('🔍 [PROMOTION-SETTINGS-PUBLIC] ===== Route Hit =====');
+    console.log('🔍 [PROMOTION-SETTINGS-PUBLIC] Request URL:', req.originalUrl);
+    console.log('🔍 [PROMOTION-SETTINGS-PUBLIC] Request path:', req.path);
+    console.log('🔍 [PROMOTION-SETTINGS-PUBLIC] Request params:', req.params);
     console.log('🔍 [PROMOTION-SETTINGS-PUBLIC] Getting settings for company:', companyId);
 
     if (!companyId) {

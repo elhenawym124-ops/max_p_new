@@ -49,15 +49,22 @@ import ProductEditNew from './pages/products/ProductEditNew';
 import ProductEditTest from './pages/products/ProductEditTest';
 import EasyOrdersImport from './pages/products/EasyOrdersImport';
 import WooCommerceImport from './pages/products/WooCommerceImport';
+import ProductReviewsSimple from './pages/products/ProductReviewsSimple';
+import ProtectedRoute from './components/ProtectedRoute';
 import Categories from './pages/categories/Categories';
 import Reports from './pages/reports/Reports';
 import Settings from './pages/settings/Settings';
 import CompanySettings from './pages/settings/CompanySettings';
 import FacebookSettings from './pages/settings/FacebookSettings';
 import StoreSettings from './pages/settings/StoreSettings';
+import StorePages from './pages/settings/StorePages';
+import StorefrontFeaturesSettings from './pages/settings/StorefrontFeaturesSettings';
 import DeliveryOptions from './pages/settings/DeliveryOptions';
 import PromotionSettings from './pages/settings/PromotionSettings';
 import RecommendationSettings from './pages/settings/RecommendationSettings';
+
+// Advertising
+import FacebookPixelSettings from './pages/advertising/FacebookPixelSettings';
 import Profile from './pages/profile/Profile';
 import TermsAndConditions from './pages/legal/TermsAndConditions';
 import PrivacyPolicyPage from './pages/legal/PrivacyPolicy';
@@ -81,6 +88,8 @@ import Cart from './pages/storefront/Cart';
 import Checkout from './pages/storefront/Checkout';
 import OrderConfirmation from './pages/storefront/OrderConfirmation';
 import TrackOrder from './pages/storefront/TrackOrder';
+import WishlistPage from './pages/storefront/WishlistPage';
+import StorePage from './pages/storefront/StorePage';
 
 // AI Management
 import AIManagement from './pages/ai/AIManagement';
@@ -123,6 +132,11 @@ import SubscriptionRenewalPayment from './pages/SubscriptionRenewalPayment';
 import PrivacyPolicy from './pages/legal/PrivacyPolicy';
 import TermsOfService from './pages/legal/TermsOfService';
 import UnifiedCommentsManagement from "./pages/comments/UnifiedCommentsManagement"
+
+// Page Builder
+import PageBuilder from './pages/PageBuilder';
+import LandingPageList from './pages/LandingPageList';
+
 import { useAuth } from './hooks/useAuthSimple';
 
 // Create a separate component that uses auth
@@ -139,6 +153,25 @@ const AppContent = () => {
         </div>
       </div>
     );
+  }
+
+  // Debug: Log current route and auth status
+  const currentPath = window.location.pathname;
+  console.log('🔍 [App] Current path:', currentPath);
+  console.log('🔍 [App] Is authenticated:', isAuthenticated);
+  console.log('🔍 [App] Is loading:', isLoading);
+  
+  // Check if path is /products/reviews and log debug info
+  if (currentPath === '/products/reviews') {
+    console.log('🔍 [App] Accessing /products/reviews');
+    console.log('🔍 [App] Is authenticated:', isAuthenticated);
+    console.log('🔍 [App] Token exists:', !!localStorage.getItem('accessToken'));
+    console.log('🔍 [App] Will render:', isAuthenticated ? 'ProductReviews component' : 'Redirect to login');
+    
+    // If not authenticated but token exists, log more details
+    if (!isAuthenticated && localStorage.getItem('accessToken')) {
+      console.warn('⚠️ [App] User has token but isAuthenticated is false! This might be a timing issue.');
+    }
   }
 
   return (
@@ -159,13 +192,31 @@ const AppContent = () => {
         {/* <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} /> */}
 
+        {/* Root path - redirect based on auth status */}
+        <Route path="/" element={
+          isLoading ? (
+            <div className="min-h-screen flex items-center justify-center">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+                <p className="mt-4 text-gray-600">جاري التحميل...</p>
+              </div>
+            </div>
+          ) : isAuthenticated ? (
+            <Navigate to="/dashboard" replace />
+          ) : (
+            <Navigate to="/auth/login" replace />
+          )
+        } />
+
         {/* Public Storefront Routes - No Authentication Required */}
         <Route path="/shop" element={<StorefrontLayout><Shop /></StorefrontLayout>} />
         <Route path="/shop/products/:id" element={<StorefrontLayout><ProductDetails /></StorefrontLayout>} />
         <Route path="/shop/cart" element={<StorefrontLayout><Cart /></StorefrontLayout>} />
+        <Route path="/shop/wishlist" element={<StorefrontLayout><WishlistPage /></StorefrontLayout>} />
         <Route path="/shop/checkout" element={<StorefrontLayout><Checkout /></StorefrontLayout>} />
         <Route path="/shop/order-confirmation/:orderNumber" element={<StorefrontLayout><OrderConfirmation /></StorefrontLayout>} />
         <Route path="/shop/track-order" element={<StorefrontLayout><TrackOrder /></StorefrontLayout>} />
+        <Route path="/shop/page/:slug" element={<StorefrontLayout><StorePage /></StorefrontLayout>} />
 
         {/* Super Admin Routes */}
         <Route path="/super-admin/login" element={<SuperAdminLogin />} />
@@ -184,10 +235,16 @@ const AppContent = () => {
         <Route path="/payment/:invoiceId" element={<PaymentPage />} />
         <Route path="/payment/subscription-renewal" element={<SubscriptionRenewalPayment />} />
 
-        {/* Protected Routes */}
+        {/* Page Builder Routes - Public for testing */}
+        <Route path="/page-builder" element={<PageBuilder />} />
+        <Route path="/landing-pages" element={<Layout><LandingPageList /></Layout>} />
+
+        {/* Protected Routes with ProtectedRoute component (handles auth internally) */}
+        <Route path="/products/reviews" element={<ProtectedRoute><ProductReviewsSimple /></ProtectedRoute>} />
+
+        {/* Protected Routes - Only accessible when authenticated */}
         {isAuthenticated ? (
           <>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<Layout><Dashboard /></Layout>} />
             <Route path="/customers" element={<Layout><CustomerList /></Layout>} />
             {/* <Route path="/conversations" element={<Layout><ConversationsSimple /></Layout>} /> */}
@@ -211,10 +268,14 @@ const AppContent = () => {
             <Route path="/products/new" element={<Layout><ProductNew /></Layout>} />
             <Route path="/products/import-easy-orders" element={<Layout><EasyOrdersImport /></Layout>} />
             <Route path="/products/import-woocommerce" element={<Layout><WooCommerceImport /></Layout>} />
+            <Route path="/products/:id/edit" element={<Layout><ProductEditNew /></Layout>} />
+            <Route path="/products/:id/edit-test" element={<Layout><ProductEditTest /></Layout>} />
+            <Route path="/products/:id/edit-old" element={<Layout><ProductEdit /></Layout>} />
             <Route path="/products/:id" element={<Layout><ProductView /></Layout>} />
             <Route path="/products/:id/edit" element={<Layout><ProductEditNew /></Layout>} />
             <Route path="/products/:id/edit-test" element={<Layout><ProductEditTest /></Layout>} />
             <Route path="/products/:id/edit-old" element={<Layout><ProductEdit /></Layout>} />
+            
             <Route path="/categories" element={<Layout><Categories /></Layout>} />
             <Route path="/orders" element={<Layout><Orders /></Layout>} />
             <Route path="/orders/enhanced" element={<Layout><OrdersEnhanced /></Layout>} />
@@ -244,6 +305,10 @@ const AppContent = () => {
             <Route path="/subscription" element={<Layout><CustomerSubscription /></Layout>} />
 
             <Route path="/broadcast" element={<Layout><BroadcastDashboard /></Layout>} />
+            
+            {/* Advertising Routes */}
+            <Route path="/advertising/facebook-pixel" element={<Layout><FacebookPixelSettings /></Layout>} />
+            
             <Route path="/reminders" element={<Layout><Reminders /></Layout>} />
             <Route path="/notifications" element={<Layout><Notifications /></Layout>} />
             <Route path="/notification-settings" element={<Layout><NotificationSettings /></Layout>} />
@@ -265,6 +330,8 @@ const AppContent = () => {
             <Route path="/settings/company" element={<Layout><CompanySettings /></Layout>} />
             <Route path="/store-settings" element={<Layout><StoreSettings /></Layout>} />
             <Route path="/settings/store" element={<Layout><StoreSettings /></Layout>} />
+            <Route path="/settings/store-pages" element={<Layout><StorePages /></Layout>} />
+            <Route path="/settings/storefront-features" element={<Layout><StorefrontFeaturesSettings /></Layout>} />
             <Route path="/settings/delivery-options" element={<Layout><DeliveryOptions /></Layout>} />
             <Route path="/settings/promotion" element={<Layout><PromotionSettings /></Layout>} />
             <Route path="/settings/recommendations" element={<Layout><RecommendationSettings /></Layout>} />
@@ -274,11 +341,51 @@ const AppContent = () => {
             <Route path="/privacy" element={<Layout><PrivacyPolicy /></Layout>} />
           </>
         ) : (
-          <Route path="*" element={<Navigate to="/auth/login" replace />} />
+          // Redirect unauthenticated users trying to access protected routes
+          <>
+            <Route path="/store-settings" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/settings/storefront-features" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/settings/*" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/dashboard" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/products/*" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/orders/*" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/customers" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/inventory" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/coupons" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/analytics" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/reports" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/companies" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/users" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/roles" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/company-dashboard" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/profile" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/advertising/*" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/ai-management" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/test-chat" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/invoices" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/payments" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/subscription" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/broadcast" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/reminders" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/notifications" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/notification-settings" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/monitoring" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/alert-settings" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/quality-test" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/quality-advanced" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/ai-quality" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/success-analytics" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/pattern-management" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/comments/*" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/unified-comments/*" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/posts/*" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/messenger-chat" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/conversations-improved" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/categories" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/appointments" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/tasks" element={<Navigate to="/auth/login" replace />} />
+          </>
         )}
-
-        {/* Catch all route */}
-        <Route path="*" element={<Navigate to={isAuthenticated ? "/dashboard" : "/auth/login"} replace />} />
         </Routes>
       </div>
     </PerformanceOptimizer>

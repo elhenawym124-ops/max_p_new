@@ -10,6 +10,7 @@ import {
   CurrencyDollarIcon,
 } from '@heroicons/react/24/outline';
 import { SUPPORTED_CURRENCIES, DEFAULT_CURRENCY, formatCurrency, getCurrencyByCode } from '../../utils/currency';
+import { getApiUrl } from '../../config/environment';
 
 import { useDateFormat } from '../../hooks/useDateFormat';
 import { DateFormatType, DATE_FORMAT_LABELS } from '../../utils/dateFormat';
@@ -41,6 +42,10 @@ const CompanySettings: React.FC = () => {
   const [selectedCurrency, setSelectedCurrency] = useState<string>(DEFAULT_CURRENCY);
   const [savingCurrency, setSavingCurrency] = useState(false);
   
+  // Logo upload states
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  
   // Date format hook
   const { dateFormat, setDateFormat, isLoading: dateFormatLoading, error: dateFormatError, formatDate } = useDateFormat();
 
@@ -52,12 +57,23 @@ const CompanySettings: React.FC = () => {
 
   const fetchCompanyData = async () => {
     try {
-      const response = await fetch(`https://www.mokhtarelhenawy.online/api/v1/companies/${user?.companyId}`);
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch(`${getApiUrl()}/companies/${user?.companyId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
       const data = await response.json();
       if (data.success) {
         setCompany(data.data);
         // Set currency from company data or use default
         setSelectedCurrency(data.data?.currency || DEFAULT_CURRENCY);
+        // Set logo preview if exists
+        if (data.data?.logo) {
+          // Remove /api/v1 from the URL for static files
+          const baseUrl = getApiUrl().replace('/api/v1', '');
+          setLogoPreview(`${baseUrl}${data.data.logo}`);
+        }
       }
     } catch (error) {
       console.error('Error fetching company data:', error);
@@ -66,7 +82,12 @@ const CompanySettings: React.FC = () => {
 
   const fetchPlans = async () => {
     try {
-      const response = await fetch('https://www.mokhtarelhenawy.online/api/v1/companies/plans');
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch(`${getApiUrl()}/companies/plans`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
       const data = await response.json();
       if (data.success) {
         setPlans(data.data);
@@ -78,7 +99,12 @@ const CompanySettings: React.FC = () => {
 
   const fetchUsage = async () => {
     try {
-      const response = await fetch(`https://www.mokhtarelhenawy.online/api/v1/companies/${user?.companyId}/usage`);
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch(`${getApiUrl()}/companies/${user?.companyId}/usage`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
       const data = await response.json();
       if (data.success) {
         setUsage(data.data);
@@ -92,10 +118,12 @@ const CompanySettings: React.FC = () => {
 
   const handleUpgrade = async (planName: string) => {
     try {
-      const response = await fetch(`https://www.mokhtarelhenawy.online/api/v1/companies/${user?.companyId}/subscription`, {
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch(`${getApiUrl()}/companies/${user?.companyId}/subscription`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({ plan: planName }),
       });
@@ -117,10 +145,12 @@ const CompanySettings: React.FC = () => {
   const handleCurrencyChange = async (currencyCode: string) => {
     try {
       setSavingCurrency(true);
-      const response = await fetch(`https://www.mokhtarelhenawy.online/api/v1/companies/${user?.companyId}/currency`, {
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch(`${getApiUrl()}/companies/${user?.companyId}/currency`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({ currency: currencyCode }),
       });
@@ -138,6 +168,58 @@ const CompanySettings: React.FC = () => {
       alert('حدث خطأ أثناء تحديث العملة');
     } finally {
       setSavingCurrency(false);
+    }
+  };
+
+  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('يُسمح فقط بملفات الصور');
+      return;
+    }
+
+    // Validate file size (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('حجم الملف يجب أن يكون أقل من 5 ميجابايت');
+      return;
+    }
+
+    try {
+      setUploadingLogo(true);
+
+      // Create FormData
+      const formData = new FormData();
+      formData.append('logo', file);
+
+      // Get token from localStorage
+      const token = localStorage.getItem('accessToken');
+
+      // Upload logo
+      const response = await fetch(`${getApiUrl()}/companies/${user?.companyId}/logo`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        setLogoPreview(data.data.fullUrl);
+        setCompany((prev: any) => ({ ...prev, logo: data.data.logo }));
+        alert('تم رفع اللوجو بنجاح!');
+      } else {
+        alert(data.error || 'فشل في رفع اللوجو');
+      }
+    } catch (error) {
+      console.error('Error uploading logo:', error);
+      alert('حدث خطأ أثناء رفع اللوجو');
+    } finally {
+      setUploadingLogo(false);
     }
   };
 
@@ -208,6 +290,63 @@ const CompanySettings: React.FC = () => {
               <span className="mr-2 text-sm text-gray-500">
                 ({formatCurrency(plans[company?.subscription?.plan]?.price || 0, selectedCurrency)}/شهر)
               </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Logo Upload Section */}
+        <div className="mt-6 pt-6 border-t border-gray-200">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">لوجو الشركة</h3>
+          <div className="flex items-start space-x-4 space-x-reverse">
+            {/* Logo Preview */}
+            <div className="flex-shrink-0">
+              {logoPreview ? (
+                <img
+                  src={logoPreview}
+                  alt="Company Logo"
+                  className="h-24 w-24 rounded-lg object-cover border-2 border-gray-200"
+                />
+              ) : (
+                <div className="h-24 w-24 rounded-lg bg-gray-100 flex items-center justify-center border-2 border-dashed border-gray-300">
+                  <BuildingOfficeIcon className="h-12 w-12 text-gray-400" />
+                </div>
+              )}
+            </div>
+
+            {/* Upload Button */}
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                رفع لوجو جديد
+              </label>
+              <div className="flex items-center">
+                <label className="relative cursor-pointer bg-white rounded-md font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none">
+                  <span className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    {uploadingLogo ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600 ml-2"></div>
+                        جاري الرفع...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="ml-2 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        </svg>
+                        اختر صورة
+                      </>
+                    )}
+                  </span>
+                  <input
+                    type="file"
+                    className="sr-only"
+                    accept="image/*"
+                    onChange={handleLogoUpload}
+                    disabled={uploadingLogo}
+                  />
+                </label>
+              </div>
+              <p className="mt-2 text-xs text-gray-500">
+                PNG, JPG, GIF حتى 5MB
+              </p>
             </div>
           </div>
         </div>
