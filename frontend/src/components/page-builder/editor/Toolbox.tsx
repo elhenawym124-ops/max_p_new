@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Element, useEditor } from '@craftjs/core';
-import { Text, Button, Container, Image, ProductCard, CountdownTimer } from '../user';
+import { Text, Button, Container, Image, ProductCard, CountdownTimer, Heading, Divider, Spacer, Tabs, Accordion, Alert, Counter, StarRating, ProgressBar, SocialIcons } from '../user';
 
 export const Toolbox: React.FC = () => {
   const { connectors } = useEditor();
@@ -8,6 +8,12 @@ export const Toolbox: React.FC = () => {
 
   const widgets = {
     basic: [
+      {
+        name: 'عنوان',
+        icon: '📌',
+        component: <Element id="heading_element" is={Heading} text="عنوان الصفحة" />,
+        description: 'عناوين H1-H6'
+      },
       {
         name: 'نص',
         icon: '📝',
@@ -25,6 +31,60 @@ export const Toolbox: React.FC = () => {
         icon: '🖼️',
         component: <Element id="image_element" is={Image} />,
         description: 'إضافة صورة'
+      },
+      {
+        name: 'فاصل',
+        icon: '➖',
+        component: <Element id="divider_element" is={Divider} />,
+        description: 'خط فاصل'
+      },
+      {
+        name: 'مسافة',
+        icon: '📏',
+        component: <Element id="spacer_element" is={Spacer} />,
+        description: 'مسافة عمودية'
+      },
+      {
+        name: 'تبويبات',
+        icon: '📑',
+        component: <Element id="tabs_element" is={Tabs} />,
+        description: 'تنظيم المحتوى'
+      },
+      {
+        name: 'أكورديون',
+        icon: '📋',
+        component: <Element id="accordion_element" is={Accordion} />,
+        description: 'أسئلة وأجوبة'
+      },
+      {
+        name: 'تنبيه',
+        icon: '🔔',
+        component: <Element id="alert_element" is={Alert} />,
+        description: 'رسائل تنبيه'
+      },
+      {
+        name: 'عداد',
+        icon: '🔢',
+        component: <Element id="counter_element" is={Counter} />,
+        description: 'عداد متحرك'
+      },
+      {
+        name: 'تقييم',
+        icon: '⭐',
+        component: <Element id="star_rating_element" is={StarRating} />,
+        description: 'تقييم نجوم'
+      },
+      {
+        name: 'شريط تقدم',
+        icon: '📊',
+        component: <Element id="progress_bar_element" is={ProgressBar} />,
+        description: 'شريط تقدم'
+      },
+      {
+        name: 'أيقونات اجتماعية',
+        icon: '🔗',
+        component: <Element id="social_icons_element" is={SocialIcons} />,
+        description: 'روابط اجتماعية'
       },
       {
         name: 'حاوية',

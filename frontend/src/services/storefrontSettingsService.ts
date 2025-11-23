@@ -101,6 +101,77 @@ export interface StorefrontSettings {
   stickyTrackAnalytics?: boolean;
   stickyAutoScrollToCheckout?: boolean;
   
+  // Product Navigation Settings
+  navigationEnabled?: boolean;
+  navigationType?: 'sameCategory' | 'allProducts';
+  showNavigationButtons?: boolean;
+  keyboardShortcuts?: boolean;
+  
+  // Sold Number Display Settings
+  soldNumberEnabled?: boolean;
+  soldNumberType?: 'real' | 'fake';
+  soldNumberMin?: number;
+  soldNumberMax?: number;
+  soldNumberText?: string;
+  
+  // Variant Styles Settings
+  variantColorStyle?: 'buttons' | 'circles' | 'thumbnails' | 'dropdown' | 'swatches';
+  variantColorShowName?: boolean;
+  variantColorSize?: 'small' | 'medium' | 'large';
+  variantSizeStyle?: 'buttons' | 'table' | 'dropdown' | 'grid';
+  variantSizeShowGuide?: boolean;
+  variantSizeShowStock?: boolean;
+  
+  // Stock Progress Bar Settings
+  stockProgressEnabled?: boolean;
+  stockProgressType?: 'percentage' | 'count' | 'text';
+  stockProgressLowColor?: string;
+  stockProgressMediumColor?: string;
+  stockProgressHighColor?: string;
+  stockProgressThreshold?: number;
+  
+  // Security Badges Settings
+  securityBadgesEnabled?: boolean;
+  badgeSecurePayment?: boolean;
+  badgeFreeShipping?: boolean;
+  badgeQualityGuarantee?: boolean;
+  badgeCashOnDelivery?: boolean;
+  badgeBuyerProtection?: boolean;
+  badgeHighRating?: boolean;
+  badgeCustom1?: boolean;
+  badgeCustom1Text?: string;
+  badgeCustom2?: boolean;
+  badgeCustom2Text?: string;
+  badgeLayout?: 'horizontal' | 'vertical';
+  
+  // Reasons to Purchase Settings
+  reasonsToPurchaseEnabled?: boolean;
+  reasonsToPurchaseType?: 'global' | 'perProduct';
+  reasonsToPurchaseList?: string; // JSON array
+  reasonsToPurchaseMaxItems?: number;
+  reasonsToPurchaseStyle?: 'list' | 'icons';
+  
+  // Online Visitors Count Settings
+  onlineVisitorsEnabled?: boolean;
+  onlineVisitorsType?: 'real' | 'fake';
+  onlineVisitorsMin?: number;
+  onlineVisitorsMax?: number;
+  onlineVisitorsUpdateInterval?: number;
+  onlineVisitorsText?: string;
+  
+  // Estimated Delivery Time Settings
+  estimatedDeliveryEnabled?: boolean;
+  estimatedDeliveryShowOnProduct?: boolean;
+  estimatedDeliveryDefaultText?: string;
+  
+  // FOMO Popup Settings
+  fomoEnabled?: boolean;
+  fomoType?: 'soldCount' | 'visitors' | 'stock' | 'countdown';
+  fomoTrigger?: 'time' | 'scroll' | 'exit';
+  fomoDelay?: number;
+  fomoShowOncePerSession?: boolean;
+  fomoMessage?: string;
+  
   // SEO Settings
   seoEnabled: boolean;
   seoMetaDescription: boolean;
@@ -144,6 +215,35 @@ export interface StorefrontSettings {
   lastCapiTest?: string;
   pixelStatus?: string;
   capiStatus?: string;
+  
+  // Product Page Layout Order Settings
+  productPageLayoutEnabled?: boolean;
+  productPageOrder?: string; // JSON array of element IDs in order
+  productPageShowTitle?: boolean;
+  productPageShowCategory?: boolean;
+  productPageShowSocialSharing?: boolean;
+  productPageShowBadges?: boolean;
+  productPageShowPrice?: boolean;
+  productPageShowCountdown?: boolean;
+  productPageShowStockStatus?: boolean;
+  productPageShowStockProgress?: boolean;
+  productPageShowBackInStock?: boolean;
+  productPageShowSecurityBadges?: boolean;
+  productPageShowSoldNumber?: boolean;
+  productPageShowOnlineVisitors?: boolean;
+  productPageShowEstimatedDelivery?: boolean;
+  productPageShowFreeShipping?: boolean;
+  productPageShowPreOrder?: boolean;
+  productPageShowVariants?: boolean;
+  productPageShowSizeGuide?: boolean;
+  productPageShowQuantity?: boolean;
+  productPageShowVolumeDiscounts?: boolean;
+  productPageShowReasonsToPurchase?: boolean;
+  productPageShowActions?: boolean;
+  productPageShowTabs?: boolean;
+  productPageShowDescription?: boolean;
+  productPageShowSKU?: boolean;
+  productPageShowCheckoutForm?: boolean;
   
   createdAt: string;
   updatedAt: string;
@@ -437,6 +537,66 @@ export const storefrontSettingsService = {
           stickyShowProductName: true,
           stickyTrackAnalytics: true,
           stickyAutoScrollToCheckout: false,
+          // Product Navigation
+          navigationEnabled: false,
+          navigationType: 'sameCategory',
+          showNavigationButtons: true,
+          keyboardShortcuts: true,
+          // Sold Number Display
+          soldNumberEnabled: false,
+          soldNumberType: 'real',
+          soldNumberMin: 10,
+          soldNumberMax: 500,
+          soldNumberText: 'تم بيع {count} قطعة',
+          // Variant Styles
+          variantColorStyle: 'buttons',
+          variantColorShowName: true,
+          variantColorSize: 'medium',
+          variantSizeStyle: 'buttons',
+          variantSizeShowGuide: false,
+          variantSizeShowStock: true,
+          // Stock Progress Bar
+          stockProgressEnabled: false,
+          stockProgressType: 'percentage',
+          stockProgressLowColor: '#ef4444',
+          stockProgressMediumColor: '#f59e0b',
+          stockProgressHighColor: '#10b981',
+          stockProgressThreshold: 10,
+          // Security Badges
+          securityBadgesEnabled: false,
+          badgeSecurePayment: true,
+          badgeFreeShipping: true,
+          badgeQualityGuarantee: true,
+          badgeCashOnDelivery: true,
+          badgeBuyerProtection: true,
+          badgeHighRating: true,
+          badgeCustom1: false,
+          badgeCustom1Text: '',
+          badgeCustom2: false,
+          badgeCustom2Text: '',
+          badgeLayout: 'horizontal',
+          // Reasons to Purchase
+          reasonsToPurchaseEnabled: false,
+          reasonsToPurchaseType: 'global',
+          reasonsToPurchaseList: '',
+          reasonsToPurchaseMaxItems: 4,
+          reasonsToPurchaseStyle: 'list',
+          // Online Visitors Count
+          onlineVisitorsEnabled: false,
+          onlineVisitorsType: 'fake',
+          onlineVisitorsMin: 5,
+          onlineVisitorsMax: 50,
+          onlineVisitorsUpdateInterval: 30,
+          onlineVisitorsText: '{count} شخص يشاهدون هذا المنتج الآن',
+          estimatedDeliveryEnabled: false,
+          estimatedDeliveryShowOnProduct: true,
+          estimatedDeliveryDefaultText: 'التوصيل خلال {time}',
+          fomoEnabled: false,
+          fomoType: 'soldCount',
+          fomoTrigger: 'time',
+          fomoDelay: 30,
+          fomoShowOncePerSession: true,
+          fomoMessage: null,
           seoEnabled: false,
           seoMetaDescription: false,
           seoStructuredData: false,

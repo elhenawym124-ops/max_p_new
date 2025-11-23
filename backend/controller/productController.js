@@ -442,6 +442,17 @@ const updateSingleProduct = async(req , res)=>{
       //console.log(`📏 [server] Size guide: ${updateData.sizeGuide ? 'provided' : 'empty'}`);
     }
 
+    // Handle Pre-order fields - 📦 الطلب المسبق
+    if (updateData.isPreOrder !== undefined) {
+      updateData.isPreOrder = Boolean(updateData.isPreOrder);
+    }
+    if (updateData.preOrderDate !== undefined) {
+      updateData.preOrderDate = updateData.preOrderDate ? new Date(updateData.preOrderDate) : null;
+    }
+    if (updateData.preOrderMessage !== undefined) {
+      updateData.preOrderMessage = updateData.preOrderMessage ? String(updateData.preOrderMessage).trim() : null;
+    }
+
     // Handle category field - convert to categoryId for Prisma
     if (updateData.category !== undefined) {
       if (updateData.category && updateData.category.trim() !== '') {

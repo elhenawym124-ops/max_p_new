@@ -348,7 +348,26 @@ const PUBLIC_ROUTES = [
   'GET /api/v1/opportunities/*',
   'POST /api/v1/opportunities',
   'PUT /api/v1/opportunities/*',
-  'DELETE /api/v1/opportunities/*'
+  'DELETE /api/v1/opportunities/*',
+
+  // Public storefront routes (no authentication required)
+  'GET /api/v1/public/*',
+  'POST /api/v1/public/*',
+  'PUT /api/v1/public/*',
+  'DELETE /api/v1/public/*',
+  'PATCH /api/v1/public/*',
+  
+  // Public homepage routes
+  'GET /api/v1/homepage/*',
+  
+  // Public footer settings
+  'GET /api/v1/public/footer-settings/*',
+  
+  // Public storefront settings
+  'GET /api/v1/public/storefront-settings/*',
+  
+  // Public coupons
+  'GET /api/v1/public/coupons/*'
 ];
 
 /**
@@ -431,7 +450,8 @@ function needsCompanyIsolation(path) {
 const globalAuthentication = async (req, res, next) => {
   try {
     const method = req.method;
-    const path = req.path;
+    // Use originalUrl to get the full path including /api/v1/public prefix
+    const path = req.originalUrl?.split('?')[0] || req.path; // Remove query string
     const ip = req.ip || req.connection.remoteAddress;
 
     // السماح للـ routes العامة

@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ShoppingCartIcon, TruckIcon } from '@heroicons/react/24/outline';
 import { storefrontApi, getCompanyId } from '../utils/storefrontApi';
-import axios from 'axios';
-import { getApiUrl } from '../config/environment';
 import { storefrontSettingsService } from '../services/storefrontSettingsService';
 import LanguageSwitcher from './storefront/LanguageSwitcher';
 
@@ -95,14 +93,21 @@ const StorefrontNav: React.FC = () => {
   const fetchFreeShippingSettings = async () => {
     try {
       const companyId = getCompanyId();
-      const apiUrl = getApiUrl();
-      const response = await axios.get(`${apiUrl}/public/promotion-settings/${companyId}`);
+      if (!companyId) return;
       
-      if (response.data.success) {
-        setFreeShippingSettings(response.data.data);
+      // Use storefrontFetch for public routes
+      const { storefrontFetch } = await import('../utils/storefrontApi');
+      const data = await storefrontFetch(`/promotion-settings/${companyId}`);
+      
+      if (data.success) {
+        setFreeShippingSettings(data.data);
       }
-    } catch (error) {
-      console.error('Error fetching free shipping settings:', error);
+    } catch (error: any) {
+      // Silently handle errors - free shipping settings are optional
+      const status = error?.status || (error?.message?.includes('401') ? 401 : error?.message?.includes('404') ? 404 : 0);
+      if (status !== 401 && status !== 404) {
+        console.error('Error fetching free shipping settings:', error);
+      }
     }
   };
 
@@ -138,7 +143,7 @@ const StorefrontNav: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link to={`/shop?companyId=${getCompanyId()}`} className="flex items-center">
+          <Link to={`/home?companyId=${getCompanyId()}`} className="flex items-center">
             <div className="text-2xl font-bold text-blue-600">
               🏪 المتجر
             </div>
@@ -146,6 +151,12 @@ const StorefrontNav: React.FC = () => {
 
           {/* Navigation Links */}
           <div className="hidden md:flex items-center space-x-8 space-x-reverse">
+            <Link 
+              to={`/home?companyId=${getCompanyId()}`}
+              className="text-gray-700 hover:text-blue-600 font-medium transition-colors"
+            >
+              الرئيسية
+            </Link>
             <Link 
               to={`/shop?companyId=${getCompanyId()}`}
               className="text-gray-700 hover:text-blue-600 font-medium transition-colors"

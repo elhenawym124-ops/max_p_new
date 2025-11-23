@@ -78,6 +78,7 @@ model Company {
   backInStockNotifications BackInStockNotification[] // 🔔 إشعارات العودة للمخزون
   storePages             StorePage[] // 📄 صفحات المتجر
   coupons                Coupon[] // 🎟️ كوبونات الخصم
+  homepageTemplates      HomepageTemplate[] // 🏠 قوالب الصفحة الرئيسية
 
   @@map("companies")
 }
@@ -294,6 +295,9 @@ model Product {
   saleStartDate      DateTime?              // 📅 تاريخ بداية العرض/الخصم
   saleEndDate        DateTime?              // 📅 تاريخ انتهاء العرض/الخصم
   sizeGuide          String?                @db.Text // 📏 دليل المقاسات
+  isPreOrder         Boolean                @default(false) // 📦 تفعيل الطلب المسبق
+  preOrderDate       DateTime?              // 📅 تاريخ توفر المنتج للطلب المسبق
+  preOrderMessage    String?                @db.Text // 💬 رسالة الطلب المسبق
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
   inventory          Inventory[]
@@ -1980,6 +1984,77 @@ model StorefrontSettings {
   stickyTrackAnalytics       Boolean @default(true) // تتبع التحليلات
   stickyAutoScrollToCheckout Boolean @default(false) // التمرير التلقائي لصفحة الشراء
 
+  // Product Navigation Settings (Previous/Next)
+  navigationEnabled          Boolean @default(false) // تفعيل التنقل بين المنتجات
+  navigationType             String  @default("sameCategory") // "sameCategory" | "allProducts"
+  showNavigationButtons      Boolean @default(true) // إظهار أزرار السابق/التالي
+  keyboardShortcuts          Boolean @default(true) // اختصارات لوحة المفاتيح
+
+  // Sold Number Display Settings
+  soldNumberEnabled          Boolean @default(false) // تفعيل عرض عدد المبيعات
+  soldNumberType             String  @default("real") // "real" | "fake"
+  soldNumberMin              Int     @default(10) // الحد الأدنى (للعشوائي)
+  soldNumberMax              Int     @default(500) // الحد الأقصى (للعشوائي)
+  soldNumberText              String  @default("تم بيع {count} قطعة") // نص العرض
+
+  // Variant Styles Settings
+  variantColorStyle          String  @default("buttons") // "buttons" | "circles" | "thumbnails" | "dropdown" | "swatches"
+  variantColorShowName       Boolean @default(true) // إظهار اسم اللون
+  variantColorSize            String  @default("medium") // "small" | "medium" | "large"
+  variantSizeStyle            String  @default("buttons") // "buttons" | "table" | "dropdown" | "grid"
+  variantSizeShowGuide        Boolean @default(false) // إظهار دليل المقاسات
+  variantSizeShowStock        Boolean @default(true) // إظهار المخزون
+
+  // Stock Progress Bar Settings
+  stockProgressEnabled       Boolean @default(false) // تفعيل شريط تقدم المخزون
+  stockProgressType           String  @default("percentage") // "percentage" | "count" | "text"
+  stockProgressLowColor       String  @default("#ef4444") // لون المخزون القليل (أحمر)
+  stockProgressMediumColor    String  @default("#f59e0b") // لون المخزون المتوسط (أصفر)
+  stockProgressHighColor      String  @default("#10b981") // لون المخزون العالي (أخضر)
+  stockProgressThreshold      Int     @default(10) // عتبة المخزون القليل
+
+  // Security Badges Settings
+  securityBadgesEnabled       Boolean @default(false) // تفعيل شارات الأمان
+  badgeSecurePayment          Boolean @default(true) // شارة "دفع آمن"
+  badgeFreeShipping           Boolean @default(true) // شارة "شحن مجاني"
+  badgeQualityGuarantee       Boolean @default(true) // شارة "ضمان الجودة"
+  badgeCashOnDelivery         Boolean @default(true) // شارة "دفع عند الاستلام"
+  badgeBuyerProtection        Boolean @default(true) // شارة "حماية المشتري"
+  badgeHighRating             Boolean @default(true) // شارة "تقييمات عالية"
+  badgeCustom1                Boolean @default(false) // شارة مخصصة 1
+  badgeCustom1Text            String? // نص الشارة المخصصة 1
+  badgeCustom2                Boolean @default(false) // شارة مخصصة 2
+  badgeCustom2Text            String? // نص الشارة المخصصة 2
+  badgeLayout                 String  @default("horizontal") // "horizontal" | "vertical"
+
+  // Reasons to Purchase Settings
+  reasonsToPurchaseEnabled    Boolean @default(false) // تفعيل أسباب الشراء
+  reasonsToPurchaseType       String  @default("global") // "global" | "perProduct"
+  reasonsToPurchaseList       String? @db.Text // JSON array للأسباب
+  reasonsToPurchaseMaxItems   Int     @default(4) // عدد الأسباب المعروضة
+  reasonsToPurchaseStyle      String  @default("list") // "list" | "icons"
+
+  // Online Visitors Count Settings
+  onlineVisitorsEnabled       Boolean @default(false) // تفعيل عرض الزوار المتصلين
+  onlineVisitorsType          String  @default("fake") // "real" | "fake"
+  onlineVisitorsMin           Int     @default(5) // الحد الأدنى (للعشوائي)
+  onlineVisitorsMax           Int     @default(50) // الحد الأقصى (للعشوائي)
+  onlineVisitorsUpdateInterval Int    @default(30) // فترة التحديث (بالثواني)
+  onlineVisitorsText          String  @default("{count} شخص يشاهدون هذا المنتج الآن") // نص العرض
+
+  // Estimated Delivery Time Settings
+  estimatedDeliveryEnabled    Boolean @default(false) // تفعيل عرض وقت التوصيل المتوقع
+  estimatedDeliveryShowOnProduct Boolean @default(true) // إظهار في صفحة المنتج
+  estimatedDeliveryDefaultText String  @default("التوصيل خلال {time}") // نص افتراضي
+
+  // FOMO Popup Settings
+  fomoEnabled                 Boolean @default(false) // تفعيل نافذة FOMO
+  fomoType                    String  @default("soldCount") // "soldCount" | "visitors" | "stock" | "countdown"
+  fomoTrigger                 String  @default("time") // "time" | "scroll" | "exit"
+  fomoDelay                  Int     @default(30) // تأخير الظهور (بالثواني)
+  fomoShowOncePerSession     Boolean @default(true) // إظهار مرة واحدة لكل جلسة
+  fomoMessage                String? @db.Text // رسالة FOMO مخصصة
+
   // SEO Settings
   seoEnabled         Boolean @default(true)
   seoMetaDescription Boolean @default(true)
@@ -2017,6 +2092,37 @@ model StorefrontSettings {
   capiTrackInitiateCheckout  Boolean @default(true)
   capiTrackPurchase          Boolean @default(true)
   capiTrackSearch            Boolean @default(true)
+
+  // ==========================================
+  // 📐 Product Page Layout Order Settings
+  // ==========================================
+  productPageLayoutEnabled      Boolean @default(false) // تفعيل التحكم في ترتيب صفحة المنتج
+  productPageOrder              String? @db.Text // JSON array of element IDs in order
+  productPageShowTitle          Boolean @default(true) // عرض العنوان
+  productPageShowCategory       Boolean @default(true) // عرض الفئة
+  productPageShowSocialSharing   Boolean @default(true) // عرض المشاركة الاجتماعية
+  productPageShowBadges         Boolean @default(true) // عرض شارات المنتج
+  productPageShowPrice           Boolean @default(true) // عرض السعر
+  productPageShowCountdown       Boolean @default(true) // عرض العد التنازلي
+  productPageShowStockStatus     Boolean @default(true) // عرض حالة المخزون
+  productPageShowStockProgress   Boolean @default(true) // عرض شريط تقدم المخزون
+  productPageShowBackInStock     Boolean @default(true) // عرض إشعار عودة المنتج
+  productPageShowSecurityBadges  Boolean @default(true) // عرض شارات الأمان
+  productPageShowSoldNumber      Boolean @default(true) // عرض عدد المبيعات
+  productPageShowOnlineVisitors  Boolean @default(true) // عرض عدد الزوار
+  productPageShowEstimatedDelivery Boolean @default(true) // عرض وقت التوصيل المتوقع
+  productPageShowFreeShipping    Boolean @default(true) // عرض بانر الشحن المجاني
+  productPageShowPreOrder        Boolean @default(true) // عرض زر الطلب المسبق
+  productPageShowVariants        Boolean @default(true) // عرض الخيارات (الألوان/المقاسات)
+  productPageShowSizeGuide       Boolean @default(true) // عرض دليل المقاسات
+  productPageShowQuantity        Boolean @default(true) // عرض الكمية
+  productPageShowVolumeDiscounts Boolean @default(true) // عرض خصومات الكمية
+  productPageShowReasonsToPurchase Boolean @default(true) // عرض أسباب الشراء
+  productPageShowActions         Boolean @default(true) // عرض أزرار الإجراءات
+  productPageShowTabs           Boolean @default(true) // عرض التبويبات
+  productPageShowDescription     Boolean @default(true) // عرض الوصف
+  productPageShowSKU            Boolean @default(true) // عرض رمز المنتج (SKU)
+  productPageShowCheckoutForm   Boolean @default(true) // عرض نموذج الطلب
 
   // ==========================================
   // ⚙️ Advanced Settings
@@ -2357,4 +2463,29 @@ enum CouponType {
   PERCENTAGE     // نسبة مئوية (مثل: 10%)
   FIXED          // مبلغ ثابت (مثل: 50 جنيه)
   FREE_SHIPPING  // شحن مجاني
+}
+
+// 🏠 قوالب الصفحة الرئيسية
+model HomepageTemplate {
+  id          String   @id @default(cuid())
+  companyId   String
+  
+  // معلومات القالب
+  name        String
+  description String?  @db.Text
+  content     String   @db.LongText // JSON content for sections
+  thumbnail   String?  @db.Text
+  
+  // الحالة
+  isActive    Boolean  @default(false)
+  
+  // التواريخ
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  @@index([companyId])
+  @@index([isActive])
+  @@map("homepage_templates")
 }

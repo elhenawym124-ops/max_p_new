@@ -16,6 +16,12 @@ const getApiBaseUrl = () => {
   return apiUrl.replace('/api/v1', '');
 };
 
+// Export as getApiUrl for external use
+// Returns the full API URL including /api/v1 for direct axios calls
+export const getApiUrl = (): string => {
+  return envConfig.apiUrl;
+};
+
 // استخراج Subdomain من hostname
 const getSubdomain = (): string | null => {
   const hostname = window.location.hostname;
@@ -140,16 +146,8 @@ export const storefrontFetch = async (endpoint: string, options?: RequestInit) =
   
   // Only log in development and limit frequency
   const isDevelopment = process.env.NODE_ENV === 'development';
-  if (isDevelopment) {
-    // Use a debounce mechanism to avoid spam
-    const logKey = `api_log_${endpoint}`;
-    const lastLog = sessionStorage.getItem(logKey);
-    const now = Date.now();
-    if (!lastLog || now - parseInt(lastLog) > 5000) { // Log at most once every 5 seconds per endpoint
-      console.log('🔍 [Storefront API] Request:', url.toString());
-      sessionStorage.setItem(logKey, now.toString());
-    }
-  }
+  // Don't log requests for optional endpoints (sold-count, navigation, shipping/estimate, footer-settings)
+  // These endpoints may return 401/404 which is expected and should be handled silently
   
   // Get cart session ID from localStorage
   const cartSessionId = localStorage.getItem('cart_session_id');
@@ -161,14 +159,21 @@ export const storefrontFetch = async (endpoint: string, options?: RequestInit) =
   };
   
   // ✅ CRITICAL: Include credentials to send/receive cookies
-  const response = await fetch(url.toString(), {
-    ...options,
-    headers,
-    credentials: 'include' // Enable cookies for cart functionality
-  });
+  let response: Response;
+  try {
+    response = await fetch(url.toString(), {
+      ...options,
+      headers,
+      credentials: 'include' // Enable cookies for cart functionality
+    });
+  } catch (networkError: any) {
+    // Network errors (not HTTP errors) - rethrow as-is
+    throw networkError;
+  }
   
   // Only log errors or important responses (not 401/403/404/500)
-  // 500 errors are server issues that should be handled gracefully
+  // 401/404 errors are expected for optional features and should be handled silently
+  // Note: Browser will still show these in Network tab, but we won't log them to console
   if (isDevelopment) {
     if (!response.ok && ![401, 403, 404, 500].includes(response.status)) {
       console.log('📡 [Storefront API] Response:', response.status, response.statusText, 'for', endpoint);
@@ -176,7 +181,19 @@ export const storefrontFetch = async (endpoint: string, options?: RequestInit) =
   }
   
   if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
+    // Create error with status code in message for easy checking
+    const error = new Error(`HTTP error! status: ${response.status}`);
+    (error as any).status = response.status; // Add status for easier checking
+    
+    // Mark as silent error for 401/404 to prevent console logging
+    // These are expected for optional endpoints (sold-count, navigation, shipping/estimate, footer-settings)
+    if (response.status === 401 || response.status === 404) {
+      (error as any).silent = true;
+      // Don't log to console - these are expected for optional features
+      // Browser Network tab will still show them, but that's normal
+    }
+    
+    throw error;
   }
   
   return response.json();

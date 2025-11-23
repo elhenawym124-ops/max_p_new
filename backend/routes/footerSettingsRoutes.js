@@ -17,6 +17,8 @@ router.put('/', verifyToken.authenticateToken, footerSettingsController.updateFo
 router.post('/reset', verifyToken.authenticateToken, footerSettingsController.resetFooterSettings);
 
 // Get public footer settings (for storefront - no auth required)
-router.get('/public/:companyId', footerSettingsController.getPublicFooterSettings);
+// Note: This route is mounted at /api/v1/public/footer-settings in server.js
+// So the full path is /api/v1/public/footer-settings/:companyId
+router.get('/:companyId', footerSettingsController.getPublicFooterSettings);
 
 module.exports = router;

@@ -17,9 +17,20 @@ import {
   ShoppingCartIcon,
   GlobeAltIcon,
   LanguageIcon,
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  ChartBarIcon,
+  ShieldCheckIcon,
+  CheckBadgeIcon,
+  UserGroupIcon,
+  PaintBrushIcon,
+  FireIcon,
+  TruckIcon,
+  ArrowsUpDownIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { storefrontSettingsService, StorefrontSettings, StorefrontSettingsUpdate } from '../../services/storefrontSettingsService';
+import SortableProductPageElements, { ProductPageElement } from '../../components/settings/SortableProductPageElements';
 
 const StorefrontFeaturesSettings: React.FC = () => {
   const [settings, setSettings] = useState<StorefrontSettings | null>(null);
@@ -76,12 +87,30 @@ const StorefrontFeaturesSettings: React.FC = () => {
 
     try {
       setSaving(true);
+      
+      // Remove undefined values and ensure String fields have proper defaults
+      const cleanSettings = Object.fromEntries(
+        Object.entries(settings).filter(([_, value]) => value !== undefined)
+      ) as StorefrontSettings;
+      
+      // Ensure String fields have proper defaults (not undefined/null)
+      if (!cleanSettings.estimatedDeliveryDefaultText || typeof cleanSettings.estimatedDeliveryDefaultText !== 'string') {
+        cleanSettings.estimatedDeliveryDefaultText = 'التوصيل خلال {time}';
+      }
+      if (!cleanSettings.fomoType || typeof cleanSettings.fomoType !== 'string') {
+        cleanSettings.fomoType = 'soldCount';
+      }
+      if (!cleanSettings.fomoTrigger || typeof cleanSettings.fomoTrigger !== 'string') {
+        cleanSettings.fomoTrigger = 'time';
+      }
+      // fomoMessage can be null/empty, so we keep it as is
+      
       const updateData: StorefrontSettingsUpdate = { 
-        ...settings,
+        ...cleanSettings,
         // Ensure supportedLanguages is always an array
-        supportedLanguages: Array.isArray(settings.supportedLanguages) 
-          ? settings.supportedLanguages 
-          : (settings.supportedLanguages ? [settings.supportedLanguages] : ['ar'])
+        supportedLanguages: Array.isArray(cleanSettings.supportedLanguages) 
+          ? cleanSettings.supportedLanguages 
+          : (cleanSettings.supportedLanguages ? [cleanSettings.supportedLanguages] : ['ar'])
       };
       await storefrontSettingsService.updateSettings(updateData);
       toast.success('تم حفظ الإعدادات بنجاح');
@@ -610,6 +639,685 @@ const StorefrontFeaturesSettings: React.FC = () => {
           <p className="mt-2 text-xs text-gray-500">
             عند تفعيل "التمرير التلقائي"، سيتم التمرير تلقائياً لصفحة الشراء عند الضغط على "شراء الآن"
           </p>
+        </SettingsSection>
+
+        {/* Product Navigation Section */}
+        <SettingsSection
+          title="التنقل بين المنتجات"
+          icon={ArrowLeftIcon}
+          enabled={settings.navigationEnabled !== false}
+          onToggle={(enabled) => updateSetting('navigationEnabled', enabled)}
+        >
+          <SelectSetting
+            label="نوع التنقل"
+            value={settings.navigationType || 'sameCategory'}
+            onChange={(value) => updateSetting('navigationType', value)}
+            options={[
+              { value: 'sameCategory', label: 'نفس الفئة' },
+              { value: 'allProducts', label: 'جميع المنتجات' },
+            ]}
+            disabled={!settings.navigationEnabled}
+          />
+          <ToggleSetting
+            label="إظهار أزرار السابق/التالي"
+            value={settings.showNavigationButtons !== false}
+            onChange={(value) => updateSetting('showNavigationButtons', value)}
+            disabled={!settings.navigationEnabled}
+          />
+          <ToggleSetting
+            label="اختصارات لوحة المفاتيح (Arrow Keys)"
+            value={settings.keyboardShortcuts !== false}
+            onChange={(value) => updateSetting('keyboardShortcuts', value)}
+            disabled={!settings.navigationEnabled}
+          />
+        </SettingsSection>
+
+        {/* Sold Number Display Section */}
+        <SettingsSection
+          title="عرض عدد المبيعات"
+          icon={ChartBarIcon}
+          enabled={settings.soldNumberEnabled === true}
+          onToggle={(enabled) => updateSetting('soldNumberEnabled', enabled)}
+        >
+          <SelectSetting
+            label="نوع العدد"
+            value={settings.soldNumberType || 'real'}
+            onChange={(value) => updateSetting('soldNumberType', value)}
+            options={[
+              { value: 'real', label: 'عدد حقيقي من الطلبات' },
+              { value: 'fake', label: 'عدد عشوائي/مزيف' },
+            ]}
+            disabled={!settings.soldNumberEnabled}
+          />
+          {settings.soldNumberType === 'fake' && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    الحد الأدنى
+                  </label>
+                  <input
+                    type="number"
+                    value={settings.soldNumberMin || 10}
+                    onChange={(e) => updateSetting('soldNumberMin', parseInt(e.target.value))}
+                    disabled={!settings.soldNumberEnabled}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    الحد الأقصى
+                  </label>
+                  <input
+                    type="number"
+                    value={settings.soldNumberMax || 500}
+                    onChange={(e) => updateSetting('soldNumberMax', parseInt(e.target.value))}
+                    disabled={!settings.soldNumberEnabled}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+              </div>
+            </>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              نص العرض (استخدم {`{count}`} للعدد)
+            </label>
+            <input
+              type="text"
+              value={settings.soldNumberText || 'تم بيع {count} قطعة'}
+              onChange={(e) => updateSetting('soldNumberText', e.target.value)}
+              disabled={!settings.soldNumberEnabled}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              placeholder="تم بيع {count} قطعة"
+            />
+          </div>
+        </SettingsSection>
+
+        {/* Variant Styles Section */}
+        <SettingsSection
+          title="أنماط المتغيرات"
+          icon={PaintBrushIcon}
+          enabled={true}
+          onToggle={() => {}}
+        >
+          <div className="space-y-4">
+            <div>
+              <h4 className="text-sm font-medium text-gray-700 mb-2">أنماط الألوان</h4>
+              <SelectSetting
+                label="نمط عرض الألوان"
+                value={settings.variantColorStyle || 'buttons'}
+                onChange={(value) => updateSetting('variantColorStyle', value)}
+                options={[
+                  { value: 'buttons', label: 'أزرار' },
+                  { value: 'circles', label: 'دوائر ملونة' },
+                  { value: 'thumbnails', label: 'صور مصغرة' },
+                  { value: 'dropdown', label: 'قائمة منسدلة' },
+                  { value: 'swatches', label: 'Swatches مع الأسماء' },
+                ]}
+                disabled={false}
+              />
+              <ToggleSetting
+                label="إظهار اسم اللون"
+                value={settings.variantColorShowName !== false}
+                onChange={(value) => updateSetting('variantColorShowName', value)}
+                disabled={false}
+              />
+              <SelectSetting
+                label="حجم العرض"
+                value={settings.variantColorSize || 'medium'}
+                onChange={(value) => updateSetting('variantColorSize', value)}
+                options={[
+                  { value: 'small', label: 'صغير' },
+                  { value: 'medium', label: 'متوسط' },
+                  { value: 'large', label: 'كبير' },
+                ]}
+                disabled={false}
+              />
+            </div>
+            <div>
+              <h4 className="text-sm font-medium text-gray-700 mb-2">أنماط المقاسات</h4>
+              <SelectSetting
+                label="نمط عرض المقاسات"
+                value={settings.variantSizeStyle || 'buttons'}
+                onChange={(value) => updateSetting('variantSizeStyle', value)}
+                options={[
+                  { value: 'buttons', label: 'أزرار' },
+                  { value: 'table', label: 'جدول' },
+                  { value: 'dropdown', label: 'قائمة منسدلة' },
+                  { value: 'grid', label: 'Grid مع الأسماء' },
+                ]}
+                disabled={false}
+              />
+              <ToggleSetting
+                label="إظهار دليل المقاسات"
+                value={settings.variantSizeShowGuide === true}
+                onChange={(value) => updateSetting('variantSizeShowGuide', value)}
+                disabled={false}
+              />
+              <ToggleSetting
+                label="إظهار المخزون"
+                value={settings.variantSizeShowStock !== false}
+                onChange={(value) => updateSetting('variantSizeShowStock', value)}
+                disabled={false}
+              />
+            </div>
+          </div>
+        </SettingsSection>
+
+        {/* Stock Progress Bar Section */}
+        <SettingsSection
+          title="شريط تقدم المخزون"
+          icon={ChartBarIcon}
+          enabled={settings.stockProgressEnabled === true}
+          onToggle={(enabled) => updateSetting('stockProgressEnabled', enabled)}
+        >
+          <SelectSetting
+            label="نوع العرض"
+            value={settings.stockProgressType || 'percentage'}
+            onChange={(value) => updateSetting('stockProgressType', value)}
+            options={[
+              { value: 'percentage', label: 'نسبة مئوية' },
+              { value: 'count', label: 'عدد القطع' },
+              { value: 'text', label: 'نص (قليل جداً/متوفر/نفذ)' },
+            ]}
+            disabled={!settings.stockProgressEnabled}
+          />
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                لون المخزون القليل
+              </label>
+              <input
+                type="color"
+                value={settings.stockProgressLowColor || '#ef4444'}
+                onChange={(e) => updateSetting('stockProgressLowColor', e.target.value)}
+                disabled={!settings.stockProgressEnabled}
+                className="w-full h-10 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                لون المخزون المتوسط
+              </label>
+              <input
+                type="color"
+                value={settings.stockProgressMediumColor || '#f59e0b'}
+                onChange={(e) => updateSetting('stockProgressMediumColor', e.target.value)}
+                disabled={!settings.stockProgressEnabled}
+                className="w-full h-10 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                لون المخزون العالي
+              </label>
+              <input
+                type="color"
+                value={settings.stockProgressHighColor || '#10b981'}
+                onChange={(e) => updateSetting('stockProgressHighColor', e.target.value)}
+                disabled={!settings.stockProgressEnabled}
+                className="w-full h-10 border border-gray-300 rounded-lg"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              عتبة المخزون القليل
+            </label>
+            <input
+              type="number"
+              value={settings.stockProgressThreshold || 10}
+              onChange={(e) => updateSetting('stockProgressThreshold', parseInt(e.target.value))}
+              disabled={!settings.stockProgressEnabled}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
+            <p className="mt-1 text-xs text-gray-500">عدد القطع التي تعتبر "قليلة"</p>
+          </div>
+        </SettingsSection>
+
+        {/* Security Badges Section */}
+        <SettingsSection
+          title="شارات الأمان"
+          icon={ShieldCheckIcon}
+          enabled={settings.securityBadgesEnabled === true}
+          onToggle={(enabled) => updateSetting('securityBadgesEnabled', enabled)}
+        >
+          <ToggleSetting
+            label="دفع آمن"
+            value={settings.badgeSecurePayment !== false}
+            onChange={(value) => updateSetting('badgeSecurePayment', value)}
+            disabled={!settings.securityBadgesEnabled}
+          />
+          <ToggleSetting
+            label="شحن مجاني"
+            value={settings.badgeFreeShipping !== false}
+            onChange={(value) => updateSetting('badgeFreeShipping', value)}
+            disabled={!settings.securityBadgesEnabled}
+          />
+          <ToggleSetting
+            label="ضمان الجودة"
+            value={settings.badgeQualityGuarantee !== false}
+            onChange={(value) => updateSetting('badgeQualityGuarantee', value)}
+            disabled={!settings.securityBadgesEnabled}
+          />
+          <ToggleSetting
+            label="دفع عند الاستلام"
+            value={settings.badgeCashOnDelivery !== false}
+            onChange={(value) => updateSetting('badgeCashOnDelivery', value)}
+            disabled={!settings.securityBadgesEnabled}
+          />
+          <ToggleSetting
+            label="حماية المشتري"
+            value={settings.badgeBuyerProtection !== false}
+            onChange={(value) => updateSetting('badgeBuyerProtection', value)}
+            disabled={!settings.securityBadgesEnabled}
+          />
+          <ToggleSetting
+            label="تقييمات عالية"
+            value={settings.badgeHighRating !== false}
+            onChange={(value) => updateSetting('badgeHighRating', value)}
+            disabled={!settings.securityBadgesEnabled}
+          />
+          <div className="space-y-2">
+            <ToggleSetting
+              label="شارة مخصصة 1"
+              value={settings.badgeCustom1 === true}
+              onChange={(value) => updateSetting('badgeCustom1', value)}
+              disabled={!settings.securityBadgesEnabled}
+            />
+            {settings.badgeCustom1 && (
+              <input
+                type="text"
+                value={settings.badgeCustom1Text || ''}
+                onChange={(e) => updateSetting('badgeCustom1Text', e.target.value)}
+                disabled={!settings.securityBadgesEnabled}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                placeholder="نص الشارة المخصصة 1"
+              />
+            )}
+          </div>
+          <div className="space-y-2">
+            <ToggleSetting
+              label="شارة مخصصة 2"
+              value={settings.badgeCustom2 === true}
+              onChange={(value) => updateSetting('badgeCustom2', value)}
+              disabled={!settings.securityBadgesEnabled}
+            />
+            {settings.badgeCustom2 && (
+              <input
+                type="text"
+                value={settings.badgeCustom2Text || ''}
+                onChange={(e) => updateSetting('badgeCustom2Text', e.target.value)}
+                disabled={!settings.securityBadgesEnabled}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                placeholder="نص الشارة المخصصة 2"
+              />
+            )}
+          </div>
+          <SelectSetting
+            label="تخطيط الشارات"
+            value={settings.badgeLayout || 'horizontal'}
+            onChange={(value) => updateSetting('badgeLayout', value)}
+            options={[
+              { value: 'horizontal', label: 'أفقي' },
+              { value: 'vertical', label: 'عمودي' },
+            ]}
+            disabled={!settings.securityBadgesEnabled}
+          />
+        </SettingsSection>
+
+        {/* Reasons to Purchase Section */}
+        <SettingsSection
+          title="أسباب الشراء"
+          icon={CheckBadgeIcon}
+          enabled={settings.reasonsToPurchaseEnabled === true}
+          onToggle={(enabled) => updateSetting('reasonsToPurchaseEnabled', enabled)}
+        >
+          <SelectSetting
+            label="نوع العرض"
+            value={settings.reasonsToPurchaseType || 'global'}
+            onChange={(value) => updateSetting('reasonsToPurchaseType', value)}
+            options={[
+              { value: 'global', label: 'عام لجميع المنتجات' },
+              { value: 'perProduct', label: 'خاص بكل منتج' },
+            ]}
+            disabled={!settings.reasonsToPurchaseEnabled}
+          />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              قائمة الأسباب (JSON Array - مثال: ["✅ جودة عالية", "✅ توصيل سريع"])
+            </label>
+            <textarea
+              value={settings.reasonsToPurchaseList || ''}
+              onChange={(e) => updateSetting('reasonsToPurchaseList', e.target.value)}
+              disabled={!settings.reasonsToPurchaseEnabled}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              rows={4}
+              placeholder='["✅ جودة عالية", "✅ توصيل سريع", "✅ ضمان 30 يوم"]'
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              عدد الأسباب المعروضة
+            </label>
+            <input
+              type="number"
+              value={settings.reasonsToPurchaseMaxItems || 4}
+              onChange={(e) => updateSetting('reasonsToPurchaseMaxItems', parseInt(e.target.value))}
+              disabled={!settings.reasonsToPurchaseEnabled}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              min={1}
+              max={10}
+            />
+          </div>
+          <SelectSetting
+            label="نمط العرض"
+            value={settings.reasonsToPurchaseStyle || 'list'}
+            onChange={(value) => updateSetting('reasonsToPurchaseStyle', value)}
+            options={[
+              { value: 'list', label: 'قائمة' },
+              { value: 'icons', label: 'أيقونات' },
+            ]}
+            disabled={!settings.reasonsToPurchaseEnabled}
+          />
+        </SettingsSection>
+
+        {/* Online Visitors Count Section */}
+        <SettingsSection
+          title="عرض الزوار المتصلين"
+          icon={UserGroupIcon}
+          enabled={settings.onlineVisitorsEnabled === true}
+          onToggle={(enabled) => updateSetting('onlineVisitorsEnabled', enabled)}
+        >
+          <SelectSetting
+            label="نوع العدد"
+            value={settings.onlineVisitorsType || 'fake'}
+            onChange={(value) => updateSetting('onlineVisitorsType', value)}
+            options={[
+              { value: 'real', label: 'عدد حقيقي (Real-time tracking)' },
+              { value: 'fake', label: 'عدد عشوائي/مزيف' },
+            ]}
+            disabled={!settings.onlineVisitorsEnabled}
+          />
+          {settings.onlineVisitorsType === 'fake' && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  الحد الأدنى
+                </label>
+                <input
+                  type="number"
+                  value={settings.onlineVisitorsMin || 5}
+                  onChange={(e) => updateSetting('onlineVisitorsMin', parseInt(e.target.value))}
+                  disabled={!settings.onlineVisitorsEnabled}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  الحد الأقصى
+                </label>
+                <input
+                  type="number"
+                  value={settings.onlineVisitorsMax || 50}
+                  onChange={(e) => updateSetting('onlineVisitorsMax', parseInt(e.target.value))}
+                  disabled={!settings.onlineVisitorsEnabled}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+            </div>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              فترة التحديث (بالثواني)
+            </label>
+            <input
+              type="number"
+              value={settings.onlineVisitorsUpdateInterval || 30}
+              onChange={(e) => updateSetting('onlineVisitorsUpdateInterval', parseInt(e.target.value))}
+              disabled={!settings.onlineVisitorsEnabled}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              min={5}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              نص العرض (استخدم {`{count}`} للعدد)
+            </label>
+            <input
+              type="text"
+              value={settings.onlineVisitorsText || '{count} شخص يشاهدون هذا المنتج الآن'}
+              onChange={(e) => updateSetting('onlineVisitorsText', e.target.value)}
+              disabled={!settings.onlineVisitorsEnabled}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              placeholder="{count} شخص يشاهدون هذا المنتج الآن"
+            />
+          </div>
+        </SettingsSection>
+
+        {/* Estimated Delivery Time Section */}
+        <SettingsSection
+          title="وقت التوصيل المتوقع"
+          icon={TruckIcon}
+          enabled={settings.estimatedDeliveryEnabled === true}
+          onToggle={(enabled) => updateSetting('estimatedDeliveryEnabled', enabled)}
+        >
+          <ToggleSetting
+            label="إظهار في صفحة المنتج"
+            value={settings.estimatedDeliveryShowOnProduct !== false}
+            onChange={(value) => updateSetting('estimatedDeliveryShowOnProduct', value)}
+            disabled={!settings.estimatedDeliveryEnabled}
+          />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              نص العرض (استخدم {`{time}`} لوقت التوصيل)
+            </label>
+            <input
+              type="text"
+              value={settings.estimatedDeliveryDefaultText || 'التوصيل خلال {time}'}
+              onChange={(e) => updateSetting('estimatedDeliveryDefaultText', e.target.value)}
+              disabled={!settings.estimatedDeliveryEnabled}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              placeholder="التوصيل خلال {time}"
+            />
+          </div>
+        </SettingsSection>
+
+        {/* FOMO Popup Section */}
+        <SettingsSection
+          title="نافذة FOMO (Fear of Missing Out)"
+          icon={FireIcon}
+          enabled={settings.fomoEnabled === true}
+          onToggle={(enabled) => updateSetting('fomoEnabled', enabled)}
+        >
+          <SelectSetting
+            label="نوع الرسالة"
+            value={settings.fomoType || 'soldCount'}
+            onChange={(value) => updateSetting('fomoType', value)}
+            options={[
+              { value: 'soldCount', label: 'عدد المبيعات' },
+              { value: 'visitors', label: 'عدد الزوار' },
+              { value: 'stock', label: 'المخزون المتبقي' },
+              { value: 'countdown', label: 'العد التنازلي' },
+            ]}
+            disabled={!settings.fomoEnabled}
+          />
+          <SelectSetting
+            label="متى تظهر"
+            value={settings.fomoTrigger || 'time'}
+            onChange={(value) => updateSetting('fomoTrigger', value)}
+            options={[
+              { value: 'time', label: 'بعد وقت محدد' },
+              { value: 'scroll', label: 'عند التمرير' },
+              { value: 'exit', label: 'عند محاولة الخروج' },
+            ]}
+            disabled={!settings.fomoEnabled}
+          />
+          {settings.fomoTrigger === 'time' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                تأخير الظهور (بالثواني)
+              </label>
+              <input
+                type="number"
+                value={settings.fomoDelay || 30}
+                onChange={(e) => updateSetting('fomoDelay', parseInt(e.target.value))}
+                disabled={!settings.fomoEnabled}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                min={5}
+                max={300}
+              />
+            </div>
+          )}
+          {settings.fomoTrigger === 'scroll' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                نسبة التمرير (0-100%)
+              </label>
+              <input
+                type="number"
+                value={settings.fomoDelay || 30}
+                onChange={(e) => updateSetting('fomoDelay', parseInt(e.target.value))}
+                disabled={!settings.fomoEnabled}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                min={10}
+                max={100}
+              />
+            </div>
+          )}
+          <ToggleSetting
+            label="إظهار مرة واحدة لكل جلسة"
+            value={settings.fomoShowOncePerSession !== false}
+            onChange={(value) => updateSetting('fomoShowOncePerSession', value)}
+            disabled={!settings.fomoEnabled}
+          />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              رسالة مخصصة (اختياري)
+            </label>
+            <textarea
+              value={settings.fomoMessage || ''}
+              onChange={(e) => updateSetting('fomoMessage', e.target.value)}
+              disabled={!settings.fomoEnabled}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              rows={3}
+              placeholder="رسالة FOMO مخصصة..."
+            />
+          </div>
+        </SettingsSection>
+
+        {/* Product Page Layout Order Section */}
+        <SettingsSection
+          title="ترتيب صفحة المنتج"
+          icon={ArrowsUpDownIcon}
+          enabled={settings.productPageLayoutEnabled ?? false}
+          onToggle={(enabled) => updateSetting('productPageLayoutEnabled', enabled)}
+        >
+          {(() => {
+            // تعريف جميع العناصر مع الترتيب الافتراضي
+            const defaultOrder = [
+              'title',
+              'category',
+              'socialSharing',
+              'badges',
+              'price',
+              'countdown',
+              'stockStatus',
+              'stockProgress',
+              'backInStock',
+              'securityBadges',
+              'soldNumber',
+              'onlineVisitors',
+              'estimatedDelivery',
+              'freeShipping',
+              'preOrder',
+              'variants',
+              'sizeGuide',
+              'quantity',
+              'volumeDiscounts',
+              'reasonsToPurchase',
+              'actions',
+              'tabs',
+              'description',
+              'sku',
+              'checkoutForm'
+            ];
+
+            // جلب الترتيب المحفوظ أو استخدام الافتراضي
+            let currentOrder: string[] = defaultOrder;
+            try {
+              if (settings.productPageOrder) {
+                const parsed = typeof settings.productPageOrder === 'string' 
+                  ? JSON.parse(settings.productPageOrder) 
+                  : settings.productPageOrder;
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  currentOrder = parsed;
+                }
+              }
+            } catch (e) {
+              console.error('Error parsing productPageOrder:', e);
+            }
+
+            // إنشاء قائمة العناصر مع الترتيب الحالي
+            const elementMap: Record<string, { label: string; settingKey: string }> = {
+              'title': { label: 'عرض العنوان', settingKey: 'productPageShowTitle' },
+              'category': { label: 'عرض الفئة', settingKey: 'productPageShowCategory' },
+              'socialSharing': { label: 'عرض المشاركة الاجتماعية', settingKey: 'productPageShowSocialSharing' },
+              'badges': { label: 'عرض شارات المنتج', settingKey: 'productPageShowBadges' },
+              'price': { label: 'عرض السعر', settingKey: 'productPageShowPrice' },
+              'countdown': { label: 'عرض العد التنازلي', settingKey: 'productPageShowCountdown' },
+              'stockStatus': { label: 'عرض حالة المخزون', settingKey: 'productPageShowStockStatus' },
+              'stockProgress': { label: 'عرض شريط تقدم المخزون', settingKey: 'productPageShowStockProgress' },
+              'backInStock': { label: 'عرض إشعار عودة المنتج', settingKey: 'productPageShowBackInStock' },
+              'securityBadges': { label: 'عرض شارات الأمان', settingKey: 'productPageShowSecurityBadges' },
+              'soldNumber': { label: 'عرض عدد المبيعات', settingKey: 'productPageShowSoldNumber' },
+              'onlineVisitors': { label: 'عرض عدد الزوار', settingKey: 'productPageShowOnlineVisitors' },
+              'estimatedDelivery': { label: 'عرض وقت التوصيل المتوقع', settingKey: 'productPageShowEstimatedDelivery' },
+              'freeShipping': { label: 'عرض بانر الشحن المجاني', settingKey: 'productPageShowFreeShipping' },
+              'preOrder': { label: 'عرض زر الطلب المسبق', settingKey: 'productPageShowPreOrder' },
+              'variants': { label: 'عرض الخيارات (الألوان/المقاسات)', settingKey: 'productPageShowVariants' },
+              'sizeGuide': { label: 'عرض دليل المقاسات', settingKey: 'productPageShowSizeGuide' },
+              'quantity': { label: 'عرض الكمية', settingKey: 'productPageShowQuantity' },
+              'volumeDiscounts': { label: 'عرض خصومات الكمية', settingKey: 'productPageShowVolumeDiscounts' },
+              'reasonsToPurchase': { label: 'عرض أسباب الشراء', settingKey: 'productPageShowReasonsToPurchase' },
+              'actions': { label: 'عرض أزرار الإجراءات', settingKey: 'productPageShowActions' },
+              'tabs': { label: 'عرض التبويبات', settingKey: 'productPageShowTabs' },
+              'description': { label: 'عرض الوصف', settingKey: 'productPageShowDescription' },
+              'sku': { label: 'عرض رمز المنتج (SKU)', settingKey: 'productPageShowSKU' },
+              'checkoutForm': { label: 'عرض نموذج الطلب', settingKey: 'productPageShowCheckoutForm' }
+            };
+
+            // إضافة أي عناصر جديدة غير موجودة في الترتيب الحالي
+            const allElementIds = Object.keys(elementMap);
+            const missingElements = allElementIds.filter(id => !currentOrder.includes(id));
+            currentOrder = [...currentOrder, ...missingElements];
+
+            // إنشاء قائمة العناصر مع حالة التفعيل
+            const elements: ProductPageElement[] = currentOrder
+              .filter(id => elementMap[id]) // فقط العناصر المعرفة
+              .map(id => ({
+                id,
+                label: elementMap[id].label,
+                enabled: (settings as any)[elementMap[id].settingKey] ?? true
+              }));
+
+            return (
+              <SortableProductPageElements
+                elements={elements}
+                onOrderChange={(newOrder) => {
+                  updateSetting('productPageOrder', JSON.stringify(newOrder));
+                }}
+                onToggle={(id, enabled) => {
+                  const settingKey = elementMap[id]?.settingKey;
+                  if (settingKey) {
+                    updateSetting(settingKey as keyof StorefrontSettings, enabled);
+                  }
+                }}
+                disabled={!settings.productPageLayoutEnabled}
+              />
+            );
+          })()}
         </SettingsSection>
 
         {/* SEO Section */}

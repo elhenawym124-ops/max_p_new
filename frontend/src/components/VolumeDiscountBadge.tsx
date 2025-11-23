@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { TagIcon } from '@heroicons/react/24/outline';
-import { getApiUrl } from '../config/environment';
 
 interface VolumeDiscount {
   id: string;
@@ -29,31 +28,21 @@ const VolumeDiscountBadge: React.FC<Props> = ({ productId, quantity }) => {
 
   const fetchDiscounts = async () => {
     try {
-      const apiUrl = getApiUrl();
-      const response = await fetch(`${apiUrl}/public/products/${productId}/volume-discounts`);
+      // Use storefrontFetch for public routes
+      const { storefrontFetch } = await import('../utils/storefrontApi');
+      const response = await storefrontFetch(`/products/${productId}/volume-discounts`);
       
-      // Handle 404 gracefully - endpoint might not exist or product has no volume discounts
-      if (response.status === 404) {
-        // Silently handle - this is expected if the endpoint doesn't exist or product has no discounts
+      if (response && response.success && response.data) {
+        setDiscounts(Array.isArray(response.data) ? response.data : []);
+      } else {
         setDiscounts([]);
-        return;
-      }
-      
-      if (!response.ok) {
-        // Only log non-404 errors
-        if (response.status !== 404) {
-          console.error('Error fetching volume discounts:', response.status, response.statusText);
-        }
-        setDiscounts([]);
-        return;
-      }
-      
-      const data = await response.json();
-      if (data.success) {
-        setDiscounts(data.data);
       }
     } catch (error: any) {
-      // Silently handle network errors - endpoint might not exist
+      // Silently handle errors - endpoint might not exist or product has no discounts
+      if (error?.response?.status !== 404) {
+        // Only log non-404 errors
+        console.error('Error fetching volume discounts:', error);
+      }
       setDiscounts([]);
     }
   };

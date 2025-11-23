@@ -62,6 +62,9 @@ import StorefrontFeaturesSettings from './pages/settings/StorefrontFeaturesSetti
 import DeliveryOptions from './pages/settings/DeliveryOptions';
 import PromotionSettings from './pages/settings/PromotionSettings';
 import RecommendationSettings from './pages/settings/RecommendationSettings';
+import HomepageSettings from './pages/settings/HomepageSettings';
+import HomepageEditor from './pages/settings/HomepageEditor';
+import HomepagePreview from './pages/settings/HomepagePreview';
 
 // Advertising
 import FacebookPixelSettings from './pages/advertising/FacebookPixelSettings';
@@ -82,6 +85,11 @@ import Tasks from './pages/tasks/Tasks';
 import AdvancedReports from './pages/reports/AdvancedReports';
 
 // Storefront (Public Pages)
+import Homepage from './pages/storefront/Homepage';
+import HomepageTest from './pages/storefront/HomepageTest';
+import HomepageSimple from './pages/storefront/HomepageSimple';
+import TestPublic from './pages/TestPublic';
+import TestMinimal from './pages/TestMinimal';
 import Shop from './pages/storefront/Shop';
 import ProductDetails from './pages/storefront/ProductDetails';
 import Cart from './pages/storefront/Cart';
@@ -144,7 +152,23 @@ const AppContent = () => {
   // Use real authentication state
   const { isAuthenticated, isLoading } = useAuth();
 
-  if (isLoading) {
+  // Debug: Log current route and auth status
+  const currentPath = window.location.pathname;
+  console.log('🔍 [App] Current path:', currentPath);
+  console.log('🔍 [App] Is authenticated:', isAuthenticated);
+  console.log('🔍 [App] Is loading:', isLoading);
+
+  // Check if current path is a public route
+  const isPublicRoute = 
+    currentPath.startsWith('/test-public') ||
+    currentPath.startsWith('/home') ||
+    currentPath.startsWith('/shop') ||
+    currentPath.startsWith('/auth/') ||
+    currentPath.startsWith('/payment/') ||
+    currentPath.startsWith('/super-admin/login');
+
+  // Only show loading for non-public routes
+  if (isLoading && !isPublicRoute) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -154,12 +178,6 @@ const AppContent = () => {
       </div>
     );
   }
-
-  // Debug: Log current route and auth status
-  const currentPath = window.location.pathname;
-  console.log('🔍 [App] Current path:', currentPath);
-  console.log('🔍 [App] Is authenticated:', isAuthenticated);
-  console.log('🔍 [App] Is loading:', isLoading);
   
   // Check if path is /products/reviews and log debug info
   if (currentPath === '/products/reviews') {
@@ -192,6 +210,22 @@ const AppContent = () => {
         {/* <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} /> */}
 
+        {/* Public Storefront Routes - No Authentication Required */}
+        <Route path="/test-minimal" element={<TestMinimal />} />
+        <Route path="/test-public" element={<TestPublic />} />
+        <Route path="/home-test" element={<HomepageTest />} />
+        <Route path="/home-simple" element={<HomepageSimple />} />
+        <Route path="/home-no-layout" element={<Homepage />} />
+        <Route path="/home" element={<StorefrontLayout><Homepage /></StorefrontLayout>} />
+        <Route path="/shop" element={<StorefrontLayout><Shop /></StorefrontLayout>} />
+        <Route path="/shop/products/:id" element={<StorefrontLayout><ProductDetails /></StorefrontLayout>} />
+        <Route path="/shop/cart" element={<StorefrontLayout><Cart /></StorefrontLayout>} />
+        <Route path="/shop/wishlist" element={<StorefrontLayout><WishlistPage /></StorefrontLayout>} />
+        <Route path="/shop/checkout" element={<StorefrontLayout><Checkout /></StorefrontLayout>} />
+        <Route path="/shop/order-confirmation/:orderNumber" element={<StorefrontLayout><OrderConfirmation /></StorefrontLayout>} />
+        <Route path="/shop/track-order" element={<StorefrontLayout><TrackOrder /></StorefrontLayout>} />
+        <Route path="/shop/page/:slug" element={<StorefrontLayout><StorePage /></StorefrontLayout>} />
+
         {/* Root path - redirect based on auth status */}
         <Route path="/" element={
           isLoading ? (
@@ -207,16 +241,6 @@ const AppContent = () => {
             <Navigate to="/auth/login" replace />
           )
         } />
-
-        {/* Public Storefront Routes - No Authentication Required */}
-        <Route path="/shop" element={<StorefrontLayout><Shop /></StorefrontLayout>} />
-        <Route path="/shop/products/:id" element={<StorefrontLayout><ProductDetails /></StorefrontLayout>} />
-        <Route path="/shop/cart" element={<StorefrontLayout><Cart /></StorefrontLayout>} />
-        <Route path="/shop/wishlist" element={<StorefrontLayout><WishlistPage /></StorefrontLayout>} />
-        <Route path="/shop/checkout" element={<StorefrontLayout><Checkout /></StorefrontLayout>} />
-        <Route path="/shop/order-confirmation/:orderNumber" element={<StorefrontLayout><OrderConfirmation /></StorefrontLayout>} />
-        <Route path="/shop/track-order" element={<StorefrontLayout><TrackOrder /></StorefrontLayout>} />
-        <Route path="/shop/page/:slug" element={<StorefrontLayout><StorePage /></StorefrontLayout>} />
 
         {/* Super Admin Routes */}
         <Route path="/super-admin/login" element={<SuperAdminLogin />} />
@@ -335,6 +359,10 @@ const AppContent = () => {
             <Route path="/settings/delivery-options" element={<Layout><DeliveryOptions /></Layout>} />
             <Route path="/settings/promotion" element={<Layout><PromotionSettings /></Layout>} />
             <Route path="/settings/recommendations" element={<Layout><RecommendationSettings /></Layout>} />
+            <Route path="/settings/homepage" element={<Layout><HomepageSettings /></Layout>} />
+            <Route path="/settings/homepage/create" element={<Layout><HomepageEditor /></Layout>} />
+            <Route path="/settings/homepage/edit/:id" element={<Layout><HomepageEditor /></Layout>} />
+            <Route path="/preview/homepage/:id" element={<HomepagePreview />} />
             <Route path="/settings/facebook" element={<Layout><FacebookSettings /></Layout>} />
             <Route path="/settings/facebook-oauth" element={<Layout><FacebookOAuth /></Layout>} />
             <Route path="/terms" element={<Layout><TermsOfService /></Layout>} />

@@ -110,6 +110,7 @@ const productReviewRoutes = require('./routes/productReviewRoutes'); // ⭐ ال
 const storePagesRoutes = require('./routes/storePagesRoutes'); // 📄 صفحات المتجر
 const couponsRoutes = require('./routes/couponsRoutes'); // 🎟️ الكوبونات والخصومات
 const publicCouponsRoutes = require('./routes/publicCouponsRoutes'); // 🌐 الكوبونات العامة
+const homepageRoutes = require('./routes/homepageRoutes'); // 🏠 قوالب الصفحة الرئيسية
 
 
 
@@ -428,6 +429,9 @@ app.use("/api/v1/public", (req, res, next) => {
   console.log('🔵 [PUBLIC-ORDERS-MIDDLEWARE] Request:', req.method, req.path);
   next();
 }, getCompanyFromSubdomain, addPublicCORS, publicOrdersRoutes);
+
+// 🏠 Homepage public routes - MUST be before globalSecurity
+app.use("/api/v1/homepage", homepageRoutes); // قوالب الصفحة الرئيسية (public + protected)
 console.log('✅ [SERVER] Public storefront routes registered');
 
 // Apply Global Security Middleware to all routes AFTER public routes
@@ -487,7 +491,7 @@ app.use("/api/v1/branches/", branchRoutes)
 app.use("/api/v1/shipping-zones/", shippingZoneRoutes)
 app.use("/api/v1/store-settings/", storeSettingsRoutes)
 app.use("/api/v1/footer-settings", footerSettingsRoutes) // 🏪 إعدادات الفوتر (محمية)
-app.use("/api/v1/public/footer-settings", addPublicCORS, footerSettingsRoutes) // 🏪 إعدادات الفوتر (عامة)
+app.use("/api/v1/public/footer-settings", getCompanyFromSubdomain, addPublicCORS, footerSettingsRoutes) // 🏪 إعدادات الفوتر (عامة)
 app.use("/api/v1/checkout-form-settings", checkoutFormSettingsRoutes) // 📋 إعدادات فورم الشيك أوت (محمية)
 
 // 🎯 AOV Optimization Routes (زيادة متوسط قيمة الطلب)
@@ -506,6 +510,7 @@ app.use("/api/v1/integrations/", facebookIntegrationRoutes)
 app.use("/api/v1/messages/", messageFixRoutes)
 app.use("/api/v1/comments/", commentRoutes)
 app.use("/api/v1/user/image-gallery", imageGalleryRoutes) // 🖼️ حافظة الصور
+// Homepage routes moved before globalSecurity middleware (line 434)
 
 // ==================== SERVER STARTUP ====================
 const PORT = process.env.PORT || 3001;

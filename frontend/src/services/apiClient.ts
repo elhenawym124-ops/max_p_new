@@ -205,6 +205,8 @@ class ApiClient {
     // Redirect to login (if not already there AND not on public storefront routes)
     const currentPath = window.location.pathname;
     const isPublicRoute = 
+      currentPath.startsWith('/test-public') ||
+      currentPath.startsWith('/home') ||
       currentPath.startsWith('/shop') ||
       currentPath.startsWith('/auth/') ||
       currentPath.startsWith('/super-admin/login') ||

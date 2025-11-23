@@ -23,6 +23,16 @@ import ProductTabs from '../../components/storefront/ProductTabs';
 import StickyAddToCart from '../../components/storefront/StickyAddToCart';
 import SizeGuide from '../../components/storefront/SizeGuide';
 import { addToComparison } from '../../components/storefront/ProductComparison';
+import ProductNavigation from '../../components/storefront/ProductNavigation';
+import SoldNumberDisplay from '../../components/storefront/SoldNumberDisplay';
+import StockProgressBar from '../../components/storefront/StockProgressBar';
+import SecurityBadges from '../../components/storefront/SecurityBadges';
+import ReasonsToPurchase from '../../components/storefront/ReasonsToPurchase';
+import OnlineVisitorsCount from '../../components/storefront/OnlineVisitorsCount';
+import VariantSelector from '../../components/storefront/VariantSelector';
+import EstimatedDeliveryTime from '../../components/storefront/EstimatedDeliveryTime';
+import PreOrderButton from '../../components/storefront/PreOrderButton';
+import FOMOPopup from '../../components/storefront/FOMOPopup';
 import { updateSEO, generateProductStructuredData, addStructuredData } from '../../utils/seo';
 import { trackViewContent, trackAddToCart, trackInitiateCheckout, trackPurchase } from '../../utils/facebookPixel';
 
@@ -110,21 +120,9 @@ const ProductDetails: React.FC = () => {
       if (companyId) {
         const data = await storefrontSettingsService.getPublicSettings(companyId);
         if (data.success && data.data) {
-          console.log('✅ [ProductDetails] Storefront settings loaded:', {
-            quickViewEnabled: data.data.quickViewEnabled,
-            comparisonEnabled: data.data.comparisonEnabled,
-            wishlistEnabled: data.data.wishlistEnabled,
-            reviewsEnabled: data.data.reviewsEnabled,
-            countdownEnabled: data.data.countdownEnabled,
-            countdownShowOnProduct: data.data.countdownShowOnProduct,
-            countdownShowOnListing: data.data.countdownShowOnListing,
-            recentlyViewedEnabled: data.data.recentlyViewedEnabled,
-            recentlyViewedCount: data.data.recentlyViewedCount
-          });
           setStorefrontSettings(data.data);
         } else {
-          console.warn('⚠️ [ProductDetails] Failed to load storefront settings, using disabled defaults');
-          // Set to null to ensure features are hidden
+          // Failed to load storefront settings, using disabled defaults
           setStorefrontSettings(null);
         }
       }
@@ -169,17 +167,6 @@ const ProductDetails: React.FC = () => {
       const data = await storefrontApi.getProduct(id!);
       
       if (data.success) {
-        console.log('🔍 [ProductDetails] Product data received:', {
-          id: data.data.id,
-          name: data.data.name,
-          comparePrice: data.data.comparePrice,
-          price: data.data.price,
-          saleStartDate: data.data.saleStartDate,
-          saleEndDate: data.data.saleEndDate,
-          hasSaleEndDate: !!data.data.saleEndDate,
-          saleEndDateValid: data.data.saleEndDate ? new Date(data.data.saleEndDate) > new Date() : false,
-          fullProductData: data.data // Log full product data to see all fields
-        });
         setProduct(data.data);
         
         // Parse images from JSON string
@@ -203,20 +190,11 @@ const ProductDetails: React.FC = () => {
         const isRecentlyViewedEnabled = storefrontSettings?.recentlyViewedEnabled === true;
         if (isRecentlyViewedEnabled && id) {
           try {
-            const result = await recentlyViewedApi.recordView(id);
-            console.log('✅ [ProductDetails] Product view recorded:', {
-              productId: id,
-              success: result.success
-            });
+            await recentlyViewedApi.recordView(id);
+            // Product view recorded - no need to log
           } catch (error) {
-            console.error('❌ [ProductDetails] Error recording product view:', error);
+            // Silently handle errors - recently viewed is optional
           }
-        } else {
-          console.log('ℹ️ [ProductDetails] Recently viewed disabled or no product ID:', {
-            recentlyViewedEnabled: storefrontSettings?.recentlyViewedEnabled,
-            isEnabled: isRecentlyViewedEnabled,
-            productId: id
-          });
         }
 
         // Track Facebook Pixel ViewContent event
@@ -569,30 +547,44 @@ const ProductDetails: React.FC = () => {
 
         {/* Product Info */}
         <div>
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">{product.name}</h1>
-              {product.category && (
-                <p className="text-gray-600">{product.category.name}</p>
+          {/* العنوان والفئة */}
+          {(!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowTitle !== false) && (
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900 mb-2">{product.name}</h1>
+                {product.category && (!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowCategory !== false) && (
+                  <p className="text-gray-600">{product.category.name}</p>
+                )}
+              </div>
+              {/* Social Sharing */}
+              {storefrontSettings?.socialSharingEnabled && (!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowSocialSharing !== false) && (
+                <SocialSharing
+                  enabled={storefrontSettings.socialSharingEnabled}
+                  product={product}
+                  settings={{
+                    shareFacebook: storefrontSettings.shareFacebook,
+                    shareTwitter: storefrontSettings.shareTwitter,
+                    shareWhatsApp: storefrontSettings.shareWhatsApp,
+                    shareTelegram: storefrontSettings.shareTelegram
+                  }}
+                />
               )}
             </div>
-            {/* Social Sharing */}
-            {storefrontSettings?.socialSharingEnabled && (
-              <SocialSharing
-                enabled={storefrontSettings.socialSharingEnabled}
-                product={product}
-                settings={{
-                  shareFacebook: storefrontSettings.shareFacebook,
-                  shareTwitter: storefrontSettings.shareTwitter,
-                  shareWhatsApp: storefrontSettings.shareWhatsApp,
-                  shareTelegram: storefrontSettings.shareTelegram
-                }}
-              />
-            )}
-          </div>
+          )}
 
-          {/* Price */}
-          <div className="mb-6">
+          {/* Product Badges */}
+          {storefrontSettings?.badgesEnabled && (!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowBadges !== false) && (
+            <div className="mb-4">
+              <ProductBadges
+                product={product}
+                settings={storefrontSettings}
+              />
+            </div>
+          )}
+
+          {/* السعر */}
+          {(!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowPrice !== false) && (
+          <div className="mb-4">
             <div className="flex flex-col gap-2">
               {product.comparePrice && product.comparePrice > currentPrice ? (
                 <>
@@ -622,9 +614,29 @@ const ProductDetails: React.FC = () => {
               )}
             </div>
           </div>
+          )}
 
-          {/* Stock Status */}
-          <div className="mb-6">
+          {/* Countdown Timer */}
+          {(!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowCountdown !== false) && (() => {
+            const countdownEnabled = storefrontSettings?.countdownEnabled;
+            const showOnProduct = storefrontSettings?.countdownShowOnProduct;
+            const hasComparePrice = product.comparePrice && product.comparePrice > currentPrice;
+            const hasSaleEndDate = product.saleEndDate;
+            const saleEndDateValid = hasSaleEndDate && new Date(product.saleEndDate) > new Date();
+            
+            return countdownEnabled && showOnProduct && hasComparePrice && saleEndDateValid ? (
+              <div className="mb-4">
+                <CountdownTimer
+                  endDate={product.saleEndDate}
+                  enabled={storefrontSettings.countdownEnabled}
+                />
+              </div>
+            ) : null;
+          })()}
+
+          {/* Stock Status & Progress Bar */}
+          {(!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowStockStatus !== false) && (
+          <div className="mb-4 space-y-2">
             {currentStock > 0 ? (
               <p className="text-green-600 font-medium">
                 ✓ متوفر في المخزون ({currentStock} قطعة)
@@ -634,41 +646,25 @@ const ProductDetails: React.FC = () => {
                 ✗ غير متوفر حالياً
               </p>
             )}
+            
+            {storefrontSettings?.stockProgressEnabled && (!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowStockProgress !== false) && (
+              <StockProgressBar
+                enabled={storefrontSettings.stockProgressEnabled}
+                type={storefrontSettings.stockProgressType as 'percentage' | 'count' | 'text'}
+                stock={currentStock}
+                maxStock={product.stock}
+                lowColor={storefrontSettings.stockProgressLowColor}
+                mediumColor={storefrontSettings.stockProgressMediumColor}
+                highColor={storefrontSettings.stockProgressHighColor}
+                threshold={storefrontSettings.stockProgressThreshold}
+              />
+            )}
           </div>
-
-          {/* Countdown Timer */}
-          {(() => {
-            const countdownEnabled = storefrontSettings?.countdownEnabled;
-            const showOnProduct = storefrontSettings?.countdownShowOnProduct;
-            const hasComparePrice = product.comparePrice && product.comparePrice > currentPrice;
-            const hasSaleEndDate = product.saleEndDate;
-            const saleEndDateValid = hasSaleEndDate && new Date(product.saleEndDate) > new Date();
-            
-            console.log('🔍 [ProductDetails] Countdown Timer Debug:', {
-              countdownEnabled,
-              showOnProduct,
-              hasComparePrice,
-              comparePrice: product.comparePrice,
-              currentPrice,
-              hasSaleEndDate,
-              saleEndDate: product.saleEndDate,
-              saleEndDateValid,
-              willShow: countdownEnabled && showOnProduct && hasComparePrice && saleEndDateValid
-            });
-            
-            return countdownEnabled && showOnProduct && hasComparePrice && saleEndDateValid ? (
-              <div className="mb-6">
-                <CountdownTimer
-                  endDate={product.saleEndDate}
-                  enabled={storefrontSettings.countdownEnabled}
-                />
-              </div>
-            ) : null;
-          })()}
+          )}
 
           {/* Back in Stock Notification */}
-          {storefrontSettings?.backInStockEnabled && currentStock === 0 && (
-            <div className="mb-6">
+          {storefrontSettings?.backInStockEnabled && currentStock === 0 && (!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowBackInStock !== false) && (
+            <div className="mb-4">
               <BackInStockNotification
                 productId={product.id}
                 enabled={storefrontSettings.backInStockEnabled}
@@ -679,8 +675,70 @@ const ProductDetails: React.FC = () => {
             </div>
           )}
 
+          {/* Security Badges */}
+          {storefrontSettings?.securityBadgesEnabled && (!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowSecurityBadges !== false) && (
+            <div className="mb-4">
+              <SecurityBadges
+                enabled={storefrontSettings.securityBadgesEnabled}
+                badges={{
+                  securePayment: storefrontSettings.badgeSecurePayment,
+                  freeShipping: storefrontSettings.badgeFreeShipping,
+                  qualityGuarantee: storefrontSettings.badgeQualityGuarantee,
+                  cashOnDelivery: storefrontSettings.badgeCashOnDelivery,
+                  buyerProtection: storefrontSettings.badgeBuyerProtection,
+                  highRating: storefrontSettings.badgeHighRating,
+                  custom1: storefrontSettings.badgeCustom1,
+                  custom1Text: storefrontSettings.badgeCustom1Text,
+                  custom2: storefrontSettings.badgeCustom2,
+                  custom2Text: storefrontSettings.badgeCustom2Text,
+                }}
+                layout={storefrontSettings.badgeLayout as 'horizontal' | 'vertical'}
+              />
+            </div>
+          )}
+
+          {/* Social Proof: Sold Number & Online Visitors */}
+          {(!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowSoldNumber !== false || storefrontSettings?.productPageShowOnlineVisitors !== false) && (storefrontSettings?.soldNumberEnabled || storefrontSettings?.onlineVisitorsEnabled) && (
+            <div className="mb-4 space-y-2">
+              {storefrontSettings?.soldNumberEnabled && (!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowSoldNumber !== false) && (
+                <SoldNumberDisplay
+                  enabled={storefrontSettings.soldNumberEnabled}
+                  type={storefrontSettings.soldNumberType as 'real' | 'fake'}
+                  min={storefrontSettings.soldNumberMin}
+                  max={storefrontSettings.soldNumberMax}
+                  text={storefrontSettings.soldNumberText}
+                  productId={product.id}
+                />
+              )}
+              
+              {storefrontSettings?.onlineVisitorsEnabled && (!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowOnlineVisitors !== false) && (
+                <OnlineVisitorsCount
+                  enabled={storefrontSettings.onlineVisitorsEnabled}
+                  type={storefrontSettings.onlineVisitorsType as 'real' | 'fake'}
+                  min={storefrontSettings.onlineVisitorsMin}
+                  max={storefrontSettings.onlineVisitorsMax}
+                  updateInterval={storefrontSettings.onlineVisitorsUpdateInterval}
+                  text={storefrontSettings.onlineVisitorsText}
+                  productId={product.id}
+                />
+              )}
+            </div>
+          )}
+
+          {/* Estimated Delivery Time */}
+          {storefrontSettings?.estimatedDeliveryEnabled && (!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowEstimatedDelivery !== false) && (
+            <div className="mb-4">
+              <EstimatedDeliveryTime
+                enabled={storefrontSettings.estimatedDeliveryEnabled}
+                showOnProduct={storefrontSettings.estimatedDeliveryShowOnProduct !== false}
+                defaultText={storefrontSettings.estimatedDeliveryDefaultText}
+                productId={product.id}
+              />
+            </div>
+          )}
+
           {/* Free Shipping Banner */}
-          {freeShippingSettings && freeShippingSettings.freeShippingEnabled && (() => {
+          {(!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowFreeShipping !== false) && freeShippingSettings && freeShippingSettings.freeShippingEnabled && (() => {
             const productTotal = currentPrice * quantity;
             const totalWithCart = cartTotal + productTotal;
             const threshold = freeShippingSettings.freeShippingThreshold;
@@ -689,7 +747,7 @@ const ProductDetails: React.FC = () => {
 
             if (remaining > 0) {
               return (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                   <div className="flex items-start gap-3">
                     <TruckIcon className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                     <div className="flex-1">
@@ -709,7 +767,7 @@ const ProductDetails: React.FC = () => {
               );
             } else {
               return (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
                   <div className="flex items-center gap-3">
                     <TruckIcon className="w-5 h-5 text-green-600" />
                     <p className="text-sm text-green-900 font-bold">
@@ -721,34 +779,111 @@ const ProductDetails: React.FC = () => {
             }
           })()}
 
+          {/* Pre-order Button */}
+          {product.isPreOrder && (!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowPreOrder !== false) && (
+            <div className="mb-4">
+              <PreOrderButton
+                product={{
+                  id: product.id,
+                  name: product.name,
+                  price: currentPrice,
+                  isPreOrder: product.isPreOrder,
+                  preOrderDate: (product as any).preOrderDate,
+                  preOrderMessage: (product as any).preOrderMessage,
+                  enableCheckoutForm: product.enableCheckoutForm,
+                }}
+                quantity={quantity}
+                selectedVariant={selectedVariant}
+              />
+            </div>
+          )}
+
           {/* Variants */}
-          {product.variants && product.variants.length > 0 && (
-            <div className="mb-6">
-              <h3 className="font-semibold text-gray-900 mb-3">الخيارات المتاحة:</h3>
-              <div className="flex flex-wrap gap-2">
-                {product.variants.map((variant) => (
-                  <button
-                    key={variant.id}
-                    onClick={() => setSelectedVariant(variant.id)}
-                    disabled={variant.stock === 0}
-                    className={`px-4 py-2 border-2 rounded-lg font-medium transition-colors ${
-                      selectedVariant === variant.id
-                        ? 'border-blue-600 bg-blue-50 text-blue-600'
-                        : variant.stock === 0
-                        ? 'border-gray-300 bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'border-gray-300 hover:border-blue-600'
-                    }`}
-                  >
-                    {variant.name}
-                    {variant.stock === 0 && ' (غير متوفر)'}
-                  </button>
-                ))}
+          {(!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowVariants !== false) && product.variants && product.variants.length > 0 && (() => {
+            // Separate variants by type
+            const colorVariants = product.variants.filter(v => v.type === 'color');
+            const sizeVariants = product.variants.filter(v => v.type === 'size');
+            const otherVariants = product.variants.filter(v => v.type !== 'color' && v.type !== 'size');
+
+            return (
+              <div className="mb-6 space-y-4">
+                {/* Color Variants */}
+                {colorVariants.length > 0 && (
+                  <div>
+                    <h3 className="font-semibold text-gray-900 mb-3">اللون:</h3>
+                    <VariantSelector
+                      variants={colorVariants}
+                      selectedVariant={selectedVariant}
+                      onSelect={setSelectedVariant}
+                      style={storefrontSettings?.variantColorStyle as any || 'buttons'}
+                      showName={storefrontSettings?.variantColorShowName !== false}
+                      showStock={true}
+                      size={storefrontSettings?.variantColorSize as any || 'medium'}
+                      variantType="color"
+                    />
+                  </div>
+                )}
+
+                {/* Size Variants */}
+                {sizeVariants.length > 0 && (
+                  <div>
+                    <h3 className="font-semibold text-gray-900 mb-3">المقاس:</h3>
+                    <VariantSelector
+                      variants={sizeVariants}
+                      selectedVariant={selectedVariant}
+                      onSelect={setSelectedVariant}
+                      style={storefrontSettings?.variantSizeStyle as any || 'buttons'}
+                      showName={true}
+                      showStock={storefrontSettings?.variantSizeShowStock !== false}
+                      size="medium"
+                      variantType="size"
+                    />
+                    {storefrontSettings?.variantSizeShowGuide && storefrontSettings?.sizeGuideEnabled && (
+                      <div className="mt-2">
+                        <SizeGuide
+                          enabled={storefrontSettings.sizeGuideEnabled}
+                          sizeGuideContent={product.sizeGuide}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Other Variants */}
+                {otherVariants.length > 0 && (
+                  <div>
+                    <h3 className="font-semibold text-gray-900 mb-3">الخيارات المتاحة:</h3>
+                    <VariantSelector
+                      variants={otherVariants}
+                      selectedVariant={selectedVariant}
+                      onSelect={setSelectedVariant}
+                      style="buttons"
+                      showName={true}
+                      showStock={true}
+                      size="medium"
+                      variantType="color"
+                    />
+                  </div>
+                )}
               </div>
+            );
+          })()}
+
+          {/* Size Guide - قبل الكمية */}
+          {(!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowSizeGuide !== false) && storefrontSettings?.sizeGuideEnabled && storefrontSettings?.sizeGuideShowOnProduct && (
+            <div className="mb-6">
+              <SizeGuide
+                enabled={storefrontSettings.sizeGuideEnabled}
+                showOnProduct={storefrontSettings.sizeGuideShowOnProduct}
+                sizeGuide={product.sizeGuide}
+                productName={product.name}
+              />
             </div>
           )}
 
           {/* Quantity */}
-          <div className="mb-6">
+          {(!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowQuantity !== false) && (
+          <div className="mb-4">
             <h3 className="font-semibold text-gray-900 mb-3">الكمية:</h3>
             <div className="flex items-center gap-3">
               <button
@@ -767,24 +902,114 @@ const ProductDetails: React.FC = () => {
               </button>
             </div>
           </div>
+          )}
 
           {/* Volume Discounts */}
-          {product && <VolumeDiscountBadge productId={product.id} quantity={quantity} />}
-
-          {/* Size Guide */}
-          {storefrontSettings?.sizeGuideEnabled && storefrontSettings?.sizeGuideShowOnProduct && (
-            <div className="mb-6">
-              <SizeGuide
-                enabled={storefrontSettings.sizeGuideEnabled}
-                showOnProduct={storefrontSettings.sizeGuideShowOnProduct}
-                sizeGuide={product.sizeGuide}
-                productName={product.name}
-              />
+          {(!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowVolumeDiscounts !== false) && product && (
+            <div className="mb-4">
+              <VolumeDiscountBadge productId={product.id} quantity={quantity} />
             </div>
           )}
 
+          {/* Reasons to Purchase */}
+          {(!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowReasonsToPurchase !== false) && storefrontSettings?.reasonsToPurchaseEnabled && (() => {
+            try {
+              let reasonsList: string[] = [];
+              
+              // Handle different cases
+              if (storefrontSettings.reasonsToPurchaseList) {
+                const rawValue = storefrontSettings.reasonsToPurchaseList;
+                
+                // If it's already an array (shouldn't happen but handle it)
+                if (Array.isArray(rawValue)) {
+                  reasonsList = rawValue;
+                } 
+                // If it's a string, try to parse it as JSON
+                else if (typeof rawValue === 'string') {
+                  // Trim whitespace
+                  const trimmed = rawValue.trim();
+                  
+                  // If empty, use default reasons
+                  if (!trimmed || trimmed === '' || trimmed === 'null') {
+                    reasonsList = [
+                      '✅ جودة عالية',
+                      '✅ توصيل سريع',
+                      '✅ ضمان 30 يوم',
+                      '✅ دعم فني 24/7'
+                    ];
+                  } else {
+                    // Try to parse as JSON
+                    try {
+                      const parsed = JSON.parse(trimmed);
+                      if (Array.isArray(parsed)) {
+                        reasonsList = parsed.filter(r => r && typeof r === 'string' && r.trim() !== '');
+                      } else if (typeof parsed === 'string') {
+                        reasonsList = [parsed];
+                      }
+                    } catch (parseError) {
+                      // If JSON parsing fails, treat it as a single reason or comma-separated
+                      const parts = trimmed.split(',').map(p => p.trim()).filter(p => p);
+                      if (parts.length > 0) {
+                        reasonsList = parts;
+                      }
+                    }
+                  }
+                }
+              } else {
+                // No list provided, use defaults (silently)
+                reasonsList = [
+                  '✅ جودة عالية',
+                  '✅ توصيل سريع',
+                  '✅ ضمان 30 يوم',
+                  '✅ دعم فني 24/7'
+                ];
+              }
+              
+              // Log only in development and if not using defaults
+              if (storefrontSettings.reasonsToPurchaseList && storefrontSettings.reasonsToPurchaseList.trim() !== '') {
+                console.log('✅ [ProductDetails] Final reasons list:', reasonsList);
+              }
+              
+              if (Array.isArray(reasonsList) && reasonsList.length > 0) {
+                return (
+                  <div className="mb-6">
+                    <ReasonsToPurchase
+                      enabled={storefrontSettings.reasonsToPurchaseEnabled}
+                      reasons={reasonsList}
+                      maxItems={storefrontSettings.reasonsToPurchaseMaxItems || 4}
+                      style={storefrontSettings.reasonsToPurchaseStyle as 'list' | 'icons' || 'list'}
+                    />
+                  </div>
+                );
+              } else {
+                console.warn('⚠️ [ProductDetails] Reasons list is still empty after processing');
+              }
+            } catch (error) {
+              console.error('❌ [ProductDetails] Error parsing reasonsToPurchaseList:', error);
+              console.error('Raw value:', storefrontSettings.reasonsToPurchaseList);
+              
+              // Fallback to default reasons
+              return (
+                <div className="mb-6">
+                  <ReasonsToPurchase
+                    enabled={storefrontSettings.reasonsToPurchaseEnabled}
+                    reasons={[
+                      '✅ جودة عالية',
+                      '✅ توصيل سريع',
+                      '✅ ضمان 30 يوم',
+                      '✅ دعم فني 24/7'
+                    ]}
+                    maxItems={storefrontSettings.reasonsToPurchaseMaxItems || 4}
+                    style={storefrontSettings.reasonsToPurchaseStyle as 'list' | 'icons' || 'list'}
+                  />
+                </div>
+              );
+            }
+            return null;
+          })()}
+
           {/* Actions - Show "Add to Cart" button if enabled and checkout form is disabled */}
-          {product.showAddToCartButton !== false && product.enableCheckoutForm === false && (
+          {(!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowActions !== false) && product.showAddToCartButton !== false && product.enableCheckoutForm === false && (
             <div className="flex gap-3 mb-6">
               <button
                 onClick={addToCart}
@@ -827,7 +1052,7 @@ const ProductDetails: React.FC = () => {
           )}
 
           {/* Product Tabs */}
-          {storefrontSettings?.tabsEnabled && (
+          {(!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowTabs !== false) && storefrontSettings?.tabsEnabled && (
             <ProductTabs
               enabled={storefrontSettings.tabsEnabled}
               product={{
@@ -856,7 +1081,7 @@ const ProductDetails: React.FC = () => {
           )}
 
           {/* Fallback Description if tabs disabled */}
-          {!storefrontSettings?.tabsEnabled && product.description && (
+          {(!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowDescription !== false) && !storefrontSettings?.tabsEnabled && product.description && (
             <div className="border-t border-gray-200 pt-6">
               <h3 className="font-semibold text-gray-900 mb-3">الوصف:</h3>
               <p className="text-gray-700 leading-relaxed whitespace-pre-line">
@@ -866,14 +1091,14 @@ const ProductDetails: React.FC = () => {
           )}
 
           {/* SKU */}
-          {product.sku && (
+          {(!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowSKU !== false) && product.sku && (
             <div className="mt-4 text-sm text-gray-500">
               رمز المنتج: {product.sku}
             </div>
           )}
 
           {/* Inline Checkout Form */}
-          {showCheckoutForm && product.enableCheckoutForm && (
+          {(!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowCheckoutForm !== false) && showCheckoutForm && product.enableCheckoutForm && (
             <div id="checkout-form" className="mt-8 border-t-2 border-gray-200 pt-8">
               <h3 className="text-xl font-bold text-gray-900 mb-2 text-right">يرجى إدخال معلوماتك لإكمال الطلب</h3>
               <p className="text-sm text-gray-600 mb-6 text-right">عدد القطع: {quantity}</p>
@@ -1047,6 +1272,20 @@ const ProductDetails: React.FC = () => {
         </div>
       )}
 
+      {/* Product Navigation */}
+      {storefrontSettings?.navigationEnabled && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <ProductNavigation
+            enabled={storefrontSettings.navigationEnabled}
+            navigationType={storefrontSettings.navigationType as 'sameCategory' | 'allProducts'}
+            showButtons={storefrontSettings.showNavigationButtons}
+            keyboardShortcuts={storefrontSettings.keyboardShortcuts}
+            currentProductId={product.id}
+            currentCategoryId={product.category?.id}
+          />
+        </div>
+      )}
+
       {/* Related Products */}
       {product && getCompanyId() && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -1068,21 +1307,7 @@ const ProductDetails: React.FC = () => {
         </div>
       )}
 
-      {/* Product Reviews (if not in tabs) */}
-      {(() => {
-        if (product) {
-          console.log('🔍 [ProductDetails] Reviews Debug:', {
-            hasProduct: !!product,
-            hasSettings: !!storefrontSettings,
-            reviewsEnabled: storefrontSettings?.reviewsEnabled,
-            tabsEnabled: storefrontSettings?.tabsEnabled,
-            tabReviews: storefrontSettings?.tabReviews,
-            willShowInTabs: storefrontSettings?.tabsEnabled && storefrontSettings?.tabReviews && storefrontSettings?.reviewsEnabled,
-            willShowOutside: storefrontSettings?.reviewsEnabled && !storefrontSettings?.tabsEnabled
-          });
-        }
-        return null;
-      })()}
+      {/* Product Reviews (if not in tabs) - handled in tabs or outside */}
       {product && storefrontSettings?.reviewsEnabled && !storefrontSettings?.tabsEnabled && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <ProductReviews
@@ -1093,6 +1318,26 @@ const ProductDetails: React.FC = () => {
             minRatingToDisplay={storefrontSettings.minRatingToDisplay}
           />
         </div>
+      )}
+
+      {/* FOMO Popup */}
+      {product && storefrontSettings?.fomoEnabled && (
+        <FOMOPopup
+          enabled={storefrontSettings.fomoEnabled}
+          type={storefrontSettings.fomoType as 'soldCount' | 'visitors' | 'stock' | 'countdown'}
+          trigger={storefrontSettings.fomoTrigger as 'time' | 'scroll' | 'exit'}
+          delay={storefrontSettings.fomoDelay || 30}
+          showOncePerSession={storefrontSettings.fomoShowOncePerSession !== false}
+          message={storefrontSettings.fomoMessage || undefined}
+          product={{
+            id: product.id,
+            name: product.name,
+            stock: currentStock,
+            saleEndDate: product.saleEndDate,
+          }}
+          soldCount={0} // TODO: حساب من الطلبات
+          visitorsCount={0} // TODO: من OnlineVisitorsCount
+        />
       )}
 
       {/* Sticky Add to Cart */}

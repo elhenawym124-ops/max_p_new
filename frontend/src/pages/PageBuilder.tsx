@@ -7,7 +7,17 @@ import {
   Container,
   Image,
   ProductCard,
-  CountdownTimer
+  CountdownTimer,
+  Heading,
+  Divider,
+  Spacer,
+  Tabs,
+  Accordion,
+  Alert,
+  Counter,
+  StarRating,
+  ProgressBar,
+  SocialIcons
 } from '../components/page-builder/user';
 
 const PageBuilder: React.FC = () => {
@@ -31,7 +41,17 @@ const PageBuilder: React.FC = () => {
           Container,
           Image,
           ProductCard,
-          CountdownTimer
+          CountdownTimer,
+          Heading,
+          Divider,
+          Spacer,
+          Tabs,
+          Accordion,
+          Alert,
+          Counter,
+          StarRating,
+          ProgressBar,
+          SocialIcons
         }}
       >
         <Topbar onSave={handleSave} />

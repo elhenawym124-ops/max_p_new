@@ -44,13 +44,22 @@ class FooterSettingsService {
    * Get public footer settings (for storefront)
    */
   async getPublicSettings(companyId: string) {
-    // Use storefrontFetch for public routes (no authentication required)
-    const { storefrontFetch } = await import('../utils/storefrontApi');
-    // Route structure: /api/v1/public/footer-settings/public/:companyId
-    // The route in server.js is: /api/v1/public/footer-settings
-    // The route in footerSettingsRoutes.js is: /public/:companyId
-    // So the full path is: /footer-settings/public/:companyId
-    return storefrontFetch(`/footer-settings/public/${companyId}`);
+    try {
+      // Use storefrontFetch for public routes (no authentication required)
+      // Note: storefrontFetch adds /api/v1/public automatically, so we only need the endpoint
+      const { storefrontFetch } = await import('../utils/storefrontApi');
+      return await storefrontFetch(`/footer-settings/${companyId}`);
+    } catch (error: any) {
+      // Silently handle errors - footer settings are optional
+      // storefrontFetch throws Error with status property
+      const status = error?.status || (error?.message?.includes('401') ? 401 : error?.message?.includes('404') ? 404 : 0);
+      if (status !== 401 && status !== 404) {
+        // Only log non-401/404 errors
+        console.error('Error fetching public footer settings:', error);
+      }
+      // Return null silently - footer settings are optional
+      return { success: true, data: null };
+    }
   }
 }
 

@@ -18,6 +18,15 @@ function getPrisma() {
 router.get('/products', async (req, res) => {
   try {
     const { company } = req; // from middleware
+    
+    if (!company || !company.id) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'المتجر غير موجود أو غير نشط',
+        hint: 'استخدم ?companyId=xxx في URL'
+      });
+    }
+    
     const { 
       category, 
       search, 
@@ -175,10 +184,116 @@ router.get('/products/recently-viewed', async (req, res) => {
   }
 });
 
+// Get product navigation (previous/next) - MUST be before /products/:id
+router.get('/products/navigation', async (req, res) => {
+  try {
+    const { company } = req;
+    
+    if (!company || !company.id) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'المتجر غير موجود أو غير نشط',
+        hint: 'استخدم ?companyId=xxx في URL'
+      });
+    }
+    
+    const { currentProductId, categoryId, type = 'sameCategory' } = req.query;
+
+    if (!currentProductId) {
+      return res.status(400).json({
+        success: false,
+        error: 'معرف المنتج الحالي مطلوب'
+      });
+    }
+
+    const prisma = getPrisma();
+
+    // Get current product
+    const currentProduct = await prisma.product.findFirst({
+      where: {
+        id: currentProductId,
+        companyId: company.id,
+        isActive: true
+      },
+      select: {
+        id: true,
+        categoryId: true,
+        createdAt: true
+      }
+    });
+
+    if (!currentProduct) {
+      return res.status(404).json({
+        success: false,
+        error: 'المنتج غير موجود'
+      });
+    }
+
+    const where = {
+      companyId: company.id,
+      isActive: true
+    };
+
+    // Filter by category if sameCategory
+    if (type === 'sameCategory' && (categoryId || currentProduct.categoryId)) {
+      where.categoryId = categoryId || currentProduct.categoryId;
+    }
+
+    // Get all products ordered by createdAt
+    const allProducts = await prisma.product.findMany({
+      where,
+      select: {
+        id: true,
+        name: true,
+        createdAt: true
+      },
+      orderBy: {
+        createdAt: 'asc'
+      }
+    });
+
+    // Find current product index
+    const currentIndex = allProducts.findIndex(p => p.id === currentProductId);
+    
+    if (currentIndex === -1) {
+      return res.json({
+        success: true,
+        data: {
+          previous: null,
+          next: null
+        }
+      });
+    }
+
+    const previous = currentIndex > 0 ? allProducts[currentIndex - 1] : null;
+    const next = currentIndex < allProducts.length - 1 ? allProducts[currentIndex + 1] : null;
+
+    res.json({
+      success: true,
+      data: {
+        previous,
+        next
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching product navigation:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Get product details by ID
 router.get('/products/:id', async (req, res) => {
   try {
     const { company } = req;
+    
+    if (!company || !company.id) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'المتجر غير موجود أو غير نشط',
+        hint: 'استخدم ?companyId=xxx في URL'
+      });
+    }
+    
     const { id } = req.params;
 
     const prisma = getPrisma();
@@ -277,6 +392,48 @@ router.get('/products/:id/quick', async (req, res) => {
     res.json({ success: true, data: product });
   } catch (error) {
     console.error('Error fetching product quick view:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get sold count for a product
+router.get('/products/:id/sold-count', async (req, res) => {
+  try {
+    const { company } = req;
+    const { id } = req.params;
+    
+    if (!company || !company.id) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'المتجر غير موجود أو غير نشط',
+        hint: 'استخدم ?companyId=xxx في URL'
+      });
+    }
+
+    const prisma = getPrisma();
+    
+    // Count order items for this product
+    const soldCount = await prisma.orderItem.count({
+      where: {
+        productId: id,
+        order: {
+          companyId: company.id,
+          status: {
+            not: 'CANCELLED'
+          }
+        }
+      }
+    });
+
+    res.json({ 
+      success: true, 
+      data: { 
+        productId: id,
+        soldCount 
+      } 
+    });
+  } catch (error) {
+    console.error('Error fetching sold count:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -428,6 +585,14 @@ router.post('/products/:id/back-in-stock', async (req, res) => {
 router.get('/categories', async (req, res) => {
   try {
     const { company } = req;
+    
+    if (!company || !company.id) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'المتجر غير موجود أو غير نشط',
+        hint: 'استخدم ?companyId=xxx في URL'
+      });
+    }
 
     const prisma = getPrisma();
     const categories = await prisma.category.findMany({

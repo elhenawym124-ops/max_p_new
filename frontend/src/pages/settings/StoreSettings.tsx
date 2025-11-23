@@ -9,6 +9,7 @@ import {
   LightBulbIcon,
   DocumentTextIcon,
   GlobeAltIcon,
+  HomeIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { storeSettingsService, Branch, ShippingZone } from '../../services/storeSettingsService';
@@ -23,7 +24,7 @@ import { ShippingModal } from '../../components/store/ShippingModal';
 
 const StoreSettings: React.FC = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'branches' | 'shipping' | 'checkout' | 'footer' | 'promotion' | 'delivery' | 'recommendations' | 'features'>('branches');
+  const [activeTab, setActiveTab] = useState<'branches' | 'shipping' | 'checkout' | 'footer' | 'promotion' | 'delivery' | 'recommendations' | 'features' | 'homepage'>('branches');
   const [branches, setBranches] = useState<Branch[]>([]);
   const [shippingZones, setShippingZones] = useState<ShippingZone[]>([]);
   const [checkoutSettings, setCheckoutSettings] = useState<Partial<CheckoutFormSettings>>({});
@@ -302,6 +303,17 @@ const StoreSettings: React.FC = () => {
           <div className="bg-white shadow rounded-lg p-2">
             <nav className="space-y-1">
               <button
+                onClick={() => setActiveTab('homepage')}
+                className={`w-full px-4 py-3 text-sm font-medium rounded-lg flex items-center transition-colors ${
+                  activeTab === 'homepage'
+                    ? 'bg-indigo-50 text-indigo-600 border-r-4 border-indigo-600'
+                    : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                }`}
+              >
+                <HomeIcon className="h-5 w-5 ml-3" />
+                الصفحة الرئيسية
+              </button>
+              <button
                 onClick={() => setActiveTab('branches')}
                 className={`w-full px-4 py-3 text-sm font-medium rounded-lg flex items-center transition-colors ${
                   activeTab === 'branches'
@@ -391,7 +403,24 @@ const StoreSettings: React.FC = () => {
 
         {/* Content */}
         <div className="flex-1 bg-white shadow rounded-lg p-6">
-          {activeTab === 'branches' ? (
+          {activeTab === 'homepage' ? (
+            <div className="text-center py-12">
+              <HomeIcon className="h-16 w-16 text-indigo-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                إدارة الصفحة الرئيسية
+              </h3>
+              <p className="text-gray-600 mb-6">
+                إنشاء وتخصيص الصفحة الرئيسية لمتجرك بتصميم احترافي وعصري
+              </p>
+              <button
+                onClick={() => navigate('/settings/homepage')}
+                className="inline-flex items-center px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+              >
+                <HomeIcon className="h-5 w-5 ml-2" />
+                إدارة الصفحات الرئيسية
+              </button>
+            </div>
+          ) : activeTab === 'branches' ? (
             <BranchesSection
               branches={branches}
               onAdd={handleAddBranch}

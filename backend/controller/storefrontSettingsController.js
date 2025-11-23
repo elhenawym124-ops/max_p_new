@@ -182,6 +182,68 @@ exports.getStorefrontSettings = async (req, res) => {
       stickyShowProductName: Boolean(settings.stickyShowProductName !== false),
       stickyTrackAnalytics: Boolean(settings.stickyTrackAnalytics !== false),
       stickyAutoScrollToCheckout: Boolean(settings.stickyAutoScrollToCheckout === true),
+      // Product Navigation Settings
+      navigationEnabled: Boolean(settings.navigationEnabled === true),
+      navigationType: settings.navigationType || 'sameCategory',
+      showNavigationButtons: Boolean(settings.showNavigationButtons !== false),
+      keyboardShortcuts: Boolean(settings.keyboardShortcuts !== false),
+      // Sold Number Display Settings
+      soldNumberEnabled: Boolean(settings.soldNumberEnabled === true),
+      soldNumberType: settings.soldNumberType || 'real',
+      soldNumberMin: parseInt(settings.soldNumberMin) || 10,
+      soldNumberMax: parseInt(settings.soldNumberMax) || 500,
+      soldNumberText: settings.soldNumberText || 'تم بيع {count} قطعة',
+      // Variant Styles Settings
+      variantColorStyle: settings.variantColorStyle || 'buttons',
+      variantColorShowName: Boolean(settings.variantColorShowName !== false),
+      variantColorSize: settings.variantColorSize || 'medium',
+      variantSizeStyle: settings.variantSizeStyle || 'buttons',
+      variantSizeShowGuide: Boolean(settings.variantSizeShowGuide === true),
+      variantSizeShowStock: Boolean(settings.variantSizeShowStock !== false),
+      // Stock Progress Bar Settings
+      stockProgressEnabled: Boolean(settings.stockProgressEnabled === true),
+      stockProgressType: settings.stockProgressType || 'percentage',
+      stockProgressLowColor: settings.stockProgressLowColor || '#ef4444',
+      stockProgressMediumColor: settings.stockProgressMediumColor || '#f59e0b',
+      stockProgressHighColor: settings.stockProgressHighColor || '#10b981',
+      stockProgressThreshold: parseInt(settings.stockProgressThreshold) || 10,
+      // Security Badges Settings
+      securityBadgesEnabled: Boolean(settings.securityBadgesEnabled === true),
+      badgeSecurePayment: Boolean(settings.badgeSecurePayment !== false),
+      badgeFreeShipping: Boolean(settings.badgeFreeShipping !== false),
+      badgeQualityGuarantee: Boolean(settings.badgeQualityGuarantee !== false),
+      badgeCashOnDelivery: Boolean(settings.badgeCashOnDelivery !== false),
+      badgeBuyerProtection: Boolean(settings.badgeBuyerProtection !== false),
+      badgeHighRating: Boolean(settings.badgeHighRating !== false),
+      badgeCustom1: Boolean(settings.badgeCustom1 === true),
+      badgeCustom1Text: settings.badgeCustom1Text || null,
+      badgeCustom2: Boolean(settings.badgeCustom2 === true),
+      badgeCustom2Text: settings.badgeCustom2Text || null,
+      badgeLayout: settings.badgeLayout || 'horizontal',
+      // Reasons to Purchase Settings
+      reasonsToPurchaseEnabled: Boolean(settings.reasonsToPurchaseEnabled === true),
+      reasonsToPurchaseType: settings.reasonsToPurchaseType || 'global',
+      reasonsToPurchaseList: settings.reasonsToPurchaseList || null,
+      reasonsToPurchaseMaxItems: parseInt(settings.reasonsToPurchaseMaxItems) || 4,
+      reasonsToPurchaseStyle: settings.reasonsToPurchaseStyle || 'list',
+      // Online Visitors Count Settings
+      onlineVisitorsEnabled: Boolean(settings.onlineVisitorsEnabled === true),
+      onlineVisitorsType: settings.onlineVisitorsType || 'fake',
+      onlineVisitorsMin: parseInt(settings.onlineVisitorsMin) || 5,
+      onlineVisitorsMax: parseInt(settings.onlineVisitorsMax) || 50,
+      onlineVisitorsUpdateInterval: parseInt(settings.onlineVisitorsUpdateInterval) || 30,
+      onlineVisitorsText: settings.onlineVisitorsText || '{count} شخص يشاهدون هذا المنتج الآن',
+      // Estimated Delivery Time Settings
+      estimatedDeliveryEnabled: Boolean(settings.estimatedDeliveryEnabled === true),
+      estimatedDeliveryShowOnProduct: Boolean(settings.estimatedDeliveryShowOnProduct !== false),
+      estimatedDeliveryDefaultText: settings.estimatedDeliveryDefaultText || 'التوصيل خلال {time}',
+      // FOMO Popup Settings
+      fomoEnabled: Boolean(settings.fomoEnabled === true),
+      fomoType: settings.fomoType || 'soldCount',
+      fomoTrigger: settings.fomoTrigger || 'time',
+      fomoDelay: parseInt(settings.fomoDelay) || 30,
+      fomoShowOncePerSession: Boolean(settings.fomoShowOncePerSession !== false),
+      fomoMessage: settings.fomoMessage || null,
       seoEnabled: Boolean(settings.seoEnabled),
       seoMetaDescription: Boolean(settings.seoMetaDescription),
       seoStructuredData: Boolean(settings.seoStructuredData),
@@ -311,6 +373,40 @@ exports.updateStorefrontSettings = async (req, res) => {
       'stickyScrollThreshold', 'stickyShowBuyNow', 'stickyShowAddToCartButton', 
       'stickyShowQuantity', 'stickyShowProductImage', 'stickyShowProductName',
       'stickyTrackAnalytics', 'stickyAutoScrollToCheckout',
+      // Product Navigation
+      'navigationEnabled', 'navigationType', 'showNavigationButtons', 'keyboardShortcuts',
+      // Sold Number Display
+      'soldNumberEnabled', 'soldNumberType', 'soldNumberMin', 'soldNumberMax', 'soldNumberText',
+      // Variant Styles
+      'variantColorStyle', 'variantColorShowName', 'variantColorSize',
+      'variantSizeStyle', 'variantSizeShowGuide', 'variantSizeShowStock',
+      // Stock Progress Bar
+      'stockProgressEnabled', 'stockProgressType', 'stockProgressLowColor',
+      'stockProgressMediumColor', 'stockProgressHighColor', 'stockProgressThreshold',
+      // Security Badges
+      'securityBadgesEnabled', 'badgeSecurePayment', 'badgeFreeShipping',
+      'badgeQualityGuarantee', 'badgeCashOnDelivery', 'badgeBuyerProtection',
+      'badgeHighRating', 'badgeCustom1', 'badgeCustom1Text', 'badgeCustom2', 'badgeCustom2Text', 'badgeLayout',
+      // Reasons to Purchase
+      'reasonsToPurchaseEnabled', 'reasonsToPurchaseType', 'reasonsToPurchaseList',
+      'reasonsToPurchaseMaxItems', 'reasonsToPurchaseStyle',
+      // Online Visitors Count
+      'onlineVisitorsEnabled', 'onlineVisitorsType', 'onlineVisitorsMin',
+      'onlineVisitorsMax', 'onlineVisitorsUpdateInterval', 'onlineVisitorsText',
+      // Estimated Delivery Time
+      'estimatedDeliveryEnabled', 'estimatedDeliveryShowOnProduct', 'estimatedDeliveryDefaultText',
+      // FOMO Popup
+      'fomoEnabled', 'fomoType', 'fomoTrigger', 'fomoDelay', 'fomoShowOncePerSession', 'fomoMessage',
+      // Product Page Layout Order Settings
+      'productPageLayoutEnabled', 'productPageOrder',
+      'productPageShowTitle', 'productPageShowCategory', 'productPageShowSocialSharing',
+      'productPageShowBadges', 'productPageShowPrice', 'productPageShowCountdown',
+      'productPageShowStockStatus', 'productPageShowStockProgress', 'productPageShowBackInStock',
+      'productPageShowSecurityBadges', 'productPageShowSoldNumber', 'productPageShowOnlineVisitors',
+      'productPageShowEstimatedDelivery', 'productPageShowFreeShipping', 'productPageShowPreOrder',
+      'productPageShowVariants', 'productPageShowSizeGuide', 'productPageShowQuantity',
+      'productPageShowVolumeDiscounts', 'productPageShowReasonsToPurchase', 'productPageShowActions',
+      'productPageShowTabs', 'productPageShowDescription', 'productPageShowSKU', 'productPageShowCheckoutForm',
       // SEO
       'seoEnabled', 'seoMetaDescription', 'seoStructuredData', 'seoSitemap', 'seoOpenGraph',
       // Multi-language
@@ -329,10 +425,137 @@ exports.updateStorefrontSettings = async (req, res) => {
     ];
 
     const updateData = {};
+    console.log('🔍 [STOREFRONT-SETTINGS] Processing fields. Total allowed fields:', allowedFields.length);
+    console.log('🔍 [STOREFRONT-SETTINGS] Settings data keys:', Object.keys(settingsData));
+    
     for (const field of allowedFields) {
       if (settingsData[field] !== undefined) {
+        console.log(`🔍 [STOREFRONT-SETTINGS] Processing field: ${field}, type: ${typeof settingsData[field]}, value:`, settingsData[field]);
         // معالجة أنواع البيانات المختلفة
         // IMPORTANT: Check specific fields first before generic patterns
+        
+        // String fields (must be checked BEFORE Boolean patterns to avoid conversion)
+        // List of ALL String fields in StorefrontSettings
+        // NOTE: productPageOrder is handled separately in Text/JSON fields section
+        const stringFields = [
+          'imageZoomType', 'navigationType', 'soldNumberType', 'soldNumberText',
+          'variantColorStyle', 'variantColorSize', 'variantSizeStyle',
+          'stockProgressType', 'stockProgressLowColor', 'stockProgressMediumColor', 'stockProgressHighColor',
+          'badgeLayout', 'badgeCustom1Text', 'badgeCustom2Text',
+          'reasonsToPurchaseType', 'reasonsToPurchaseStyle',
+          'onlineVisitorsType', 'onlineVisitorsText',
+          'estimatedDeliveryDefaultText',
+          'fomoType', 'fomoTrigger', 'fomoMessage',
+          'defaultLanguage', 'pixelStatus', 'capiStatus'
+        ];
+        
+        if (stringFields.includes(field)) {
+          console.log(`🔍 [STOREFRONT-SETTINGS] Processing STRING field: ${field}, type: ${typeof settingsData[field]}, value:`, settingsData[field]);
+          // Handle String fields - convert to string or null
+          if (settingsData[field] === null || settingsData[field] === undefined || settingsData[field] === '') {
+            // Set defaults for required fields
+            if (field === 'fomoMessage' || field === 'badgeCustom1Text' || field === 'badgeCustom2Text') {
+              updateData[field] = null;
+            } else if (field === 'estimatedDeliveryDefaultText') {
+              updateData[field] = 'التوصيل خلال {time}';
+            } else if (field === 'fomoType') {
+              updateData[field] = 'soldCount';
+            } else if (field === 'fomoTrigger') {
+              updateData[field] = 'time';
+            } else if (field === 'imageZoomType') {
+              updateData[field] = 'hover';
+            } else if (field === 'navigationType') {
+              updateData[field] = 'sameCategory';
+            } else if (field === 'soldNumberType') {
+              updateData[field] = 'real';
+            } else if (field === 'soldNumberText') {
+              updateData[field] = 'تم بيع {count} قطعة';
+            } else if (field === 'variantColorStyle') {
+              updateData[field] = 'buttons';
+            } else if (field === 'variantColorSize') {
+              updateData[field] = 'medium';
+            } else if (field === 'variantSizeStyle') {
+              updateData[field] = 'buttons';
+            } else if (field === 'stockProgressType') {
+              updateData[field] = 'percentage';
+            } else if (field === 'stockProgressLowColor') {
+              updateData[field] = '#ef4444';
+            } else if (field === 'stockProgressMediumColor') {
+              updateData[field] = '#f59e0b';
+            } else if (field === 'stockProgressHighColor') {
+              updateData[field] = '#10b981';
+            } else if (field === 'badgeLayout') {
+              updateData[field] = 'horizontal';
+            } else if (field === 'reasonsToPurchaseType') {
+              updateData[field] = 'global';
+            } else if (field === 'reasonsToPurchaseStyle') {
+              updateData[field] = 'list';
+            } else if (field === 'onlineVisitorsType') {
+              updateData[field] = 'fake';
+            } else if (field === 'onlineVisitorsText') {
+              updateData[field] = '{count} شخص يشاهدون هذا المنتج الآن';
+            } else if (field === 'defaultLanguage') {
+              updateData[field] = 'ar';
+            } else if (field === 'pixelStatus' || field === 'capiStatus') {
+              updateData[field] = 'not_configured';
+            } else {
+              updateData[field] = null;
+            }
+          } else {
+            // Ensure it's a string, not boolean
+            const value = settingsData[field];
+            if (typeof value === 'boolean') {
+              console.error(`❌ [STOREFRONT-SETTINGS] ${field} is Boolean but should be String! Converting...`);
+              // Convert boolean to default string based on field
+              if (field === 'fomoType') {
+                updateData[field] = 'soldCount';
+              } else if (field === 'fomoTrigger') {
+                updateData[field] = 'time';
+              } else if (field === 'estimatedDeliveryDefaultText') {
+                updateData[field] = 'التوصيل خلال {time}';
+              } else if (field === 'imageZoomType') {
+                updateData[field] = 'hover';
+              } else if (field === 'navigationType') {
+                updateData[field] = 'sameCategory';
+              } else if (field === 'soldNumberType') {
+                updateData[field] = 'real';
+              } else if (field === 'soldNumberText') {
+                updateData[field] = 'تم بيع {count} قطعة';
+              } else if (field === 'variantColorStyle') {
+                updateData[field] = 'buttons';
+              } else if (field === 'variantColorSize') {
+                updateData[field] = 'medium';
+              } else if (field === 'variantSizeStyle') {
+                updateData[field] = 'buttons';
+              } else if (field === 'stockProgressType') {
+                updateData[field] = 'percentage';
+              } else if (field === 'stockProgressLowColor') {
+                updateData[field] = '#ef4444';
+              } else if (field === 'stockProgressMediumColor') {
+                updateData[field] = '#f59e0b';
+              } else if (field === 'stockProgressHighColor') {
+                updateData[field] = '#10b981';
+              } else if (field === 'badgeLayout') {
+                updateData[field] = 'horizontal';
+              } else if (field === 'reasonsToPurchaseType') {
+                updateData[field] = 'global';
+              } else if (field === 'reasonsToPurchaseStyle') {
+                updateData[field] = 'list';
+              } else if (field === 'onlineVisitorsType') {
+                updateData[field] = 'fake';
+              } else if (field === 'onlineVisitorsText') {
+                updateData[field] = '{count} شخص يشاهدون هذا المنتج الآن';
+              } else if (field === 'defaultLanguage') {
+                updateData[field] = 'ar';
+              } else {
+                updateData[field] = null;
+              }
+            } else {
+              updateData[field] = String(value);
+            }
+          }
+          continue; // Skip to next field
+        }
         
         // Boolean filter fields (must be checked first to avoid being caught by generic patterns)
         if (field === 'filterByPrice' || field === 'filterByRating' || field === 'filterByBrand' || field === 'filterByAttributes') {
@@ -340,19 +563,41 @@ exports.updateStorefrontSettings = async (req, res) => {
           continue; // Skip to next field
         }
         
+        // Product Page Layout fields - all Boolean except productPageOrder (handled above)
+        if (field.startsWith('productPageShow') || field === 'productPageLayoutEnabled') {
+          updateData[field] = Boolean(settingsData[field]);
+          continue; // Skip to next field
+        }
+        
         // Numeric fields
-        if (field === 'minRatingToDisplay' || 
+        if (field === 'minRatingToDisplay' || field === 'fomoDelay' ||
             field.includes('Count') || field.includes('Days') || field.includes('Items') || 
-            field.includes('Products')) {
+            field.includes('Products') || field.includes('Threshold') || field.includes('Interval')) {
           updateData[field] = parseInt(settingsData[field]) || 0;
           continue; // Skip to next field
         }
         
-        // Boolean fields (generic pattern)
-        if (field.includes('Enabled') || field.includes('Show') || field.includes('Require') || 
+        // Boolean fields (generic pattern) - BUT exclude String fields
+        // estimatedDeliveryShowOnProduct is Boolean, so it's OK
+        // NOTE: productPageOrder and reasonsToPurchaseList are handled separately in Text/JSON fields section
+        const stringFieldsList = [
+          'imageZoomType', 'navigationType', 'soldNumberType', 'soldNumberText',
+          'variantColorStyle', 'variantColorSize', 'variantSizeStyle',
+          'stockProgressType', 'stockProgressLowColor', 'stockProgressMediumColor', 'stockProgressHighColor',
+          'badgeLayout', 'badgeCustom1Text', 'badgeCustom2Text',
+          'reasonsToPurchaseType', 'reasonsToPurchaseStyle',
+          'onlineVisitorsType', 'onlineVisitorsText',
+          'estimatedDeliveryDefaultText',
+          'fomoType', 'fomoTrigger', 'fomoMessage',
+          'defaultLanguage', 'pixelStatus', 'capiStatus'
+        ];
+        
+        if ((field.includes('Enabled') || field.includes('Show') || field.includes('Require') || 
             field.includes('Moderation') || field.includes('Autoplay') || field.includes('Controls') ||
             field.startsWith('badge') || field.startsWith('tab') || field.startsWith('share') ||
-            field.startsWith('seo') || field === 'multiLanguageEnabled') {
+            field.startsWith('seo') || field === 'multiLanguageEnabled') &&
+            // Exclude ALL String fields
+            !stringFieldsList.includes(field)) {
           updateData[field] = Boolean(settingsData[field]);
           continue; // Skip to next field
         }
@@ -370,6 +615,30 @@ exports.updateStorefrontSettings = async (req, res) => {
           } else {
             updateData[field] = ['ar']; // Default if not provided
           }
+          continue; // Skip to next field
+        }
+        
+        // Text/JSON fields (stored as TEXT in DB) - MUST be checked BEFORE generic patterns
+        if (field === 'productPageOrder' || field === 'reasonsToPurchaseList') {
+          console.log(`🔍 [STOREFRONT-SETTINGS] Processing TEXT/JSON field: ${field}, type: ${typeof settingsData[field]}, value:`, settingsData[field]);
+          if (typeof settingsData[field] === 'string') {
+            // Already a string, keep as is (could be JSON string or plain text)
+            updateData[field] = settingsData[field];
+          } else if (Array.isArray(settingsData[field])) {
+            // Convert array to JSON string
+            updateData[field] = JSON.stringify(settingsData[field]);
+          } else if (settingsData[field] === null || settingsData[field] === undefined) {
+            updateData[field] = null;
+          } else {
+            // Try to stringify if it's an object
+            try {
+              updateData[field] = JSON.stringify(settingsData[field]);
+            } catch (e) {
+              console.error(`❌ [STOREFRONT-SETTINGS] Error stringifying ${field}:`, e);
+              updateData[field] = null;
+            }
+          }
+          console.log(`✅ [STOREFRONT-SETTINGS] ${field} processed, final value:`, updateData[field]);
           continue; // Skip to next field
         }
         
@@ -407,32 +676,223 @@ exports.updateStorefrontSettings = async (req, res) => {
     }
 
     // تحديث أو إنشاء الإعدادات
-    // Ensure supportedLanguages is always present (required Json field)
+    // Note: createData will be built after cleanUpdateData is ready
+
+    // Debug: Log updateData for String fields and check for type mismatches
+    // NOTE: productPageOrder and reasonsToPurchaseList are TEXT fields, not String fields
+    const stringFieldsList = [
+      'imageZoomType', 'navigationType', 'soldNumberType', 'soldNumberText',
+      'variantColorStyle', 'variantColorSize', 'variantSizeStyle',
+      'stockProgressType', 'stockProgressLowColor', 'stockProgressMediumColor', 'stockProgressHighColor',
+      'badgeLayout', 'badgeCustom1Text', 'badgeCustom2Text',
+      'reasonsToPurchaseType', 'reasonsToPurchaseStyle',
+      'onlineVisitorsType', 'onlineVisitorsText',
+      'estimatedDeliveryDefaultText',
+      'fomoType', 'fomoTrigger', 'fomoMessage',
+      'defaultLanguage', 'pixelStatus', 'capiStatus'
+    ];
+    const debugData = {};
+    const typeErrors = [];
+    
+    stringFieldsList.forEach(field => {
+      if (updateData[field] !== undefined) {
+        const value = updateData[field];
+        const type = typeof value;
+        debugData[field] = { value, type };
+        
+        // Check if String field has wrong type
+        if (type === 'boolean') {
+          typeErrors.push(`${field} is Boolean but should be String!`);
+        }
+      }
+    });
+    
+    if (Object.keys(debugData).length > 0) {
+      console.log('🔍 [STOREFRONT-SETTINGS] String fields in updateData:', JSON.stringify(debugData, null, 2));
+    }
+    
+    if (typeErrors.length > 0) {
+      console.error('❌ [STOREFRONT-SETTINGS] Type errors found:', typeErrors);
+      // Fix the errors - use the same logic as in the main loop
+      typeErrors.forEach(error => {
+        const field = error.split(' ')[0];
+        // Apply default values based on field name
+        if (field === 'estimatedDeliveryDefaultText') {
+          updateData[field] = 'التوصيل خلال {time}';
+        } else if (field === 'fomoType') {
+          updateData[field] = 'soldCount';
+        } else if (field === 'fomoTrigger') {
+          updateData[field] = 'time';
+        } else if (field === 'fomoMessage') {
+          updateData[field] = null;
+        } else if (field === 'imageZoomType') {
+          updateData[field] = 'hover';
+        } else if (field === 'navigationType') {
+          updateData[field] = 'sameCategory';
+        } else if (field === 'soldNumberType') {
+          updateData[field] = 'real';
+        } else if (field === 'soldNumberText') {
+          updateData[field] = 'تم بيع {count} قطعة';
+        } else if (field === 'variantColorStyle') {
+          updateData[field] = 'buttons';
+        } else if (field === 'variantColorSize') {
+          updateData[field] = 'medium';
+        } else if (field === 'variantSizeStyle') {
+          updateData[field] = 'buttons';
+        } else if (field === 'stockProgressType') {
+          updateData[field] = 'percentage';
+        } else if (field === 'stockProgressLowColor') {
+          updateData[field] = '#ef4444';
+        } else if (field === 'stockProgressMediumColor') {
+          updateData[field] = '#f59e0b';
+        } else if (field === 'stockProgressHighColor') {
+          updateData[field] = '#10b981';
+        } else if (field === 'badgeLayout') {
+          updateData[field] = 'horizontal';
+        } else if (field === 'reasonsToPurchaseType') {
+          updateData[field] = 'global';
+        } else if (field === 'reasonsToPurchaseStyle') {
+          updateData[field] = 'list';
+        } else if (field === 'onlineVisitorsType') {
+          updateData[field] = 'fake';
+        } else if (field === 'onlineVisitorsText') {
+          updateData[field] = '{count} شخص يشاهدون هذا المنتج الآن';
+        } else if (field === 'defaultLanguage') {
+          updateData[field] = 'ar';
+        } else {
+          updateData[field] = null;
+        }
+        console.log(`✅ [STOREFRONT-SETTINGS] Fixed ${field}`);
+      });
+    }
+
+    // Clean updateData: remove undefined values and fix type mismatches
+    const cleanUpdateData = {};
+    for (const [key, value] of Object.entries(updateData)) {
+      if (value === undefined) continue; // Skip undefined
+      
+      // Final type check and fix for String fields
+      if (stringFieldsList.includes(key)) {
+        if (typeof value === 'boolean') {
+          console.error(`❌ [STOREFRONT-SETTINGS] CRITICAL: ${key} is Boolean, fixing...`);
+          // Fix based on field
+          if (key === 'estimatedDeliveryDefaultText') {
+            cleanUpdateData[key] = 'التوصيل خلال {time}';
+          } else if (key === 'fomoType') {
+            cleanUpdateData[key] = 'soldCount';
+          } else if (key === 'fomoTrigger') {
+            cleanUpdateData[key] = 'time';
+          } else if (key === 'fomoMessage') {
+            cleanUpdateData[key] = null;
+          }
+        } else if (typeof value === 'string' || value === null) {
+          cleanUpdateData[key] = value;
+        } else {
+          console.warn(`⚠️ [STOREFRONT-SETTINGS] ${key} has unexpected type: ${typeof value}, skipping`);
+        }
+      } else {
+        // Non-String fields - keep as is
+        cleanUpdateData[key] = value;
+      }
+    }
+
+    console.log('🔄 [STOREFRONT-SETTINGS] Starting upsert with', Object.keys(cleanUpdateData).length, 'fields');
+    
+    // Final validation log
+    stringFieldsList.forEach(field => {
+      if (cleanUpdateData[field] !== undefined) {
+        console.log(`✅ [STOREFRONT-SETTINGS] ${field}: type=${typeof cleanUpdateData[field]}, value=${cleanUpdateData[field]}`);
+      }
+    });
+
+    // Final check: Log ALL String fields in cleanUpdateData to find any Boolean values
+    console.log('🔍 [STOREFRONT-SETTINGS] === FINAL CHECK: All String fields ===');
+    const allStringFields = stringFieldsList;
+    allStringFields.forEach(field => {
+      if (cleanUpdateData[field] !== undefined) {
+        const type = typeof cleanUpdateData[field];
+        const value = cleanUpdateData[field];
+        if (type === 'boolean') {
+          console.error(`❌❌❌ [STOREFRONT-SETTINGS] CRITICAL ERROR: ${field} is still Boolean! Value: ${value}`);
+        } else {
+          console.log(`✅ [STOREFRONT-SETTINGS] ${field}: ${type} = ${value}`);
+        }
+      }
+    });
+    
+    // Build createData with final validation
     const createData = {
       companyId,
-      ...updateData,
-      supportedLanguages: updateData.supportedLanguages || ["ar"] // Default to Arabic if not provided
+      ...cleanUpdateData,
+      supportedLanguages: cleanUpdateData.supportedLanguages || ["ar"]
     };
-
-    const settings = await prisma.storefrontSettings.upsert({
-      where: { companyId },
-      update: updateData,
-      create: createData
+    
+    console.log('🔍 [STOREFRONT-SETTINGS] === Checking createData String fields ===');
+    allStringFields.forEach(field => {
+      if (createData[field] !== undefined) {
+        const type = typeof createData[field];
+        const value = createData[field];
+        if (type === 'boolean') {
+          console.error(`❌❌❌ [STOREFRONT-SETTINGS] CRITICAL ERROR in createData: ${field} is Boolean! Value: ${value}`);
+          // Fix it immediately
+          if (field === 'estimatedDeliveryDefaultText') {
+            createData[field] = 'التوصيل خلال {time}';
+          } else if (field === 'fomoType') {
+            createData[field] = 'soldCount';
+          } else if (field === 'fomoTrigger') {
+            createData[field] = 'time';
+          } else if (field === 'fomoMessage') {
+            createData[field] = null;
+          }
+          console.log(`✅ [STOREFRONT-SETTINGS] Fixed ${field} in createData`);
+        }
+      }
     });
 
-    console.log('✅ [STOREFRONT-SETTINGS] Settings updated successfully:', settings.id);
+    console.log('🔄 [STOREFRONT-SETTINGS] Attempting upsert with cleanUpdateData keys:', Object.keys(cleanUpdateData));
+    console.log('🔄 [STOREFRONT-SETTINGS] cleanUpdateData sample (first 5):', Object.fromEntries(Object.entries(cleanUpdateData).slice(0, 5)));
+    
+    try {
+      const settings = await prisma.storefrontSettings.upsert({
+        where: { companyId },
+        update: cleanUpdateData,
+        create: createData
+      });
 
-    return res.status(200).json({
-      success: true,
-      message: 'تم تحديث الإعدادات بنجاح',
-      data: settings
-    });
+      console.log('✅ [STOREFRONT-SETTINGS] Settings updated successfully:', settings.id);
+
+      return res.status(200).json({
+        success: true,
+        message: 'تم تحديث الإعدادات بنجاح',
+        data: settings
+      });
+    } catch (prismaError) {
+      console.error('❌ [STOREFRONT-SETTINGS] Prisma error:', prismaError);
+      console.error('❌ [STOREFRONT-SETTINGS] Error code:', prismaError.code);
+      console.error('❌ [STOREFRONT-SETTINGS] Error meta:', prismaError.meta);
+      console.error('❌ [STOREFRONT-SETTINGS] Error message:', prismaError.message);
+      
+      // Check if it's a field not found error
+      if (prismaError.code === 'P2009' || prismaError.message?.includes('Unknown field')) {
+        return res.status(500).json({
+          success: false,
+          message: 'بعض الحقول غير موجودة في قاعدة البيانات. يرجى تشغيل migration.',
+          error: prismaError.message,
+          code: prismaError.code,
+          meta: prismaError.meta
+        });
+      }
+      
+      throw prismaError; // Re-throw to be caught by outer catch
+    }
   } catch (error) {
     console.error('❌ [STOREFRONT-SETTINGS] Error updating settings:', error);
+    console.error('❌ [STOREFRONT-SETTINGS] Error stack:', error.stack);
     return res.status(500).json({
       success: false,
       message: 'حدث خطأ في تحديث الإعدادات',
-      error: error.message
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };
@@ -571,6 +1031,57 @@ exports.getPublicStorefrontSettings = async (req, res) => {
         stickyShowProductName: true,
         stickyTrackAnalytics: true,
         stickyAutoScrollToCheckout: false,
+        // Product Navigation
+        navigationEnabled: false,
+        navigationType: 'sameCategory',
+        showNavigationButtons: true,
+        keyboardShortcuts: true,
+        // Sold Number Display
+        soldNumberEnabled: false,
+        soldNumberType: 'real',
+        soldNumberMin: 10,
+        soldNumberMax: 500,
+        soldNumberText: 'تم بيع {count} قطعة',
+        // Variant Styles
+        variantColorStyle: 'buttons',
+        variantColorShowName: true,
+        variantColorSize: 'medium',
+        variantSizeStyle: 'buttons',
+        variantSizeShowGuide: false,
+        variantSizeShowStock: true,
+        // Stock Progress Bar
+        stockProgressEnabled: false,
+        stockProgressType: 'percentage',
+        stockProgressLowColor: '#ef4444',
+        stockProgressMediumColor: '#f59e0b',
+        stockProgressHighColor: '#10b981',
+        stockProgressThreshold: 10,
+        // Security Badges
+        securityBadgesEnabled: false,
+        badgeSecurePayment: true,
+        badgeFreeShipping: true,
+        badgeQualityGuarantee: true,
+        badgeCashOnDelivery: true,
+        badgeBuyerProtection: true,
+        badgeHighRating: true,
+        badgeCustom1: false,
+        badgeCustom1Text: null,
+        badgeCustom2: false,
+        badgeCustom2Text: null,
+        badgeLayout: 'horizontal',
+        // Reasons to Purchase
+        reasonsToPurchaseEnabled: false,
+        reasonsToPurchaseType: 'global',
+        reasonsToPurchaseList: null,
+        reasonsToPurchaseMaxItems: 4,
+        reasonsToPurchaseStyle: 'list',
+        // Online Visitors Count
+        onlineVisitorsEnabled: false,
+        onlineVisitorsType: 'fake',
+        onlineVisitorsMin: 5,
+        onlineVisitorsMax: 50,
+        onlineVisitorsUpdateInterval: 30,
+        onlineVisitorsText: '{count} شخص يشاهدون هذا المنتج الآن',
         seoEnabled: true,
         seoMetaDescription: true,
         seoStructuredData: true,

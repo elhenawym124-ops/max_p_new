@@ -47,6 +47,15 @@ router.use(getCartId);
 router.get('/cart', async (req, res) => {
   try {
     const { company } = req;
+    
+    if (!company || !company.id) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'المتجر غير موجود أو غير نشط',
+        hint: 'استخدم ?companyId=xxx في URL'
+      });
+    }
+    
     const cartId = req.cartId;
 
     if (!cartId) {
@@ -385,6 +394,15 @@ router.delete('/cart/clear', async (req, res) => {
 router.get('/shipping/calculate', async (req, res) => {
   try {
     const { company } = req;
+    
+    if (!company || !company.id) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'المتجر غير موجود أو غير نشط',
+        hint: 'استخدم ?companyId=xxx في URL'
+      });
+    }
+    
     const { city, governorate } = req.query;
     
     const shippingZones = await prisma.shippingZone.findMany({
@@ -424,6 +442,62 @@ router.get('/shipping/calculate', async (req, res) => {
     }
   } catch (error) {
     console.error('Error calculating shipping:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Alias for shipping/estimate (for frontend compatibility)
+router.get('/shipping/estimate', async (req, res) => {
+  try {
+    const { company } = req;
+    
+    if (!company || !company.id) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'المتجر غير موجود أو غير نشط',
+        hint: 'استخدم ?companyId=xxx في URL'
+      });
+    }
+    
+    const { city, governorate } = req.query;
+    
+    const shippingZones = await prisma.shippingZone.findMany({
+      where: {
+        companyId: company.id,
+        isActive: true
+      }
+    });
+
+    // Find matching zone
+    const searchTerm = (governorate || city || '').toLowerCase();
+    const matchingZone = shippingZones.find(zone => {
+      const govs = Array.isArray(zone.governorates) ? zone.governorates : [];
+      return govs.some(gov => 
+        gov.toLowerCase().includes(searchTerm) ||
+        searchTerm.includes(gov.toLowerCase())
+      );
+    });
+
+    if (matchingZone) {
+      res.json({ 
+        success: true, 
+        data: {
+          cost: parseFloat(matchingZone.price),
+          deliveryTime: matchingZone.deliveryTime || 'غير محدد'
+        }
+      });
+    } else {
+      res.json({ 
+        success: true, 
+        data: {
+          cost: 0,
+          deliveryTime: 'غير محدد',
+          message: 'لم يتم العثور على منطقة شحن مطابقة'
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Error estimating shipping:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

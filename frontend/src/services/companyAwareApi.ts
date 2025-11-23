@@ -27,6 +27,7 @@ class CompanyAwareApiService {
           // Only redirect if not on public routes
           const currentPath = window.location.pathname;
           const isPublicRoute = 
+            currentPath.startsWith('/home') ||
             currentPath.startsWith('/shop') ||
             currentPath.startsWith('/auth/') ||
             currentPath.startsWith('/super-admin/login') ||
