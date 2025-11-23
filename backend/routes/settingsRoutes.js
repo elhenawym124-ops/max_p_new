@@ -448,8 +448,11 @@ router.put('/ai', async (req, res) => {
         autoReplyEnabled: aiSettings.autoReplyEnabled
       }));
 
-      // إبطال كاش الطوابير للتحديث الفوري
+      // إبطال كاش الطوابير والتحديث الفوري
       messageQueueManager.invalidateCompanyCache(companyId);
+      // إبطال كاش إعدادات AI في webhookController
+      const { invalidateAISettingsCache } = require('../controller/webhookController');
+      invalidateAISettingsCache(companyId);
 
       res.json({
         success: true,
@@ -650,8 +653,11 @@ router.put('/queue', async (req, res) => {
 
       //console.log('✅ [QUEUE-SETTINGS] Saved to database:', aiSettings);
       
-      // إبطال كاش الطوابير للتحديث الفوري
+      // إبطال كاش الطوابير والتحديث الفوري
       messageQueueManager.invalidateCompanyCache(companyId);
+      // إبطال كاش إعدادات AI في webhookController
+      const { invalidateAISettingsCache } = require('../controller/webhookController');
+      invalidateAISettingsCache(companyId);
       
       res.json({
         success: true,

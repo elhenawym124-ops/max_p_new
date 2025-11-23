@@ -164,18 +164,24 @@ router.get('/callback', async (req, res) => {
       return res.redirect(`${redirectBaseUrl}/settings/facebook?error=invalid_state`);
     }
 
-    const { companyId, userId, timestamp } = stateData;
+    const { companyId, userId, timestamp, type } = stateData;
 
     if (!companyId) {
       console.error('❌ No companyId in state');
-      return res.redirect(`${redirectBaseUrl}/settings/facebook?error=no_company_id`);
+      const redirectTarget = type === 'pixel' 
+        ? `${redirectBaseUrl}/advertising/facebook-pixel`
+        : `${redirectBaseUrl}/settings/facebook`;
+      return res.redirect(`${redirectTarget}?error=no_company_id`);
     }
 
     const stateAge = Date.now() - timestamp;
     const maxStateAge = 10 * 60 * 1000; // 10 minutes
     if (stateAge > maxStateAge) {
       console.error('❌ State expired');
-      return res.redirect(`${redirectBaseUrl}/settings/facebook?error=state_expired`);
+      const redirectTarget = type === 'pixel' 
+        ? `${redirectBaseUrl}/advertising/facebook-pixel`
+        : `${redirectBaseUrl}/settings/facebook`;
+      return res.redirect(`${redirectTarget}?error=state_expired`);
     }
 
     const company = await prisma.company.findUnique({
@@ -184,7 +190,10 @@ router.get('/callback', async (req, res) => {
 
     if (!company) {
       console.error(`❌ Company not found: ${companyId}`);
-      return res.redirect(`${redirectBaseUrl}/settings/facebook?error=company_not_found`);
+      const redirectTarget = type === 'pixel' 
+        ? `${redirectBaseUrl}/advertising/facebook-pixel`
+        : `${redirectBaseUrl}/settings/facebook`;
+      return res.redirect(`${redirectTarget}?error=company_not_found`);
     }
 
     // ✅ تبادل الكود مع Facebook Access Token
@@ -197,17 +206,53 @@ router.get('/callback', async (req, res) => {
       }
     });
 
-    const { access_token: userAccessToken } = tokenResponse.data;
+    const { access_token: userAccessToken, expires_in } = tokenResponse.data;
     console.log('✅ Got user access token');
+    
+    // 🔍 تسجيل معلومات Token (خاصة للـ Pixels)
+    if (type === 'pixel') {
+      console.log(`📊 [PIXELS] Token info: expires_in=${expires_in}, length=${userAccessToken?.length}`);
+      // لا نحاول التحقق من Token هنا لأنه قد يحتاج وقت لتفعيله في Facebook
+      console.log('⏳ [PIXELS] Token will be validated when first used');
+    }
 
     // 💾 حفظ User Access Token في Company
+    // إذا كان type === 'pixel'، احفظ في facebookPixelAccessToken
+    // وإلا احفظ في facebookUserAccessToken (للصفحات)
+    const updateData = type === 'pixel' 
+      ? { facebookPixelAccessToken: userAccessToken }
+      : { facebookUserAccessToken: userAccessToken };
+    
     await prisma.company.update({
       where: { id: companyId },
-      data: { facebookUserAccessToken: userAccessToken }
+      data: updateData
     });
-    console.log('✅ Saved user access token to company');
+    
+    if (type === 'pixel') {
+      console.log('✅ [PIXELS] Saved pixel access token to company');
+      
+      // ✅ التحقق من أن Token تم حفظه بشكل صحيح
+      const savedCompany = await prisma.company.findUnique({
+        where: { id: companyId },
+        select: { facebookPixelAccessToken: true }
+      });
+      
+      if (savedCompany?.facebookPixelAccessToken) {
+        console.log('✅ [PIXELS] Token confirmed saved in database');
+        console.log(`📊 [PIXELS] Token length: ${savedCompany.facebookPixelAccessToken.length}`);
+        console.log(`📊 [PIXELS] Token starts with: ${savedCompany.facebookPixelAccessToken.substring(0, 10)}...`);
+      } else {
+        console.error('❌ [PIXELS] Token NOT found in database after save!');
+      }
+      
+      // ✅ توجيه مباشرة لصفحة Pixels بعد نجاح الربط
+      // لا نحتاج delay هنا لأن Token سيتم استخدامه لاحقاً من Frontend
+      return res.redirect(`${redirectBaseUrl}/advertising/facebook-pixel?success=pixel_connected`);
+    } else {
+      console.log('✅ Saved user access token to company');
+    }
 
-    // ✅ الحصول على كل الصفحات المرتبطة بالحساب مع دعم paging
+    // ✅ الحصول على كل الصفحات المرتبطة بالحساب مع دعم paging (للصفحات فقط)
     let allPages = [];
     let currentLimit = 20; // ابدأ بـ limit أصغر
     let nextUrl = `https://graph.facebook.com/v18.0/me/accounts?access_token=${userAccessToken}&fields=id,name,access_token&limit=${currentLimit}`;
@@ -870,6 +915,190 @@ router.get('/debug', requireAuth, async (req, res) => {
 });
 
 /**
+ * Step 1: Generate Facebook OAuth URL for Pixels (منفصل عن Pages)
+ * GET /api/v1/facebook-oauth/pixel-authorize
+ * ✅ REQUIRES AUTHENTICATION
+ */
+router.get('/pixel-authorize', requireAuth, async (req, res) => {
+  try {
+    const { companyId } = req.query;
+
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Company ID is required',
+        message: 'معرف الشركة مطلوب'
+      });
+    }
+
+    // Verify user has access to this company
+    if (req.user.companyId !== companyId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Unauthorized access to company',
+        message: 'غير مصرح لك بالوصول لهذه الشركة'
+      });
+    }
+
+    const state = JSON.stringify({
+      companyId,
+      userId: req.user.id,
+      timestamp: Date.now(),
+      random: Math.random().toString(36).substring(7),
+      type: 'pixel' // 🔑 تمييز أن هذا للـ Pixels وليس Pages
+    });
+
+    const encodedState = Buffer.from(state).toString('base64');
+
+    // استخدام نفس redirect URI مثل Pages (لتجنب إضافته في Facebook App Settings)
+    // النوع سيتم تحديده من خلال state.type في callback
+    const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?` +
+      `client_id=${FACEBOOK_APP_ID}&` +
+      `redirect_uri=${encodeURIComponent(FACEBOOK_REDIRECT_URI)}&` +
+      `scope=${FACEBOOK_SCOPES}&` +
+      `response_type=code&` +
+      `state=${encodedState}`;
+
+    res.json({
+      success: true,
+      authUrl: authUrl,
+      message: 'Facebook authorization URL generated successfully for Pixels'
+    });
+
+  } catch (error) {
+    console.error('❌ Error generating pixel auth URL:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      message: 'فشل إنشاء رابط الترخيص'
+    });
+  }
+});
+
+/**
+ * Step 2: Handle Facebook OAuth Callback for Pixels (منفصل عن Pages)
+ * GET /api/v1/facebook-oauth/pixel-callback
+ * ⚠️ NO AUTHENTICATION - Facebook redirects here directly
+ */
+router.get('/pixel-callback', async (req, res) => {
+  try {
+    const { code, state, error } = req.query;
+
+    console.log('📥 [PIXELS] Received Facebook OAuth callback for Pixels');
+
+    const redirectBaseUrl = envConfig.environment === 'development'
+      ? 'https://mokhtarelhenawy.online'
+      : 'https://mokhtarelhenawy.online';
+
+    if (error) {
+      console.error(`❌ [PIXELS] Facebook OAuth error: ${error}`);
+      return res.redirect(`${redirectBaseUrl}/advertising/facebook-pixel?error=facebook_oauth_${error}`);
+    }
+
+    if (!code || !state) {
+      console.error('❌ [PIXELS] Missing code or state in callback');
+      return res.redirect(`${redirectBaseUrl}/advertising/facebook-pixel?error=missing_code_or_state`);
+    }
+
+    let stateData;
+    try {
+      const decodedState = Buffer.from(state, 'base64').toString('utf8');
+      stateData = JSON.parse(decodedState);
+    } catch (stateError) {
+      console.error('❌ [PIXELS] Invalid state parameter:', stateError);
+      return res.redirect(`${redirectBaseUrl}/advertising/facebook-pixel?error=invalid_state`);
+    }
+
+    const { companyId, userId, timestamp, type } = stateData;
+
+    // التحقق من أن هذا callback للـ Pixels وليس Pages
+    if (type !== 'pixel') {
+      console.error('❌ [PIXELS] Invalid callback type:', type);
+      return res.redirect(`${redirectBaseUrl}/advertising/facebook-pixel?error=invalid_callback_type`);
+    }
+
+    if (!companyId) {
+      console.error('❌ [PIXELS] No companyId in state');
+      return res.redirect(`${redirectBaseUrl}/advertising/facebook-pixel?error=no_company_id`);
+    }
+
+    const stateAge = Date.now() - timestamp;
+    const maxStateAge = 10 * 60 * 1000; // 10 minutes
+    if (stateAge > maxStateAge) {
+      console.error('❌ [PIXELS] State expired');
+      return res.redirect(`${redirectBaseUrl}/advertising/facebook-pixel?error=state_expired`);
+    }
+
+    const company = await prisma.company.findUnique({
+      where: { id: companyId }
+    });
+
+    if (!company) {
+      console.error(`❌ [PIXELS] Company not found: ${companyId}`);
+      return res.redirect(`${redirectBaseUrl}/advertising/facebook-pixel?error=company_not_found`);
+    }
+
+    // ✅ تبادل الكود مع Facebook Access Token
+    const pixelRedirectUri = envConfig.environment === 'development'
+      ? 'https://mokhtarelhenawy.online/api/v1/facebook-oauth/pixel-callback'
+      : 'https://mokhtarelhenawy.online/api/v1/facebook-oauth/pixel-callback';
+
+    const tokenResponse = await axios.get('https://graph.facebook.com/v18.0/oauth/access_token', {
+      params: {
+        client_id: FACEBOOK_APP_ID,
+        client_secret: FACEBOOK_APP_SECRET,
+        redirect_uri: pixelRedirectUri,
+        code: code
+      }
+    });
+
+    const { access_token: pixelAccessToken } = tokenResponse.data;
+    console.log('✅ [PIXELS] Got user access token for Pixels');
+
+    // 💾 حفظ Pixel Access Token في Company (منفصل عن facebookUserAccessToken)
+    await prisma.company.update({
+      where: { id: companyId },
+      data: { facebookPixelAccessToken: pixelAccessToken }
+    });
+    console.log('✅ [PIXELS] Saved pixel access token to company');
+
+    // ✅ توجيه المستخدم إلى صفحة Pixels بعد نجاح الربط
+    res.redirect(`${redirectBaseUrl}/advertising/facebook-pixel?success=pixel_connected`);
+
+  } catch (error) {
+    console.error('❌ [PIXELS] Error in pixel callback:', error);
+    const redirectBaseUrl = envConfig.environment === 'development'
+      ? 'https://mokhtarelhenawy.online'
+      : 'https://mokhtarelhenawy.online';
+    res.redirect(`${redirectBaseUrl}/advertising/facebook-pixel?error=callback_failed`);
+  }
+});
+
+/**
+ * 🆕 Helper function to handle token errors for Pixels
+ */
+const handlePixelTokenError = async (error, companyId) => {
+  // Check if error is OAuthException with code 190 (token decryption error)
+  if (error.response?.data?.error?.code === 190 || 
+      error.response?.data?.error?.code === '190') {
+    console.log('⚠️ [PIXELS] Token expired or invalid (code 190), clearing pixel token...');
+    
+    // حذف Pixel Token فقط (لا نمس facebookUserAccessToken)
+    try {
+      await prisma.company.update({
+        where: { id: companyId },
+        data: { facebookPixelAccessToken: null }
+      });
+      console.log('✅ [PIXELS] Cleared invalid pixel token');
+      return true; // Token was cleared
+    } catch (dbError) {
+      console.error('❌ [PIXELS] Error clearing pixel token:', dbError);
+    }
+  }
+  return false; // Token was not cleared
+};
+
+/**
  * 🆕 Get Facebook Pixels for authenticated user
  * GET /api/v1/facebook-oauth/pixels
  * ✅ REQUIRES AUTHENTICATION
@@ -897,39 +1126,204 @@ router.get('/pixels', requireAuth, async (req, res) => {
 
     console.log('🎯 [PIXELS] Fetching pixels for company:', companyId);
 
-    // Get company with Facebook User Access Token
+    // Get company with Facebook Pixel Access Token (منفصل عن Pages Token)
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      select: { facebookUserAccessToken: true }
+      select: { facebookPixelAccessToken: true }
     });
 
-    if (!company || !company.facebookUserAccessToken) {
+    if (!company || !company.facebookPixelAccessToken) {
       return res.json({
         success: false,
-        message: 'يرجى ربط حسابك مع Facebook أولاً',
+        message: 'يرجى ربط حسابك مع Facebook أولاً للوصول إلى Pixels',
         needsAuth: true
       });
     }
 
-    const userAccessToken = company.facebookUserAccessToken;
+    const pixelAccessToken = company.facebookPixelAccessToken;
+
+    // 🔍 التحقق من permissions الـ Token قبل الاستخدام
+    console.log('🔍 [PIXELS] Checking token permissions...');
+    try {
+      // محاولة استخدام Token الأساسي أولاً
+      const userInfoResponse = await axios.get(
+        'https://graph.facebook.com/v18.0/me',
+        {
+          params: {
+            access_token: pixelAccessToken,
+            fields: 'id,name,email'
+          }
+        }
+      );
+      console.log(`✅ [PIXELS] Token is valid for user: ${userInfoResponse.data.name || userInfoResponse.data.id}`);
+      
+      // التحقق من الصلاحيات
+      const permissionsResponse = await axios.get(
+        'https://graph.facebook.com/v18.0/me/permissions',
+        {
+          params: {
+            access_token: pixelAccessToken
+          }
+        }
+      );
+      
+      const grantedPermissions = permissionsResponse.data.data
+        .filter(p => p.status === 'granted')
+        .map(p => p.permission);
+      
+      console.log(`📊 [PIXELS] Granted permissions (${grantedPermissions.length}):`, grantedPermissions.join(', '));
+      
+      // التحقق من الصلاحيات المطلوبة للـ Pixels
+      const requiredPermissions = {
+        'business_management': 'للوصول إلى Businesses',
+        'ads_read': 'لقراءة بيانات Pixels',
+        'ads_management': 'لإدارة Pixels'
+      };
+      
+      const missingPermissions = [];
+      for (const [perm, description] of Object.entries(requiredPermissions)) {
+        if (!grantedPermissions.includes(perm)) {
+          missingPermissions.push(perm);
+          console.warn(`⚠️ [PIXELS] Missing permission: ${perm} (${description})`);
+        } else {
+          console.log(`✅ [PIXELS] Permission granted: ${perm}`);
+        }
+      }
+      
+      if (missingPermissions.length > 0) {
+        console.error(`❌ [PIXELS] Missing ${missingPermissions.length} required permission(s): ${missingPermissions.join(', ')}`);
+        console.error(`❌ [PIXELS] Token may not work for fetching pixels. Please re-authorize with all required permissions.`);
+        console.error(`📝 [PIXELS] Required scopes: ${Object.keys(requiredPermissions).join(', ')}`);
+        
+        // إذا كانت الصلاحيات المطلوبة مفقودة، احذف Token واطلب إعادة الربط
+        console.warn('⚠️ [PIXELS] Clearing token due to missing permissions. User needs to re-authorize.');
+        await prisma.company.update({
+          where: { id: companyId },
+          data: { facebookPixelAccessToken: null }
+        });
+        
+        return res.json({
+          success: false,
+          message: 'الصلاحيات المطلوبة غير متوفرة. يرجى إعادة الربط مع Facebook والتأكد من الموافقة على جميع الصلاحيات المطلوبة (ads_read و ads_management).',
+          needsAuth: true,
+          missingPermissions: missingPermissions
+        });
+      } else {
+        console.log('✅ [PIXELS] All required permissions are granted');
+      }
+      
+    } catch (permError) {
+      const errorCode = permError.response?.data?.error?.code;
+      const errorMessage = permError.response?.data?.error?.message || permError.message;
+      
+      console.error(`❌ [PIXELS] Error checking token permissions: ${errorMessage} (code: ${errorCode})`);
+      
+      // إذا كان code 190، Token غير صالح
+      if (errorCode === 190 || errorCode === '190') {
+        console.error('❌ [PIXELS] Token is invalid (code 190) - will clear and request re-auth');
+        // سنحذف Token لاحقاً في retry logic
+      }
+    }
 
     // 1. Get user's businesses
     console.log('📊 [PIXELS] Fetching businesses...');
-    const businessesResponse = await axios.get(
-      'https://graph.facebook.com/v18.0/me/businesses',
-      {
-        params: {
-          access_token: userAccessToken,
-          fields: 'id,name'
+    let businessesResponse;
+    
+    // Retry logic: Token قد يحتاج وقت لتفعيله في Facebook (خاصة code 190)
+    let retryCount = 0;
+    const maxRetries = 3; // زيادة عدد المحاولات
+    let lastError = null;
+    let code190Retries = 0;
+    const maxCode190Retries = 2; // محاولات خاصة لـ code 190
+    
+    while (retryCount <= maxRetries) {
+      try {
+        businessesResponse = await axios.get(
+          'https://graph.facebook.com/v18.0/me/businesses',
+          {
+            params: {
+              access_token: pixelAccessToken,
+              fields: 'id,name'
+            }
+          }
+        );
+        // نجح! خروج من الحلقة
+        console.log('✅ [PIXELS] Successfully fetched businesses');
+        break;
+      } catch (error) {
+        lastError = error;
+        const errorCode = error.response?.data?.error?.code;
+        const errorMessage = error.response?.data?.error?.message || error.message;
+        
+        // إذا كان Token منتهي (code 190)، نحاول مرة أو مرتين قبل الحذف
+        if (errorCode === 190 || errorCode === '190') {
+          console.error(`❌ [PIXELS] Token error (code 190) - Attempt ${code190Retries + 1}/${maxCode190Retries + 1}`);
+          console.error(`📊 [PIXELS] Error message: ${errorMessage}`);
+          
+          code190Retries++;
+          
+          // إذا تجاوزنا عدد المحاولات المسموح لـ code 190، احذف Token
+          if (code190Retries > maxCode190Retries) {
+            console.error('❌ [PIXELS] Token persistently invalid (code 190), clearing...');
+            const tokenCleared = await handlePixelTokenError(error, companyId);
+            if (tokenCleared) {
+              return res.json({
+                success: false,
+                message: 'انتهت صلاحية الربط مع Facebook. يرجى إعادة الربط',
+                needsAuth: true
+              });
+            }
+            throw error;
+          }
+          
+          // محاولة أخرى مع delay أطول لـ code 190
+          retryCount++;
+          const delay = code190Retries * 2000; // 2s, 4s
+          console.log(`⏳ [PIXELS] Waiting ${delay}ms before retry (code 190 may need activation time)...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue; // حاول مرة أخرى
+        }
+        
+        // إذا كان خطأ آخر ويمكن إعادة المحاولة
+        if (retryCount < maxRetries) {
+          retryCount++;
+          const delay = retryCount * 1000; // 1s, 2s, 3s
+          console.log(`⚠️ [PIXELS] Retry ${retryCount}/${maxRetries} after ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          // فشلت جميع المحاولات
+          console.error('❌ [PIXELS] Error fetching businesses after retries:', error.response?.data || error.message);
+          throw error;
         }
       }
-    );
+    }
 
     const businesses = businessesResponse.data.data || [];
     console.log(`✅ [PIXELS] Found ${businesses.length} businesses`);
 
+    // 🔍 إذا لم يتم العثور على Businesses، قد يكون المستخدم مسجل بحساب آخر
+    if (businesses.length === 0) {
+      console.warn('⚠️ [PIXELS] No businesses found - user may be logged in with wrong account');
+      console.warn('⚠️ [PIXELS] Clearing token to allow re-authentication with correct account');
+      
+      // حذف Token القديم للسماح بإعادة الربط بحساب آخر
+      await prisma.company.update({
+        where: { id: companyId },
+        data: { facebookPixelAccessToken: null }
+      });
+      
+      return res.json({
+        success: false,
+        message: 'لم يتم العثور على Businesses. قد تكون مسجل بحساب آخر. يرجى إعادة الربط بالحساب الصحيح.',
+        needsAuth: true,
+        noBusinesses: true
+      });
+    }
+
     // 2. Get pixels for each business
     const allPixels = [];
+    let tokenExpired = false;
+    let permissionDenied = false;
 
     for (const business of businesses) {
       try {
@@ -939,7 +1333,7 @@ router.get('/pixels', requireAuth, async (req, res) => {
           `https://graph.facebook.com/v18.0/${business.id}/adspixels`,
           {
             params: {
-              access_token: userAccessToken,
+              access_token: pixelAccessToken,
               fields: 'id,name,code'
             }
           }
@@ -957,9 +1351,56 @@ router.get('/pixels', requireAuth, async (req, res) => {
           });
         });
       } catch (error) {
-        console.error(`❌ [PIXELS] Error fetching pixels for business ${business.id}:`, error.response?.data || error.message);
-        // Continue with other businesses
+        const errorCode = error.response?.data?.error?.code;
+        const errorSubcode = error.response?.data?.error?.error_subcode;
+        const errorMessage = error.response?.data?.error?.message || error.message;
+        
+        console.error(`❌ [PIXELS] Error fetching pixels for business ${business.id}:`, errorMessage);
+        
+        // إذا كان الخطأ متعلق بصلاحيات (code 100, subcode 33 = missing permissions)
+        if (errorCode === 100 && errorSubcode === 33) {
+          console.warn(`⚠️ [PIXELS] Permission denied for business ${business.id} - missing ads_read or ads_management permission`);
+          permissionDenied = true;
+          // لا نكسر الحلقة، نحاول باقي Businesses
+          continue;
+        }
+        
+        // معالجة Token المنتهي
+        const tokenCleared = await handlePixelTokenError(error, companyId);
+        if (tokenCleared) {
+          tokenExpired = true;
+          break; // خروج من الحلقة إذا Token منتهي
+        }
+        // Continue with other businesses if it's not a token error
       }
+    }
+    
+    // إذا تم رفض الوصول لجميع Businesses بسبب الصلاحيات
+    if (permissionDenied && allPixels.length === 0) {
+      console.error('❌ [PIXELS] All businesses returned permission denied - missing ads_read/ads_management');
+      console.warn('⚠️ [PIXELS] Clearing token due to missing permissions. User needs to re-authorize.');
+      
+      // حذف Token وطلب إعادة الربط
+      await prisma.company.update({
+        where: { id: companyId },
+        data: { facebookPixelAccessToken: null }
+      });
+      
+      return res.json({
+        success: false,
+        message: 'الصلاحيات المطلوبة غير متوفرة. يرجى إعادة الربط مع Facebook والتأكد من الموافقة على جميع الصلاحيات المطلوبة (ads_read و ads_management).',
+        needsAuth: true,
+        missingPermissions: ['ads_read', 'ads_management']
+      });
+    }
+
+    // إذا Token منتهي، أعد response يحتاج re-auth
+    if (tokenExpired) {
+      return res.json({
+        success: false,
+        message: 'انتهت صلاحية الربط مع Facebook. يرجى إعادة الربط',
+        needsAuth: true
+      });
     }
 
     console.log(`✅ [PIXELS] Total pixels found: ${allPixels.length}`);
@@ -975,6 +1416,20 @@ router.get('/pixels', requireAuth, async (req, res) => {
 
   } catch (error) {
     console.error('❌ [PIXELS] Error fetching pixels:', error.response?.data || error.message);
+    
+    // محاولة معالجة Token المنتهي
+    const { companyId } = req.query;
+    if (companyId) {
+      const tokenCleared = await handlePixelTokenError(error, companyId);
+      if (tokenCleared) {
+        return res.json({
+          success: false,
+          message: 'انتهت صلاحية الربط مع Facebook. يرجى إعادة الربط',
+          needsAuth: true
+        });
+      }
+    }
+    
     res.status(500).json({
       success: false,
       error: error.message,

@@ -20,6 +20,85 @@ const AI_CACHE_DURATION = 60 * 1000; // 1 minute
 const facebookPagesCache = new Map();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
+// ⚡ Cache for AI settings to check if AI is enabled
+const aiSettingsCache = new Map();
+const AI_SETTINGS_CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
+
+// ⚡ FAST CHECK: Check cache only (synchronous - no database query)
+function checkIfAIEnabledSync(companyId) {
+  const cached = aiSettingsCache.get(companyId);
+  if (cached && (Date.now() - cached.timestamp) < AI_SETTINGS_CACHE_DURATION) {
+    return cached.autoReplyEnabled || false;
+  }
+  // ⚡ CRITICAL FIX: If not in cache, assume AI is DISABLED and load in background
+  // This ensures instant processing when AI is off
+  // Load settings in background immediately (non-blocking)
+  loadAISettingsInBackground(companyId).catch(() => {});
+  // ⚡ DEFAULT: If not in cache, assume AI is DISABLED (fastest default for instant processing)
+  return false;
+}
+
+// Load AI settings in background (for future messages)
+async function loadAISettingsInBackground(companyId) {
+  try {
+    // ⚡ OPTIMIZATION: Use safeQuery for faster database access
+    const aiSettings = await safeQuery(async () => {
+      const prisma = getPrisma();
+      return await prisma.aiSettings.findUnique({
+        where: { companyId },
+        select: { autoReplyEnabled: true }
+      });
+    }, 1); // ⚡ Only 1 retry for speed
+    
+    const isEnabled = aiSettings?.autoReplyEnabled || false;
+    
+    // Cache the result
+    aiSettingsCache.set(companyId, {
+      autoReplyEnabled: isEnabled,
+      timestamp: Date.now()
+    });
+    
+    console.log(`✅ [AI-CACHE] Loaded AI settings for company ${companyId}: ${isEnabled ? 'ENABLED' : 'DISABLED'}`);
+  } catch (error) {
+    console.error(`❌ [AI-CACHE] Error loading AI settings:`, error.message);
+    // Cache as disabled on error (safer default)
+    aiSettingsCache.set(companyId, {
+      autoReplyEnabled: false,
+      timestamp: Date.now()
+    });
+  }
+}
+
+// ⚡ NEW: Pre-load AI settings on startup for all companies
+async function preloadAISettingsForAllCompanies() {
+  try {
+    const prisma = getPrisma();
+    const allCompanies = await prisma.company.findMany({
+      select: { id: true }
+    });
+    
+    console.log(`🔄 [AI-CACHE] Pre-loading AI settings for ${allCompanies.length} companies...`);
+    
+    // Load settings for all companies in parallel (but limit concurrency)
+    const batchSize = 10;
+    for (let i = 0; i < allCompanies.length; i += batchSize) {
+      const batch = allCompanies.slice(i, i + batchSize);
+      await Promise.all(
+        batch.map(company => loadAISettingsInBackground(company.id))
+      );
+    }
+    
+    console.log(`✅ [AI-CACHE] Pre-loaded AI settings for ${allCompanies.length} companies`);
+  } catch (error) {
+    console.error(`❌ [AI-CACHE] Error pre-loading AI settings:`, error.message);
+  }
+}
+
+// ⚡ Start pre-loading on module load (non-blocking)
+setImmediate(() => {
+  preloadAISettingsForAllCompanies().catch(() => {});
+});
+
 
 // Function to get Facebook page with caching
 async function getCachedFacebookPage(pageId) {
@@ -190,8 +269,8 @@ const postWebhook = async (req, res) => {
       
       if (pageExists.status === 'disconnected') {
         //console.log(`⚠️ [WEBHOOK] Ignoring webhook event from DISCONNECTED page: ${pageExists.pageName} (${entry.id})`);
-        console.log(`   This page was disconnected at: ${pageExists.disconnectedAt}`);
-        console.log(`   Please unsubscribe this page from webhooks in Facebook settings`);
+        // console.log(`   This page was disconnected at: ${pageExists.disconnectedAt}`);
+        // console.log(`   Please unsubscribe this page from webhooks in Facebook settings`);
         continue;
       }
       
@@ -893,6 +972,9 @@ async function handleMessage(webhookEvent, pageId = null) {
       if (facebookPage && facebookPage.companyId) {
         const companyId = facebookPage.companyId;
         
+        // ⚡ Pre-load AI settings in background for faster future checks
+        loadAISettingsInBackground(companyId).catch(() => {});
+        
         // 🆕 For referral events without message, process directly (don't queue)
         if (hasReferral && !webhookEvent.message) {
           console.log('📨 [POST-REF] Processing referral event without message - calling handleFacebookMessage directly');
@@ -922,14 +1004,29 @@ async function handleMessage(webhookEvent, pageId = null) {
           // Ignore preview errors
         }
 
-        // ⏱️ Add message to ADAPTIVE QUEUE for batching
-        const queueStartTime = Date.now();
-        console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${queueStartTime - startTime}ms] 📤 [QUEUE] Adding to queue...`);
-        messageQueueManager.addToQueue(senderId, messageData, companyId).then(() => {
-          console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - startTime}ms] ✅ [QUEUE] Added to queue successfully`);
-        }).catch(error => {
-          console.error(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - startTime}ms] ❌ [QUEUE] Error adding message to queue:`, error);
-        });
+        // ⚡ CRITICAL FIX: Fast sync check - if AI disabled or not in cache, process directly
+        const aiEnabled = checkIfAIEnabledSync(companyId);
+        
+        if (!aiEnabled) {
+          // ⚡ AI معطل = معالجة فورية تماماً بدون أي صف
+          console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - startTime}ms] ⚡ [INSTANT] AI disabled or not cached - Processing DIRECTLY (bypassing queue completely)`);
+          const { handleFacebookMessage } = require('../utils/allFunctions');
+          // ⚡ CRITICAL: Process immediately without any delay
+          // Don't use setImmediate - process NOW to avoid any delay
+          handleFacebookMessage(webhookEvent, recipientPageId).catch(error => {
+            console.error(`❌ [DIRECT-PROCESS] Error:`, error);
+          });
+          // ⚡ NOTE: loadAISettingsInBackground already called in checkIfAIEnabledSync
+        } else {
+          // ⏱️ AI مفعّل = استخدم الصف
+          const queueStartTime = Date.now();
+          console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${queueStartTime - startTime}ms] 📤 [QUEUE] AI enabled - Adding to queue...`);
+          messageQueueManager.addToQueue(senderId, messageData, companyId).then(() => {
+            console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - startTime}ms] ✅ [QUEUE] Added to queue successfully`);
+          }).catch(error => {
+            console.error(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - startTime}ms] ❌ [QUEUE] Error adding message to queue:`, error);
+          });
+        }
         return;
       }
     }
@@ -947,13 +1044,19 @@ async function handleMessage(webhookEvent, pageId = null) {
       }
 
       const companyId = facebookPage.companyId;
+      
+      // ⚡ Pre-load AI settings in background for faster future checks
+      loadAISettingsInBackground(companyId).catch(() => {});
 
       // 🆕 For referral events without message, process directly (don't queue)
       if (hasReferral && !webhookEvent.message) {
         console.log('📨 [POST-REF] Processing referral event without message - calling handleFacebookMessage directly');
         const { handleFacebookMessage } = require('../utils/allFunctions');
-        handleFacebookMessage(webhookEvent, recipientPageId).catch(error => {
-          console.error(`❌ [POST-REF] Error processing referral:`, error);
+        // ⚡ CRITICAL: Use setImmediate to process in next tick (non-blocking)
+        setImmediate(() => {
+          handleFacebookMessage(webhookEvent, recipientPageId).catch(error => {
+            console.error(`❌ [POST-REF] Error processing referral:`, error);
+          });
         });
         return;
       }
@@ -981,10 +1084,26 @@ async function handleMessage(webhookEvent, pageId = null) {
         // console.warn(`⚠️ [INSTANT] Preview failed:`, previewError.message);
       }
 
-      // ⏱️ Add message to ADAPTIVE QUEUE for batching
-      messageQueueManager.addToQueue(senderId, messageData, companyId).catch(error => {
-        console.error(`❌ [QUEUE] Error adding message to queue:`, error);
-      });
+      // ⚡ CRITICAL FIX: Fast sync check - if AI disabled or not in cache, process directly
+      const aiEnabled = checkIfAIEnabledSync(companyId);
+      
+      if (!aiEnabled) {
+        // ⚡ AI معطل = معالجة فورية تماماً بدون أي صف
+        console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - startTime}ms] ⚡ [INSTANT] AI disabled or not cached - Processing DIRECTLY (bypassing queue completely)`);
+        const { handleFacebookMessage } = require('../utils/allFunctions');
+        // ⚡ CRITICAL: Process immediately without any delay
+        // Don't use setImmediate - process NOW to avoid any delay
+        handleFacebookMessage(webhookEvent, recipientPageId).catch(error => {
+          console.error(`❌ [DIRECT-PROCESS] Error:`, error);
+        });
+        // ⚡ NOTE: loadAISettingsInBackground already called in checkIfAIEnabledSync
+      } else {
+        // ⏱️ AI مفعّل = استخدم الصف
+        console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - startTime}ms] 📤 [QUEUE] AI enabled - Adding to queue...`);
+        messageQueueManager.addToQueue(senderId, messageData, companyId).catch(error => {
+          console.error(`❌ [QUEUE] Error adding message to queue:`, error);
+        });
+      }
     }).catch(error => {
       console.error(`❌ [QUEUE] Error getting Facebook page:`, error);
       // Fallback to direct processing
@@ -1052,4 +1171,12 @@ function markMessageAsAI(facebookMessageId, aiMetadata) {
   }
 }
 
-module.exports = { getWebhook, postWebhook, markMessageAsAI }
+// Function to invalidate AI settings cache (called when AI settings are updated)
+function invalidateAISettingsCache(companyId) {
+  if (aiSettingsCache.has(companyId)) {
+    aiSettingsCache.delete(companyId);
+    console.log(`🗑️ [AI-CACHE] Invalidated AI settings cache for company ${companyId}`);
+  }
+}
+
+module.exports = { getWebhook, postWebhook, markMessageAsAI, invalidateAISettingsCache }

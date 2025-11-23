@@ -17,7 +17,8 @@ model Company {
   logo                   String?
   address                String?
   currency               String                  @default("EGP")
-  facebookUserAccessToken String?                // 🔑 Facebook User Access Token for Pixel API
+  facebookUserAccessToken String?                @db.Text // 🔑 Facebook User Access Token for Pages API
+  facebookPixelAccessToken String?               @db.Text // 🔑 Facebook User Access Token for Pixel API (منفصل)
   plan                   SubscriptionPlan        @default(BASIC)
   planConfigurationId    String?
   isActive               Boolean                 @default(true)

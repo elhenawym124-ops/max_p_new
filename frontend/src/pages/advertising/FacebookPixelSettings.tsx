@@ -90,8 +90,62 @@ const FacebookPixelSettings: React.FC = () => {
 
   // Load settings on mount
   useEffect(() => {
-    loadSettings();
+    const initializePage = async () => {
+      await loadSettings();
+      
+      // معالجة query parameters بعد إعادة التوجيه من Facebook OAuth
+      const urlParams = new URLSearchParams(window.location.search);
+      const success = urlParams.get('success');
+      const error = urlParams.get('error');
+      
+      if (success === 'pixel_connected') {
+        toast.success('✅ تم ربط حساب Facebook بنجاح! جاري جلب Pixels...');
+        // تنظيف URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+        // جلب Pixels بعد الربط الناجح
+        setTimeout(() => {
+          fetchPixels();
+        }, 1000);
+      } else if (error) {
+        let errorMessage = 'فشل الربط مع Facebook';
+        switch (error) {
+          case 'facebook_oauth_access_denied':
+            errorMessage = 'تم رفض طلب الوصول. يرجى المحاولة مرة أخرى';
+            break;
+          case 'missing_code_or_state':
+            errorMessage = 'خطأ في بيانات الترخيص. يرجى المحاولة مرة أخرى';
+            break;
+          case 'invalid_state':
+            errorMessage = 'تم انتهاء صلاحية الطلب. يرجى المحاولة مرة أخرى';
+            break;
+          case 'state_expired':
+            errorMessage = 'انتهت صلاحية الطلب. يرجى المحاولة مرة أخرى';
+            break;
+          case 'callback_failed':
+            errorMessage = 'فشل استكمال الربط. يرجى المحاولة مرة أخرى';
+            break;
+        }
+        toast.error(errorMessage);
+        // تنظيف URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    };
+    
+    initializePage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Auto-fetch pixels when settings are loaded (if token exists)
+  useEffect(() => {
+    if (!loading && !fetchingPixels && !showPixelSelector && !showManualSetup) {
+      // جلب Pixels تلقائياً بعد تحميل الإعدادات (إذا كان Token موجود)
+      const timer = setTimeout(() => {
+        fetchPixels();
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   const loadSettings = async () => {
     try {
@@ -222,27 +276,19 @@ const FacebookPixelSettings: React.FC = () => {
     }
   };
 
-  // 🆕 Easy Connect Functions
+  // 🆕 Easy Connect Functions (منفصل عن نظام الصفحات)
   const handleEasyConnect = async () => {
     try {
       setFetchingPixels(true);
       
-      // Try to fetch pixels directly
-      await fetchPixels();
+      // اذهب مباشرة لـ OAuth (مثل صفحة الإعدادات/التكامل)
+      const authResponse = await apiClient.get('/facebook-oauth/pixel-authorize', {
+        params: { companyId: user?.companyId }
+      });
+      window.location.href = authResponse.data.authUrl;
     } catch (error: any) {
       console.error('Error in easy connect:', error);
-      
-      // If error, try OAuth
-      try {
-        const authResponse = await apiClient.get('/facebook-oauth/authorize', {
-          params: { companyId: user?.companyId }
-        });
-        window.location.href = authResponse.data.authUrl;
-      } catch (authError) {
-        toast.error('فشل الربط مع Facebook');
-        setShowManualSetup(true);
-      }
-    } finally {
+      toast.error('فشل الربط مع Facebook للـ Pixels');
       setFetchingPixels(false);
     }
   };
@@ -258,20 +304,64 @@ const FacebookPixelSettings: React.FC = () => {
         setPixels(response.data.pixels);
         setShowPixelSelector(true);
         toast.success(`✅ تم العثور على ${response.data.pixels.length} Pixel`);
-      } else if (response.data.needsAuth) {
-        // Need to authenticate
-        const authResponse = await apiClient.get('/facebook-oauth/authorize', {
-          params: { companyId: user?.companyId }
-        });
-        window.location.href = authResponse.data.authUrl;
+      } else if (response.data.needsAuth || response.data.noBusinesses) {
+        // Need to authenticate - استخدم Pixel OAuth endpoint
+        if (response.data.noBusinesses) {
+          toast.error('⚠️ لم يتم العثور على Businesses. قد تكون مسجل بحساب آخر. سيتم إعادة التوجيه لتسجيل الدخول بالحساب الصحيح...', {
+            duration: 4000
+          });
+          // تأخير صغير لإظهار الرسالة ثم إعادة التوجيه
+          setTimeout(() => {
+            handleEasyConnect();
+          }, 1000);
+        } else if (response.data.missingPermissions) {
+          // صلاحيات مفقودة
+          const missingPerms = response.data.missingPermissions.join(' و ');
+          toast.error(`⚠️ الصلاحيات المطلوبة غير متوفرة: ${missingPerms}. سيتم إعادة التوجيه لإعادة الربط...`, {
+            duration: 6000
+          });
+          setTimeout(() => {
+            handleEasyConnect();
+          }, 1500);
+        } else {
+          // إعادة توجيه مباشرة لـ OAuth
+          toast.success(response.data.message || 'يرجى إعادة الربط مع Facebook...', {
+            duration: 3000
+          });
+          const authResponse = await apiClient.get('/facebook-oauth/pixel-authorize', {
+            params: { companyId: user?.companyId }
+          });
+          window.location.href = authResponse.data.authUrl;
+        }
       } else {
-        toast.info('لم يتم العثور على Pixels. استخدم الطريقة اليدوية.');
+        toast.success('لم يتم العثور على Pixels. استخدم الطريقة اليدوية.');
         setShowManualSetup(true);
       }
     } catch (error: any) {
       console.error('Error fetching pixels:', error);
-      toast.error('فشل جلب Pixels');
-      setShowManualSetup(true);
+      
+      // إذا كان الخطأ يحتاج re-auth، اذهب مباشرة لـ OAuth
+      if (error.response?.data?.needsAuth || error.response?.data?.missingPermissions) {
+        const missingPerms = error.response?.data?.missingPermissions;
+        
+        if (missingPerms && missingPerms.length > 0) {
+          const missingPermsText = missingPerms.join(' و ');
+          toast.error(`⚠️ الصلاحيات المطلوبة غير متوفرة: ${missingPermsText}. سيتم إعادة التوجيه...`, {
+            duration: 4000
+          });
+        } else {
+          toast.success(error.response?.data?.message || 'يرجى إعادة الربط مع Facebook...', {
+            duration: 3000
+          });
+        }
+        
+        setTimeout(() => {
+          handleEasyConnect();
+        }, 1000);
+      } else {
+        toast.error('فشل جلب Pixels');
+        setShowManualSetup(true);
+      }
     } finally {
       setFetchingPixels(false);
     }

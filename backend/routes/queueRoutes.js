@@ -25,8 +25,73 @@ class MessageQueueManager {
     this.processingCustomers = new Set();
     this.customerQueues = new Map();
     this.batchTimers = new Map(); // مؤقتات التجميع
-    this.BATCH_WAIT_TIME = 500; // 500ms لتجميع الرسائل المتتالية من العميل
+    this.BATCH_WAIT_TIME = 300; // ⚡ OPTIMIZED: 300ms لتجميع الرسائل المتتالية (كان 500ms)
     this.companyBatchSettings = new Map(); // إعدادات خاصة بكل شركة
+    this.queueTimestamps = new Map(); // ⚡ NEW: تتبع وقت آخر رسالة لكل queue
+    
+    // ⚡ NEW: Cleanup دوري للـ queues القديمة (كل دقيقة)
+    this.startPeriodicCleanup();
+  }
+  
+  /**
+   * ⚡ NEW: تنظيف دوري للـ queues القديمة
+   */
+  startPeriodicCleanup() {
+    setInterval(() => {
+      this.cleanupOldQueues();
+    }, 60 * 1000); // كل دقيقة
+  }
+  
+  /**
+   * ⚡ NEW: تنظيف الـ queues التي لم يتم استخدامها لمدة 5 دقائق
+   */
+  cleanupOldQueues() {
+    const now = Date.now();
+    const MAX_QUEUE_AGE = 5 * 60 * 1000; // 5 دقائق
+    let cleanedCount = 0;
+    
+    // تنظيف الـ queues القديمة
+    for (const [customerId, timestamp] of this.queueTimestamps.entries()) {
+      if (now - timestamp > MAX_QUEUE_AGE) {
+        // إذا كان الـ queue قديم ولم يتم معالجته، ننظفه
+        if (!this.processingCustomers.has(customerId)) {
+          // إلغاء أي timer نشط
+          if (this.batchTimers.has(customerId)) {
+            clearTimeout(this.batchTimers.get(customerId));
+            this.batchTimers.delete(customerId);
+          }
+          
+          // حذف الـ queue
+          this.customerQueues.delete(customerId);
+          this.queueTimestamps.delete(customerId);
+          cleanedCount++;
+        }
+      }
+    }
+    
+    // تنظيف الـ processingCustomers التي عالقة (أكثر من 10 دقائق)
+    const MAX_PROCESSING_TIME = 10 * 60 * 1000; // 10 دقائق
+    for (const customerId of this.processingCustomers) {
+      const queue = this.customerQueues.get(customerId);
+      if (queue && queue.length > 0) {
+        const oldestMessage = queue[0];
+        if (oldestMessage && (now - oldestMessage.queuedAt) > MAX_PROCESSING_TIME) {
+          console.error(`⚠️ [QUEUE-CLEANUP] Force cleaning stuck processing customer ${customerId} (${now - oldestMessage.queuedAt}ms old)`);
+          this.processingCustomers.delete(customerId);
+          this.customerQueues.delete(customerId);
+          this.queueTimestamps.delete(customerId);
+          if (this.batchTimers.has(customerId)) {
+            clearTimeout(this.batchTimers.get(customerId));
+            this.batchTimers.delete(customerId);
+          }
+          cleanedCount++;
+        }
+      }
+    }
+    
+    if (cleanedCount > 0) {
+      console.log(`🧹 [QUEUE-CLEANUP] Cleaned ${cleanedCount} old/stuck queue(s)`);
+    }
   }
 
   /**
@@ -53,21 +118,30 @@ class MessageQueueManager {
         }
       });
 
-      // حساب batchWaitTime بناءً على حالة AI
-      let batchWaitTime = 500; // القيمة الافتراضية عندما AI معطّل
+      // ⚡ SOLUTION: حساب batchWaitTime بناءً على حالة AI
+      // إذا AI معطل = معالجة فورية تماماً (0ms)
+      // إذا AI مفعّل = استخدام التجميع
+      let batchWaitTime = 0; // افتراضي: فوري (0ms) - بدون تأخير
+      let queueEnabled = false; // افتراضي: معطل - معالجة فورية
       
       if (aiSettings?.autoReplyEnabled) {
-        // إذا كان AI مفعّل، استخدم maxRepliesPerCustomer بعد تحويله من ثواني إلى ميللي ثانية
+        // إذا كان AI مفعّل، استخدم التجميع
+        queueEnabled = true;
+        // استخدم maxRepliesPerCustomer بعد تحويله من ثواني إلى ميللي ثانية
         const waitTimeInSeconds = aiSettings.maxRepliesPerCustomer || 5;
-        batchWaitTime = waitTimeInSeconds * 1000;
-        console.log(`✅ [QUEUE-CONFIG] AI is enabled - using maxRepliesPerCustomer: ${waitTimeInSeconds} seconds (${batchWaitTime}ms)`);
+        batchWaitTime = Math.min(waitTimeInSeconds * 1000, 2000); // Maximum 2 seconds even with AI
+        console.log(`✅ [QUEUE-CONFIG] AI is ENABLED - using batching: batchWaitTime=${batchWaitTime}ms (capped at 2s)`);
       } else {
-        console.log(`⚠️ [QUEUE-CONFIG] AI is disabled - using default batchWaitTime: 500ms`);
+        // ⚡ CRITICAL: AI معطل = معالجة فورية تماماً بدون أي تأخير
+        queueEnabled = false;
+        batchWaitTime = 0; // فوري تماماً
+        console.log(`⚡ [QUEUE-CONFIG] AI is DISABLED - INSTANT processing (0ms delay, no batching)`);
       }
 
       let settings = {
-        enabled: true,
-        maxBatchSize: 10
+        enabled: queueEnabled, // ⚡ يتم تفعيل التجميع فقط إذا كان AI مفعّل
+        maxBatchSize: 10,
+        batchWaitTime: batchWaitTime
       };
 
       if (aiSettings && aiSettings.queueSettings) {
@@ -75,11 +149,15 @@ class MessageQueueManager {
           ? JSON.parse(aiSettings.queueSettings) 
           : aiSettings.queueSettings;
         
-        settings = { ...settings, ...parsedSettings };
+        // فقط تطبيق إعدادات إضافية، لكن نحافظ على enabled و batchWaitTime حسب حالة AI
+        settings = { 
+          ...settings, 
+          ...parsedSettings,
+          // ⚡ Force override: enabled و batchWaitTime يتم تحديدهما حسب حالة AI فقط
+          enabled: queueEnabled,
+          batchWaitTime: batchWaitTime
+        };
       }
-
-      // تطبيق batchWaitTime المحسوب بناءً على AI (يأخذ الأولوية)
-      settings.batchWaitTime = batchWaitTime;
 
       // حفظ في الكاش
       this.companyBatchSettings.set(companyId, {
@@ -93,10 +171,10 @@ class MessageQueueManager {
     } catch (error) {
       console.error(`❌ [ADAPTIVE-QUEUE] Failed to load queue settings for company ${companyId}:`, error);
       
-      // الإعدادات الافتراضية في حالة الخطأ
+      // الإعدادات الافتراضية في حالة الخطأ - افتراضي: معالجة فورية (AI معطل)
       const defaultSettings = {
-        batchWaitTime: 500, // 500ms لتجميع رسائل العميل المتتالية
-        enabled: true,
+        batchWaitTime: 0, // ⚡ DEFAULT: 0ms - معالجة فورية (افتراضياً AI معطل)
+        enabled: false, // ⚡ DEFAULT: معطل - معالجة فورية
         maxBatchSize: 10
       };
       
@@ -129,34 +207,48 @@ class MessageQueueManager {
       companyId
     });
     
+    // ⚡ NEW: تحديث timestamp للـ queue
+    this.queueTimestamps.set(customerId, Date.now());
+    
     // ⚡ DEBUG: Log immediately with timestamp
-    console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - queueStartTime}ms] 📥 [QUEUE] Message added to queue for customer ${customerId}, company ${companyId}`);
+    console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - queueStartTime}ms] 📥 [QUEUE] Message added to queue for customer ${customerId}, company ${companyId} (queue size: ${queue.length})`);
     
     // ⚡ OPTIMIZATION: Try to get settings from cache first (synchronous check)
     let queueSettings = null;
-    let batchWaitTime = 500; // Default value
+    let batchWaitTime = 0; // ⚡ DEFAULT: 0ms - معالجة فورية (افتراضياً AI معطل)
+    let isQueueEnabled = false; // ⚡ DEFAULT: معطل - معالجة فورية
     
     // Check cache first (fast, synchronous)
     if (this.companyBatchSettings.has(companyId)) {
       const cached = this.companyBatchSettings.get(companyId);
       if (Date.now() - cached.lastUpdated < 5 * 60 * 1000) {
         queueSettings = cached.settings;
-        batchWaitTime = queueSettings.enabled ? queueSettings.batchWaitTime : 0;
+        isQueueEnabled = queueSettings.enabled || false;
+        batchWaitTime = isQueueEnabled ? queueSettings.batchWaitTime : 0;
       }
     }
     
     // If not in cache, get settings asynchronously (but don't block)
     if (!queueSettings) {
-      // Use default settings immediately, then update in background
+      // ⚡ DEFAULT: معالجة فورية (افتراضياً AI معطل)
       queueSettings = {
-        enabled: true,
-        batchWaitTime: 500,
+        enabled: false, // ⚡ DEFAULT: معطل - معالجة فورية
+        batchWaitTime: 0, // ⚡ DEFAULT: 0ms - فوري
         maxBatchSize: 10
       };
-      batchWaitTime = 500;
+      isQueueEnabled = false;
+      batchWaitTime = 0;
       
       // Fetch actual settings in background (non-blocking) - for future messages
-      this.getCompanyQueueSettings(companyId).catch(error => {
+      this.getCompanyQueueSettings(companyId).then(settings => {
+        // Update cache with real settings for future messages
+        if (settings) {
+          this.companyBatchSettings.set(companyId, {
+            settings: settings,
+            lastUpdated: Date.now()
+          });
+        }
+      }).catch(error => {
         console.error(`❌ [QUEUE] Error loading queue settings for company ${companyId}:`, error.message);
       });
     }
@@ -167,24 +259,30 @@ class MessageQueueManager {
       //console.log(`⏰ [ADAPTIVE-QUEUE] Cancelled previous timer for customer ${customerId}, restarting`);
     }
     
-    // 🚀 OPTIMIZATION: معالجة فورية لأول رسالة، تجميع فقط للرسائل المتتالية
-    if (queue.length === 1 && !this.processingCustomers.has(customerId)) {
-      // أول رسالة - معالجة فورية بدون تأخير
-      console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - queueStartTime}ms] ⚡ [INSTANT] Processing first message immediately for customer ${customerId}`);
-      this.processBatch(customerId);
-    } else if (batchWaitTime > 0 && queueSettings.enabled) {
-      // رسائل متتالية - استخدم التجميع
+    // ⚡ SOLUTION: معالجة فورية إذا AI معطل، تجميع فقط إذا AI مفعّل
+    if (!isQueueEnabled || batchWaitTime === 0) {
+      // ⚡ AI معطل = معالجة فورية تماماً بدون أي تأخير
+      console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - queueStartTime}ms] ⚡ [INSTANT-AI-OFF] AI is DISABLED - Processing message IMMEDIATELY (0ms delay) for customer ${customerId}`);
+      setImmediate(() => this.processBatch(customerId));
+    } else if (queue.length === 1 && !this.processingCustomers.has(customerId)) {
+      // ⚡ AI مفعّل + أول رسالة - معالجة فورية (لا ننتظر للتجميع)
+      console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - queueStartTime}ms] ⚡ [INSTANT-AI-ON] AI enabled but first message - Processing IMMEDIATELY for customer ${customerId}`);
+      setImmediate(() => this.processBatch(customerId));
+    } else if (queue.length > 1 && batchWaitTime > 0 && isQueueEnabled) {
+      // ⚡ AI مفعّل + رسائل متتالية - استخدم التجميع
+      const optimizedBatchWaitTime = Math.min(batchWaitTime, 1000); // Maximum 1 second delay
+      
       const timer = setTimeout(() => {
-        console.log(`⏰ [BATCH] Timer expired for customer ${customerId} - processing ${queue.length} message(s)`);
+        console.log(`⏰ [BATCH-AI-ON] Timer expired for customer ${customerId} - processing ${queue.length} message(s) (AI enabled)`);
         this.processBatch(customerId);
-      }, batchWaitTime);
+      }, optimizedBatchWaitTime);
       
       this.batchTimers.set(customerId, timer);
-      console.log(`⏰ [BATCH] Started ${batchWaitTime}ms timer for customer ${customerId} (${queue.length} message(s) queued)`);
+      console.log(`⏰ [BATCH-AI-ON] Started ${optimizedBatchWaitTime}ms timer for customer ${customerId} (${queue.length} message(s) queued, AI enabled)`);
     } else {
-      // معالجة فورية إذا كان النظام معطل
-      //console.log(`⚡ [ADAPTIVE-QUEUE] Queue system disabled, processing immediately for customer ${customerId}`);
-      setTimeout(() => this.processBatch(customerId), 50); // تأخير بسيط لتجنب التداخل
+      // Fallback: معالجة فورية
+      console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - queueStartTime}ms] ⚡ [FALLBACK] Processing message IMMEDIATELY for customer ${customerId}`);
+      setImmediate(() => this.processBatch(customerId));
     }
     
     return queue.length;
@@ -245,7 +343,16 @@ class MessageQueueManager {
     } finally {
       clearTimeout(processingTimeout);
       this.processingCustomers.delete(customerId);
-      this.customerQueues.delete(customerId);
+      
+      // ⚡ FIX: فقط احذف الـ queue إذا كانت فارغة (لا تحذفها إذا كانت تحتوي على رسائل جديدة)
+      const remainingQueue = this.customerQueues.get(customerId);
+      if (!remainingQueue || remainingQueue.length === 0) {
+        this.customerQueues.delete(customerId);
+        this.queueTimestamps.delete(customerId);
+      } else {
+        // ⚡ إذا كانت هناك رسائل جديدة، اترك الـ queue للمعالجة التالية
+        console.log(`⚠️ [BATCH] Queue for customer ${customerId} still has ${remainingQueue.length} message(s) - keeping queue for next processing`);
+      }
       //console.log(`✅ [ADAPTIVE-QUEUE] Finished batch processing for customer ${customerId}`);
     }
   }
@@ -313,41 +420,94 @@ class MessageQueueManager {
    */
   async processSingleMessage(messageData) {
     const singleStartTime = Date.now();
-    const { senderId, messageText, webhookEvent } = messageData;
+    const { senderId, messageText, webhookEvent, companyId } = messageData;
     const messageId = webhookEvent.message?.mid || `msg_${Date.now()}`;
+    const customerId = senderId;
     
     console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [0ms] 📨 [SINGLE] Processing message from ${senderId}: "${messageText?.substring(0, 50)}..."`);
     
-    // استدعاء دالة معالجة فيسبوك العادية مع pageId الصحيح
-    const correctPageId = webhookEvent.recipient?.id || lastWebhookPageId;
-    const handleStartTime = Date.now();
-    console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${handleStartTime - singleStartTime}ms] 🎯 [SINGLE] Calling handleFacebookMessage with pageId: ${correctPageId}`);
+    // ⚡ FIX: إضافة timeout للمعالجة (30 ثانية كحد أقصى)
+    const PROCESSING_TIMEOUT = 30 * 1000; // 30 ثانية
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`Processing timeout after ${PROCESSING_TIMEOUT}ms`));
+      }, PROCESSING_TIMEOUT);
+    });
     
-    // ✅ RESTORE: Use await to ensure message is saved immediately (like in backup)
-    await handleFacebookMessage(webhookEvent, correctPageId);
-    console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - singleStartTime}ms] ✅ [SINGLE] handleFacebookMessage completed`);
+    try {
+      // استدعاء دالة معالجة فيسبوك العادية مع pageId الصحيح
+      const correctPageId = webhookEvent.recipient?.id || lastWebhookPageId;
+      const handleStartTime = Date.now();
+      console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${handleStartTime - singleStartTime}ms] 🎯 [SINGLE] Calling handleFacebookMessage with pageId: ${correctPageId}`);
+      
+      // ✅ RESTORE: Use await to ensure message is saved immediately (like in backup)
+      // ⚡ FIX: استخدام Promise.race لضمان timeout
+      await Promise.race([
+        handleFacebookMessage(webhookEvent, correctPageId),
+        timeoutPromise
+      ]);
+      
+      console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - singleStartTime}ms] ✅ [SINGLE] handleFacebookMessage completed`);
+    } catch (error) {
+      console.error(`❌ [SINGLE] Error processing message ${messageId.slice(-8)}:`, error.message);
+      
+      // ⚡ FIX: في حالة timeout أو خطأ، تأكد من تنظيف الـ queue
+      const queue = this.customerQueues.get(customerId);
+      if (queue && queue.length > 0) {
+        // إزالة الرسالة التي فشلت من الـ queue
+        const failedIndex = queue.findIndex(msg => msg.id === messageData.id);
+        if (failedIndex !== -1) {
+          queue.splice(failedIndex, 1);
+          console.log(`🧹 [SINGLE] Removed failed message from queue for customer ${customerId}`);
+        }
+      }
+      
+      // إعادة throw الخطأ للتعامل معه في processBatch
+      throw error;
+    }
   }
 
   /**
    * فحص حالة الطوابير والتجميع التكيفي
    */
   getQueueStats() {
+    const now = Date.now();
     const stats = {
       totalQueues: this.customerQueues.size,
       processingCustomers: this.processingCustomers.size,
       activeBatchTimers: this.batchTimers.size,
       totalPendingMessages: 0,
       batchWaitTime: this.BATCH_WAIT_TIME,
-      queueDetails: []
+      queueDetails: [],
+      stuckQueues: 0, // ⚡ NEW: عدد الـ queues العالقة
+      oldestQueueAge: 0 // ⚡ NEW: عمر أقدم queue
     };
 
     for (const [customerId, queue] of this.customerQueues) {
+      const queueAge = this.queueTimestamps.has(customerId) 
+        ? now - this.queueTimestamps.get(customerId)
+        : 0;
+      
       stats.totalPendingMessages += queue.length;
+      
+      // ⚡ NEW: تحديد إذا كان الـ queue عالق (أكثر من 5 دقائق)
+      const isStuck = queueAge > 5 * 60 * 1000 && !this.processingCustomers.has(customerId);
+      if (isStuck) {
+        stats.stuckQueues++;
+      }
+      
+      if (queueAge > stats.oldestQueueAge) {
+        stats.oldestQueueAge = queueAge;
+      }
+      
       stats.queueDetails.push({
         customerId,
         queueLength: queue.length,
         isProcessing: this.processingCustomers.has(customerId),
-        hasBatchTimer: this.batchTimers.has(customerId)
+        hasBatchTimer: this.batchTimers.has(customerId),
+        queueAge: queueAge, // ⚡ NEW: عمر الـ queue
+        oldestMessageAge: queue.length > 0 ? now - queue[0].queuedAt : 0, // ⚡ NEW: عمر أقدم رسالة
+        isStuck: isStuck // ⚡ NEW: هل الـ queue عالق
       });
     }
 
@@ -380,6 +540,7 @@ class MessageQueueManager {
     this.batchTimers.clear();
     this.customerQueues.clear();
     this.processingCustomers.clear();
+    this.queueTimestamps.clear();
     
     //console.log('✅ [ADAPTIVE-QUEUE] Adaptive queue system shutdown complete');
   }
