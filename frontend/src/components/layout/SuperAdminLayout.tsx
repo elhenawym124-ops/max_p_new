@@ -27,7 +27,11 @@ import {
   AdminPanelSettings as AdminIcon,
   AttachMoney as PlansIcon,
   AccountBalanceWallet as WalletIcon,
-  AutoAwesome as PromptIcon
+  AutoAwesome as PromptIcon,
+  VpnKey as KeyIcon,
+  Psychology as ModelsIcon,
+  Timeline as TimelineIcon,
+  Speed as SpeedIcon
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuthSimple';
@@ -108,6 +112,31 @@ const SuperAdminLayout: React.FC<SuperAdminLayoutProps> = ({ children }) => {
       text: 'مكتبة البرومبتات',
       icon: <PromptIcon />,
       path: '/super-admin/prompt-library'
+    },
+    {
+      text: 'إدارة المفاتيح المركزية',
+      icon: <KeyIcon />,
+      path: '/super-admin/central-keys'
+    },
+    {
+      text: 'إدارة النماذج',
+      icon: <ModelsIcon />,
+      path: '/super-admin/models'
+    },
+    {
+      text: 'إدارة أنواع النماذج',
+      icon: <ModelsIcon />,
+      path: '/super-admin/model-types'
+    },
+    {
+      text: 'إدارة أولويات النماذج',
+      icon: <TimelineIcon />,
+      path: '/super-admin/model-priorities'
+    },
+    {
+      text: 'متابعة Rate Limits',
+      icon: <SpeedIcon />,
+      path: '/super-admin/rate-limits'
     },
     {
       text: 'إدارة أنظمة النظام',

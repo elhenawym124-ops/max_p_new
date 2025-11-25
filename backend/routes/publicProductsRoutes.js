@@ -43,8 +43,7 @@ router.get('/products', async (req, res) => {
     const prisma = getPrisma();
     const where = {
       companyId: company.id,
-      isActive: true,
-      stock: { gt: 0 }
+      isActive: true
     };
 
     // Filtering
@@ -63,7 +62,7 @@ router.get('/products', async (req, res) => {
       if (maxPrice) where.price.lte = parseFloat(maxPrice);
     }
     
-    // Stock filter
+    // Stock filter - only filter if explicitly requested
     if (inStock === 'true') {
       where.stock = { gt: 0 };
     }
@@ -612,7 +611,20 @@ router.get('/categories', async (req, res) => {
       }
     });
 
-    res.json({ success: true, data: categories });
+    // Transform categories to include productsCount
+    const formattedCategories = categories.map(category => ({
+      id: category.id,
+      name: category.name,
+      slug: category.slug,
+      description: category.description,
+      image: category.image,
+      sortOrder: category.sortOrder,
+      isActive: category.isActive,
+      parentId: category.parentId,
+      productsCount: category._count?.products || 0
+    }));
+
+    res.json({ success: true, data: formattedCategories });
   } catch (error) {
     console.error('Error fetching categories:', error);
     res.status(500).json({ success: false, error: error.message });

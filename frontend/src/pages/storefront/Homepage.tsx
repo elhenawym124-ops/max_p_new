@@ -68,7 +68,18 @@ const Homepage: React.FC = () => {
       
       // Load active homepage for this company
       const response = await homepageService.getPublicActiveTemplate(id);
-      if (response.data.data) {
+      console.log('📦 [Homepage] API Response:', {
+        success: response.data.success,
+        hasData: !!response.data.data,
+        data: response.data.data ? {
+          name: response.data.data.name,
+          id: response.data.data.id,
+          isActive: response.data.data.isActive
+        } : null,
+        debug: response.data.debug
+      });
+      
+      if (response.data.success && response.data.data) {
         console.log('✅ [Homepage] Template loaded:', response.data.data.name);
         const loadedTemplate = response.data.data;
         setTemplate(loadedTemplate);
@@ -86,11 +97,24 @@ const Homepage: React.FC = () => {
         });
       } else {
         console.warn('⚠️ [Homepage] No active template found for company:', id);
+        console.warn('⚠️ [Homepage] Response:', response.data);
+        if (response.data.debug) {
+          console.warn('⚠️ [Homepage] Debug info:', response.data.debug);
+        }
       }
     } catch (error: any) {
       console.error('❌ [Homepage] Error loading homepage:', error);
+      console.error('❌ [Homepage] Error details:', {
+        message: error.message,
+        status: error.response?.status,
+        data: error.response?.data
+      });
+      
       if (error.response?.status === 404) {
         console.warn('⚠️ [Homepage] No homepage template found for this company');
+        if (error.response?.data?.debug) {
+          console.warn('⚠️ [Homepage] Debug info:', error.response.data.debug);
+        }
       }
     } finally {
       setLoading(false);

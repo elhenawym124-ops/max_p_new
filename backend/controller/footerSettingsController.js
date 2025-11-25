@@ -170,14 +170,32 @@ exports.resetFooterSettings = async (req, res) => {
 
 /**
  * Get public footer settings (for storefront)
+ * Supports both companyId and slug
  */
 exports.getPublicFooterSettings = async (req, res) => {
   try {
     const { companyId } = req.params;
     const prisma = getPrisma();
 
+    // Determine if companyId is actually a slug or an ID
+    let actualCompanyId = companyId;
+    
+    // Check if it looks like a slug (contains hyphens or is shorter than typical CUID)
+    const looksLikeSlug = companyId.includes('-') || companyId.length < 20;
+    
+    if (looksLikeSlug) {
+      const company = await prisma.company.findUnique({
+        where: { slug: companyId },
+        select: { id: true }
+      });
+      
+      if (company) {
+        actualCompanyId = company.id;
+      }
+    }
+
     const settings = await prisma.footerSettings.findUnique({
-      where: { companyId },
+      where: { companyId: actualCompanyId },
       select: {
         aboutStore: true,
         showAboutStore: true,
@@ -196,7 +214,7 @@ exports.getPublicFooterSettings = async (req, res) => {
     if (!settings) {
       // Return default settings if not configured
       const company = await prisma.company.findUnique({
-        where: { id: companyId },
+        where: { id: actualCompanyId },
         select: { name: true, email: true, phone: true, address: true }
       });
 

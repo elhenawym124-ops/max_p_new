@@ -9,6 +9,9 @@ router.get('/settings',verifyToken.authenticateToken,verifyToken.requireCompanyA
 
 router.put('/settings',verifyToken.authenticateToken,verifyToken.requireRole(['COMPANY_ADMIN']),companyDashboardController.updateCompanySettings)
 
+// Update AI Keys setting (useCentralKeys)
+router.put('/settings/ai-keys',verifyToken.authenticateToken,verifyToken.requireRole(['COMPANY_ADMIN']),companyDashboardController.updateAIKeysSetting)
+
 
 // ==================== PLAN LIMITS ROUTES ====================
 

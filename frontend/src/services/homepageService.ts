@@ -42,6 +42,7 @@ export const homepageService = {
 
   // Get public active homepage (for storefront) - NO AUTH REQUIRED
   getPublicActiveTemplate: async (companyId: string) => {
+    // config.apiUrl already includes /api/v1, so we just need /homepage/public/...
     return axios.get<{ data: HomepageTemplate }>(`${config.apiUrl}/homepage/public/${companyId}`);
   },
 

@@ -181,16 +181,33 @@ export const storefrontFetch = async (endpoint: string, options?: RequestInit) =
   }
   
   if (!response.ok) {
-    // Create error with status code in message for easy checking
-    const error = new Error(`HTTP error! status: ${response.status}`);
-    (error as any).status = response.status; // Add status for easier checking
+    // Try to parse error response body to get actual error message
+    let errorMessage = `HTTP error! status: ${response.status}`;
+    let errorData: any = null;
+    
+    try {
+      errorData = await response.json();
+      if (errorData?.error) {
+        errorMessage = errorData.error;
+      } else if (errorData?.message) {
+        errorMessage = errorData.message;
+      }
+      // Log the full error for debugging
+      if (isDevelopment && response.status === 400) {
+        console.error('❌ [Storefront API] Error response:', errorData);
+      }
+    } catch (parseError) {
+      // Could not parse JSON response, use default message
+    }
+    
+    const error = new Error(errorMessage);
+    (error as any).status = response.status;
+    (error as any).data = errorData;
     
     // Mark as silent error for 401/404 to prevent console logging
     // These are expected for optional endpoints (sold-count, navigation, shipping/estimate, footer-settings)
     if (response.status === 401 || response.status === 404) {
       (error as any).silent = true;
-      // Don't log to console - these are expected for optional features
-      // Browser Network tab will still show them, but that's normal
     }
     
     throw error;

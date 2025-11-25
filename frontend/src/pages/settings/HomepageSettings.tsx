@@ -9,12 +9,16 @@ import {
   CheckCircleIcon,
   EyeIcon,
   SparklesIcon,
+  ArrowTopRightOnSquareIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { homepageService, HomepageTemplate } from '../../services/homepageService';
+import { useAuth } from '../../hooks/useAuthSimple';
+import { buildStoreUrl } from '../../utils/storeUrl';
 
 const HomepageSettings: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [templates, setTemplates] = useState<HomepageTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTemplate, setActiveTemplate] = useState<HomepageTemplate | null>(null);
@@ -96,6 +100,20 @@ const HomepageSettings: React.FC = () => {
     window.open(`/preview/homepage/${id}`, '_blank');
   };
 
+  const handleViewStorefront = () => {
+    if (!user?.companyId) {
+      toast.error('لا يمكن الوصول للمتجر: معرف الشركة غير موجود');
+      return;
+    }
+
+    // بناء رابط المتجر
+    const slug = user?.company?.slug || user.companyId;
+    const storeUrl = buildStoreUrl(slug, '/home');
+    
+    // فتح المتجر في تبويب جديد
+    window.open(storeUrl, '_blank');
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -122,6 +140,14 @@ const HomepageSettings: React.FC = () => {
             </p>
           </div>
           <div className="flex gap-3">
+            <button
+              onClick={handleViewStorefront}
+              className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-md"
+              title="عرض الصفحة الرئيسية في المتجر"
+            >
+              <ArrowTopRightOnSquareIcon className="h-5 w-5 ml-2" />
+              عرض المتجر
+            </button>
             <button
               onClick={handleCreateDemo}
               className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all shadow-md"

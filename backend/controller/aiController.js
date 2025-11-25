@@ -594,13 +594,38 @@ const addNewGeminKey = async (req, res) => {
         //console.log('✅ Main key inserted successfully');
 
         // Create all available models for this key
+        // قائمة النماذج مع Rate Limits الحقيقية من Google AI Studio
+        // الأولويات: الأذكى أولاً (Pro models أعلى أولوية)
         const availableModels = [
-            { model: 'gemini-2.5-flash', limit: 1000000, priority: 1 },
-            { model: 'gemini-2.5-pro', limit: 500000, priority: 2 },
-            { model: 'gemini-2.0-flash', limit: 750000, priority: 3 },
-            { model: 'gemini-2.0-flash-exp', limit: 1000, priority: 4 },
-            { model: 'gemini-1.5-flash', limit: 1500, priority: 5 },
-            { model: 'gemini-1.5-pro', limit: 50, priority: 6 }
+            // 🧠 نماذج Pro (الأذكى)
+            { model: 'gemini-3-pro', rpm: 2, tpm: 125000, rpd: 50, priority: 1 },
+            { model: 'gemini-2.5-pro', rpm: 2, tpm: 125000, rpd: 50, priority: 2 },
+            { model: 'gemini-1.5-pro', rpm: 2, tpm: 32000, rpd: 50, priority: 3 },
+            
+            // ⚡ نماذج Flash (سريعة وذكية)
+            { model: 'gemini-2.5-flash', rpm: 10, tpm: 250000, rpd: 250, priority: 4 },
+            { model: 'gemini-2.5-flash-lite', rpm: 15, tpm: 250000, rpd: 1000, priority: 5 },
+            { model: 'gemini-1.5-flash', rpm: 15, tpm: 1000000, rpd: 1500, priority: 6 },
+            { model: 'gemini-2.0-flash', rpm: 15, tpm: 1000000, rpd: 200, priority: 7 },
+            { model: 'gemini-2.0-flash-lite', rpm: 30, tpm: 1000000, rpd: 200, priority: 8 },
+            
+            // 🔴 نماذج Live API
+            { model: 'gemini-2.5-flash-live', rpm: 15, tpm: 250000, rpd: 1000, priority: 9 },
+            { model: 'gemini-2.0-flash-live', rpm: 15, tpm: 1000000, rpd: 200, priority: 10 },
+            { model: 'gemini-2.5-flash-native-audio-dialog', rpm: 15, tpm: 250000, rpd: 1000, priority: 11 },
+            
+            // 🎤 نماذج الصوت
+            { model: 'gemini-2.5-flash-tts', rpm: 3, tpm: 10000, rpd: 15, priority: 12 },
+            
+            // 🔬 نماذج متخصصة
+            { model: 'learnlm-2.0-flash-experimental', rpm: 15, tpm: 1500000, rpd: 1500, priority: 13 },
+            { model: 'gemini-robotics-er-1.5-preview', rpm: 15, tpm: 250000, rpd: 250, priority: 14 },
+            
+            // 💎 نماذج Gemma
+            { model: 'gemma-3-27b', rpm: 15, tpm: 14400, rpd: 1440, priority: 15 },
+            { model: 'gemma-3-12b', rpm: 15, tpm: 14400, rpd: 1440, priority: 16 },
+            { model: 'gemma-3-4b', rpm: 15, tpm: 14400, rpd: 1440, priority: 17 },
+            { model: 'gemma-3-2b', rpm: 15, tpm: 14400, rpd: 1440, priority: 18 }
         ];
 
         //console.log('📦 Creating models for key...');
@@ -608,14 +633,30 @@ const addNewGeminKey = async (req, res) => {
         for (const modelInfo of availableModels) {
             try {
                 //console.log(`📦 Creating model: ${modelInfo.model}`);
+                const defaultLimit = modelInfo.tpm || 250000;
                 await prisma.$executeRaw`
           INSERT INTO \`gemini_key_models\`
           (\`id\`, \`keyId\`, \`model\`, \`usage\`, \`isEnabled\`, \`priority\`, \`createdAt\`, \`updatedAt\`)
           VALUES
           (${generateId()}, ${keyId}, ${modelInfo.model}, ${JSON.stringify({
                     used: 0,
-                    limit: modelInfo.limit,
-                    resetDate: null
+                    limit: defaultLimit,
+                    resetDate: null,
+                    rpm: {
+                        used: 0,
+                        limit: modelInfo.rpm || 15,
+                        windowStart: null
+                    },
+                    rph: {
+                        used: 0,
+                        limit: (modelInfo.rpm || 15) * 60,
+                        windowStart: null
+                    },
+                    rpd: {
+                        used: 0,
+                        limit: modelInfo.rpd || 1000,
+                        windowStart: null
+                    }
                 })}, true, ${modelInfo.priority}, NOW(), NOW())
         `;
                 createdModels.push(modelInfo.model);
@@ -1012,13 +1053,89 @@ const getAvailableModels = async (req, res) => {
                 features: ['مستقر', 'سريع', 'متعدد الوسائط']
             },
 
-            // نماذج التضمين 🔍
+            // 🆕 أحدث نماذج 2025
             {
-                id: 'gemini-embedding-001',
-                name: 'Gemini Embedding',
-                description: 'للبحث والتشابه النصي',
-                category: 'embedding',
-                features: ['تضمين نصي', 'بحث دلالي', 'تشابه المحتوى']
+                id: 'gemini-3-pro',
+                name: 'Gemini 3 Pro',
+                description: 'أحدث نموذج Pro - الأقوى للمهام المعقدة',
+                category: 'premium',
+                features: ['أحدث تقنية', 'أقوى أداء', 'دقة عالية']
+            },
+            {
+                id: 'gemini-2.5-flash-tts',
+                name: 'Gemini 2.5 Flash TTS',
+                description: 'تحويل نص لصوت عالي الجودة',
+                category: 'audio',
+                features: ['تحويل نص لصوت', 'أصوات طبيعية', 'دعم عربي']
+            },
+
+            // نماذج Live API 🎙️
+            {
+                id: 'gemini-2.5-flash-live',
+                name: 'Gemini 2.5 Flash Live',
+                description: 'تفاعل مباشر في الوقت الفعلي',
+                category: 'live',
+                features: ['تفاعل مباشر', 'زمن استجابة منخفض', 'محادثات طبيعية']
+            },
+            {
+                id: 'gemini-2.0-flash-live',
+                name: 'Gemini 2.0 Flash Live',
+                description: 'تفاعل مباشر - الجيل الثاني',
+                category: 'live',
+                features: ['تفاعل مباشر', 'سرعة عالية', 'أداء محسن']
+            },
+            {
+                id: 'gemini-2.5-flash-native-audio-dialog',
+                name: 'Gemini 2.5 Native Audio Dialog',
+                description: 'محادثات صوتية تفاعلية طبيعية',
+                category: 'audio',
+                features: ['صوت تفاعلي', 'محادثات طبيعية', 'تحكم في النبرة']
+            },
+
+            // نماذج متخصصة 🔬
+            {
+                id: 'gemini-robotics-er-1.5-preview',
+                name: 'Gemini Robotics ER 1.5',
+                description: 'مخصص للتطبيقات الروبوتية',
+                category: 'specialized',
+                features: ['روبوتات', 'تحكم دقيق', 'معالجة إشارات']
+            },
+            {
+                id: 'learnlm-2.0-flash-experimental',
+                name: 'LearnLM 2.0 Flash',
+                description: 'نموذج تجريبي للتعلم والتعليم',
+                category: 'experimental',
+                features: ['تعليم', 'تعلم', 'تفسيرات واضحة']
+            },
+
+            // نماذج Gemma 🦙
+            {
+                id: 'gemma-3-12b',
+                name: 'Gemma 3 12B',
+                description: 'نموذج Gemma متوسط الحجم',
+                category: 'gemma',
+                features: ['أداء متوازن', 'كفاءة عالية', 'مفتوح المصدر']
+            },
+            {
+                id: 'gemma-3-27b',
+                name: 'Gemma 3 27B',
+                description: 'نموذج Gemma كبير الحجم',
+                category: 'gemma',
+                features: ['أداء عالي', 'دقة ممتازة', 'مفتوح المصدر']
+            },
+            {
+                id: 'gemma-3-4b',
+                name: 'Gemma 3 4B',
+                description: 'نموذج Gemma صغير الحجم',
+                category: 'gemma',
+                features: ['خفيف', 'سريع', 'موفر للطاقة']
+            },
+            {
+                id: 'gemma-3-2b',
+                name: 'Gemma 3 2B',
+                description: 'نموذج Gemma صغير جداً',
+                category: 'gemma',
+                features: ['خفيف جداً', 'سريع جداً', 'موفر للطاقة']
             }
         ];
 

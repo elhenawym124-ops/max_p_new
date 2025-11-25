@@ -930,6 +930,14 @@ app.use('/api/v1/admin/invoices', invoiceRoutes);
 // Super Admin Payment Routes
 app.use('/api/v1/admin/payments', paymentRoutes);
 
+// Super Admin Gemini Keys Management Routes
+const adminGeminiKeysRoutes = require('./routes/adminGeminiKeysRoutes');
+const adminModelsRoutes = require('./routes/adminModelsRoutes');
+const adminModelTypesRoutes = require('./routes/adminModelTypesRoutes');
+app.use('/api/v1/admin/gemini-keys', adminGeminiKeysRoutes);
+app.use('/api/v1/admin/models', adminModelsRoutes);
+app.use('/api/v1/admin/model-types', adminModelTypesRoutes);
+
 // Super Admin System Management Routes
 app.use('/api/v1/admin', systemManagementRoutes);
 
@@ -2469,6 +2477,17 @@ process.on('SIGINT', async () => {
   //console.log('\n🛑 Received SIGINT, shutting down gracefully...');
 
   try {
+    // إيقاف خدمة Reset للـ Rate Limits
+    try {
+      const { getRateLimitResetService } = require('./services/aiAgent/rateLimitResetService');
+      const resetService = getRateLimitResetService();
+      if (resetService && resetService.isRunning) {
+        resetService.stop();
+      }
+    } catch (error) {
+      console.error('⚠️ Error stopping rate limit reset service:', error.message);
+    }
+    
     // إيقاف خدمة الاكتشاف التلقائي
     //console.log('🔍 Stopping Auto Pattern Detection Service...');
     autoPatternService.stop();
@@ -2490,6 +2509,17 @@ process.on('SIGTERM', async () => {
   //console.log('\n🛑 Received SIGTERM, shutting down gracefully...');
 
   try {
+    // إيقاف خدمة Reset للـ Rate Limits
+    try {
+      const { getRateLimitResetService } = require('./services/aiAgent/rateLimitResetService');
+      const resetService = getRateLimitResetService();
+      if (resetService && resetService.isRunning) {
+        resetService.stop();
+      }
+    } catch (error) {
+      console.error('⚠️ Error stopping rate limit reset service:', error.message);
+    }
+    
     autoPatternService.stop();
     const prisma = getPrisma();
     await prisma.$disconnect();
@@ -2615,12 +2645,31 @@ async function startServer() {
   }
   
   // 🔥 ALWAYS start the server regardless of database status
+  // بدء خدمة Reset للـ Rate Limits
+  let rateLimitResetService = null;
+  try {
+    const { getRateLimitResetService } = require('./services/aiAgent/rateLimitResetService');
+    rateLimitResetService = getRateLimitResetService();
+  } catch (error) {
+    console.error('⚠️ Failed to load rate limit reset service:', error.message);
+  }
+  
   server.listen(PORT, async () => {
     serverStarted = true;
     console.log(`Mahmoud Ahmed`);
     console.log(`Mahmoud Ahmed`);
     if (dbInitialized) {
       console.log(`🎉 Server running on port ${PORT} with DATABASE`);
+      
+      // بدء خدمة Reset للـ Rate Limits
+      if (rateLimitResetService) {
+        try {
+          rateLimitResetService.start();
+          console.log('✅ [RATE-LIMIT-RESET] Service started successfully');
+        } catch (error) {
+          console.error('⚠️ Failed to start rate limit reset service:', error.message);
+        }
+      }
     } else {
       console.log(`⚠️ Server running on port ${PORT} in DEGRADED MODE (no database)`);
     }

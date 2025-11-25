@@ -26,9 +26,17 @@ exports.getHomepageTemplates = async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
 
+    // Parse content from JSON string to object for all templates
+    const parsedTemplates = templates.map(template => ({
+      ...template,
+      content: typeof template.content === 'string' 
+        ? JSON.parse(template.content) 
+        : template.content
+    }));
+
     res.json({
       success: true,
-      data: templates
+      data: parsedTemplates
     });
   } catch (error) {
     console.error('Error fetching homepage templates:', error);
@@ -64,7 +72,12 @@ exports.getActiveHomepage = async (req, res) => {
 
     res.json({
       success: true,
-      data: activeTemplate
+      data: {
+        ...activeTemplate,
+        content: typeof activeTemplate.content === 'string' 
+          ? JSON.parse(activeTemplate.content) 
+          : activeTemplate.content
+      }
     });
   } catch (error) {
     console.error('Error fetching active homepage:', error);
@@ -79,6 +92,7 @@ exports.getActiveHomepage = async (req, res) => {
 /**
  * Get public active homepage (for storefront)
  * PUBLIC ROUTE - NO AUTHENTICATION REQUIRED
+ * Supports both companyId and slug
  */
 exports.getPublicActiveHomepage = async (req, res) => {
   console.log('🏠 [PUBLIC-HOMEPAGE] ===== Request Received =====');
@@ -89,31 +103,112 @@ exports.getPublicActiveHomepage = async (req, res) => {
   
   try {
     const { companyId } = req.params;
-    console.log('🏠 [PUBLIC-HOMEPAGE] Company ID:', companyId);
+    console.log('🏠 [PUBLIC-HOMEPAGE] Company identifier:', companyId);
     
     const prisma = getPrisma();
 
+    // Determine if companyId is actually a slug or an ID
+    // CUIDs are typically 25 characters, slugs are usually shorter and may contain hyphens
+    let actualCompanyId = companyId;
+    
+    // Check if it looks like a slug (contains hyphens or is shorter than typical CUID)
+    const looksLikeSlug = companyId.includes('-') || companyId.length < 20;
+    
+    if (looksLikeSlug) {
+      console.log('🏠 [PUBLIC-HOMEPAGE] Identifier looks like slug, searching for company...');
+      const company = await prisma.company.findUnique({
+        where: { slug: companyId },
+        select: { id: true }
+      });
+      
+      if (company) {
+        actualCompanyId = company.id;
+        console.log('🏠 [PUBLIC-HOMEPAGE] Found company by slug, ID:', actualCompanyId);
+      } else {
+        // Try as ID anyway (fallback)
+        console.log('🏠 [PUBLIC-HOMEPAGE] No company found with slug, trying as ID...');
+        actualCompanyId = companyId;
+      }
+    }
+
+    console.log('🏠 [PUBLIC-HOMEPAGE] Using companyId:', actualCompanyId);
+
+    // First, check if company exists
+    const company = await prisma.company.findUnique({
+      where: { id: actualCompanyId },
+      select: { id: true, name: true, slug: true }
+    });
+
+    if (!company) {
+      console.log('🏠 [PUBLIC-HOMEPAGE] Company not found with ID:', actualCompanyId);
+      return res.status(404).json({
+        success: false,
+        message: 'الشركة غير موجودة'
+      });
+    }
+
+    console.log('🏠 [PUBLIC-HOMEPAGE] Company found:', company.name);
+
+    // Check all templates for this company (for debugging)
+    const allTemplates = await prisma.homepageTemplate.findMany({
+      where: { companyId: actualCompanyId },
+      select: { id: true, name: true, isActive: true }
+    });
+    console.log('🏠 [PUBLIC-HOMEPAGE] All templates for company:', allTemplates.length);
+    allTemplates.forEach(t => {
+      console.log(`  - ${t.name} (Active: ${t.isActive})`);
+    });
+
     const activeTemplate = await prisma.homepageTemplate.findFirst({
       where: { 
-        companyId,
+        companyId: actualCompanyId,
         isActive: true 
       }
     });
 
     console.log('🏠 [PUBLIC-HOMEPAGE] Active template found:', !!activeTemplate);
+    if (activeTemplate) {
+      console.log('🏠 [PUBLIC-HOMEPAGE] Active template name:', activeTemplate.name);
+      console.log('🏠 [PUBLIC-HOMEPAGE] Active template ID:', activeTemplate.id);
+    }
 
     if (!activeTemplate) {
       console.log('🏠 [PUBLIC-HOMEPAGE] No active template - returning 404');
       return res.status(404).json({
         success: false,
-        message: 'لا توجد صفحة رئيسية نشطة'
+        message: 'لا توجد صفحة رئيسية نشطة',
+        debug: {
+          companyId: actualCompanyId,
+          companyName: company.name,
+          totalTemplates: allTemplates.length,
+          templates: allTemplates
+        }
       });
     }
 
     console.log('🏠 [PUBLIC-HOMEPAGE] Returning template:', activeTemplate.name);
+    
+    // Parse content safely
+    let parsedContent;
+    try {
+      parsedContent = typeof activeTemplate.content === 'string' 
+        ? JSON.parse(activeTemplate.content) 
+        : activeTemplate.content;
+    } catch (parseError) {
+      console.error('❌ [PUBLIC-HOMEPAGE] Error parsing content:', parseError);
+      return res.status(500).json({
+        success: false,
+        message: 'خطأ في تحليل محتوى الصفحة الرئيسية',
+        error: parseError.message
+      });
+    }
+
     res.json({
       success: true,
-      data: activeTemplate
+      data: {
+        ...activeTemplate,
+        content: parsedContent
+      }
     });
   } catch (error) {
     console.error('❌ [PUBLIC-HOMEPAGE] Error:', error);

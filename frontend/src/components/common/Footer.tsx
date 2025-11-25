@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { footerSettingsService, FooterSettings } from '../../services/footerSettingsService';
 import { useAuth } from '../../hooks/useAuthSimple';
+import { getApiUrl } from '../../config/environment';
 
 interface StorePage {
   id: string;
@@ -112,7 +113,7 @@ const Footer: React.FC = () => {
         showEmail: true,
         showPhone: true,
         showAddress: true,
-        showQuickLinks: true,
+        showQuickLinks: false, // لا نعرض الروابط السريعة للعملاء
         showCopyright: true,
       });
     } finally {
@@ -140,7 +141,8 @@ const Footer: React.FC = () => {
       sessionStorage.setItem('currentCompanyId', companyId);
 
       // Fetch all active pages using public endpoint
-      const response = await fetch(`http://localhost:3007/api/v1/store-pages/${companyId}/public`);
+      const apiUrl = getApiUrl();
+      const response = await fetch(`${apiUrl}/store-pages/${companyId}/public`);
       const data = await response.json();
       
       if (data.success) {
@@ -161,10 +163,10 @@ const Footer: React.FC = () => {
   return (
     <footer className="bg-gray-800 text-white py-8 mt-auto">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {/* About Store */}
           {settings?.showAboutStore && settings?.aboutStore && (
-            <div className="col-span-1 md:col-span-1">
+            <div>
               <h3 className="text-lg font-semibold mb-4">عن المتجر</h3>
               <p className="text-gray-300 text-sm">
                 {settings.aboutStore}
@@ -203,35 +205,6 @@ const Footer: React.FC = () => {
             </div>
           )}
 
-          {/* Quick Links */}
-          {settings?.showQuickLinks && (
-            <div>
-              <h4 className="text-md font-semibold mb-4">روابط سريعة</h4>
-              <ul className="space-y-2">
-                <li>
-                  <Link to="/dashboard" className="text-gray-300 hover:text-white transition-colors text-sm">
-                    لوحة التحكم
-                  </Link>
-                </li>
-                <li>
-                  <Link to="/customers" className="text-gray-300 hover:text-white transition-colors text-sm">
-                    العملاء
-                  </Link>
-                </li>
-                <li>
-                  <Link to="/conversations" className="text-gray-300 hover:text-white transition-colors text-sm">
-                    المحادثات
-                  </Link>
-                </li>
-                <li>
-                  <Link to="/products" className="text-gray-300 hover:text-white transition-colors text-sm">
-                    المنتجات
-                  </Link>
-                </li>
-              </ul>
-            </div>
-          )}
-
           {/* Store Pages */}
           {storePages.length > 0 && (
             <div>
@@ -240,7 +213,7 @@ const Footer: React.FC = () => {
                 {storePages.map((page) => (
                   <li key={page.id}>
                     <Link 
-                      to={`/shop/page/${page.slug}`} 
+                      to={`/shop/page/${page.slug}?companyId=${searchParams.get('companyId') || ''}`}
                       className="text-gray-300 hover:text-white transition-colors text-sm"
                     >
                       {page.title}

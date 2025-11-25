@@ -20,6 +20,45 @@ class ModelManager {
   }
 
   /**
+   * الحصول على القيم الافتراضية الصحيحة للنموذج
+   */
+  getModelDefaults(modelName) {
+    const defaults = {
+      // نماذج Pro
+      'gemini-3-pro': { limit: 50000, rpm: 2, rph: 120, rpd: 50 },
+      'gemini-2.5-pro': { limit: 50000, rpm: 2, rph: 120, rpd: 50 },
+      'gemini-1.5-pro': { limit: 50, rpm: 2, rph: 120, rpd: 50 },
+      
+      // نماذج Flash
+      'gemini-2.5-flash': { limit: 250000, rpm: 10, rph: 600, rpd: 250 },
+      'gemini-2.5-flash-lite': { limit: 1000000, rpm: 15, rph: 900, rpd: 1000 },
+      'gemini-1.5-flash': { limit: 1500, rpm: 15, rph: 900, rpd: 1500 },
+      'gemini-2.0-flash': { limit: 200000, rpm: 15, rph: 900, rpd: 200 },
+      'gemini-2.0-flash-lite': { limit: 200000, rpm: 30, rph: 1800, rpd: 200 },
+      
+      // نماذج Live API
+      'gemini-2.5-flash-live': { limit: 1000000, rpm: 15, rph: 900, rpd: 1000 },
+      'gemini-2.0-flash-live': { limit: 1000000, rpm: 15, rph: 900, rpd: 200 },
+      'gemini-2.5-flash-native-audio-dialog': { limit: 1000000, rpm: 15, rph: 900, rpd: 1000 },
+      
+      // نماذج الصوت
+      'gemini-2.5-flash-tts': { limit: 15, rpm: 3, rph: 180, rpd: 15 },
+      
+      // نماذج متخصصة
+      'gemini-robotics-er-1.5-preview': { limit: 250000, rpm: 15, rph: 900, rpd: 250 },
+      'learnlm-2.0-flash-experimental': { limit: 1500000, rpm: 30, rph: 1800, rpd: 1500 },
+      
+      // نماذج Gemma
+      'gemma-3-27b': { limit: 14400, rpm: 10, rph: 600, rpd: 14400 },
+      'gemma-3-12b': { limit: 14400, rpm: 10, rph: 600, rpd: 14400 },
+      'gemma-3-4b': { limit: 14400, rpm: 10, rph: 600, rpd: 14400 },
+      'gemma-3-2b': { limit: 14400, rpm: 10, rph: 600, rpd: 14400 }
+    };
+    
+    return defaults[modelName] || { limit: 1000000, rpm: 15, rph: 900, rpd: 1000 };
+  }
+
+  /**
    * الحصول على مفتاح Gemini نشط للشركة
    * ✅ نقل من aiAgentService.js
    * @param {string} companyId - معرف الشركة
@@ -60,14 +99,78 @@ class ModelManager {
    */
   async getActiveGeminiKeyWithModel(companyId) {
     try {
-      const activeKey = await this.getActiveGeminiKey(companyId);
+      // ⚠️ IMPORTANT: لا نستدعي this.aiAgentService.getActiveGeminiKey هنا لتجنب حلقة لا نهائية
+      // بدلاً من ذلك، نستخدم الكود مباشرة من aiAgentService.js
       
+      if (!companyId) {
+        console.error('❌ [MODEL-MANAGER] لم يتم تمرير companyId - رفض الطلب للأمان');
+        return null;
+      }
+
+      // 1. التحقق من إعدادات الشركة (useCentralKeys)
+      const company = await this.prisma.company.findUnique({
+        where: { id: companyId },
+        select: { useCentralKeys: true }
+      });
+
+      const useCentralKeys = company?.useCentralKeys || false;
+
+      // 2. إذا كانت الشركة تستخدم المفاتيح المركزية، ابحث في المفاتيح المركزية أولاً
+      if (useCentralKeys) {
+        const centralKey = await this.findActiveCentralKey();
+        if (centralKey) {
+          const bestModel = await this.findBestAvailableModelInActiveKey(centralKey.id);
+          if (bestModel) {
+            await this.updateModelUsage(bestModel.id);
+            return {
+              apiKey: centralKey.apiKey,
+              model: bestModel.model,
+              keyId: centralKey.id,
+              modelId: bestModel.id,
+              keyType: 'CENTRAL'
+            };
+          }
+        }
+      }
+
+      // 3. البحث عن المفتاح النشط للشركة المحددة
+      const activeKey = await this.prisma.geminiKey.findFirst({
+        where: {
+          isActive: true,
+          companyId: companyId,
+          keyType: 'COMPANY'
+        },
+        orderBy: { priority: 'asc' }
+      });
+
       if (!activeKey) {
-        // Fallback: محاولة تفعيل أول مفتاح متاح تلقائياً
+        // البحث عن أول مفتاح متاح وتفعيله تلقائياً
         const autoActivatedKey = await this.findAndActivateFirstAvailableKey(companyId);
         if (autoActivatedKey) {
           return autoActivatedKey;
         }
+
+        // 4. Fallback: إذا لم توجد مفاتيح شركة، جرب المفاتيح المركزية
+        if (!useCentralKeys) {
+          console.log('🔄 [MODEL-MANAGER] محاولة استخدام المفاتيح المركزية كبديل...');
+          const centralKey = await this.findActiveCentralKey();
+          if (centralKey) {
+            console.log(`✅ [MODEL-MANAGER] تم العثور على مفتاح مركزي: ${centralKey.name}`);
+            const bestModel = await this.findBestAvailableModelInActiveKey(centralKey.id);
+            if (bestModel) {
+              console.log(`✅ [MODEL-MANAGER] تم العثور على نموذج متاح: ${bestModel.model}`);
+              await this.updateModelUsage(bestModel.id);
+              return {
+                apiKey: centralKey.apiKey,
+                model: bestModel.model,
+                keyId: centralKey.id,
+                modelId: bestModel.id,
+                keyType: 'CENTRAL'
+              };
+            }
+          }
+        }
+
         return null;
       }
 
@@ -75,25 +178,11 @@ class ModelManager {
       const bestModel = await this.findBestAvailableModelInActiveKey(activeKey.id);
       
       if (bestModel) {
-        // ✅ FIX: لا نحدث الاستخدام هنا - سيتم تحديثه بعد نجاح الطلب فقط
-        // هذا يضمن دقة عداد الاستخدام
         return {
           apiKey: activeKey.apiKey,
           model: bestModel.model,
           keyId: activeKey.id,
           modelId: bestModel.id
-        };
-      }
-
-      // البحث عن نموذج احتياطي للشركة
-      const backupModel = await this.findNextAvailableModel(companyId);
-      if (backupModel) {
-        return {
-          apiKey: backupModel.apiKey,
-          model: backupModel.model,
-          keyId: backupModel.keyId,
-          modelId: backupModel.modelId || null, // ✅ FIX: إضافة modelId للنموذج الاحتياطي
-          switchType: backupModel.switchType
         };
       }
 
@@ -112,15 +201,42 @@ class ModelManager {
    */
   async findBestAvailableModelInActiveKey(keyId, forceRefresh = false) {
     try {
+      // ⚠️ قائمة النماذج المعطلة مؤقتاً (غير متوفرة في API)
+      const disabledModels = [
+        'gemini-3-pro' // ⚠️ معطل - غير متوفر في API (404 Not Found) - تم الاختبار والتأكد
+      ];
+      
       // ✅ قائمة النماذج المتوفرة (جميع النماذج المدعومة)
       const supportedModels = [
-        'gemini-2.5-flash',
+        // أحدث نماذج 2025
+        'gemini-3-pro',
         'gemini-2.5-pro',
-        'gemini-2.0-flash',
-        'gemini-2.0-flash-exp',
+        'gemini-2.5-flash',
         'gemini-2.5-flash-lite',
+        'gemini-2.5-flash-tts',
+        
+        // نماذج Gemini 2.0
+        'gemini-2.0-flash',
+        'gemini-2.0-flash-lite',
+        
+        // نماذج Live API
+        'gemini-2.5-flash-live',
+        'gemini-2.0-flash-live',
+        'gemini-2.5-flash-native-audio-dialog',
+        
+        // نماذج مستقرة 1.5
+        'gemini-1.5-pro',
         'gemini-1.5-flash',
-        'gemini-1.5-pro'
+        
+        // نماذج متخصصة
+        'gemini-robotics-er-1.5-preview',
+        'learnlm-2.0-flash-experimental',
+        
+        // نماذج Gemma
+        'gemma-3-12b',
+        'gemma-3-27b',
+        'gemma-3-4b',
+        'gemma-3-2b'
       ];
 
       const availableModels = await this.prisma.geminiKeyModel.findMany({
@@ -133,7 +249,17 @@ class ModelManager {
         }
       });
 
+      console.log(`📋 [MODEL-MANAGER] فحص ${availableModels.length} نموذج (مرتبة حسب الأولوية)`);
+
       for (const modelRecord of availableModels) {
+        console.log(`🔍 [MODEL-MANAGER] فحص النموذج: ${modelRecord.model} (Priority: ${modelRecord.priority})`);
+        
+        // ✅ FIX: تخطي النماذج المعطلة مؤقتاً (غير متوفرة في API)
+        if (disabledModels.includes(modelRecord.model)) {
+          console.warn(`⚠️ [MODEL-MANAGER] Skipping disabled model (not available in API): ${modelRecord.model}`);
+          continue;
+        }
+        
         // ✅ FIX: تخطي النماذج غير المتوفرة في v1beta API
         if (!supportedModels.includes(modelRecord.model)) {
           console.warn(`⚠️ [MODEL-MANAGER] Skipping unsupported model: ${modelRecord.model}`);
@@ -142,10 +268,94 @@ class ModelManager {
 
         // فحص الذاكرة المؤقتة أولاً
         if (this.exhaustedModelsCache && this.exhaustedModelsCache.has(modelRecord.model)) {
+          console.log(`⚠️ [MODEL-MANAGER] النموذج ${modelRecord.model} في قائمة المستنفدة المؤقتة`);
           continue;
         }
 
-        const usage = JSON.parse(modelRecord.usage);
+        let usage;
+        try {
+          usage = JSON.parse(modelRecord.usage || '{}');
+        } catch (e) {
+          console.warn(`⚠️ [MODEL-MANAGER] خطأ في تحليل JSON للنموذج ${modelRecord.model} (ID: ${modelRecord.id}):`, e.message);
+          console.warn(`   Usage string length: ${(modelRecord.usage || '').length}`);
+          console.warn(`   Usage string preview: ${(modelRecord.usage || '').substring(0, 200)}...`);
+          
+          // ⚠️ إذا فشل تحليل JSON، استخدم JSON افتراضي بقيم صحيحة بناءً على النموذج
+          console.log(`   🔧 [MODEL-MANAGER] استخدام JSON افتراضي صحيح للنموذج ${modelRecord.model}`);
+          
+          // الحصول على القيم الافتراضية الصحيحة للنموذج
+          const modelDefaults = this.getModelDefaults(modelRecord.model);
+          usage = {
+            used: 0,
+            limit: modelDefaults.limit,
+            rpm: { used: 0, limit: modelDefaults.rpm, windowStart: null },
+            rph: { used: 0, limit: modelDefaults.rph, windowStart: null },
+            rpd: { used: 0, limit: modelDefaults.rpd, windowStart: null },
+            resetDate: null
+          };
+          
+          // محاولة إصلاح JSON في قاعدة البيانات
+          try {
+            await this.prisma.geminiKeyModel.update({
+              where: { id: modelRecord.id },
+              data: {
+                usage: JSON.stringify(usage)
+              }
+            });
+            console.log(`   ✅ [MODEL-MANAGER] تم إصلاح JSON للنموذج ${modelRecord.model} بقيم صحيحة`);
+          } catch (fixError) {
+            console.warn(`   ⚠️ [MODEL-MANAGER] فشل إصلاح JSON: ${fixError.message}`);
+          }
+        }
+
+        // التحقق من RPM (Requests Per Minute) - فقط إذا كان limit > 0 و windowStart موجود
+        if (usage.rpm && usage.rpm.limit > 0 && usage.rpm.windowStart) {
+          const now = new Date();
+          const rpmWindowStart = new Date(usage.rpm.windowStart);
+          const rpmWindowMs = 60 * 1000; // 1 دقيقة
+          
+          // فقط إذا كانت النافذة لا تزال نشطة (أقل من دقيقة)
+          if ((now - rpmWindowStart) < rpmWindowMs) {
+            if ((usage.rpm.used || 0) >= usage.rpm.limit) {
+              console.log(`⚠️ [MODEL-MANAGER] النموذج ${modelRecord.model} تجاوز RPM (${usage.rpm.used}/${usage.rpm.limit})`);
+              continue; // تجاوز RPM
+            }
+          }
+          // إذا انتهت النافذة (> دقيقة)، لا نحتاج للفحص - سيتم إعادة تعيينها تلقائياً
+        }
+
+        // التحقق من RPH (Requests Per Hour) - فقط إذا كان limit > 0 و windowStart موجود
+        if (usage.rph && usage.rph.limit > 0 && usage.rph.windowStart) {
+          const now = new Date();
+          const rphWindowStart = new Date(usage.rph.windowStart);
+          const rphWindowMs = 60 * 60 * 1000; // 1 ساعة
+          
+          // فقط إذا كانت النافذة لا تزال نشطة (أقل من ساعة)
+          if ((now - rphWindowStart) < rphWindowMs) {
+            if ((usage.rph.used || 0) >= usage.rph.limit) {
+              console.log(`⚠️ [MODEL-MANAGER] النموذج ${modelRecord.model} تجاوز RPH (${usage.rph.used}/${usage.rph.limit})`);
+              continue; // تجاوز RPH
+            }
+          }
+          // إذا انتهت النافذة (> ساعة)، لا نحتاج للفحص
+        }
+
+        // التحقق من RPD (Requests Per Day) - فقط إذا كان limit > 0 و windowStart موجود
+        if (usage.rpd && usage.rpd.limit > 0 && usage.rpd.windowStart) {
+          const now = new Date();
+          const rpdWindowStart = new Date(usage.rpd.windowStart);
+          const rpdWindowMs = 24 * 60 * 60 * 1000; // 1 يوم
+          
+          // فقط إذا كانت النافذة لا تزال نشطة (أقل من يوم)
+          if ((now - rpdWindowStart) < rpdWindowMs) {
+            if ((usage.rpd.used || 0) >= usage.rpd.limit) {
+              console.log(`⚠️ [MODEL-MANAGER] النموذج ${modelRecord.model} تجاوز RPD (${usage.rpd.used}/${usage.rpd.limit})`);
+              continue; // تجاوز RPD
+            }
+          }
+          // إذا انتهت النافذة (> يوم)، لا نحتاج للفحص
+        }
+
         const currentUsage = usage.used || 0;
         const maxRequests = usage.limit || 1000000;
 
@@ -157,14 +367,21 @@ class ModelManager {
 
           // إذا تم تحديد النموذج كمستنفد خلال آخر 5 دقائق، تجاهله
           if (timeDiff < 5 * 60 * 1000) {
+            console.log(`⚠️ [MODEL-MANAGER] النموذج ${modelRecord.model} تم تحديده كمستنفد مؤخراً`);
             continue;
           }
         }
 
-        if (currentUsage < maxRequests) {
-          return modelRecord;
+        if (currentUsage >= maxRequests) {
+          console.log(`⚠️ [MODEL-MANAGER] النموذج ${modelRecord.model} تجاوز الحد العام (${currentUsage}/${maxRequests})`);
+          continue;
         }
+
+        console.log(`✅ [MODEL-MANAGER] نموذج متاح: ${modelRecord.model} (Priority: ${modelRecord.priority}, Usage: ${currentUsage}/${maxRequests})`);
+        return modelRecord;
       }
+
+      console.log(`❌ [MODEL-MANAGER] لم يتم العثور على نموذج متاح في المفتاح: ${keyId}`);
 
       return null;
     } catch (error) {
@@ -288,7 +505,7 @@ class ModelManager {
   }
 
   /**
-   * تحديث عداد الاستخدام لنموذج معين
+   * تحديث عداد الاستخدام لنموذج معين مع دعم RPM, RPH, RPD
    * ✅ نقل من aiAgentService.js
    */
   async updateModelUsage(modelId) {
@@ -305,11 +522,50 @@ class ModelManager {
       });
 
       if (modelRecord) {
-        const usage = JSON.parse(modelRecord.usage || '{"used": 0, "limit": 1000000}'); // ✅ FIX: استخدام modelRecord بدلاً من model
+        let usage;
+        try {
+          usage = JSON.parse(modelRecord.usage || '{}');
+        } catch (e) {
+          console.warn(`⚠️ [USAGE-UPDATE] خطأ في تحليل JSON للنموذج ${modelId}:`, e.message);
+          usage = { used: 0, limit: 1000000 };
+        }
+
+        const now = new Date();
+        
+        // تحديث RPM (Requests Per Minute)
+        const rpmWindowMs = 60 * 1000; // 1 دقيقة
+        let rpm = usage.rpm || { used: 0, limit: 15, windowStart: null };
+        if (!rpm.windowStart || (now - new Date(rpm.windowStart)) >= rpmWindowMs) {
+          rpm = { used: 1, limit: rpm.limit || 15, windowStart: now.toISOString() };
+        } else {
+          rpm.used = (rpm.used || 0) + 1;
+        }
+
+        // تحديث RPH (Requests Per Hour)
+        const rphWindowMs = 60 * 60 * 1000; // 1 ساعة
+        let rph = usage.rph || { used: 0, limit: 900, windowStart: null };
+        if (!rph.windowStart || (now - new Date(rph.windowStart)) >= rphWindowMs) {
+          rph = { used: 1, limit: rph.limit || 900, windowStart: now.toISOString() };
+        } else {
+          rph.used = (rph.used || 0) + 1;
+        }
+
+        // تحديث RPD (Requests Per Day)
+        const rpdWindowMs = 24 * 60 * 60 * 1000; // 1 يوم
+        let rpd = usage.rpd || { used: 0, limit: 1000, windowStart: null };
+        if (!rpd.windowStart || (now - new Date(rpd.windowStart)) >= rpdWindowMs) {
+          rpd = { used: 1, limit: rpd.limit || 1000, windowStart: now.toISOString() };
+        } else {
+          rpd.used = (rpd.used || 0) + 1;
+        }
+
         const newUsage = {
           ...usage,
           used: (usage.used || 0) + 1,
-          lastUpdated: new Date().toISOString()
+          lastUpdated: now.toISOString(),
+          rpm,
+          rph,
+          rpd
         };
 
         await this.prisma.geminiKeyModel.update({
@@ -318,12 +574,12 @@ class ModelManager {
           },
           data: {
             usage: JSON.stringify(newUsage),
-            lastUsed: new Date(),
-            updatedAt: new Date()
+            lastUsed: now,
+            updatedAt: now
           }
         });
 
-        console.log(`✅ [USAGE-UPDATE] Updated usage for model ${modelRecord.model} (${modelId}): ${newUsage.used}/${usage.limit || 1000000}`);
+        console.log(`✅ [USAGE-UPDATE] Updated usage for model ${modelRecord.model} (${modelId}): Total=${newUsage.used}/${usage.limit || 1000000}, RPM=${rpm.used}/${rpm.limit}, RPH=${rph.used}/${rph.limit}, RPD=${rpd.used}/${rpd.limit}`);
       } else {
         console.warn(`⚠️ [USAGE-UPDATE] Model not found: ${modelId}`);
       }
@@ -346,13 +602,35 @@ class ModelManager {
     try {
       // ✅ قائمة النماذج المتوفرة (جميع النماذج المدعومة)
       const supportedModels = [
-        'gemini-2.5-flash',
+        // أحدث نماذج 2025
+        'gemini-3-pro',
         'gemini-2.5-pro',
-        'gemini-2.0-flash',
-        'gemini-2.0-flash-exp',
+        'gemini-2.5-flash',
         'gemini-2.5-flash-lite',
+        'gemini-2.5-flash-tts',
+        
+        // نماذج Gemini 2.0
+        'gemini-2.0-flash',
+        'gemini-2.0-flash-lite',
+        
+        // نماذج Live API
+        'gemini-2.5-flash-live',
+        'gemini-2.0-flash-live',
+        'gemini-2.5-flash-native-audio-dialog',
+        
+        // نماذج مستقرة 1.5
+        'gemini-1.5-pro',
         'gemini-1.5-flash',
-        'gemini-1.5-pro'
+        
+        // نماذج متخصصة
+        'gemini-robotics-er-1.5-preview',
+        'learnlm-2.0-flash-experimental',
+        
+        // نماذج Gemma
+        'gemma-3-12b',
+        'gemma-3-27b',
+        'gemma-3-4b',
+        'gemma-3-2b'
       ];
 
       // ✅ إذا كان النموذج غير مدعوم، إرجاع false مباشرة
@@ -455,13 +733,35 @@ class ModelManager {
     try {
       // ✅ قائمة النماذج المتوفرة (جميع النماذج المدعومة)
       const supportedModels = [
-        'gemini-2.5-flash',
+        // أحدث نماذج 2025
+        'gemini-3-pro',
         'gemini-2.5-pro',
-        'gemini-2.0-flash',
-        'gemini-2.0-flash-exp',
+        'gemini-2.5-flash',
         'gemini-2.5-flash-lite',
+        'gemini-2.5-flash-tts',
+        
+        // نماذج Gemini 2.0
+        'gemini-2.0-flash',
+        'gemini-2.0-flash-lite',
+        
+        // نماذج Live API
+        'gemini-2.5-flash-live',
+        'gemini-2.0-flash-live',
+        'gemini-2.5-flash-native-audio-dialog',
+        
+        // نماذج مستقرة 1.5
+        'gemini-1.5-pro',
         'gemini-1.5-flash',
-        'gemini-1.5-pro'
+        
+        // نماذج متخصصة
+        'gemini-robotics-er-1.5-preview',
+        'learnlm-2.0-flash-experimental',
+        
+        // نماذج Gemma
+        'gemma-3-12b',
+        'gemma-3-27b',
+        'gemma-3-4b',
+        'gemma-3-2b'
       ];
 
       const availableModels = await this.prisma.geminiKeyModel.findMany({
@@ -599,13 +899,35 @@ class ModelManager {
     try {
       // ✅ قائمة النماذج المتوفرة (جميع النماذج المدعومة)
       const supportedModels = [
-        'gemini-2.5-flash',
+        // أحدث نماذج 2025
+        'gemini-3-pro',
         'gemini-2.5-pro',
-        'gemini-2.0-flash',
-        'gemini-2.0-flash-exp',
+        'gemini-2.5-flash',
         'gemini-2.5-flash-lite',
+        'gemini-2.5-flash-tts',
+        
+        // نماذج Gemini 2.0
+        'gemini-2.0-flash',
+        'gemini-2.0-flash-lite',
+        
+        // نماذج Live API
+        'gemini-2.5-flash-live',
+        'gemini-2.0-flash-live',
+        'gemini-2.5-flash-native-audio-dialog',
+        
+        // نماذج مستقرة 1.5
+        'gemini-1.5-pro',
         'gemini-1.5-flash',
-        'gemini-1.5-pro'
+        
+        // نماذج متخصصة
+        'gemini-robotics-er-1.5-preview',
+        'learnlm-2.0-flash-experimental',
+        
+        // نماذج Gemma
+        'gemma-3-12b',
+        'gemma-3-27b',
+        'gemma-3-4b',
+        'gemma-3-2b'
       ];
 
       const availableModels = await this.prisma.geminiKeyModel.findMany({
@@ -656,6 +978,31 @@ class ModelManager {
    * البحث عن أول مفتاح متاح وتفعيله تلقائياً
    * ✅ نقل من aiAgentService.js
    */
+  // البحث عن مفتاح مركزي نشط
+  async findActiveCentralKey() {
+    try {
+      const centralKey = await this.prisma.geminiKey.findFirst({
+        where: {
+          keyType: 'CENTRAL',
+          companyId: null,
+          isActive: true
+        },
+        orderBy: { priority: 'asc' }
+      });
+
+      if (centralKey) {
+        console.log(`✅ [MODEL-MANAGER] تم العثور على مفتاح مركزي نشط: ${centralKey.name} (ID: ${centralKey.id})`);
+        return centralKey;
+      }
+
+      console.log('⚠️ [MODEL-MANAGER] لا يوجد مفتاح مركزي نشط');
+      return null;
+    } catch (error) {
+      console.error('❌ [MODEL-MANAGER] خطأ في البحث عن مفتاح مركزي:', error);
+      return null;
+    }
+  }
+
   async findAndActivateFirstAvailableKey(companyId) {
     try {
       // البحث عن جميع مفاتيح الشركة

@@ -62,12 +62,35 @@ async function quickAddGeminiKey() {
         
         // Create models
         const availableModels = [
-            { model: 'gemini-2.5-flash', limit: 1000000, priority: 1 },
-            { model: 'gemini-2.5-pro', limit: 500000, priority: 2 },
-            { model: 'gemini-2.0-flash', limit: 750000, priority: 3 },
-            { model: 'gemini-2.0-flash-exp', limit: 1000, priority: 4 },
-            { model: 'gemini-1.5-flash', limit: 1500, priority: 5 },
-            { model: 'gemini-1.5-pro', limit: 50, priority: 6 }
+            // 🆕 أحدث نماذج 2025
+            { model: 'gemini-3-pro', limit: 50000, priority: 1 },
+            { model: 'gemini-2.5-pro', limit: 50000, priority: 2 },
+            { model: 'gemini-2.5-flash', limit: 250000, priority: 3 },
+            { model: 'gemini-2.5-flash-lite', limit: 1000000, priority: 4 },
+            { model: 'gemini-2.5-flash-tts', limit: 15, priority: 5 },
+            
+            // نماذج Gemini 2.0
+            { model: 'gemini-2.0-flash', limit: 200000, priority: 6 },
+            { model: 'gemini-2.0-flash-lite', limit: 200000, priority: 7 },
+            
+            // نماذج Live API
+            { model: 'gemini-2.5-flash-live', limit: 1000000, priority: 8 },
+            { model: 'gemini-2.0-flash-live', limit: 1000000, priority: 9 },
+            { model: 'gemini-2.5-flash-native-audio-dialog', limit: 1000000, priority: 10 },
+            
+            // نماذج مستقرة 1.5
+            { model: 'gemini-1.5-pro', limit: 50, priority: 11 },
+            { model: 'gemini-1.5-flash', limit: 1500, priority: 12 },
+            
+            // نماذج متخصصة
+            { model: 'gemini-robotics-er-1.5-preview', limit: 250000, priority: 13 },
+            { model: 'learnlm-2.0-flash-experimental', limit: 1500000, priority: 14 },
+            
+            // نماذج Gemma
+            { model: 'gemma-3-12b', limit: 14400, priority: 15 },
+            { model: 'gemma-3-27b', limit: 14400, priority: 16 },
+            { model: 'gemma-3-4b', limit: 14400, priority: 17 },
+            { model: 'gemma-3-2b', limit: 14400, priority: 18 }
         ];
         
         console.log('📦 Creating models...');

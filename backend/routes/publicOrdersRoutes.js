@@ -95,16 +95,56 @@ router.post('/orders', async (req, res) => {
 
     // Verify stock again
     for (const item of cartItems) {
-      const product = await prisma.product.findUnique({
-        where: { id: item.productId },
+      console.log('🔍 [CREATE-ORDER] Checking product:', item.productId, 'variantId:', item.variantId, 'quantity:', item.quantity);
+      
+      const product = await prisma.product.findFirst({
+        where: { 
+          id: item.productId,
+          companyId: company.id // Ensure product belongs to this company
+        },
         include: { variants: true }
       });
 
-      if (!product || product.stock < item.quantity) {
+      console.log('🔍 [CREATE-ORDER] Product found:', product ? 'Yes' : 'No', 'Stock:', product?.stock, 'TrackInventory:', product?.trackInventory);
+
+      if (!product) {
+        console.log('❌ [CREATE-ORDER] Product not found:', item.productId);
         return res.status(400).json({ 
           success: false, 
-          error: `المخزون غير كافي للمنتج: ${item.name || product?.name || 'Unknown'}` 
+          error: `المنتج غير موجود: ${item.name || 'Unknown'}` 
         });
+      }
+
+      // Check variant stock if variantId is provided
+      if (item.variantId) {
+        const variant = product.variants.find(v => v.id === item.variantId);
+        console.log('🔍 [CREATE-ORDER] Variant found:', variant ? 'Yes' : 'No', 'Stock:', variant?.stock, 'TrackInventory:', variant?.trackInventory);
+        
+        if (!variant) {
+          console.log('❌ [CREATE-ORDER] Variant not found:', item.variantId);
+          return res.status(400).json({ 
+            success: false, 
+            error: `الاختيار غير موجود للمنتج: ${item.name || product.name}` 
+          });
+        }
+        
+        // Check variant stock if tracking is enabled
+        if (variant.trackInventory !== false && variant.stock < item.quantity) {
+          console.log('❌ [CREATE-ORDER] Insufficient variant stock:', variant.stock, 'requested:', item.quantity);
+          return res.status(400).json({ 
+            success: false, 
+            error: `المخزون غير كافي للاختيار: ${variant.name}. المتوفر: ${variant.stock}` 
+          });
+        }
+      } else {
+        // Check main product stock if no variant and tracking is enabled
+        if (product.trackInventory !== false && product.stock < item.quantity) {
+          console.log('❌ [CREATE-ORDER] Insufficient stock:', product.stock, 'requested:', item.quantity);
+          return res.status(400).json({ 
+            success: false, 
+            error: `المخزون غير كافي للمنتج: ${item.name || product.name}. المتوفر: ${product.stock}` 
+          });
+        }
       }
     }
 

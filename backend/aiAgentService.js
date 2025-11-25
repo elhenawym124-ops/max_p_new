@@ -35,13 +35,13 @@ class AIAgentService {
    * Get current active model for the session (with fallback to fresh lookup)
    */
   async getCurrentActiveModel(companyId) {
-    console.log(companyId)
+    console.log(`🔍 [AI-MODEL] getCurrentActiveModel called for company: ${companyId}`);
     // إذا تم تمرير companyId، احصل على نموذج جديد للشركة المحددة
     if (companyId) {
-      //console.log(`🔍 [AI-MODEL] Getting active model for company: ${companyId}`);
+      console.log(`🔍 [AI-MODEL] Getting active model for company: ${companyId}`);
       const model = await this.getActiveGeminiKey(companyId);
       if (model) {
-        //console.log(`✅ [AI-MODEL] Active model found: ${model.model}`);
+        console.log(`✅ [AI-MODEL] Active model found: ${model.model} (Key Type: ${model.keyType || 'COMPANY'})`);
       } else {
         console.error(`❌ [AI-MODEL] No active model found for company: ${companyId}`);
         // Check if company exists
@@ -2374,6 +2374,50 @@ ${imageAnalysis}
 
     } catch (error) {
       console.error('❌ Error in generateAIResponse:', error.message);
+
+      // فحص إذا كان خطأ 404 (Model Not Found)
+      const is404Error = error.status === 404 || 
+                        error.message?.includes('404') || 
+                        error.message?.includes('not found') ||
+                        error.message?.includes('is not found for API version');
+      
+      if (is404Error && providedGeminiConfig) {
+        console.log(`🔄 [404-ERROR] Model ${providedGeminiConfig.model} not found. Attempting to switch to next available model...`);
+        
+        // تحديد النموذج كمستنفد (غير متوفر)
+        if (providedGeminiConfig.modelId) {
+          await this.markModelAsExhausted(providedGeminiConfig.modelId);
+        }
+        
+        // إضافة النموذج إلى قائمة المستنفدة المؤقتة
+        if (this.exhaustedModelsCache) {
+          this.exhaustedModelsCache.add(providedGeminiConfig.model);
+          console.log(`⚠️ [404-ERROR] Added ${providedGeminiConfig.model} to exhausted cache`);
+        }
+        
+        // محاولة الحصول على نموذج بديل للشركة
+        const backupModel = await this.findNextAvailableModel(companyId);
+        if (backupModel) {
+          console.log(`🔄 [404-FALLBACK] Switching to backup model: ${backupModel.model}`);
+          
+          // إعادة المحاولة مع النموذج البديل
+          try {
+            const retryResult = await this.generateAIResponse(
+              prompt, 
+              conversationMemory, 
+              useRAG, 
+              backupModel, 
+              companyId, 
+              conversationId, 
+              messageContext
+            );
+            return retryResult;
+          } catch (retryError) {
+            console.error('❌ Error in retry with backup model:', retryError.message);
+            throw retryError;
+          }
+        }
+      }
 
       // فحص إذا كان خطأ 503 (Service Unavailable - Model Overloaded)
       const is503Error = error.status === 503 || 
@@ -5308,44 +5352,89 @@ ${conversationContext}
    */
   async getActiveGeminiKey(companyId) {
     try {
-      //console.log('🔍 البحث عن مفتاح Gemini نشط (النظام الجديد)...');
+      //console.log('🔍 البحث عن مفتاح Gemini نشط (النظام الجديد مع دعم المفاتيح المركزية)...');
 
       // تحديد الشركة - بدون fallback للأمان
       let targetCompanyId = companyId;
-      console.log(targetCompanyId)
       if (!targetCompanyId) {
         console.error('❌ [SECURITY] لم يتم تمرير companyId - رفض الطلب للأمان');
         return null;
       }
 
-      if (!targetCompanyId) {
-        //console.log('❌ لا توجد شركات في النظام');
-        return null;
+      // 1. التحقق من إعدادات الشركة (useCentralKeys)
+      const company = await this.prisma.company.findUnique({
+        where: { id: targetCompanyId },
+        select: { useCentralKeys: true }
+      });
+
+      const useCentralKeys = company?.useCentralKeys || false;
+
+      // 2. إذا كانت الشركة تستخدم المفاتيح المركزية، ابحث في المفاتيح المركزية أولاً
+      if (useCentralKeys) {
+        //console.log(`🔑 [CENTRAL] الشركة ${targetCompanyId} تستخدم المفاتيح المركزية`);
+        const centralKey = await this.findActiveCentralKey();
+        if (centralKey) {
+          const bestModel = await this.findBestAvailableModelInActiveKey(centralKey.id);
+          if (bestModel) {
+            await this.updateModelUsage(bestModel.id);
+            return {
+              apiKey: centralKey.apiKey,
+              model: bestModel.model,
+              keyId: centralKey.id,
+              modelId: bestModel.id,
+              keyType: 'CENTRAL'
+            };
+          }
+        }
       }
 
-      //console.log(`🏢 البحث عن مفاتيح الشركة: ${targetCompanyId}`);
-
-      // البحث عن المفتاح النشط للشركة المحددة
+      // 3. البحث عن المفتاح النشط للشركة المحددة
       const activeKey = await this.prisma.geminiKey.findFirst({
         where: {
           isActive: true,
-          companyId: targetCompanyId
+          companyId: targetCompanyId,
+          keyType: 'COMPANY'
         },
         orderBy: { priority: 'asc' }
       });
 
       if (!activeKey) {
-        //console.log(`❌ لم يتم العثور على مفتاح نشط للشركة: ${targetCompanyId}`);
-        //console.log('🔄 محاولة تفعيل أول مفتاح متاح تلقائياً...');
+        console.log(`❌ لم يتم العثور على مفتاح نشط للشركة: ${targetCompanyId}`);
+        console.log('🔄 محاولة تفعيل أول مفتاح متاح تلقائياً...');
 
         // البحث عن أول مفتاح متاح وتفعيله تلقائياً
         const autoActivatedKey = await this.findAndActivateFirstAvailableKey(targetCompanyId);
         if (autoActivatedKey) {
-          //console.log(`✅ تم تفعيل مفتاح تلقائياً: ${autoActivatedKey.keyName}`);
+          console.log(`✅ تم تفعيل مفتاح تلقائياً: ${autoActivatedKey.keyName || autoActivatedKey.keyId}`);
           return autoActivatedKey;
         }
 
-        //console.log(`❌ لا توجد مفاتيح متاحة للتفعيل للشركة: ${targetCompanyId}`);
+        console.log('⚠️ لم يتم العثور على مفاتيح شركة للتفعيل التلقائي');
+
+        // 4. Fallback: إذا لم توجد مفاتيح شركة، جرب المفاتيح المركزية (بغض النظر عن useCentralKeys)
+        console.log('🔄 [FALLBACK] محاولة استخدام المفاتيح المركزية كبديل...');
+        const centralKey = await this.findActiveCentralKey();
+        if (centralKey) {
+          console.log(`✅ [FALLBACK] تم العثور على مفتاح مركزي: ${centralKey.name} (ID: ${centralKey.id})`);
+          const bestModel = await this.findBestAvailableModelInActiveKey(centralKey.id);
+          if (bestModel) {
+            console.log(`✅ [FALLBACK] تم العثور على نموذج متاح: ${bestModel.model}`);
+            await this.updateModelUsage(bestModel.id);
+            return {
+              apiKey: centralKey.apiKey,
+              model: bestModel.model,
+              keyId: centralKey.id,
+              modelId: bestModel.id,
+              keyType: 'CENTRAL'
+            };
+          } else {
+            console.error(`❌ [FALLBACK] لم يتم العثور على نموذج متاح في المفتاح المركزي: ${centralKey.name}`);
+          }
+        } else {
+          console.error('❌ [FALLBACK] لم يتم العثور على مفاتيح مركزية نشطة');
+        }
+
+        console.log(`❌ لا توجد مفاتيح متاحة للتفعيل للشركة: ${targetCompanyId}`);
         return null;
       }
 
@@ -5400,32 +5489,104 @@ ${conversationContext}
     }
   }
 
+  // فحص Rate Limit للـ window معين (دقيقة، ساعة، يوم)
+  isRateLimitExceeded(windowData, windowType) {
+    if (!windowData || !windowData.limit || windowData.limit === 0) {
+      return false; // لا يوجد حد محدد
+    }
+
+    const now = new Date();
+    let windowStart = windowData.windowStart ? new Date(windowData.windowStart) : null;
+    let windowMs = 0;
+
+    // تحديد حجم النافذة
+    switch (windowType) {
+      case 'minute':
+        windowMs = 60 * 1000; // 1 دقيقة
+        break;
+      case 'hour':
+        windowMs = 60 * 60 * 1000; // 1 ساعة
+        break;
+      case 'day':
+        windowMs = 24 * 60 * 60 * 1000; // 1 يوم
+        break;
+      default:
+        return false;
+    }
+
+    // إذا لم يكن هناك windowStart، أو انتهت النافذة، ابدأ نافذة جديدة
+    if (!windowStart || (now - windowStart) >= windowMs) {
+      return false; // النافذة جديدة أو انتهت، متاح للاستخدام
+    }
+
+    // التحقق من الحد
+    const used = windowData.used || 0;
+    return used >= windowData.limit;
+  }
+
   // البحث عن أفضل نموذج متاح في المفتاح النشط
   async findBestAvailableModelInActiveKey(keyId, forceRefresh = false) {
     try {
+      console.log(`🔍 [FIND-MODEL] البحث عن نموذج متاح في المفتاح: ${keyId}`);
+      
       // FIXED: Use Prisma ORM instead of raw SQL for better security
+      // ⚠️ قائمة النماذج المعطلة مؤقتاً (غير متوفرة في API)
+      const disabledModels = [
+        'gemini-3-pro' // ⚠️ معطل - غير متوفر في API (404 Not Found) - تم الاختبار والتأكد
+      ];
+      
       const availableModels = await this.prisma.geminiKeyModel.findMany({
         where: {
           keyId: keyId,
-          isEnabled: true
+          isEnabled: true,
+          model: {
+            notIn: disabledModels // تخطي النماذج المعطلة مباشرة من الاستعلام
+          }
         },
         orderBy: {
-          priority: 'asc'
+          priority: 'asc' // الأذكى أولاً
         }
       });
 
+      console.log(`📋 [FIND-MODEL] تم العثور على ${availableModels.length} نموذج مفعل (مرتبة حسب الأولوية)`);
+      if (availableModels.length > 0) {
+        console.log(`   الأولوية الأولى: ${availableModels[0].model} (Priority: ${availableModels[0].priority})`);
+      }
+
       for (const modelRecord of availableModels) {
+        console.log(`🔍 [FIND-MODEL] فحص النموذج: ${modelRecord.model} (Priority: ${modelRecord.priority})`);
+        
         // فحص الذاكرة المؤقتة أولاً
         if (this.exhaustedModelsCache && this.exhaustedModelsCache.has(modelRecord.model)) {
-          //console.log(`⚠️ النموذج ${modelRecord.model} في قائمة المستنفدة المؤقتة`);
+          console.log(`⚠️ [FIND-MODEL] النموذج ${modelRecord.model} في قائمة المستنفدة المؤقتة - يتم تخطيه`);
           continue;
         }
 
-        const usage = JSON.parse(modelRecord.usage);
-        const currentUsage = usage.used || 0;
-        const maxRequests = usage.limit || 1000000;
+        let usage;
+        try {
+          usage = JSON.parse(modelRecord.usage || '{}');
+        } catch (e) {
+          console.warn(`⚠️ خطأ في تحليل JSON للنموذج ${modelRecord.id}:`, e.message);
+          continue;
+        }
 
-        //console.log(`🔍 فحص ${modelRecord.model}: ${currentUsage}/${maxRequests}`);
+        // التحقق من RPM (Requests Per Minute) - فقط إذا كان limit > 0
+        if (usage.rpm && usage.rpm.limit > 0 && this.isRateLimitExceeded(usage.rpm, 'minute')) {
+          console.log(`⚠️ [FIND-MODEL] النموذج ${modelRecord.model} تجاوز RPM (${usage.rpm.used}/${usage.rpm.limit})`);
+          continue;
+        }
+
+        // التحقق من RPH (Requests Per Hour) - فقط إذا كان limit > 0
+        if (usage.rph && usage.rph.limit > 0 && this.isRateLimitExceeded(usage.rph, 'hour')) {
+          console.log(`⚠️ [FIND-MODEL] النموذج ${modelRecord.model} تجاوز RPH (${usage.rph.used}/${usage.rph.limit})`);
+          continue;
+        }
+
+        // التحقق من RPD (Requests Per Day) - فقط إذا كان limit > 0
+        if (usage.rpd && usage.rpd.limit > 0 && this.isRateLimitExceeded(usage.rpd, 'day')) {
+          console.log(`⚠️ [FIND-MODEL] النموذج ${modelRecord.model} تجاوز RPD (${usage.rpd.used}/${usage.rpd.limit})`);
+          continue;
+        }
 
         // فحص إضافي: إذا كان النموذج يبدو متاحاً لكن تم تحديثه مؤخراً كمستنفد
         if (forceRefresh && usage.exhaustedAt) {
@@ -5440,17 +5601,49 @@ ${conversationContext}
           }
         }
 
-        if (currentUsage < maxRequests) {
-          //console.log(`✅ نموذج متاح: ${modelRecord.model}`);
-          return modelRecord;
-        } else {
-          //console.log(`⚠️ النموذج ${modelRecord.model} تجاوز الحد`);
+        // التحقق من الحد العام (للتوافق العكسي)
+        const currentUsage = usage.used || 0;
+        const maxRequests = usage.limit || 1000000;
+        if (currentUsage >= maxRequests) {
+          console.log(`⚠️ [FIND-MODEL] النموذج ${modelRecord.model} تجاوز الحد العام (${currentUsage}/${maxRequests})`);
+          continue;
         }
+
+        console.log(`✅ [FIND-MODEL] نموذج متاح: ${modelRecord.model} (Key: ${keyId})`);
+        return modelRecord;
       }
 
+      console.log(`❌ [FIND-MODEL] لم يتم العثور على نموذج متاح في المفتاح: ${keyId}`);
       return null;
     } catch (error) {
-      console.error('❌ خطأ في البحث عن نموذج متاح:', error);
+      console.error('❌ [FIND-MODEL] خطأ في البحث عن نموذج متاح:', error);
+      return null;
+    }
+  }
+
+  // البحث عن مفتاح مركزي نشط
+  async findActiveCentralKey() {
+    try {
+      //console.log('🔑 [CENTRAL] البحث عن مفتاح مركزي نشط...');
+
+      const centralKey = await this.prisma.geminiKey.findFirst({
+        where: {
+          keyType: 'CENTRAL',
+          companyId: null,
+          isActive: true
+        },
+        orderBy: { priority: 'asc' }
+      });
+
+      if (centralKey) {
+        console.log(`✅ [CENTRAL] تم العثور على مفتاح مركزي نشط: ${centralKey.name} (ID: ${centralKey.id})`);
+        return centralKey;
+      }
+
+      console.log('⚠️ [CENTRAL] لا يوجد مفتاح مركزي نشط');
+      return null;
+    } catch (error) {
+      console.error('❌ خطأ في البحث عن مفتاح مركزي:', error);
       return null;
     }
   }
@@ -5552,7 +5745,7 @@ ${conversationContext}
     }
   }
 
-  // تحديث عداد الاستخدام لنموذج معين
+  // تحديث عداد الاستخدام لنموذج معين مع دعم RPM, RPH, RPD
   async updateModelUsage(modelId) {
     try {
       // FIXED: Use Prisma ORM instead of raw SQL
@@ -5564,11 +5757,50 @@ ${conversationContext}
 
       if (modelRecord && modelRecord.length > 0) {
         const model = modelRecord[0];
-        const usage = JSON.parse(model.usage);
+        let usage;
+        try {
+          usage = JSON.parse(model.usage || '{}');
+        } catch (e) {
+          console.warn(`⚠️ خطأ في تحليل JSON للنموذج ${modelId}:`, e.message);
+          usage = { used: 0, limit: 1000000 };
+        }
+
+        const now = new Date();
+        
+        // تحديث RPM (Requests Per Minute)
+        const rpmWindowMs = 60 * 1000; // 1 دقيقة
+        let rpm = usage.rpm || { used: 0, limit: 15, windowStart: null };
+        if (!rpm.windowStart || (now - new Date(rpm.windowStart)) >= rpmWindowMs) {
+          rpm = { used: 1, limit: rpm.limit || 15, windowStart: now.toISOString() };
+        } else {
+          rpm.used = (rpm.used || 0) + 1;
+        }
+
+        // تحديث RPH (Requests Per Hour)
+        const rphWindowMs = 60 * 60 * 1000; // 1 ساعة
+        let rph = usage.rph || { used: 0, limit: 900, windowStart: null };
+        if (!rph.windowStart || (now - new Date(rph.windowStart)) >= rphWindowMs) {
+          rph = { used: 1, limit: rph.limit || 900, windowStart: now.toISOString() };
+        } else {
+          rph.used = (rph.used || 0) + 1;
+        }
+
+        // تحديث RPD (Requests Per Day)
+        const rpdWindowMs = 24 * 60 * 60 * 1000; // 1 يوم
+        let rpd = usage.rpd || { used: 0, limit: 1000, windowStart: null };
+        if (!rpd.windowStart || (now - new Date(rpd.windowStart)) >= rpdWindowMs) {
+          rpd = { used: 1, limit: rpd.limit || 1000, windowStart: now.toISOString() };
+        } else {
+          rpd.used = (rpd.used || 0) + 1;
+        }
+
         const newUsage = {
           ...usage,
           used: (usage.used || 0) + 1,
-          lastUpdated: new Date().toISOString()
+          lastUpdated: now.toISOString(),
+          rpm,
+          rph,
+          rpd
         };
 
         // FIXED: Use Prisma ORM instead of raw SQL
@@ -5578,12 +5810,12 @@ ${conversationContext}
           },
           data: {
             usage: JSON.stringify(newUsage),
-            lastUsed: new Date(),
-            updatedAt: new Date()
+            lastUsed: now,
+            updatedAt: now
           }
         });
 
-        //console.log(`📊 تم تحديث الاستخدام: ${model.model} (${newUsage.used}/${usage.limit})`);
+        //console.log(`📊 تم تحديث الاستخدام: ${model.model} (RPM: ${rpm.used}/${rpm.limit}, RPH: ${rph.used}/${rph.limit}, RPD: ${rpd.used}/${rpd.limit})`);
       }
     } catch (error) {
       console.error('❌ خطأ في تحديث عداد الاستخدام:', error);
@@ -5621,17 +5853,43 @@ ${conversationContext}
         return null;
       }
 
-      // الحصول على المفتاح النشط الحالي للشركة
-      const currentActiveKey = await this.prisma.geminiKey.findFirst({
-        where: {
-          isActive: true,
-          companyId: targetCompanyId
-        },
-        orderBy: { priority: 'asc' }
+      // التحقق من إعدادات الشركة
+      const company = await this.prisma.company.findUnique({
+        where: { id: targetCompanyId },
+        select: { useCentralKeys: true }
       });
 
+      const useCentralKeys = company?.useCentralKeys || false;
+
+      // الحصول على المفتاح النشط الحالي (شركة أو مركزي)
+      let currentActiveKey;
+      
+      if (useCentralKeys) {
+        // البحث في المفاتيح المركزية أولاً
+        currentActiveKey = await this.prisma.geminiKey.findFirst({
+          where: {
+            isActive: true,
+            keyType: 'CENTRAL',
+            companyId: null
+          },
+          orderBy: { priority: 'asc' }
+        });
+      }
+      
+      if (!currentActiveKey) {
+        // البحث في مفاتيح الشركة
+        currentActiveKey = await this.prisma.geminiKey.findFirst({
+          where: {
+            isActive: true,
+            companyId: targetCompanyId,
+            keyType: 'COMPANY'
+          },
+          orderBy: { priority: 'asc' }
+        });
+      }
+
       if (currentActiveKey) {
-        //console.log(`🔍 المفتاح النشط الحالي للشركة ${targetCompanyId}: ${currentActiveKey.name}`);
+        //console.log(`🔍 المفتاح النشط الحالي: ${currentActiveKey.name}`);
 
         // أولاً: البحث عن نموذج آخر في نفس المفتاح
         const nextModelInSameKey = await this.findNextModelInKey(currentActiveKey.id);
@@ -5647,8 +5905,8 @@ ${conversationContext}
         }
       }
 
-      // ثانياً: البحث في مفاتيح أخرى للشركة
-      //console.log('🔄 البحث في مفاتيح أخرى للشركة...');
+      // ثانياً: البحث في مفاتيح أخرى
+      //console.log('🔄 البحث في مفاتيح أخرى...');
       const nextKeyWithModel = await this.findNextAvailableKey(targetCompanyId);
       
       if (nextKeyWithModel) {
@@ -5664,6 +5922,23 @@ ${conversationContext}
           keyName: nextKeyWithModel.keyName,
           switchType: 'different_key'
         };
+      }
+
+      // ثالثاً: Fallback إلى المفاتيح المركزية إذا لم تكن مستخدمة
+      if (!useCentralKeys) {
+        const centralKey = await this.findActiveCentralKey();
+        if (centralKey) {
+          const nextModelInCentral = await this.findNextModelInKey(centralKey.id);
+          if (nextModelInCentral) {
+            return {
+              apiKey: centralKey.apiKey,
+              model: nextModelInCentral.model,
+              keyId: centralKey.id,
+              keyName: centralKey.name,
+              switchType: 'central_key_fallback'
+            };
+          }
+        }
       }
 
       //console.log('❌ لا توجد نماذج متاحة في أي مفتاح');
@@ -5775,9 +6050,44 @@ ${conversationContext}
 
       //console.log(`🏢 البحث عن مفاتيح بديلة للشركة: ${targetCompanyId}`);
 
+      // التحقق من إعدادات الشركة
+      const company = await this.prisma.company.findUnique({
+        where: { id: targetCompanyId },
+        select: { useCentralKeys: true }
+      });
+
+      const useCentralKeys = company?.useCentralKeys || false;
+
+      // إذا كانت الشركة تستخدم المفاتيح المركزية، ابحث فيها أولاً
+      if (useCentralKeys) {
+        const centralKeys = await this.prisma.geminiKey.findMany({
+          where: {
+            keyType: 'CENTRAL',
+            companyId: null
+          },
+          orderBy: { priority: 'asc' }
+        });
+
+        for (const key of centralKeys) {
+          const availableModel = await this.findBestModelInKey(key.id);
+          if (availableModel) {
+            return {
+              keyId: key.id,
+              keyName: key.name,
+              apiKey: key.apiKey,
+              model: availableModel.model,
+              modelId: availableModel.id
+            };
+          }
+        }
+      }
+
       // الحصول على مفاتيح الشركة المحددة مرتبة حسب الأولوية
       const allKeys = await this.prisma.geminiKey.findMany({
-        where: { companyId: targetCompanyId },
+        where: {
+          companyId: targetCompanyId,
+          keyType: 'COMPANY'
+        },
         orderBy: { priority: 'asc' }
       });
 
@@ -5797,6 +6107,30 @@ ${conversationContext}
             model: availableModel.model,
             modelId: availableModel.id
           };
+        }
+      }
+
+      // Fallback: إذا لم توجد مفاتيح شركة، جرب المفاتيح المركزية
+      if (!useCentralKeys) {
+        const centralKeys = await this.prisma.geminiKey.findMany({
+          where: {
+            keyType: 'CENTRAL',
+            companyId: null
+          },
+          orderBy: { priority: 'asc' }
+        });
+
+        for (const key of centralKeys) {
+          const availableModel = await this.findBestModelInKey(key.id);
+          if (availableModel) {
+            return {
+              keyId: key.id,
+              keyName: key.name,
+              apiKey: key.apiKey,
+              model: availableModel.model,
+              modelId: availableModel.id
+            };
+          }
         }
       }
 
@@ -5850,34 +6184,112 @@ ${conversationContext}
   // البحث عن أول مفتاح متاح وتفعيله تلقائياً
   async findAndActivateFirstAvailableKey(companyId) {
     try {
-      //console.log(`🔍 البحث عن أول مفتاح متاح للتفعيل التلقائي للشركة: ${companyId}`);
+      console.log(`🔍 [AUTO-ACTIVATE] البحث عن أول مفتاح متاح للتفعيل التلقائي للشركة: ${companyId}`);
+
+      // التحقق من إعدادات الشركة
+      const company = await this.prisma.company.findUnique({
+        where: { id: companyId },
+        select: { useCentralKeys: true }
+      });
+
+      const useCentralKeys = company?.useCentralKeys || false;
+      console.log(`📋 [AUTO-ACTIVATE] الشركة useCentralKeys: ${useCentralKeys}`);
+
+      // إذا كانت الشركة تستخدم المفاتيح المركزية، ابحث فيها أولاً
+      if (useCentralKeys) {
+        console.log('🔍 [AUTO-ACTIVATE] البحث في المفاتيح المركزية...');
+        const centralKeys = await this.prisma.geminiKey.findMany({
+          where: {
+            keyType: 'CENTRAL',
+            companyId: null,
+            isActive: true
+          },
+          orderBy: { priority: 'asc' }
+        });
+
+        console.log(`📋 [AUTO-ACTIVATE] تم العثور على ${centralKeys.length} مفتاح مركزي نشط`);
+
+        for (const key of centralKeys) {
+          const availableModel = await this.findBestModelInKey(key.id);
+          if (availableModel) {
+            console.log(`✅ [AUTO-ACTIVATE] تم العثور على نموذج متاح في المفتاح المركزي: ${key.name}`);
+            await this.activateKey(key.id);
+            const keyRecord = await this.prisma.geminiKey.findUnique({ where: { id: key.id } });
+            return {
+              apiKey: keyRecord.apiKey,
+              model: availableModel.model,
+              keyId: key.id,
+              modelId: availableModel.id,
+              keyName: keyRecord.name
+            };
+          }
+        }
+      }
 
       // البحث عن جميع مفاتيح الشركة
+      console.log(`🔍 [AUTO-ACTIVATE] البحث عن مفاتيح الشركة...`);
       const allKeys = await this.prisma.geminiKey.findMany({
-        where: { companyId: companyId },
+        where: {
+          companyId: companyId,
+          keyType: 'COMPANY'
+        },
         orderBy: { priority: 'asc' }
       });
 
-      if (allKeys.length === 0) {
-        //console.log(`❌ لا توجد مفاتيح مُضافة للشركة: ${companyId}`);
+      console.log(`📋 [AUTO-ACTIVATE] تم العثور على ${allKeys.length} مفتاح شركة`);
+
+      if (allKeys.length === 0 && !useCentralKeys) {
+        console.log(`⚠️ [AUTO-ACTIVATE] لا توجد مفاتيح شركة، جرب المفاتيح المركزية كبديل...`);
+        // Fallback: جرب المفاتيح المركزية - استخدم findBestAvailableModelInActiveKey (أسرع ولا يختبر الصحة)
+        const centralKeys = await this.prisma.geminiKey.findMany({
+          where: {
+            keyType: 'CENTRAL',
+            companyId: null,
+            isActive: true
+          },
+          orderBy: { priority: 'asc' }
+        });
+
+        console.log(`📋 [AUTO-ACTIVATE] تم العثور على ${centralKeys.length} مفتاح مركزي نشط للـ fallback`);
+
+        for (const key of centralKeys) {
+          // استخدم findBestAvailableModelInActiveKey بدلاً من findBestModelInKey (أسرع ولا يختبر الصحة)
+          const availableModel = await this.findBestAvailableModelInActiveKey(key.id);
+          if (availableModel) {
+            console.log(`✅ [AUTO-ACTIVATE] تم العثور على نموذج متاح في المفتاح المركزي (fallback): ${key.name} - ${availableModel.model}`);
+            // لا نحتاج لتفعيل المفاتيح المركزية - فهي مشتركة
+            return {
+              apiKey: key.apiKey,
+              model: availableModel.model,
+              keyId: key.id,
+              modelId: availableModel.id,
+              keyName: key.name,
+              keyType: 'CENTRAL'
+            };
+          } else {
+            console.log(`⚠️ [AUTO-ACTIVATE] لا توجد نماذج متاحة في المفتاح المركزي: ${key.name}`);
+          }
+        }
+        console.log(`❌ [AUTO-ACTIVATE] لم يتم العثور على نماذج متاحة في المفاتيح المركزية`);
         return null;
       }
 
-      //console.log(`📋 فحص ${allKeys.length} مفتاح للتفعيل التلقائي...`);
+      console.log(`📋 [AUTO-ACTIVATE] فحص ${allKeys.length} مفتاح شركة للتفعيل التلقائي...`);
 
       // البحث عن أول مفتاح يحتوي على نماذج متاحة
       for (const key of allKeys) {
-        //console.log(`🔍 فحص المفتاح: ${key.name}`);
+        console.log(`🔍 [AUTO-ACTIVATE] فحص المفتاح: ${key.name} (Active: ${key.isActive})`);
 
         // البحث عن نموذج متاح في هذا المفتاح
         const availableModel = await this.findBestModelInKey(key.id);
 
         if (availableModel) {
-          //console.log(`✅ تم العثور على نموذج متاح في المفتاح: ${key.name} - ${availableModel.model}`);
+          console.log(`✅ [AUTO-ACTIVATE] تم العثور على نموذج متاح في المفتاح: ${key.name} - ${availableModel.model}`);
 
           // تفعيل هذا المفتاح
           const activated = await this.activateKey(key.id);
           if (activated) {
+            console.log(`✅ [AUTO-ACTIVATE] تم تفعيل المفتاح: ${key.name}`);
             return {
               apiKey: key.apiKey,
               model: availableModel.model,
@@ -5887,10 +6299,12 @@ ${conversationContext}
               autoActivated: true
             };
           }
+        } else {
+          console.log(`⚠️ [AUTO-ACTIVATE] لا توجد نماذج متاحة في المفتاح: ${key.name}`);
         }
       }
 
-      //console.log(`❌ لا توجد مفاتيح تحتوي على نماذج متاحة للشركة: ${companyId}`);
+      console.log(`❌ [AUTO-ACTIVATE] لا توجد مفاتيح تحتوي على نماذج متاحة للشركة: ${companyId}`);
       return null;
 
     } catch (error) {

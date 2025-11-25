@@ -59,7 +59,7 @@ const CONSTANTS = {
     EXCLUDE_WORDS: ['صور', 'كل', 'جميع']
   },
   AI_CONFIG: {
-    MODEL: 'gemini-2.0-flash-exp',
+    MODEL: 'gemini-2.5-flash',
     TEMPERATURE: 0.1,
     MAX_TOKENS: 200
   }

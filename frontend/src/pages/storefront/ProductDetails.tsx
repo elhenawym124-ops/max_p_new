@@ -30,6 +30,7 @@ import SecurityBadges from '../../components/storefront/SecurityBadges';
 import ReasonsToPurchase from '../../components/storefront/ReasonsToPurchase';
 import OnlineVisitorsCount from '../../components/storefront/OnlineVisitorsCount';
 import VariantSelector from '../../components/storefront/VariantSelector';
+import CompositeVariantSelector from '../../components/storefront/CompositeVariantSelector';
 import EstimatedDeliveryTime from '../../components/storefront/EstimatedDeliveryTime';
 import PreOrderButton from '../../components/storefront/PreOrderButton';
 import FOMOPopup from '../../components/storefront/FOMOPopup';
@@ -53,6 +54,10 @@ interface Product {
   createdAt?: string;
   isFeatured?: boolean;
   specifications?: string;
+  trackInventory?: boolean; // 📦 تتبع المخزون
+  isPreOrder?: boolean; // 📦 الطلب المسبق
+  preOrderDate?: string; // 📅 تاريخ توفر المنتج
+  preOrderMessage?: string; // 💬 رسالة الطلب المسبق
   category?: {
     id: string;
     name: string;
@@ -64,6 +69,7 @@ interface Product {
     price?: number;
     stock: number;
     images: string[];
+    trackInventory?: boolean;
   }>;
 }
 
@@ -450,6 +456,39 @@ const ProductDetails: React.FC = () => {
     ? product.variants?.find(v => v.id === selectedVariant)?.stock || 0
     : product.stock;
 
+  // التحقق من تتبع المخزون للمتغير أو المنتج
+  const selectedVariantData = selectedVariant 
+    ? product.variants?.find(v => v.id === selectedVariant)
+    : null;
+  
+  // حساب التوفر بناءً على المتغيرات أو المنتج
+  const hasVariants = product.variants && product.variants.length > 0;
+  
+  // إذا كان هناك متغيرات ولم يتم اختيار أي منها، نتحقق من توفر أي متغير
+  const anyVariantAvailable = hasVariants 
+    ? product.variants!.some(v => 
+        v.trackInventory === false || // لا يتتبع المخزون = متوفر دائماً
+        v.stock > 0 // أو لديه مخزون
+      )
+    : false;
+  
+  const currentTrackInventory = selectedVariantData 
+    ? selectedVariantData.trackInventory !== false
+    : hasVariants 
+      ? true // إذا كان هناك متغيرات، نحتاج اختيار واحد
+      : product.trackInventory !== false;
+
+  // هل المنتج متاح للشراء؟
+  // إذا لم يتم اختيار متغير وهناك متغيرات، نتحقق من توفر أي متغير
+  const isAvailableForPurchase = selectedVariant
+    ? (!currentTrackInventory || currentStock > 0 || product.isPreOrder)
+    : hasVariants
+      ? anyVariantAvailable || product.isPreOrder
+      : (!currentTrackInventory || currentStock > 0 || product.isPreOrder);
+  
+  // هل يجب اختيار متغير قبل الشراء؟
+  const needsVariantSelection = hasVariants && !selectedVariant;
+
   return (
     <>
       <StorefrontNav />
@@ -637,9 +676,37 @@ const ProductDetails: React.FC = () => {
           {/* Stock Status & Progress Bar */}
           {(!storefrontSettings?.productPageLayoutEnabled || storefrontSettings?.productPageShowStockStatus !== false) && (
           <div className="mb-4 space-y-2">
-            {currentStock > 0 ? (
+            {/* إذا كان هناك متغيرات ولم يتم اختيار أي منها */}
+            {needsVariantSelection ? (
+              anyVariantAvailable ? (
+                <p className="text-blue-600 font-medium">
+                  ℹ️ اختر اللون والمقاس لمعرفة التوفر
+                </p>
+              ) : product.isPreOrder ? (
+                <p className="text-blue-600 font-medium">
+                  📦 متاح للطلب المسبق - اختر اللون والمقاس
+                </p>
+              ) : (
+                <p className="text-red-600 font-medium">
+                  ✗ غير متوفر حالياً
+                </p>
+              )
+            ) : currentStock > 0 ? (
               <p className="text-green-600 font-medium">
-                ✓ متوفر في المخزون ({currentStock} قطعة)
+                ✓ متوفر في المخزون {currentTrackInventory && `(${currentStock} قطعة)`}
+              </p>
+            ) : !currentTrackInventory ? (
+              <p className="text-green-600 font-medium">
+                ✓ متوفر
+              </p>
+            ) : product.isPreOrder ? (
+              <p className="text-blue-600 font-medium">
+                📦 متاح للطلب المسبق
+                {product.preOrderDate && (
+                  <span className="text-sm text-gray-500 mr-2">
+                    - متوقع التوفر: {new Date(product.preOrderDate).toLocaleDateString('ar-EG')}
+                  </span>
+                )}
               </p>
             ) : (
               <p className="text-red-600 font-medium">
@@ -805,6 +872,24 @@ const ProductDetails: React.FC = () => {
             const sizeVariants = product.variants.filter(v => v.type === 'size');
             const otherVariants = product.variants.filter(v => v.type !== 'color' && v.type !== 'size');
 
+            // إذا كانت كل المتغيرات في otherVariants ولها أسماء مركبة (مثل "أسود - XL")
+            const hasCompositeVariants = otherVariants.length > 0 && 
+              colorVariants.length === 0 && 
+              sizeVariants.length === 0 &&
+              otherVariants.some(v => v.name.includes(' - '));
+
+            if (hasCompositeVariants) {
+              return (
+                <div className="mb-6">
+                  <CompositeVariantSelector
+                    variants={otherVariants}
+                    onSelect={setSelectedVariant}
+                    selectedVariantId={selectedVariant}
+                  />
+                </div>
+              );
+            }
+
             return (
               <div className="mb-6 space-y-4">
                 {/* Color Variants */}
@@ -850,7 +935,7 @@ const ProductDetails: React.FC = () => {
                 )}
 
                 {/* Other Variants */}
-                {otherVariants.length > 0 && (
+                {otherVariants.length > 0 && !hasCompositeVariants && (
                   <div>
                     <h3 className="font-semibold text-gray-900 mb-3">الخيارات المتاحة:</h3>
                     <VariantSelector
@@ -1013,11 +1098,11 @@ const ProductDetails: React.FC = () => {
             <div className="flex gap-3 mb-6">
               <button
                 onClick={addToCart}
-                disabled={currentStock === 0}
+                disabled={!isAvailableForPurchase || needsVariantSelection}
                 className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
               >
                 <ShoppingCartIcon className="h-5 w-5" />
-                <span>أضف للسلة</span>
+                <span>{needsVariantSelection ? 'اختر اللون والمقاس أولاً' : 'أضف للسلة'}</span>
               </button>
               {storefrontSettings?.comparisonEnabled && (
                 <button
@@ -1221,10 +1306,10 @@ const ProductDetails: React.FC = () => {
                 {/* Submit Button */}
                 <button
                   type="submit"
-                  disabled={submitting || currentStock === 0}
+                  disabled={submitting || !isAvailableForPurchase || needsVariantSelection}
                   className="w-full px-6 py-4 bg-black text-white rounded-md font-medium hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-lg"
                 >
-                  {submitting ? 'جاري إنشاء الطلب...' : 'اضغط هنا للشراء'}
+                  {submitting ? 'جاري إنشاء الطلب...' : needsVariantSelection ? 'اختر اللون والمقاس أولاً' : 'اضغط هنا للشراء'}
                 </button>
               </form>
             </div>

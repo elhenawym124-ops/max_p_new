@@ -8,13 +8,31 @@ const prisma = new PrismaClient();
 
 /**
  * Get all store pages for a company
+ * Supports both companyId and slug
  */
 const getAllPages = async (req, res) => {
   try {
     const { companyId } = req.params;
     const { includeInactive } = req.query;
 
-    const whereClause = { companyId };
+    // Determine if companyId is actually a slug or an ID
+    let actualCompanyId = companyId;
+    
+    // Check if it looks like a slug (contains hyphens or is shorter than typical CUID)
+    const looksLikeSlug = companyId.includes('-') || companyId.length < 20;
+    
+    if (looksLikeSlug) {
+      const company = await prisma.company.findUnique({
+        where: { slug: companyId },
+        select: { id: true }
+      });
+      
+      if (company) {
+        actualCompanyId = company.id;
+      }
+    }
+
+    const whereClause = { companyId: actualCompanyId };
     if (!includeInactive || includeInactive === 'false') {
       whereClause.isActive = true;
     }
@@ -78,15 +96,33 @@ const getPageById = async (req, res) => {
 
 /**
  * Get a page by slug (for public access)
+ * Supports both companyId and slug
  */
 const getPageBySlug = async (req, res) => {
   try {
     const { companyId, slug } = req.params;
 
+    // Determine if companyId is actually a slug or an ID
+    let actualCompanyId = companyId;
+    
+    // Check if it looks like a slug (contains hyphens or is shorter than typical CUID)
+    const looksLikeSlug = companyId.includes('-') || companyId.length < 20;
+    
+    if (looksLikeSlug) {
+      const company = await prisma.company.findUnique({
+        where: { slug: companyId },
+        select: { id: true }
+      });
+      
+      if (company) {
+        actualCompanyId = company.id;
+      }
+    }
+
     const page = await prisma.storePage.findFirst({
       where: {
         slug,
-        companyId,
+        companyId: actualCompanyId,
         isActive: true
       }
     });

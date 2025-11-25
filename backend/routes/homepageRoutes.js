@@ -37,6 +37,11 @@ router.delete('/templates/:id', requireAuth, homepageController.deleteHomepageTe
 // ============ Public Routes (for storefront) ============
 
 // Get public active homepage by company ID
-router.get('/public/:companyId', homepageController.getPublicActiveHomepage);
+router.get('/public/:companyId', (req, res, next) => {
+  console.log('🔍 [HOMEPAGE-ROUTE] Route matched: /public/:companyId');
+  console.log('🔍 [HOMEPAGE-ROUTE] Params:', req.params);
+  console.log('🔍 [HOMEPAGE-ROUTE] CompanyId:', req.params.companyId);
+  next();
+}, homepageController.getPublicActiveHomepage);
 
 module.exports = router;

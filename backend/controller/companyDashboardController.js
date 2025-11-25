@@ -149,6 +149,7 @@ const companySettings = async (req, res) => {
                 currency: true,
                 isActive: true,
                 settings: true,
+                useCentralKeys: true,
                 createdAt: true
             }
         });
@@ -202,7 +203,8 @@ const updateCompanySettings = async (req, res) => {
                 ...(phone !== undefined && { phone }),
                 ...(website !== undefined && { website }),
                 ...(address !== undefined && { address }),
-                ...(settings && { settings: JSON.stringify(settings) })
+                ...(settings && { settings: JSON.stringify(settings) }),
+                ...(req.body.useCentralKeys !== undefined && { useCentralKeys: req.body.useCentralKeys })
             },
             select: {
                 id: true,
@@ -350,11 +352,57 @@ const checkMultipleLimits = async (req, res) => {
     }
 }
 
+// Update AI Keys setting (useCentralKeys)
+const updateAIKeysSetting = async (req, res) => {
+    try {
+        const companyId = req.user.companyId;
+        const { useCentralKeys } = req.body;
+
+        if (typeof useCentralKeys !== 'boolean') {
+            return res.status(400).json({
+                success: false,
+                message: 'قيمة useCentralKeys يجب أن تكون true أو false'
+            });
+        }
+
+        const updatedCompany = await prisma.company.update({
+            where: { id: companyId },
+            data: { useCentralKeys },
+            select: {
+                id: true,
+                name: true,
+                useCentralKeys: true
+            }
+        });
+
+        res.json({
+            success: true,
+            message: useCentralKeys 
+                ? 'تم تفعيل استخدام المفاتيح المركزية' 
+                : 'تم إلغاء تفعيل استخدام المفاتيح المركزية',
+            data: {
+                companyId: updatedCompany.id,
+                companyName: updatedCompany.name,
+                useCentralKeys: updatedCompany.useCentralKeys
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Error updating AI keys setting:', error);
+        res.status(500).json({
+            success: false,
+            message: 'فشل في تحديث إعداد المفاتيح',
+            error: error.message
+        });
+    }
+}
+
 module.exports = {
     companyDashboardOverview,
     companySettings,
     updateCompanySettings , 
-    checkPlanLimits ,
+    checkPlanLimits , 
     checkMultipleLimits , 
-    checkSpecificLimit
+    checkSpecificLimit,
+    updateAIKeysSetting
 }

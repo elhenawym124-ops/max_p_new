@@ -590,6 +590,20 @@ const createProduct = async(req , res)=>{
 
     //console.log('📦 Creating product for company:', companyId);
 
+    // معالجة الفئة - التحقق من وجودها
+    let categoryId = null;
+    if (category && category.trim() !== '') {
+      const categoryExists = await prisma.category.findFirst({
+        where: { 
+          id: category,
+          companyId 
+        }
+      });
+      if (categoryExists) {
+        categoryId = category;
+      }
+    }
+
     const product = await prisma.product.create({
       data: {
         name,
@@ -599,17 +613,24 @@ const createProduct = async(req , res)=>{
         stock: parseInt(stock) || 0,
         trackInventory: req.body.trackInventory !== undefined ? req.body.trackInventory : true,
         hasPromotedAd: hasPromotedAd !== undefined ? Boolean(hasPromotedAd) : false,
-        companyId, // استخدام companyId من المستخدم المصادق عليه
+        companyId, // 
+        categoryId, // 
         images: images ? JSON.stringify(images) : null,
         tags: tags ? JSON.stringify(tags) : null,
         enableCheckoutForm: req.body.enableCheckoutForm !== undefined ? Boolean(req.body.enableCheckoutForm) : true,
         showAddToCartButton: req.body.showAddToCartButton !== undefined ? Boolean(req.body.showAddToCartButton) : true,
         saleStartDate: req.body.saleStartDate ? new Date(req.body.saleStartDate) : null,
-        saleEndDate: req.body.saleEndDate ? new Date(req.body.saleEndDate) : null
+        saleEndDate: req.body.saleEndDate ? new Date(req.body.saleEndDate) : null,
+        comparePrice: req.body.comparePrice ? parseFloat(req.body.comparePrice) : null,
+        cost: req.body.cost ? parseFloat(req.body.cost) : null,
+        isActive: req.body.isActive !== undefined ? Boolean(req.body.isActive) : true,
+        isFeatured: req.body.isFeatured !== undefined ? Boolean(req.body.isFeatured) : false,
+        weight: req.body.weight ? parseFloat(req.body.weight) : null,
+        dimensions: req.body.dimensions ? JSON.stringify(req.body.dimensions) : null
       }
     });
 
-    //console.log('✅ [server] Product created successfully:', product.name);
+    //console.log(' [server] Product created successfully:', product.name);
     res.json({
       success: true,
       data: product,

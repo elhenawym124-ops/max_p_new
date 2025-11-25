@@ -236,32 +236,35 @@ const AIManagement: React.FC = () => {
   });
 
   const [availableModels, setAvailableModels] = useState([
-    // أحدث نماذج Gemini 2025
-    'gemini-2.5-pro',                              // الأقوى - للمهام المعقدة
-    'gemini-2.5-flash',                            // الأفضل سعر/أداء
-    'gemini-2.5-flash-lite',                       // الأسرع والأوفر
-    'gemini-2.5-flash-preview-native-audio-dialog', // صوت تفاعلي
-    'gemini-2.5-flash-exp-native-audio-thinking-dialog', // صوت مع تفكير
-    'gemini-2.5-flash-preview-tts',                // تحويل نص لصوت
-    'gemini-2.5-pro-preview-tts',                  // تحويل نص لصوت متقدم
+    // 🆕 أحدث نماذج Gemini 2025
+    'gemini-3-pro',                              // أحدث Pro - الأقوى
+    'gemini-2.5-pro',                            // الأقوى - للمهام المعقدة
+    'gemini-2.5-flash',                          // الأفضل سعر/أداء
+    'gemini-2.5-flash-lite',                     // الأسرع والأوفر
+    'gemini-2.5-flash-tts',                      // تحويل نص لصوت
 
     // نماذج Gemini 2.0
-    'gemini-2.0-flash',                            // الجيل الثاني
-    'gemini-2.0-flash-lite',                       // نسخة خفيفة
-    'gemini-2.0-flash-preview-image-generation',   // توليد صور
-    'gemini-2.0-flash-live-001',                   // تفاعل مباشر
-
-    // نماذج Gemini 1.5 (قديمة لكن مستقرة)
-    'gemini-1.5-pro',                              // مستقر للمهام المعقدة
-    'gemini-1.5-flash',                            // مستقر سريع
-    'gemini-1.5-flash-8b',                         // خفيف للمهام البسيطة
+    'gemini-2.0-flash',                          // الجيل الثاني
+    'gemini-2.0-flash-lite',                     // نسخة خفيفة
 
     // نماذج Live API
-    'gemini-live-2.5-flash-preview',               // تفاعل مباشر 2.5
+    'gemini-2.5-flash-live',                     // تفاعل مباشر 2.5
+    'gemini-2.0-flash-live',                     // تفاعل مباشر 2.0
+    'gemini-2.5-flash-native-audio-dialog',      // صوت تفاعلي
 
-    // نماذج التضمين
-    'gemini-embedding-001',                        // للبحث والتشابه
-    'text-embedding-004'                           // قديم لكن مستقر
+    // نماذج Gemini 1.5 (مستقرة)
+    'gemini-1.5-pro',                            // مستقر للمهام المعقدة
+    'gemini-1.5-flash',                          // مستقر سريع
+
+    // نماذج متخصصة
+    'gemini-robotics-er-1.5-preview',            // للروبوتات
+    'learnlm-2.0-flash-experimental',            // للتعلّم
+
+    // نماذج Gemma
+    'gemma-3-12b',                               // Gemma متوسط
+    'gemma-3-27b',                               // Gemma كبير
+    'gemma-3-4b',                                // Gemma صغير
+    'gemma-3-2b'                                 // Gemma صغير جداً
   ]);
 
   const [stats, setStats] = useState<AIStats>({
@@ -1535,37 +1538,44 @@ const AIManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="-mb-px flex space-x-8 overflow-x-auto">
-          {[
-            { id: 'ai-settings', name: '🤖 شخصية المساعد', icon: BoltIcon },
-            { id: 'advanced-ai', name: '⚡ إعدادات AI متقدمة', icon: BoltIcon },
-            { id: 'gemini', name: '🔑 مفاتيح Gemini', icon: CogIcon },
-            { id: 'prompts', name: '💬 البرومبت المتقدم', icon: BoltIcon },
-            { id: 'priority', name: '🎯 أولوية النظام', icon: CogIcon },
-            { id: 'memory', name: '🧠 إدارة الذاكرة', icon: ChartBarIcon },
-            { id: 'queue-settings', name: '⏱️ إعدادات الطوابير', icon: ClockIcon },
-            { id: 'settings', name: '⚙️ الإعدادات', icon: CogIcon },
-            { id: 'analytics', name: '📊 التحليلات', icon: ChartBarIcon },
-            { id: 'knowledge', name: '📚 قاعدة المعرفة', icon: BoltIcon }
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center py-2 px-3 border-b-2 font-medium text-sm whitespace-nowrap ${
-                activeTab === tab.id
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              {tab.name}
-            </button>
-          ))}
-        </nav>
-      </div>
+      {/* Sidebar Navigation and Content */}
+      <div className="flex flex-col lg:flex-row gap-6">
+        {/* Sidebar Navigation */}
+        <div className="w-full lg:w-64 flex-shrink-0">
+          <nav className="bg-white rounded-lg shadow p-2 space-y-1">
+            {[
+              { id: 'ai-settings', name: '🤖 شخصية المساعد', icon: BoltIcon },
+              { id: 'advanced-ai', name: '⚡ إعدادات AI متقدمة', icon: BoltIcon },
+              { id: 'gemini', name: '🔑 مفاتيح Gemini', icon: CogIcon },
+              { id: 'prompts', name: '💬 البرومبت المتقدم', icon: BoltIcon },
+              { id: 'priority', name: '🎯 أولوية النظام', icon: CogIcon },
+              { id: 'memory', name: '🧠 إدارة الذاكرة', icon: ChartBarIcon },
+              { id: 'queue-settings', name: '⏱️ إعدادات الطوابير', icon: ClockIcon },
+              { id: 'settings', name: '⚙️ الإعدادات', icon: CogIcon },
+              { id: 'analytics', name: '📊 التحليلات', icon: ChartBarIcon },
+              { id: 'knowledge', name: '📚 قاعدة المعرفة', icon: BoltIcon }
+            ].map((tab) => {
+              const IconComponent = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`w-full flex items-center py-3 px-4 rounded-lg font-medium text-sm transition-colors ${
+                    activeTab === tab.id
+                      ? 'bg-blue-50 text-blue-600 border-r-4 border-blue-600'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  <IconComponent className="h-5 w-5 ml-3 flex-shrink-0" />
+                  <span className="text-right flex-1">{tab.name}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
 
-      {/* Tab Content */}
+        {/* Tab Content */}
+        <div className="flex-1 min-w-0">
       {activeTab === 'ai-settings' && (
         <div className="bg-white rounded-lg shadow">
           <div className="px-6 py-4 border-b border-gray-200">
@@ -3395,6 +3405,8 @@ const AIManagement: React.FC = () => {
           </div>
         </div>
       )}
+        </div>
+      </div>
 
       {/* Add New Gemini Key Modal */}
       {showAddGeminiKeyModal && (

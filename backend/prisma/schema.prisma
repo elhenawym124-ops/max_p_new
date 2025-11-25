@@ -23,6 +23,7 @@ model Company {
   planConfigurationId    String?
   isActive               Boolean                 @default(true)
   settings               String?                 @db.Text
+  useCentralKeys         Boolean                 @default(false) // 🔑 استخدام المفاتيح المركزية بدلاً من المفاتيح الخاصة
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
   aiInteractions         AiInteraction[]
@@ -880,14 +881,16 @@ model GeminiKey {
   maxRequestsPerDay Int              @default(1500)
   priority          Int              @default(1)
   description       String?
-  companyId         String // 🏢 إضافة العزل بين الشركات
-  company           Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId         String? // 🏢 إضافة العزل بين الشركات - الآن nullable لدعم المفاتيح المركزية
+  keyType           GeminiKeyType    @default(COMPANY) // 🔑 نوع المفتاح: COMPANY أو CENTRAL
+  company           Company?         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
   models            GeminiKeyModel[]
 
   @@index([isActive, priority])
   @@index([companyId, isActive])
+  @@index([keyType, isActive])
   @@map("gemini_keys")
 }
 
@@ -895,7 +898,7 @@ model GeminiKeyModel {
   id        String    @id @default(cuid())
   keyId     String
   model     String
-  usage     String    @default("{\"used\": 0, \"limit\": 1000000, \"resetDate\": null}")
+  usage     String    @db.Text @default("{\"used\": 0, \"limit\": 1000000, \"resetDate\": null, \"rpm\": {\"used\": 0, \"limit\": 0, \"windowStart\": null}, \"rph\": {\"used\": 0, \"limit\": 0, \"windowStart\": null}, \"rpd\": {\"used\": 0, \"limit\": 0, \"windowStart\": null}}")
   isEnabled Boolean   @default(true)
   priority  Int       @default(1)
   lastUsed  DateTime?
@@ -1265,6 +1268,11 @@ enum SubscriptionStatus {
   EXPIRED
   TRIAL
   SUSPENDED
+}
+
+enum GeminiKeyType {
+  COMPANY
+  CENTRAL
 }
 
 enum InvoiceStatus {

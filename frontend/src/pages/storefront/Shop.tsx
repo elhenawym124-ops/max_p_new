@@ -33,7 +33,10 @@ interface Product {
 interface Category {
   id: string;
   name: string;
-  productsCount: number;
+  productsCount?: number;
+  _count?: {
+    products?: number;
+  };
 }
 
 const Shop: React.FC = () => {
@@ -440,7 +443,9 @@ const Shop: React.FC = () => {
                   }`}
                 >
                   <span>{category.name}</span>
-                  <span className="text-sm text-gray-500">({category.productsCount})</span>
+                  <span className="text-sm text-gray-500">
+                    ({category.productsCount ?? category._count?.products ?? 0})
+                  </span>
                 </button>
               ))}
             </div>

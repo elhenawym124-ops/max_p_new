@@ -158,7 +158,7 @@ const FrequentlyBoughtTogether: React.FC<FrequentlyBoughtTogetherProps> = ({
           const displayPrice = product.salePrice || product.price;
           const isSelected = selectedProducts.has(product.id);
           const productImages = parseImages(product.images);
-          const productImage = productImages.length > 0 ? productImages[0] : '/placeholder.png';
+          const productImage = productImages.length > 0 ? productImages[0] : 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"%3E%3Crect fill="%23f0f0f0" width="100" height="100"/%3E%3Ctext fill="%23999" font-family="Arial" font-size="12" x="50" y="50" text-anchor="middle" dy=".3em"%3ENo Image%3C/text%3E%3C/svg%3E';
 
           return (
             <React.Fragment key={product.id}>
@@ -196,7 +196,7 @@ const FrequentlyBoughtTogether: React.FC<FrequentlyBoughtTogetherProps> = ({
                             alt={product.name}
                             onError={(e) => {
                               const target = e.target as HTMLImageElement;
-                              target.src = '/placeholder.png';
+                              target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"%3E%3Crect fill="%23f0f0f0" width="100" height="100"/%3E%3Ctext fill="%23999" font-family="Arial" font-size="12" x="50" y="50" text-anchor="middle" dy=".3em"%3ENo Image%3C/text%3E%3C/svg%3E';
                             }}
                           />
                           <Box sx={{ flex: 1 }}>

@@ -43,6 +43,8 @@ import MessengerChat from './pages/conversations/MessengerChat-final';
 import AITestChat from './pages/testChat/AITestChat';
 import Products from './pages/products/Products';
 import ProductNew from './pages/products/ProductNew';
+import ProductNewTabsDemo from './pages/products/ProductNewTabsDemo';
+import ProductNewFinal from './pages/products/ProductNewFinal';
 import ProductView from './pages/products/ProductView';
 import ProductEdit from './pages/products/ProductEdit';
 import ProductEditNew from './pages/products/ProductEditNew';
@@ -131,6 +133,11 @@ import SuperAdminInvoices from './pages/SuperAdminInvoices';
 import SuperAdminPayments from './pages/SuperAdminPayments';
 import SuperAdminSystemManagement from './pages/SuperAdminSystemManagement';
 import SuperAdminPromptLibrary from './pages/SuperAdminPromptLibrary';
+import CentralKeysManagement from './pages/super-admin/CentralKeysManagement';
+import ModelsManagement from './pages/super-admin/ModelsManagement';
+import ModelTypesManagement from './pages/super-admin/ModelTypesManagement';
+import ModelPrioritiesManagement from './pages/super-admin/ModelPrioritiesManagement';
+import RateLimitsMonitoring from './pages/super-admin/RateLimitsMonitoring';
 import PaymentPage from './pages/PaymentPage';
 import WalletManagement from './pages/WalletManagement';
 import CustomerInvoices from './pages/CustomerInvoices';
@@ -253,6 +260,11 @@ const AppContent = () => {
         <Route path="/super-admin/payments" element={<SuperAdminLayout><SuperAdminPayments /></SuperAdminLayout>} />
         <Route path="/super-admin/system-management" element={<SuperAdminLayout><SuperAdminSystemManagement /></SuperAdminLayout>} />
         <Route path="/super-admin/prompt-library" element={<SuperAdminLayout><SuperAdminPromptLibrary /></SuperAdminLayout>} />
+        <Route path="/super-admin/central-keys" element={<SuperAdminLayout><CentralKeysManagement /></SuperAdminLayout>} />
+        <Route path="/super-admin/models" element={<SuperAdminLayout><ModelsManagement /></SuperAdminLayout>} />
+        <Route path="/super-admin/model-types" element={<SuperAdminLayout><ModelTypesManagement /></SuperAdminLayout>} />
+        <Route path="/super-admin/model-priorities" element={<SuperAdminLayout><ModelPrioritiesManagement /></SuperAdminLayout>} />
+        <Route path="/super-admin/rate-limits" element={<SuperAdminLayout><RateLimitsMonitoring /></SuperAdminLayout>} />
         <Route path="/super-admin/wallet-management" element={<SuperAdminLayout><WalletManagement /></SuperAdminLayout>} />
 
         {/* Public Payment Routes */}
@@ -289,16 +301,17 @@ const AppContent = () => {
             <Route path="/posts/:postId/comments" element={<Layout><PostComments /></Layout>} />
             <Route path="/messenger-chat" element={<Layout><MessengerChat /></Layout>} />
             <Route path="/products" element={<Layout><Products /></Layout>} />
-            <Route path="/products/new" element={<Layout><ProductNew /></Layout>} />
+            <Route path="/products/new" element={<Layout><ProductNewFinal /></Layout>} />
+            <Route path="/products/new-old" element={<Layout><ProductNew /></Layout>} />
+            <Route path="/products/new-tabs" element={<Layout><ProductNewTabsDemo /></Layout>} />
             <Route path="/products/import-easy-orders" element={<Layout><EasyOrdersImport /></Layout>} />
             <Route path="/products/import-woocommerce" element={<Layout><WooCommerceImport /></Layout>} />
-            <Route path="/products/:id/edit" element={<Layout><ProductEditNew /></Layout>} />
+            <Route path="/products/:id/edit-final" element={<Layout><ProductNewFinal /></Layout>} />
+            <Route path="/products/:id/edit" element={<Layout><ProductNewFinal /></Layout>} />
+            <Route path="/products/:id/edit-old" element={<Layout><ProductEditNew /></Layout>} />
+            <Route path="/products/:id/edit-legacy" element={<Layout><ProductEdit /></Layout>} />
             <Route path="/products/:id/edit-test" element={<Layout><ProductEditTest /></Layout>} />
-            <Route path="/products/:id/edit-old" element={<Layout><ProductEdit /></Layout>} />
             <Route path="/products/:id" element={<Layout><ProductView /></Layout>} />
-            <Route path="/products/:id/edit" element={<Layout><ProductEditNew /></Layout>} />
-            <Route path="/products/:id/edit-test" element={<Layout><ProductEditTest /></Layout>} />
-            <Route path="/products/:id/edit-old" element={<Layout><ProductEdit /></Layout>} />
             
             <Route path="/categories" element={<Layout><Categories /></Layout>} />
             <Route path="/orders" element={<Layout><Orders /></Layout>} />
