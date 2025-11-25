@@ -16,15 +16,29 @@ const StorefrontLayout: React.FC<StorefrontLayoutProps> = ({ children }) => {
   const companyId = companyIdFromUrl || getCompanyId();
   
   // Debug logging
+  const currentPath = window.location.pathname;
+  const isShopPage = currentPath === '/shop' || currentPath.startsWith('/shop/');
+  
   console.log('🔍 [StorefrontLayout] Component rendered', {
     companyIdFromUrl,
     companyIdFromGetCompanyId: getCompanyId(),
     finalCompanyId: companyId,
     url: window.location.href,
+    pathname: currentPath,
+    isShopPage,
     searchParams: Object.fromEntries(searchParams.entries())
   });
   
   // تحميل Facebook Pixel
+  if (companyId) {
+    console.log('📊 [StorefrontLayout] Loading Facebook Pixel for company:', companyId);
+    if (isShopPage) {
+      console.log('🛍️ [StorefrontLayout] Shop page detected - Pixel tracking should work here');
+    }
+  } else {
+    console.warn('⚠️ [StorefrontLayout] No companyId found - Pixel will not load');
+  }
+  
   useFacebookPixel(companyId || undefined);
 
   return (

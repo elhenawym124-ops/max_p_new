@@ -296,14 +296,34 @@ class MessageQueueManager {
     const messageId = this.customerQueues.get(customerId)?.[0]?.webhookEvent?.message?.mid || `msg_${Date.now()}`;
     
     if (this.processingCustomers.has(customerId)) {
-      //console.log(`⚠️ [ADAPTIVE-QUEUE] Customer ${customerId} already being processed`);
-      return;
+      const queue = this.customerQueues.get(customerId);
+      const queueSize = queue ? queue.length : 0;
+      const oldestMessageAge = queue && queue.length > 0 ? Date.now() - queue[0].queuedAt : 0;
+      console.warn(`⚠️ [QUEUE-BLOCKED] Customer ${customerId} already being processed! Queue size: ${queueSize}, Oldest message age: ${oldestMessageAge}ms`);
+      
+      // ⚡ FIX: إذا كان الـ queue كبير جداً أو الرسالة قديمة جداً، نضطر للمعالجة
+      if (queueSize > 5 || oldestMessageAge > 10000) { // أكثر من 5 رسائل أو أقدم من 10 ثواني
+        console.error(`🚨 [QUEUE-OVERLOAD] Queue overloaded for customer ${customerId}! Forcing immediate processing despite ongoing process`);
+        // لا نعيد return - نكمل المعالجة
+      } else {
+        return;
+      }
     }
 
     const queue = this.customerQueues.get(customerId);
     if (!queue || queue.length === 0) {
       return;
     }
+    
+    // ⚡ NEW: Log queue stats before processing
+    const queueStats = {
+      queueSize: queue.length,
+      oldestMessageAge: queue.length > 0 ? Date.now() - queue[0].queuedAt : 0,
+      totalProcessingCustomers: this.processingCustomers.size,
+      totalQueues: this.customerQueues.size,
+      activeTimers: this.batchTimers.size
+    };
+    console.log(`📊 [QUEUE-STATS] Before processing customer ${customerId}:`, queueStats);
 
     // تنظيف المؤقت
     if (this.batchTimers.has(customerId)) {
@@ -312,7 +332,15 @@ class MessageQueueManager {
     }
 
     this.processingCustomers.add(customerId);
+    const processingCount = this.processingCustomers.size;
+    const totalQueues = this.customerQueues.size;
     console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - batchStartTime}ms] 🔄 [BATCH] Starting batch processing for customer ${customerId}. ${queue.length} messages in batch`);
+    console.log(`📊 [QUEUE-LOAD] Current load: ${processingCount} processing, ${totalQueues} total queues`);
+    
+    // ⚡ WARNING: إذا كان في load عالي
+    if (processingCount > 10) {
+      console.warn(`⚠️ [QUEUE-HIGH-LOAD] High queue load detected! ${processingCount} customers being processed simultaneously`);
+    }
 
     // مهلة زمنية قصوى للمعالجة (5 دقائق)
     const MAX_PROCESSING_TIME = 5 * 60 * 1000;
@@ -342,6 +370,7 @@ class MessageQueueManager {
       console.error(`❌ [ADAPTIVE-QUEUE] Error in batch processing for customer ${customerId}:`, error);
     } finally {
       clearTimeout(processingTimeout);
+      const processingTime = Date.now() - batchStartTime;
       this.processingCustomers.delete(customerId);
       
       // ⚡ FIX: فقط احذف الـ queue إذا كانت فارغة (لا تحذفها إذا كانت تحتوي على رسائل جديدة)
@@ -349,11 +378,24 @@ class MessageQueueManager {
       if (!remainingQueue || remainingQueue.length === 0) {
         this.customerQueues.delete(customerId);
         this.queueTimestamps.delete(customerId);
+        console.log(`✅ [BATCH] Completed processing for customer ${customerId} in ${processingTime}ms - queue cleared`);
       } else {
         // ⚡ إذا كانت هناك رسائل جديدة، اترك الـ queue للمعالجة التالية
-        console.log(`⚠️ [BATCH] Queue for customer ${customerId} still has ${remainingQueue.length} message(s) - keeping queue for next processing`);
+        console.log(`⚠️ [BATCH] Queue for customer ${customerId} still has ${remainingQueue.length} message(s) after ${processingTime}ms - keeping queue for next processing`);
+        
+        // ⚡ WARNING: إذا كان الـ processing time طويل جداً
+        if (processingTime > 5000) {
+          console.error(`🚨 [BATCH-SLOW] Slow processing detected! Customer ${customerId} took ${processingTime}ms to process. This may cause message delays.`);
+        }
       }
-      //console.log(`✅ [ADAPTIVE-QUEUE] Finished batch processing for customer ${customerId}`);
+      
+      // ⚡ Log final queue stats
+      const finalStats = {
+        remainingProcessing: this.processingCustomers.size,
+        totalQueues: this.customerQueues.size,
+        activeTimers: this.batchTimers.size
+      };
+      console.log(`📊 [QUEUE-STATS] After processing customer ${customerId}:`, finalStats);
     }
   }
 
@@ -553,10 +595,27 @@ const messageQueueManager = new MessageQueueManager();
 router.get('/', async (req, res) => {
   try {
     const stats = messageQueueManager.getQueueStats();
+    
+    // ⚡ NEW: Calculate load metrics
+    const loadMetrics = {
+      isHighLoad: stats.processingCustomers > 10 || stats.totalPendingMessages > 50,
+      averageQueueSize: stats.totalQueues > 0 ? (stats.totalPendingMessages / stats.totalQueues).toFixed(2) : 0,
+      oldestQueueAgeSeconds: (stats.oldestQueueAge / 1000).toFixed(2),
+      stuckQueuesPercentage: stats.totalQueues > 0 ? ((stats.stuckQueues / stats.totalQueues) * 100).toFixed(2) : 0
+    };
+    
     res.json({
       success: true,
       timestamp: new Date().toISOString(),
-      stats: stats,
+      stats: {
+        ...stats,
+        loadMetrics: loadMetrics,
+        warnings: [
+          ...(loadMetrics.isHighLoad ? ['⚠️ High queue load detected!'] : []),
+          ...(stats.stuckQueues > 0 ? [`⚠️ ${stats.stuckQueues} stuck queue(s) detected!`] : []),
+          ...(stats.oldestQueueAge > 5 * 60 * 1000 ? [`⚠️ Oldest queue is ${loadMetrics.oldestQueueAgeSeconds}s old!`] : [])
+        ]
+      },
       system: {
         type: 'Adaptive Batching Queue',
         version: '2.0',
@@ -565,7 +624,9 @@ router.get('/', async (req, res) => {
           'Adaptive message batching',
           'Context-aware grouping',
           'AI-based delay configuration',
-          'Dynamic batch window based on maxRepliesPerCustomer'
+          'Dynamic batch window based on maxRepliesPerCustomer',
+          'Queue load monitoring',
+          'Stuck queue detection'
         ]
       }
     });
