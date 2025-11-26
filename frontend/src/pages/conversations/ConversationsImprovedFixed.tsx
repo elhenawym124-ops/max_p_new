@@ -110,7 +110,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
   // حالات الـ pagination
   const [conversationsPage, setConversationsPage] = useState(1);
-  const [conversationsLimit] = useState(50);
+  const [conversationsLimit] = useState(200);
   const [hasMoreConversations, setHasMoreConversations] = useState(true);
   const [loadingMoreConversations, setLoadingMoreConversations] = useState(false);
   const [totalConversations, setTotalConversations] = useState(0);
@@ -2005,7 +2005,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         const conversationExists = prev.some(conv => conv.id === data.conversationId);
         
         if (!conversationExists) {
-          console.log(`⚠️ [SOCKET] Conversation ${data.conversationId} not found in list, loading from API...`);
+          console.log(`⚠️ [SOCKET] Conversation ${data.conversationId} not found in list, creating temporary conversation with message...`);
           console.log(`📥 [SOCKET] Message data:`, {
             conversationId: data.conversationId,
             content: data.content?.substring(0, 50),
@@ -2014,14 +2014,74 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             companyId: data.companyId || data.metadata?.companyId
           });
           
-          // ✅ FIX: استدعاء loadSpecificConversation بدون auto-select إذا كان هناك محادثة محددة بالفعل
-          // هذا يمنع اختيار المحادثة الجديدة تلقائياً عند وصول رسالة جديدة
-          const shouldAutoSelect = !selectedConversation || selectedConversation.id === data.conversationId;
-          console.log(`🔄 [SOCKET] Loading conversation ${data.conversationId}, autoSelect: ${shouldAutoSelect}`);
+          // ✅ FIX: إنشاء محادثة مؤقتة مع الرسالة فوراً حتى لا تضيع الرسالة
+          const tempConversation: Conversation = {
+            id: data.conversationId,
+            customerId: data.customerId || data.senderId || data.conversationId,
+            customerName: data.customerName || data.senderName || 'عميل جديد',
+            lastMessage: data.content,
+            lastMessageTime: new Date(data.timestamp),
+            unreadCount: data.isFromCustomer ? 1 : 0,
+            platform: (data.platform || 'facebook') as Conversation['platform'],
+            isOnline: false,
+            messages: [newMessage], // ✅ إضافة الرسالة فوراً
+            lastMessageIsFromCustomer: !!data.isFromCustomer,
+            lastCustomerMessageIsUnread: !!data.isFromCustomer,
+            pageName: data.pageName,
+            pageId: data.pageId
+          };
           
-          loadSpecificConversation(data.conversationId, shouldAutoSelect).catch(error => {
+          // ✅ إضافة المحادثة المؤقتة للقائمة فوراً
+          const updatedWithTemp = [tempConversation, ...prev];
+          
+          // ✅ تحميل المحادثة الكاملة من API في الخلفية ودمجها
+          const shouldAutoSelect = !selectedConversation || selectedConversation.id === data.conversationId;
+          console.log(`🔄 [SOCKET] Loading full conversation ${data.conversationId}, autoSelect: ${shouldAutoSelect}`);
+          
+          loadSpecificConversation(data.conversationId, shouldAutoSelect).then(() => {
+            // ✅ بعد تحميل المحادثة الكاملة، ندمج الرسالة الجديدة مع الرسائل المحملة
+            setConversations((currentPrev: Conversation[]) => {
+              return currentPrev.map((conv: Conversation) => {
+                if (conv.id === data.conversationId) {
+                  // التحقق من عدم وجود الرسالة مسبقاً
+                  const existingMessages = conv.messages || [];
+                  const messageExists = existingMessages.some(msg => msg.id === newMessage.id);
+                  
+                  if (!messageExists) {
+                    // إضافة الرسالة الجديدة للرسائل المحملة
+                    const updatedMessages = [...existingMessages, newMessage].sort((a, b) => 
+                      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+                    );
+                    
+                    const updatedConv = {
+                      ...conv,
+                      messages: updatedMessages,
+                      lastMessage: data.content,
+                      lastMessageTime: new Date(data.timestamp),
+                      lastMessageIsFromCustomer: !!data.isFromCustomer,
+                      lastCustomerMessageIsUnread: !!data.isFromCustomer
+                    };
+                    
+                    // ✅ تحديث المحادثة المحددة أيضاً إذا كانت نفس المحادثة
+                    setSelectedConversation((currentSelected) => {
+                      if (currentSelected?.id === data.conversationId) {
+                        return updatedConv;
+                      }
+                      return currentSelected;
+                    });
+                    
+                    return updatedConv;
+                  }
+                }
+                return conv;
+              });
+            });
+          }).catch(error => {
             console.error(`❌ [SOCKET] Failed to load conversation ${data.conversationId}:`, error);
           });
+          
+          // ✅ إرجاع القائمة مع المحادثة المؤقتة
+          return updatedWithTemp;
         } else {
           console.log(`✅ [SOCKET] Conversation ${data.conversationId} exists in list`);
         }

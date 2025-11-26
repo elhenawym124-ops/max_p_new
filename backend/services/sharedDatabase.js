@@ -30,7 +30,7 @@ const CONNECTION_LIMIT_COOLDOWN = 60 * 60 * 1000; // 1 hour
 // Query queue management
 const queryQueue = [];
 let isProcessingQueue = false;
-const MAX_CONCURRENT_QUERIES = 3; // ✅ Reduced to prevent connection overload
+const MAX_CONCURRENT_QUERIES = 25; // ⚡ INCREASED: Allow more concurrent queries to prevent queue buildup (was 10)
 let activeQueries = 0;
 
 // Health monitoring
@@ -47,12 +47,12 @@ function createStablePrismaClient() {
   const databaseUrl = process.env.DATABASE_URL;
   const urlWithParams = new URL(databaseUrl);
   
-  // ✅ STABILITY FOCUS: Conservative settings
-  urlWithParams.searchParams.set('connection_limit', '3');        // ✅ Only 3 connections
+  // ⚡ PERFORMANCE FOCUS: Increased limits to prevent queue buildup
+  urlWithParams.searchParams.set('connection_limit', '25');       // ⚡ INCREASED: 25 connections (was 10) to match concurrent queries
   urlWithParams.searchParams.set('pool_timeout', '30');           // ✅ 30 seconds
   urlWithParams.searchParams.set('connect_timeout', '10');        // ✅ 10 seconds
   urlWithParams.searchParams.set('socket_timeout', '30');         // ✅ 30 seconds
-  urlWithParams.searchParams.set('statement_timeout', '20000');   // ✅ 20 seconds
+  urlWithParams.searchParams.set('statement_timeout', '15000');   // ⚡ REDUCED: 15 seconds (was 20) to fail fast on slow queries
   urlWithParams.searchParams.set('pgbouncer', 'true');            // ✅ Enable pooling
   
   const client = new PrismaClient({
@@ -179,7 +179,7 @@ async function guaranteeConnection() {
 }
 
 /**
- * ✅ ULTIMATE FIX: Smart query execution with connection guarantee
+ * ✅ ULTIMATE FIX: Smart query execution with connection guarantee and timeout
  */
 async function executeQuerySafely(operation, operationName = 'unknown') {
   // Ensure we have a valid connection before executing
@@ -191,9 +191,18 @@ async function executeQuerySafely(operation, operationName = 'unknown') {
   
   let lastError;
   
+  // ⚡ NEW: Add query timeout (10 seconds max per query)
+  const QUERY_TIMEOUT = 10000; // 10 seconds
+  
   for (let attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
     try {
-      const result = await operation();
+      // ⚡ NEW: Execute query with timeout
+      const result = await Promise.race([
+        operation(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error(`Query timeout after ${QUERY_TIMEOUT}ms`)), QUERY_TIMEOUT)
+        )
+      ]);
       
       if (attempt > 1) {
         console.log(`✅ [SharedDB] Query "${operationName}" succeeded on attempt ${attempt}`);
@@ -203,6 +212,11 @@ async function executeQuerySafely(operation, operationName = 'unknown') {
       
     } catch (error) {
       lastError = error;
+      
+      // ⚡ NEW: Log slow queries
+      if (error.message.includes('timeout')) {
+        console.warn(`⏰ [SharedDB] Query "${operationName}" timed out after ${QUERY_TIMEOUT}ms`);
+      }
       
       // Check if this is a connection error
       const isConnectionError = 
@@ -250,6 +264,19 @@ async function executeQuerySafely(operation, operationName = 'unknown') {
  * Queue-based execution with connection safety
  */
 async function executeWithQueue(operation, priority = 0) {
+  // ⚡ OPTIMIZATION: If queue is empty and we have capacity, execute immediately
+  if (queryQueue.length === 0 && activeQueries < MAX_CONCURRENT_QUERIES) {
+    activeQueries++;
+    const operationName = operation.name || 'anonymous';
+    try {
+      const result = await executeQuerySafely(operation, operationName);
+      return result;
+    } finally {
+      activeQueries--;
+      processQueue(); // Process any queued items
+    }
+  }
+  
   return new Promise((resolve, reject) => {
     // Extract operation name for logging
     const operationName = operation.name || 'anonymous';
@@ -258,23 +285,39 @@ async function executeWithQueue(operation, priority = 0) {
       return await executeQuerySafely(operation, operationName);
     };
     
-    queryQueue.push({
+    const queueItem = {
       operation: wrappedOperation,
       priority,
       resolve,
       reject,
       timestamp: Date.now()
-    });
+    };
+    
+    queryQueue.push(queueItem);
     
     // Sort by priority (higher first)
     queryQueue.sort((a, b) => b.priority - a.priority);
+    
+    // ⚡ WARNING: Log if queue is getting large (reduced threshold)
+    if (queryQueue.length > 50) {
+      console.warn(`⚠️ [SharedDB] Query queue is large: ${queryQueue.length} queries waiting, ${activeQueries} active`);
+      
+      // ⚡ NEW: Log oldest query in queue
+      if (queryQueue.length > 0) {
+        const oldestQuery = queryQueue[0];
+        const queueAge = Date.now() - oldestQuery.timestamp;
+        if (queueAge > 5000) {
+          console.error(`🚨 [SharedDB] Oldest query in queue is ${queueAge}ms old! Queue may be stuck.`);
+        }
+      }
+    }
     
     processQueue();
   });
 }
 
 /**
- * Process query queue
+ * Process query queue (optimized for high load)
  */
 async function processQueue() {
   if (isProcessingQueue) return;
@@ -283,10 +326,21 @@ async function processQueue() {
   
   isProcessingQueue = true;
   
-  while (queryQueue.length > 0 && activeQueries < MAX_CONCURRENT_QUERIES) {
+  // ⚡ OPTIMIZATION: Process multiple items in parallel
+  const itemsToProcess = Math.min(
+    queryQueue.length, 
+    MAX_CONCURRENT_QUERIES - activeQueries
+  );
+  
+  const items = [];
+  for (let i = 0; i < itemsToProcess; i++) {
     const item = queryQueue.shift();
     if (!item) break;
-    
+    items.push(item);
+  }
+  
+  // Process all items in parallel
+  items.forEach(item => {
     activeQueries++;
     
     item.operation()
@@ -294,11 +348,17 @@ async function processQueue() {
       .catch(item.reject)
       .finally(() => {
         activeQueries--;
-        processQueue(); // Process next item
+        // Continue processing queue after each item completes
+        setImmediate(() => processQueue());
       });
-  }
+  });
   
   isProcessingQueue = false;
+  
+  // ⚡ NEW: If queue is still large, schedule another processing round
+  if (queryQueue.length > 0 && activeQueries < MAX_CONCURRENT_QUERIES) {
+    setImmediate(() => processQueue());
+  }
 }
 
 /**

@@ -372,17 +372,32 @@ class FacebookConversionsService {
       // Execute request
       const response = await eventRequest.execute();
       
+      // التحقق من نوع response: SDK object أو HTTP object
+      let eventsReceived, messages, fbtraceId;
+      
+      if (typeof response.getEventsReceived === 'function') {
+        // SDK response object - استخدم methods
+        eventsReceived = response.getEventsReceived();
+        messages = response.getMessages ? response.getMessages() : [];
+        fbtraceId = response.getFbtraceId ? response.getFbtraceId() : null;
+      } else {
+        // HTTP response object - استخدم properties مباشرة
+        eventsReceived = response.events_received || response.eventsReceived || 0;
+        messages = response.messages || [];
+        fbtraceId = response.fbtrace_id || response.fbtraceId || null;
+      }
+      
       console.log('✅ [Facebook CAPI] Event sent successfully:', {
-        eventsReceived: response.getEventsReceived(),
-        messages: response.getMessages(),
-        fbtraceId: response.getFbtraceId()
+        eventsReceived,
+        messages,
+        fbtraceId
       });
 
       return {
         success: true,
-        events_received: response.getEventsReceived(),
-        messages: response.getMessages(),
-        fbtrace_id: response.getFbtraceId()
+        events_received: eventsReceived,
+        messages: messages,
+        fbtrace_id: fbtraceId
       };
     } catch (error) {
       console.error('❌ [Facebook CAPI] Error sending event:', {
@@ -401,6 +416,10 @@ class FacebookConversionsService {
     const axios = require('axios');
     const url = `https://graph.facebook.com/v18.0/${this.pixelId}/events`;
     
+    if (!this.accessToken) {
+      throw new Error('Access Token is required for Facebook Conversions API');
+    }
+    
     const payload = {
       data: [event],
       access_token: this.accessToken
@@ -411,16 +430,32 @@ class FacebookConversionsService {
     }
 
     try {
-      const response = await axios.post(url, payload);
-      console.log('✅ [Facebook CAPI] Event sent via HTTP:', {
-        eventsReceived: response.data.events_received,
-        fbtraceId: response.data.fbtrace_id
+      console.log('📤 [Facebook CAPI] Sending event via HTTP with Access Token:', {
+        pixelId: this.pixelId,
+        eventName: event.event_name,
+        accessTokenLength: this.accessToken?.length || 0,
+        accessTokenStarts: this.accessToken?.substring(0, 10) + '...'
       });
-      return response.data;
+      
+      const response = await axios.post(url, payload);
+      console.log('✅ [Facebook CAPI] Event sent via HTTP with Access Token:', {
+        eventsReceived: response.data.events_received,
+        fbtraceId: response.data.fbtrace_id,
+        eventName: event.event_name
+      });
+      
+      // إرجاع بنفس structure مثل SDK response
+      return {
+        success: true,
+        events_received: response.data.events_received || 0,
+        messages: response.data.messages || [],
+        fbtrace_id: response.data.fbtrace_id || null
+      };
     } catch (error) {
       console.error('❌ [Facebook CAPI] HTTP request failed:', {
         message: error.message,
-        response: error.response?.data
+        response: error.response?.data,
+        accessTokenUsed: !!this.accessToken
       });
       throw error;
     }
@@ -446,16 +481,28 @@ class FacebookConversionsService {
 
       const response = await this.sendEvent(testEvent);
       
-      return {
-        success: true,
-        message: 'Connection successful',
-        response
-      };
+      // التحقق من أن response يحتوي على success
+      if (response && response.success) {
+        return {
+          success: true,
+          message: `✅ الاتصال ناجح! تم استقبال ${response.events_received || 0} حدث`,
+          events_received: response.events_received || 0,
+          messages: response.messages || [],
+          fbtrace_id: response.fbtrace_id || null
+        };
+      } else {
+        return {
+          success: false,
+          message: 'فشل الاتصال: استجابة غير متوقعة من Facebook',
+          response
+        };
+      }
     } catch (error) {
+      console.error('❌ [Facebook CAPI] Test connection error:', error);
       return {
         success: false,
-        message: error.message,
-        error
+        message: error.message || 'فشل الاتصال مع Facebook Conversions API',
+        error: error.response?.data || error.message
       };
     }
   }

@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { loadFacebookPixel, trackPageView } from '../utils/facebookPixel';
+import { loadFacebookPixel, trackPageView, needsCAPIOnly, isBraveBrowser, isIOSDevice } from '../utils/facebookPixel';
 import { storefrontSettingsService } from '../services/storefrontSettingsService';
 
 export const useFacebookPixel = (companyId: string | undefined) => {
@@ -13,7 +13,21 @@ export const useFacebookPixel = (companyId: string | undefined) => {
   const [pixelId, setPixelId] = useState<string | null>(null);
 
   useEffect(() => {
-    console.log('🔍 [useFacebookPixel] Hook called', { companyId, hasCompanyId: !!companyId });
+    const isBrave = isBraveBrowser();
+    const isIOS = isIOSDevice();
+    const needsCAPI = needsCAPIOnly();
+    
+    console.log('🔍 [useFacebookPixel] Hook called', { 
+      companyId, 
+      hasCompanyId: !!companyId,
+      isBraveBrowser: isBrave,
+      isIOSDevice: isIOS,
+      needsCAPIOnly: needsCAPI,
+      deviceInfo: {
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent?.substring(0, 100) : 'N/A',
+        platform: typeof navigator !== 'undefined' ? navigator.platform : 'N/A'
+      }
+    });
     
     if (!companyId) {
       console.warn('⚠️ [useFacebookPixel] No companyId provided, skipping Pixel load');
@@ -41,11 +55,35 @@ export const useFacebookPixel = (companyId: string | undefined) => {
           
           // التحقق من أن Pixel مفعّل
           if (settings.facebookPixelEnabled && settings.facebookPixelId) {
+            const isBrave = isBraveBrowser();
+            const isIOS = isIOSDevice();
+            const needsCAPI = needsCAPIOnly();
+            
+            const currentPath = window.location.pathname;
+            const isShopPage = currentPath === '/shop' || currentPath.startsWith('/shop/');
+            
             console.log('🎯 [Facebook Pixel] Loading Pixel ID:', settings.facebookPixelId);
             console.log('🎯 [Facebook Pixel] Settings:', {
               enabled: settings.facebookPixelEnabled,
               pixelId: settings.facebookPixelId,
-              trackPageView: settings.pixelTrackPageView
+              trackPageView: settings.pixelTrackPageView,
+              facebookConvApiEnabled: settings.facebookConvApiEnabled,
+              hasConvApiToken: !!settings.facebookConvApiToken,
+              currentPage: currentPath,
+              isShopPage
+            });
+            
+            if (isShopPage) {
+              console.log('🛍️ [Facebook Pixel] Shop page detected - Pixel will track PageView here');
+            }
+            
+            console.log('📊 [Facebook Pixel] Device detection:', {
+              isBraveBrowser: isBrave,
+              isIOSDevice: isIOS,
+              needsCAPIOnly: needsCAPI,
+              recommendation: needsCAPI ? 
+                '⚠️ Device may block Pixel - Ensure CAPI is enabled with Access Token' : 
+                '✅ Standard device - Pixel should work'
             });
             
             // تحميل Pixel Script

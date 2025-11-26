@@ -429,7 +429,13 @@ export const storefrontSettingsService = {
     // جلب البيانات من API
     try {
       const apiUrl = getApiUrl();
-      const response = await fetch(`${apiUrl}/public/storefront-settings/${companyId}`);
+      const settingsUrl = `${apiUrl}/public/storefront-settings/${companyId}`;
+      console.log('📡 [STOREFRONT-SETTINGS] Fetching settings from API:', {
+        companyId,
+        url: settingsUrl
+      });
+      
+      const response = await fetch(settingsUrl);
       
       if (!response.ok) {
         // Handle 500 errors gracefully - server might be having issues
@@ -471,6 +477,15 @@ export const storefrontSettingsService = {
       }
       
       const data = await response.json();
+      
+      console.log('📡 [STOREFRONT-SETTINGS] API response received:', {
+        success: data.success,
+        hasData: !!data.data,
+        facebookPixelEnabled: data.data?.facebookPixelEnabled,
+        facebookPixelId: data.data?.facebookPixelId ? `Set (${data.data.facebookPixelId})` : 'Not set',
+        facebookConvApiEnabled: data.data?.facebookConvApiEnabled,
+        hasConvApiToken: !!data.data?.facebookConvApiToken
+      });
       
       // التحقق من أن البيانات موجودة وصحيحة
       if (data.success && data.data) {

@@ -12,15 +12,68 @@ let pixelId: string | null = null;
 let isInitialized = false;
 
 /**
+ * التحقق من Brave Browser
+ * Brave Browser قد يحظر Pixel Script تلقائياً
+ * @returns {boolean} true إذا كان Brave Browser
+ */
+export const isBraveBrowser = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  
+  // Check for Brave-specific properties
+  const hasBrave = !!(window as any).brave && !!(window as any).brave.isBrave;
+  const userAgent = navigator.userAgent || '';
+  const isBraveUA = /brave/i.test(userAgent);
+  
+  return hasBrave || isBraveUA;
+};
+
+/**
+ * التحقق من iPhone/iOS
+ * @returns {boolean} true إذا كان iPhone/iOS
+ */
+export const isIOSDevice = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  
+  const userAgent = navigator.userAgent || '';
+  return /iphone|ipad|ipod|ios/i.test(userAgent);
+};
+
+/**
+ * التحقق مما إذا كان الجهاز يحتاج CAPI فقط
+ * (Brave Browser أو iPhone/iOS)
+ * @returns {boolean} true إذا كان يحتاج CAPI فقط
+ */
+export const needsCAPIOnly = (): boolean => {
+  return isBraveBrowser() || isIOSDevice();
+};
+
+/**
  * تحميل Facebook Pixel Script
  */
 export const loadFacebookPixel = (pixelIdParam: string) => {
+  const isBrave = isBraveBrowser();
+  const isIOS = isIOSDevice();
+  const needsCAPI = needsCAPIOnly();
+  
   console.log('🔍 [loadFacebookPixel] Function called', {
     pixelIdParam,
     isInitialized,
     hasPixelId: !!pixelIdParam,
-    pixelIdLength: pixelIdParam?.length
+    pixelIdLength: pixelIdParam?.length,
+    isBraveBrowser: isBrave,
+    isIOSDevice: isIOS,
+    needsCAPIOnly: needsCAPI
   });
+  
+  // في Brave Browser، Pixel قد يُحظر تلقائياً
+  if (isBrave) {
+    console.warn('⚠️ [Facebook Pixel] Brave Browser detected - Pixel may be blocked automatically');
+    console.warn('⚠️ [Facebook Pixel] Please ensure Conversions API is enabled and Access Token is configured');
+  }
+  
+  if (isIOS) {
+    console.log('📱 [Facebook Pixel] iOS device detected - Pixel should work, but CAPI recommended as backup');
+  }
   
   if (isInitialized) {
     console.log('ℹ️ [Facebook Pixel] Already initialized, skipping...');
@@ -101,10 +154,22 @@ export const loadFacebookPixel = (pixelIdParam: string) => {
         windowType: typeof window
       });
       
-      if (typeof window !== 'undefined' && (window as any).fbq) {
+        if (typeof window !== 'undefined' && (window as any).fbq) {
         console.log('✅ [Facebook Pixel] fbq function is available');
         console.log('✅ [Facebook Pixel] fbq type:', typeof (window as any).fbq);
         isInitialized = true;
+        
+        // Log device information
+        const isBrave = isBraveBrowser();
+        const isIOS = isIOSDevice();
+        const needsCAPI = needsCAPIOnly();
+        
+        console.log('📊 [Facebook Pixel] Device information:', {
+          isBraveBrowser: isBrave,
+          isIOSDevice: isIOS,
+          needsCAPIOnly: needsCAPI,
+          userAgent: navigator.userAgent?.substring(0, 100)
+        });
         
         // Log the tracking URL that will be used
         console.log('🔗 [Facebook Pixel] Tracking URL:', `https://www.facebook.com/tr?id=${pixelId}&ev=PageView`);
@@ -113,11 +178,21 @@ export const loadFacebookPixel = (pixelIdParam: string) => {
         const originalFbq = (window as any).fbq;
         (window as any).fbq = function(...args: any[]) {
           const eventName = args[1] || 'Unknown';
+          const eventId = args[3]?.eventID || 'Not set';
+          const isBrave = isBraveBrowser();
+          const isIOS = isIOSDevice();
+          
           console.log(`📤 [Facebook Pixel] Sending event: ${eventName}`, {
             url: `https://www.facebook.com/tr?id=${pixelId}&ev=${eventName}`,
+            eventId,
             data: args[2] || {},
             options: args[3] || {},
-            argsCount: args.length
+            argsCount: args.length,
+            isBraveBrowser: isBrave,
+            isIOSDevice: isIOS,
+            note: isBrave ? '⚠️ Brave Browser - Pixel may be blocked, CAPI will be used as backup' : 
+                  isIOS ? '📱 iOS Device - Pixel should work, CAPI as backup' : 
+                  '✅ Standard browser - Pixel should work'
           });
           return originalFbq.apply(this, args);
         };
