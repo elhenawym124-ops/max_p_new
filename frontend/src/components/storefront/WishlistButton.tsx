@@ -3,6 +3,9 @@ import { HeartIcon } from '@heroicons/react/24/outline';
 import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
 import { toast } from 'react-hot-toast';
 import { wishlistApi } from '../../utils/wishlistApi';
+import { trackAddToWishlist } from '../../utils/facebookPixel';
+import { storefrontSettingsService } from '../../services/storefrontSettingsService';
+import { getCompanyId } from '../../utils/storefrontApi';
 
 interface WishlistButtonProps {
   productId: string;
@@ -10,6 +13,8 @@ interface WishlistButtonProps {
   enabled?: boolean;
   className?: string;
   size?: 'sm' | 'md' | 'lg';
+  productName?: string;
+  productPrice?: number;
 }
 
 const WishlistButton: React.FC<WishlistButtonProps> = ({
@@ -17,17 +22,35 @@ const WishlistButton: React.FC<WishlistButtonProps> = ({
   variantId,
   enabled = true,
   className = '',
-  size = 'md'
+  size = 'md',
+  productName,
+  productPrice
 }) => {
   const [isInWishlist, setIsInWishlist] = useState(false);
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [storefrontSettings, setStorefrontSettings] = useState<any>(null);
 
   useEffect(() => {
     if (enabled) {
       checkWishlistStatus();
+      fetchStorefrontSettings();
     }
   }, [productId, variantId, enabled]);
+
+  const fetchStorefrontSettings = async () => {
+    try {
+      const companyId = getCompanyId();
+      if (companyId) {
+        const response = await storefrontSettingsService.getPublicSettings(companyId);
+        if (response.success && response.data) {
+          setStorefrontSettings(response.data);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching storefront settings:', error);
+    }
+  };
 
   const checkWishlistStatus = async () => {
     try {
@@ -63,6 +86,24 @@ const WishlistButton: React.FC<WishlistButtonProps> = ({
         await wishlistApi.addToWishlist(productId, variantId);
         setIsInWishlist(true);
         toast.success('تمت إضافة المنتج للمفضلة');
+        
+        // Track AddToWishlist event
+        if (storefrontSettings?.facebookPixelEnabled && productName && productPrice !== undefined) {
+          try {
+            const eventId = trackAddToWishlist({
+              id: productId,
+              name: productName,
+              price: productPrice
+            });
+            if (eventId) {
+              console.log('✅ [Facebook Pixel] AddToWishlist tracked', { productId, eventId });
+            } else {
+              console.warn('⚠️ [Facebook Pixel] AddToWishlist tracking failed - Pixel not ready');
+            }
+          } catch (error) {
+            console.error('❌ [Facebook Pixel] Error tracking AddToWishlist:', error);
+          }
+        }
       }
 
       // Dispatch event to update wishlist count in header

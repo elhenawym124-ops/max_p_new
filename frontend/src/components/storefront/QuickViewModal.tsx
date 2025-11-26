@@ -337,6 +337,8 @@ const QuickViewModal: React.FC<QuickViewModalProps> = ({
                       enabled={true}
                       className="p-3 border border-gray-300 rounded-lg hover:bg-gray-50"
                       size="lg"
+                      productName={product.name}
+                      productPrice={currentPrice}
                     />
                   )}
                 </div>

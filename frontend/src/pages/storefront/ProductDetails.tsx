@@ -120,6 +120,62 @@ const ProductDetails: React.FC = () => {
     }
   }, [id, navigate]);
 
+  // Track ViewContent when both product and storefrontSettings are loaded
+  useEffect(() => {
+    console.log('🔍 [ProductDetails] ViewContent useEffect triggered', {
+      hasProduct: !!product,
+      hasStorefrontSettings: !!storefrontSettings,
+      facebookPixelEnabled: storefrontSettings?.facebookPixelEnabled,
+      pixelTrackViewContent: storefrontSettings?.pixelTrackViewContent,
+      productId: product?.id,
+      productName: product?.name
+    });
+
+    if (product && storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackViewContent !== false) {
+      console.log('📊 [ProductDetails] Calling trackViewContent...', {
+        productId: product.id,
+        productName: product.name,
+        price: product.price,
+        category: product.category?.name,
+        pixelId: storefrontSettings?.facebookPixelId
+      });
+      
+      try {
+        const eventId = trackViewContent({
+          id: product.id,
+          name: product.name,
+          price: product.price,
+          category: product.category?.name
+        });
+        
+        if (eventId) {
+          console.log('✅ [ProductDetails] ViewContent tracked successfully', {
+            productId: product.id,
+            productName: product.name,
+            price: product.price,
+            eventId,
+            pixelId: storefrontSettings?.facebookPixelId,
+            url: `https://www.facebook.com/tr?id=${storefrontSettings?.facebookPixelId}&ev=ViewContent`
+          });
+        } else {
+          console.warn('⚠️ [ProductDetails] ViewContent tracking returned no eventId - Pixel may not be ready yet');
+        }
+      } catch (error) {
+        console.error('❌ [ProductDetails] Error tracking ViewContent:', error);
+      }
+    } else {
+      if (!product) {
+        console.log('ℹ️ [ProductDetails] ViewContent not tracked - product not loaded yet');
+      } else if (!storefrontSettings) {
+        console.log('ℹ️ [ProductDetails] ViewContent not tracked - storefrontSettings not loaded yet');
+      } else if (!storefrontSettings?.facebookPixelEnabled) {
+        console.log('ℹ️ [ProductDetails] ViewContent not tracked - Facebook Pixel disabled');
+      } else if (storefrontSettings?.pixelTrackViewContent === false) {
+        console.log('ℹ️ [ProductDetails] ViewContent not tracked - pixelTrackViewContent is false');
+      }
+    }
+  }, [product, storefrontSettings]);
+
   const fetchStorefrontSettings = async () => {
     try {
       const companyId = getCompanyId();
@@ -202,21 +258,8 @@ const ProductDetails: React.FC = () => {
             // Silently handle errors - recently viewed is optional
           }
         }
-
-        // Track Facebook Pixel ViewContent event
-        if (storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackViewContent !== false) {
-          try {
-            trackViewContent({
-              id: data.data.id,
-              name: data.data.name,
-              price: data.data.price,
-              category: data.data.category?.name
-            });
-            console.log('📊 [Facebook Pixel] ViewContent tracked for product:', data.data.id);
-          } catch (error) {
-            console.error('❌ [Facebook Pixel] Error tracking ViewContent:', error);
-          }
-        }
+        
+        // Note: ViewContent will be tracked in useEffect when both product and storefrontSettings are loaded
 
         // Update SEO
         if (storefrontSettings?.seoEnabled) {
@@ -1124,13 +1167,15 @@ const ProductDetails: React.FC = () => {
                   <ArrowsRightLeftIcon className="h-5 w-5" />
                 </button>
               )}
-              {storefrontSettings?.wishlistEnabled && (
+              {storefrontSettings?.wishlistEnabled && product && (
                 <WishlistButton
                   productId={product.id}
                   variantId={selectedVariant || undefined}
                   enabled={storefrontSettings.wishlistEnabled}
                   className="p-3 border border-gray-300 rounded-lg hover:bg-gray-50"
                   size="lg"
+                  productName={product.name}
+                  productPrice={product.price}
                 />
               )}
             </div>

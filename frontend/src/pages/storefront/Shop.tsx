@@ -5,7 +5,7 @@ import { toast } from 'react-hot-toast';
 import { storefrontApi, getCompanyId } from '../../utils/storefrontApi';
 import { storefrontSettingsService } from '../../services/storefrontSettingsService';
 import { updateSEO } from '../../utils/seo';
-import { trackSearch, trackViewContent, trackAddToCart } from '../../utils/facebookPixel';
+import { trackSearch, trackViewContent, trackAddToCart, trackAddToWishlist, trackCustom } from '../../utils/facebookPixel';
 import StorefrontNav from '../../components/StorefrontNav';
 import QuickViewModal from '../../components/storefront/QuickViewModal';
 import RecentlyViewed from '../../components/storefront/RecentlyViewed';
@@ -191,7 +191,7 @@ const Shop: React.FC = () => {
     if (searchQuery && storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackSearch !== false) {
       try {
         trackSearch(searchQuery);
-        console.log('📊 [Facebook Pixel] Search tracked:', searchQuery);
+        console.log('✅ [Facebook Pixel] Search tracked:', searchQuery);
       } catch (error) {
         console.error('❌ [Facebook Pixel] Error tracking Search:', error);
       }
@@ -298,6 +298,20 @@ const Shop: React.FC = () => {
     const params = new URLSearchParams(searchParams);
     if (categoryId) {
       params.set('category', categoryId);
+      
+      // Track ViewCategory event
+      if (storefrontSettings?.facebookPixelEnabled) {
+        try {
+          const category = categories.find(c => c.id === categoryId);
+          trackCustom('ViewCategory', {
+            content_category: category?.name || 'Unknown',
+            content_category_id: categoryId
+          });
+          console.log('✅ [Facebook Pixel] ViewCategory tracked:', category?.name || categoryId);
+        } catch (error) {
+          console.error('❌ [Facebook Pixel] Error tracking ViewCategory:', error);
+        }
+      }
     } else {
       params.delete('category');
     }
@@ -321,6 +335,31 @@ const Shop: React.FC = () => {
   };
 
   const addToCart = async (product: Product) => {
+    console.log('🛒 [Shop] addToCart called', { 
+      productId: product.id, 
+      productName: product.name,
+      price: product.price,
+      hasStorefrontSettings: !!storefrontSettings,
+      facebookPixelEnabled: storefrontSettings?.facebookPixelEnabled,
+      pixelTrackAddToCart: storefrontSettings?.pixelTrackAddToCart
+    });
+
+    // Ensure storefrontSettings is loaded before tracking
+    if (!storefrontSettings) {
+      console.warn('⚠️ [Shop] storefrontSettings not loaded yet, loading now...');
+      try {
+        const companyId = getCompanyId();
+        if (companyId) {
+          const data = await storefrontSettingsService.getPublicSettings(companyId);
+          if (data.success && data.data) {
+            setStorefrontSettings(data.data);
+          }
+        }
+      } catch (error) {
+        console.error('❌ [Shop] Error loading storefront settings:', error);
+      }
+    }
+
     try {
       let sessionId = localStorage.getItem('cart_session_id');
       
@@ -336,19 +375,61 @@ const Shop: React.FC = () => {
           localStorage.setItem('cart_session_id', data.data.cartId);
         }
         
-        // Track AddToCart event
-        if (storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackAddToCart !== false) {
+        // Track AddToCart event - MUST be called after successful add
+        // Use current storefrontSettings or reload if needed
+        const currentSettings = storefrontSettings || await (async () => {
           try {
-            trackAddToCart({
+            const companyId = getCompanyId();
+            if (companyId) {
+              const settingsData = await storefrontSettingsService.getPublicSettings(companyId);
+              if (settingsData.success && settingsData.data) {
+                setStorefrontSettings(settingsData.data);
+                return settingsData.data;
+              }
+            }
+          } catch (error) {
+            console.error('❌ [Shop] Error loading settings for tracking:', error);
+          }
+          return null;
+        })();
+        
+        if (currentSettings?.facebookPixelEnabled && currentSettings?.pixelTrackAddToCart !== false) {
+          try {
+            console.log('📊 [Shop] Tracking AddToCart event...', {
+              productId: product.id,
+              productName: product.name,
+              price: product.price,
+              pixelId: currentSettings.facebookPixelId
+            });
+            
+            const eventId = trackAddToCart({
               id: product.id,
               name: product.name,
               price: product.price,
               quantity: 1
             });
-            console.log('📊 [Facebook Pixel] AddToCart tracked (Shop page)');
+            
+            if (eventId) {
+              console.log('✅ [Facebook Pixel] AddToCart tracked successfully (Shop page)', { 
+                productId: product.id, 
+                productName: product.name,
+                eventId,
+                url: `https://www.facebook.com/tr?id=${currentSettings?.facebookPixelId}&ev=AddToCart`
+              });
+            } else {
+              console.warn('⚠️ [Facebook Pixel] AddToCart tracking failed - Pixel not ready', {
+                productId: product.id
+              });
+            }
           } catch (error) {
             console.error('❌ [Facebook Pixel] Error tracking AddToCart:', error);
           }
+        } else {
+          console.log('ℹ️ [Shop] AddToCart tracking disabled', {
+            hasSettings: !!currentSettings,
+            facebookPixelEnabled: currentSettings?.facebookPixelEnabled,
+            pixelTrackAddToCart: currentSettings?.pixelTrackAddToCart
+          });
         }
         
         toast.success('تمت إضافة المنتج للسلة');
@@ -383,7 +464,39 @@ const Shop: React.FC = () => {
                 filterByBrand: storefrontSettings.filterByBrand,
                 filterByAttributes: storefrontSettings.filterByAttributes
               }}
-              onApply={(filters) => setActiveFilters(filters)}
+              onApply={(filters) => {
+                setActiveFilters(filters);
+                
+                // Track Filter event
+                if (storefrontSettings?.facebookPixelEnabled) {
+                  try {
+                    const filterData: Record<string, any> = {};
+                    if (filters.priceRange.min > 0 || filters.priceRange.max < 10000) {
+                      filterData.price_min = filters.priceRange.min;
+                      filterData.price_max = filters.priceRange.max;
+                    }
+                    if (filters.rating) {
+                      filterData.rating = filters.rating;
+                    }
+                    if (filters.brand) {
+                      filterData.brand = filters.brand;
+                    }
+                    if (filters.inStock !== null) {
+                      filterData.in_stock = filters.inStock;
+                    }
+                    if (filters.attributes.length > 0) {
+                      filterData.attributes = filters.attributes;
+                    }
+                    
+                    if (Object.keys(filterData).length > 0) {
+                      trackCustom('Filter', filterData);
+                      console.log('✅ [Facebook Pixel] Filter tracked:', filterData);
+                    }
+                  } catch (error) {
+                    console.error('❌ [Facebook Pixel] Error tracking Filter:', error);
+                  }
+                }
+              }}
               onReset={() => setActiveFilters(null)}
               priceRange={priceRange}
               resultsCount={pagination.total}
@@ -573,13 +686,17 @@ const Shop: React.FC = () => {
                               // Track ViewContent event
                               if (storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackViewContent !== false) {
                                 try {
-                                  trackViewContent({
+                                  const eventId = trackViewContent({
                                     id: product.id,
                                     name: product.name,
                                     price: product.price,
                                     category: product.category?.name
                                   });
-                                  console.log('📊 [Facebook Pixel] ViewContent tracked (QuickView)');
+                                  if (eventId) {
+                                    console.log('✅ [Facebook Pixel] ViewContent tracked (QuickView)', { productId: product.id, eventId });
+                                  } else {
+                                    console.warn('⚠️ [Facebook Pixel] ViewContent tracking failed - Pixel not ready');
+                                  }
                                 } catch (error) {
                                   console.error('❌ [Facebook Pixel] Error tracking ViewContent:', error);
                                 }
@@ -604,13 +721,17 @@ const Shop: React.FC = () => {
                           // Track ViewContent event when clicking on product
                           if (storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackViewContent !== false) {
                             try {
-                              trackViewContent({
+                              const eventId = trackViewContent({
                                 id: product.id,
                                 name: product.name,
                                 price: product.price,
                                 category: product.category?.name
                               });
-                              console.log('📊 [Facebook Pixel] ViewContent tracked (product click)');
+                              if (eventId) {
+                                console.log('✅ [Facebook Pixel] ViewContent tracked (product click)', { productId: product.id, eventId });
+                              } else {
+                                console.warn('⚠️ [Facebook Pixel] ViewContent tracking failed - Pixel not ready');
+                              }
                             } catch (error) {
                               console.error('❌ [Facebook Pixel] Error tracking ViewContent:', error);
                             }
