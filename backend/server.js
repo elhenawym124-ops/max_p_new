@@ -52,6 +52,7 @@ const queueRoutes = require('./routes/queueRoutes');
 const authRoutes = require('./routes/authRoutes');
 const demoRoutes = require('./routes/demoRoutes');
 const productRoutes = require('./routes/productRoutes');
+const posRoutes = require('./routes/pos');
 const easyOrdersRoutes = require('./routes/easyOrdersRoutes');
 const wooCommerceRoutes = require('./routes/wooCommerceRoutes');
 const conversationRoutes = require('./routes/conversationRoutes');
@@ -237,6 +238,31 @@ async function loadHeavyServices() {
     broadcastScheduler.start();
     console.log(`✅ Broadcast Scheduler Service started successfully`);
     console.log(`📅 Checking for scheduled broadcasts every minute`);
+    
+    // بدء خدمة التحقق من النماذج المستثناة (كل ساعة)
+    console.log(`🔄 Starting Excluded Models Retry Service...`);
+    const cron = require('node-cron');
+    
+    // التأكد من أن aiAgentService محمّل قبل الوصول إلى getModelManager
+    if (aiAgentService && typeof aiAgentService.getModelManager === 'function') {
+      const modelManager = aiAgentService.getModelManager();
+      
+      // تشغيل كل ساعة
+      cron.schedule('0 * * * *', async () => {
+        try {
+          console.log(`🔄 [EXCLUDED-MODELS] Checking excluded models for retry...`);
+          await modelManager.checkAndRetryExcludedModels();
+          console.log(`✅ [EXCLUDED-MODELS] Excluded models check completed`);
+        } catch (error) {
+          console.error('❌ [EXCLUDED-MODELS] Error checking excluded models:', error);
+        }
+      });
+      
+      console.log(`✅ Excluded Models Retry Service started successfully`);
+      console.log(`📅 Checking excluded models every hour`);
+    } else {
+      console.warn(`⚠️ [EXCLUDED-MODELS] aiAgentService not loaded yet - will retry on next service load`);
+    }
     
     //console.log('✅ [PERFORMANCE] All heavy services loaded successfully!');
     
@@ -934,9 +960,11 @@ app.use('/api/v1/admin/payments', paymentRoutes);
 const adminGeminiKeysRoutes = require('./routes/adminGeminiKeysRoutes');
 const adminModelsRoutes = require('./routes/adminModelsRoutes');
 const adminModelTypesRoutes = require('./routes/adminModelTypesRoutes');
+const adminQuotaMonitoringRoutes = require('./routes/adminQuotaMonitoringRoutes');
 app.use('/api/v1/admin/gemini-keys', adminGeminiKeysRoutes);
 app.use('/api/v1/admin/models', adminModelsRoutes);
 app.use('/api/v1/admin/model-types', adminModelTypesRoutes);
+app.use('/api/v1/admin/quota-monitoring', adminQuotaMonitoringRoutes);
 
 // Super Admin System Management Routes
 app.use('/api/v1/admin', systemManagementRoutes);

@@ -54,14 +54,84 @@ export interface StorefrontSettings {
   recentlyViewedCount: number;
   recentlyViewedDays: number;
   
-  // Image Zoom Settings
+  // ==========================================
+  // 🖼️ Product Image Gallery Settings (NEW)
+  // ==========================================
+  
+  // Gallery Layout Settings
+  galleryLayout?: 'bottom' | 'left' | 'right' | 'top' | 'grid';
+  galleryStyle?: 'slider' | 'grid' | 'vertical-scroll';
+  thumbnailSize?: 'small' | 'medium' | 'large';
+  thumbnailsPerRow?: number;
+  thumbnailSpacing?: number;
+  thumbnailBorderRadius?: number;
+  mainImageAspectRatio?: '1:1' | '4:3' | '3:4' | '16:9' | 'auto';
+  
+  // Slider/Carousel Settings
+  sliderEnabled?: boolean;
+  sliderAutoplay?: boolean;
+  sliderAutoplaySpeed?: number;
+  sliderShowArrows?: boolean;
+  sliderShowDots?: boolean;
+  sliderInfiniteLoop?: boolean;
+  sliderTransitionEffect?: 'slide' | 'fade' | 'flip' | 'cube';
+  sliderTransitionSpeed?: number;
+  
+  // Image Zoom Settings (Enhanced)
   imageZoomEnabled: boolean;
   imageZoomType: 'hover' | 'click' | 'both';
+  zoomStyle?: 'lens' | 'side' | 'inner' | 'fullscreen';
+  zoomLensShape?: 'circle' | 'square';
+  zoomLensSize?: number;
+  zoomLevel?: number;
+  zoomWindowPosition?: 'right' | 'left' | 'top' | 'bottom';
+  zoomWindowSize?: number;
+  mouseWheelZoom?: boolean;
   
-  // Product Videos Settings
+  // Lightbox Settings
+  lightboxEnabled?: boolean;
+  lightboxShowThumbnails?: boolean;
+  lightboxShowArrows?: boolean;
+  lightboxShowCounter?: boolean;
+  lightboxZoomEnabled?: boolean;
+  lightboxKeyboardNav?: boolean;
+  lightboxBackgroundColor?: string;
+  lightboxCloseOnOverlay?: boolean;
+  
+  // Product Videos Settings (Enhanced)
   productVideosEnabled: boolean;
   videoAutoplay: boolean;
   videoShowControls: boolean;
+  videoSources?: string; // JSON array: ['youtube', 'vimeo', 'self-hosted']
+  videoMuted?: boolean;
+  videoPlayMode?: 'inline' | 'popup';
+  videoPosition?: 'start' | 'end' | 'default';
+  videoThumbnailIcon?: boolean;
+  
+  // Variation Images Settings
+  variationImagesEnabled?: boolean;
+  variationImagesBehavior?: 'replace' | 'add' | 'highlight';
+  variationImagesAnimation?: 'fade' | 'slide' | 'none';
+  
+  // Mobile Gallery Settings
+  mobileSwipeEnabled?: boolean;
+  mobilePinchZoom?: boolean;
+  mobileFullscreenOnTap?: boolean;
+  mobileGalleryLayout?: 'slider' | 'vertical' | 'grid';
+  mobileShowThumbnails?: boolean;
+  
+  // 360° View Settings
+  view360Enabled?: boolean;
+  view360AutoRotate?: boolean;
+  view360RotateSpeed?: number;
+  view360ShowControls?: boolean;
+  
+  // Visual Effects Settings
+  imageHoverEffect?: 'none' | 'zoom' | 'brightness' | 'shadow';
+  imageBorderRadius?: number;
+  imageShadow?: boolean;
+  imageLoadingEffect?: 'blur' | 'skeleton' | 'spinner';
+  imagePlaceholder?: string;
   
   // Size Guide Settings
   sizeGuideEnabled: boolean;
@@ -504,11 +574,72 @@ export const storefrontSettingsService = {
           recentlyViewedEnabled: false,
           recentlyViewedCount: 8,
           recentlyViewedDays: 30,
+          // Gallery Layout Defaults
+          galleryLayout: 'bottom',
+          galleryStyle: 'slider',
+          thumbnailSize: 'medium',
+          thumbnailsPerRow: 4,
+          thumbnailSpacing: 8,
+          thumbnailBorderRadius: 8,
+          mainImageAspectRatio: '1:1',
+          // Slider Defaults
+          sliderEnabled: true,
+          sliderAutoplay: false,
+          sliderAutoplaySpeed: 3000,
+          sliderShowArrows: true,
+          sliderShowDots: false,
+          sliderInfiniteLoop: true,
+          sliderTransitionEffect: 'slide',
+          sliderTransitionSpeed: 300,
+          // Image Zoom Defaults
           imageZoomEnabled: false,
           imageZoomType: 'hover',
+          zoomStyle: 'side',
+          zoomLensShape: 'square',
+          zoomLensSize: 150,
+          zoomLevel: 2.5,
+          zoomWindowPosition: 'right',
+          zoomWindowSize: 400,
+          mouseWheelZoom: false,
+          // Lightbox Defaults
+          lightboxEnabled: true,
+          lightboxShowThumbnails: true,
+          lightboxShowArrows: true,
+          lightboxShowCounter: true,
+          lightboxZoomEnabled: true,
+          lightboxKeyboardNav: true,
+          lightboxBackgroundColor: 'rgba(0,0,0,0.9)',
+          lightboxCloseOnOverlay: true,
+          // Video Defaults
           productVideosEnabled: false,
           videoAutoplay: false,
-          videoShowControls: false,
+          videoShowControls: true,
+          videoSources: '["youtube", "vimeo", "self-hosted"]',
+          videoMuted: true,
+          videoPlayMode: 'inline',
+          videoPosition: 'end',
+          videoThumbnailIcon: true,
+          // Variation Images Defaults
+          variationImagesEnabled: true,
+          variationImagesBehavior: 'replace',
+          variationImagesAnimation: 'fade',
+          // Mobile Defaults
+          mobileSwipeEnabled: true,
+          mobilePinchZoom: true,
+          mobileFullscreenOnTap: true,
+          mobileGalleryLayout: 'slider',
+          mobileShowThumbnails: false,
+          // 360 View Defaults
+          view360Enabled: false,
+          view360AutoRotate: true,
+          view360RotateSpeed: 5,
+          view360ShowControls: true,
+          // Visual Effects Defaults
+          imageHoverEffect: 'zoom',
+          imageBorderRadius: 8,
+          imageShadow: true,
+          imageLoadingEffect: 'skeleton',
+          imagePlaceholder: '📦',
           sizeGuideEnabled: false,
           sizeGuideShowOnProduct: false,
           socialSharingEnabled: false,
@@ -596,7 +727,7 @@ export const storefrontSettingsService = {
           fomoTrigger: 'time',
           fomoDelay: 30,
           fomoShowOncePerSession: true,
-          fomoMessage: null,
+          fomoMessage: '',
           seoEnabled: false,
           seoMetaDescription: false,
           seoStructuredData: false,

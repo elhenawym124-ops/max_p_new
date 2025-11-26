@@ -1088,6 +1088,83 @@ class ResponseGenerator {
   }
 
   /**
+   * ✨ Helper function to try different API versions for new models
+   * 
+   * بناءً على الوثائق الرسمية: https://ai.google.dev/api
+   * - النماذج الجديدة (2.5, 2.0, 3) تستخدم v1beta في الـ endpoint
+   * - الـ endpoint: https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
+   * - SDK @google/generative-ai يتعامل مع هذه التفاصيل تلقائياً عند تحديد apiVersion
+   * 
+   * بعض النماذج الجديدة مثل gemini-3-pro قد تحتاج v1beta أو v1alpha
+   */
+  async tryGenerateWithApiVersions(genAI, modelName, generationConfig, prompt, maxRetries = 2) {
+    // ✅ تحديد إصدارات API للاختبار حسب نوع النموذج
+    const isNewModel = modelName.includes('3') || modelName.includes('2.5') || modelName.includes('2.0');
+    const apiVersions = isNewModel ? ['v1beta', 'v1alpha', 'v1'] : ['v1', 'v1beta', 'v1alpha'];
+    
+    let lastError = null;
+    
+    for (const apiVersion of apiVersions) {
+      try {
+        const model = genAI.getGenerativeModel({ 
+          model: modelName,
+          ...(apiVersion !== 'v1' ? { apiVersion } : {}), // v1 هو الافتراضي
+          generationConfig
+        });
+        
+        // 🔄 Retry logic for 503 errors
+        const retryDelays = [1000, 2000];
+        
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          try {
+            const result = await model.generateContent(prompt);
+            return {
+              success: true,
+              response: result.response,
+              apiVersion: apiVersion === 'v1' ? 'v1 (default)' : apiVersion
+            };
+          } catch (retryError) {
+            lastError = retryError;
+            
+            // Check if it's a 503 Service Unavailable error
+            const is503Error = retryError.status === 503 || 
+                             retryError.message?.includes('503') || 
+                             retryError.message?.includes('Service Unavailable') ||
+                             retryError.message?.includes('overloaded');
+            
+            if (is503Error && attempt < maxRetries) {
+              const delay = retryDelays[attempt];
+              console.log(`🔄 [RETRY-503] API ${apiVersion}, Attempt ${attempt + 1}/${maxRetries + 1} failed with 503. Retrying after ${delay}ms...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue; // Retry
+            } else if (!is503Error) {
+              // Not a 503 error, try next API version
+              break;
+            }
+          }
+        }
+      } catch (error) {
+        lastError = error;
+        // ✅ إذا كان الخطأ 404 أو 400، قد يعني أن النموذج غير متوفر في هذا الإصدار
+        const is404or400 = error.status === 404 || error.status === 400 || 
+                          error.message?.includes('404') || error.message?.includes('400') ||
+                          error.message?.includes('not found') || error.message?.includes('invalid');
+        
+        if (is404or400) {
+          console.log(`⚠️ [API-VERSION] Model ${modelName} not available with ${apiVersion}, trying next version...`);
+          continue; // Try next API version
+        }
+        
+        // ✅ للأخطاء الأخرى، نستمر في المحاولة مع إصدار API التالي
+        continue;
+      }
+    }
+    
+    // ✅ إذا فشلت جميع المحاولات
+    throw lastError || new Error(`Failed to generate content with all API versions for model: ${modelName}`);
+  }
+
+  /**
    * Generate AI response using Gemini API with Pattern Enhancement
    */
   async generateAIResponse(prompt, conversationMemory, useRAG, providedGeminiConfig, companyId, conversationId, messageContext) {
@@ -1130,64 +1207,21 @@ class ResponseGenerator {
         // Thinking models use tokens for internal reasoning
       }
 
-      // Step 2: Generate AI response using enhanced prompt with retry logic for 503 errors
+      // Step 2: Generate AI response using enhanced prompt with API version fallback
       const { GoogleGenerativeAI } = require('@google/generative-ai');
       const genAI = new GoogleGenerativeAI(geminiConfig.apiKey);
-      const model = genAI.getGenerativeModel({ 
-        model: geminiConfig.model, 
-        generationConfig
-      });
-
-      // 🔄 Retry logic with exponential backoff for 503 Service Unavailable errors
-      // ✅ تحسين: تقليل عدد المحاولات من 3 إلى 2 لتوفير tokens
-      let result;
-      let response;
-      const maxRetries = 2; // ✅ تحسين: تقليل من 3 إلى 2
-      const retryDelays = [1000, 2000]; // ✅ تحسين: تقليل من 3 إلى 2
-      let lastError;
-      let usedModelId = geminiConfig.modelId; // حفظ modelId للاستخدام بعد النجاح
       
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        try {
-          result = await model.generateContent(enhancedPrompt);
-          response = result.response;
-          
-          // ✅ FIX: تحديث الاستخدام فقط بعد نجاح الطلب
-          if (usedModelId) {
-            console.log(`✅ [USAGE-UPDATE] Updating usage for modelId: ${usedModelId}, model: ${geminiConfig.model}`);
-            await this.aiAgentService.updateModelUsage(usedModelId);
-          } else {
-            console.warn(`⚠️ [USAGE-UPDATE] modelId is missing! geminiConfig:`, {
-              model: geminiConfig.model,
-              keyId: geminiConfig.keyId,
-              modelId: geminiConfig.modelId
-            });
-          }
-          
-          break; // Success, exit retry loop
-        } catch (retryError) {
-          lastError = retryError;
-          
-          // Check if it's a 503 Service Unavailable error
-          const is503Error = retryError.status === 503 || 
-                           retryError.message?.includes('503') || 
-                           retryError.message?.includes('Service Unavailable') ||
-                           retryError.message?.includes('overloaded');
-          
-          if (is503Error && attempt < maxRetries) {
-            const delay = retryDelays[attempt];
-            console.log(`🔄 [RETRY-503] Attempt ${attempt + 1}/${maxRetries + 1} failed with 503. Retrying after ${delay}ms...`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-            continue; // Retry
-          } else {
-            // Not a 503 error or max retries exceeded, throw the error
-            throw retryError;
-          }
-        }
-      }
+      // ✅ استخدام الدالة المساعدة لتجربة إصدارات API متعددة
+      const { response, apiVersion } = await this.tryGenerateWithApiVersions(
+        genAI,
+        geminiConfig.model,
+        generationConfig,
+        enhancedPrompt,
+        2 // maxRetries
+      );
       
-      if (!response) {
-        throw lastError || new Error('Failed to generate content after retries');
+      if (apiVersion && apiVersion !== 'v1 (default)') {
+        console.log(`✅ [API-VERSION] Using ${apiVersion} for model ${geminiConfig.model}`);
       }
       
       // 🔍 Debug full response object
@@ -1200,12 +1234,14 @@ class ResponseGenerator {
       });
       
       // ✅ تحسين: إضافة logging لتتبع استهلاك tokens
+      let totalTokenCount = 0;
       if (response?.usageMetadata) {
         const tokenUsage = {
           promptTokenCount: response.usageMetadata.promptTokenCount || 0,
           candidatesTokenCount: response.usageMetadata.candidatesTokenCount || 0,
           totalTokenCount: response.usageMetadata.totalTokenCount || 0
         };
+        totalTokenCount = tokenUsage.totalTokenCount;
         console.log(`📊 [TOKEN-USAGE] Tokens consumed:`, {
           prompt: tokenUsage.promptTokenCount,
           response: tokenUsage.candidatesTokenCount,
@@ -1215,17 +1251,18 @@ class ResponseGenerator {
         });
       }
       
-      // ✅ FIX: تحديث الاستخدام بناءً على usageMetadata الفعلي من Google (إذا كان متوفراً)
-      // هذا يعطي دقة أكبر من العد اليدوي
-      if (response?.usageMetadata && usedModelId) {
-        try {
-          const totalTokens = response.usageMetadata.totalTokenCount || 0;
-          // يمكن استخدام totalTokens لتحديث الاستخدام بشكل أكثر دقة
-          // لكن حالياً نستخدم العد اليدوي (طلب واحد = استخدام واحد)
-          // يمكن تحسين هذا لاحقاً إذا كان هناك حاجة لتتبع الـ tokens
-        } catch (usageError) {
-          console.warn('⚠️ [USAGE-METADATA] Error processing usage metadata:', usageError);
-        }
+      // ✅ تحديث الاستخدام فقط بعد نجاح الطلب - مع تتبع TPM
+      const usedModelId = geminiConfig.modelId;
+      if (usedModelId) {
+        console.log(`✅ [USAGE-UPDATE] Updating usage for modelId: ${usedModelId}, model: ${geminiConfig.model}, tokens: ${totalTokenCount}`);
+        // ✅ تمرير totalTokenCount لتتبع TPM
+        await this.aiAgentService.updateModelUsage(usedModelId, totalTokenCount);
+      } else {
+        console.warn(`⚠️ [USAGE-UPDATE] modelId is missing! geminiConfig:`, {
+          model: geminiConfig.model,
+          keyId: geminiConfig.keyId,
+          modelId: geminiConfig.modelId
+        });
       }
       
       // Check if response was blocked

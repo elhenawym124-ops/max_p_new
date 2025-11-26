@@ -115,6 +115,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       icon: '🛒',
       items: [
         { to: '/shop', icon: <BuildingStorefrontIcon className="h-5 w-5" />, label: t('sidebar.visitStore'), badge: 'جديد', external: true },
+        { to: '/pos', icon: <CreditCardIcon className="h-5 w-5" />, label: 'نقطة البيع', badge: 'جديد' },
         { to: '/products', icon: <ShoppingBagIcon className="h-5 w-5" />, label: t('sidebar.products') },
         { to: '/products/reviews', icon: <StarIcon className="h-5 w-5" />, label: t('sidebar.productReviews') },
         { to: '/categories', icon: <TagIcon className="h-5 w-5" />, label: t('sidebar.categories') },

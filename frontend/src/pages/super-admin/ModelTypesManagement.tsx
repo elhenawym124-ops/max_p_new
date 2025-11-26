@@ -23,12 +23,18 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Paper
+  Paper,
+  TextField,
+  InputAdornment,
+  Tabs,
+  Tab
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
   Visibility as VisibilityIcon,
-  Edit as EditIcon
+  Edit as EditIcon,
+  FilterList as FilterListIcon,
+  Search as SearchIcon
 } from '@mui/icons-material';
 import { buildApiUrl } from '../../utils/urlHelper';
 import { useAuth } from '../../hooks/useAuthSimple';
@@ -68,6 +74,8 @@ const ModelTypesManagement: React.FC = () => {
     globallyEnabledTypes: number;
     globallyDisabledTypes: number;
   } | null>(null);
+  const [filterStatus, setFilterStatus] = useState<'all' | 'enabled' | 'disabled'>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   useEffect(() => {
     // Check if user is authenticated and is Super Admin
@@ -326,9 +334,56 @@ const ModelTypesManagement: React.FC = () => {
         </Grid>
       )}
 
+      {/* Filters */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Grid container spacing={2} alignItems="center">
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                placeholder="بحث عن نموذج..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon />
+                    </InputAdornment>
+                  )
+                }}
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Tabs
+                value={filterStatus}
+                onChange={(e, newValue) => setFilterStatus(newValue)}
+                variant="fullWidth"
+              >
+                <Tab label="الكل" value="all" />
+                <Tab label="المفعلة" value="enabled" />
+                <Tab label="المعطلة" value="disabled" />
+              </Tabs>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
+
       {/* Model Types List */}
       <Grid container spacing={2}>
-        {modelTypes.map((modelType) => {
+        {modelTypes
+          .filter((modelType) => {
+            // Filter by status
+            if (filterStatus === 'enabled' && !modelType.isGloballyEnabled) return false;
+            if (filterStatus === 'disabled' && modelType.isGloballyEnabled) return false;
+            
+            // Filter by search query
+            if (searchQuery && !modelType.model.toLowerCase().includes(searchQuery.toLowerCase())) {
+              return false;
+            }
+            
+            return true;
+          })
+          .map((modelType) => {
           const badges = getModelBadges(modelType.model);
           return (
             <Grid item xs={12} md={6} key={modelType.model}>

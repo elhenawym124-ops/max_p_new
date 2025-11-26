@@ -246,23 +246,29 @@ model Message {
 }
 
 model Category {
-  id          String     @id @default(cuid())
-  name        String
-  description String?
-  image       String?
-  parentId    String?
-  isActive    Boolean    @default(true)
-  sortOrder   Int        @default(0)
-  companyId   String
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  company     Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  parent      Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
-  children    Category[] @relation("CategoryHierarchy")
-  products    Product[]
+  id              String     @id @default(cuid())
+  name            String
+  slug            String?    // URL-friendly name للـ SEO
+  description     String?    @db.Text
+  image           String?    // صورة الفئة
+  parentId        String?
+  isActive        Boolean    @default(true)
+  sortOrder       Int        @default(0) // ترتيب العرض
+  displayType     String     @default("default") // default | products | subcategories | both
+  metaTitle       String?    // عنوان SEO
+  metaDescription String?    @db.Text // وصف SEO
+  companyId       String
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  company         Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent          Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children        Category[] @relation("CategoryHierarchy")
+  products        Product[]
 
+  @@unique([companyId, slug]) // slug فريد لكل شركة
   @@index([companyId], map: "categories_companyId_idx")
   @@index([parentId], map: "categories_parentId_idx")
+  @@index([slug])
   @@map("categories")
 }
 
@@ -910,6 +916,25 @@ model GeminiKeyModel {
   @@index([isEnabled, priority])
   @@index([keyId, model])
   @@map("gemini_key_models")
+}
+
+model ExcludedModel {
+  id          String    @id @default(cuid())
+  modelName   String
+  keyId       String?
+  companyId   String?
+  reason      String    // RPD_EXHAUSTED, etc.
+  excludedAt  DateTime  @default(now())
+  retryAt     DateTime
+  retryCount  Int       @default(0)
+  lastRetryAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([modelName, keyId])
+  @@index([retryAt])
+  @@index([companyId])
+  @@map("excluded_models")
 }
 
 model SystemPrompt {
@@ -1946,14 +1971,84 @@ model StorefrontSettings {
   recentlyViewedCount   Int     @default(8)
   recentlyViewedDays    Int     @default(30)
 
-  // Image Zoom Settings
+  // ==========================================
+  // 🖼️ Product Image Gallery Settings (NEW)
+  // ==========================================
+  
+  // Gallery Layout Settings
+  galleryLayout          String  @default("bottom") // "bottom" | "left" | "right" | "top" | "grid"
+  galleryStyle           String  @default("slider") // "slider" | "grid" | "vertical-scroll"
+  thumbnailSize          String  @default("medium") // "small" | "medium" | "large"
+  thumbnailsPerRow       Int     @default(4)
+  thumbnailSpacing       Int     @default(8)
+  thumbnailBorderRadius  Int     @default(8)
+  mainImageAspectRatio   String  @default("1:1") // "1:1" | "4:3" | "3:4" | "16:9" | "auto"
+  
+  // Slider/Carousel Settings
+  sliderEnabled          Boolean @default(true)
+  sliderAutoplay         Boolean @default(false)
+  sliderAutoplaySpeed    Int     @default(3000)
+  sliderShowArrows       Boolean @default(true)
+  sliderShowDots         Boolean @default(false)
+  sliderInfiniteLoop     Boolean @default(true)
+  sliderTransitionEffect String  @default("slide") // "slide" | "fade" | "flip" | "cube"
+  sliderTransitionSpeed  Int     @default(300)
+  
+  // Image Zoom Settings (Enhanced)
   imageZoomEnabled Boolean @default(true)
   imageZoomType    String  @default("hover") // "hover" | "click" | "both"
+  zoomStyle        String  @default("side") // "lens" | "side" | "inner" | "fullscreen"
+  zoomLensShape    String  @default("square") // "circle" | "square"
+  zoomLensSize     Int     @default(150)
+  zoomLevel        Float   @default(2.5)
+  zoomWindowPosition String @default("right") // "right" | "left" | "top" | "bottom"
+  zoomWindowSize   Int     @default(400)
+  mouseWheelZoom   Boolean @default(false)
+  
+  // Lightbox Settings
+  lightboxEnabled        Boolean @default(true)
+  lightboxShowThumbnails Boolean @default(true)
+  lightboxShowArrows     Boolean @default(true)
+  lightboxShowCounter    Boolean @default(true)
+  lightboxZoomEnabled    Boolean @default(true)
+  lightboxKeyboardNav    Boolean @default(true)
+  lightboxBackgroundColor String @default("rgba(0,0,0,0.9)")
+  lightboxCloseOnOverlay Boolean @default(true)
 
-  // Product Videos Settings
+  // Product Videos Settings (Enhanced)
   productVideosEnabled Boolean @default(true)
   videoAutoplay        Boolean @default(false)
   videoShowControls    Boolean @default(true)
+  videoSources         String  @default("[\"youtube\", \"vimeo\", \"self-hosted\"]") // JSON array
+  videoMuted           Boolean @default(true)
+  videoPlayMode        String  @default("inline") // "inline" | "popup"
+  videoPosition        String  @default("end") // "start" | "end" | "default"
+  videoThumbnailIcon   Boolean @default(true)
+  
+  // Variation Images Settings
+  variationImagesEnabled   Boolean @default(true)
+  variationImagesBehavior  String  @default("replace") // "replace" | "add" | "highlight"
+  variationImagesAnimation String  @default("fade") // "fade" | "slide" | "none"
+  
+  // Mobile Gallery Settings
+  mobileSwipeEnabled     Boolean @default(true)
+  mobilePinchZoom        Boolean @default(true)
+  mobileFullscreenOnTap  Boolean @default(true)
+  mobileGalleryLayout    String  @default("slider") // "slider" | "vertical" | "grid"
+  mobileShowThumbnails   Boolean @default(false)
+  
+  // 360° View Settings
+  view360Enabled         Boolean @default(false)
+  view360AutoRotate      Boolean @default(true)
+  view360RotateSpeed     Int     @default(5)
+  view360ShowControls    Boolean @default(true)
+  
+  // Visual Effects Settings
+  imageHoverEffect       String  @default("zoom") // "none" | "zoom" | "brightness" | "shadow"
+  imageBorderRadius      Int     @default(8)
+  imageShadow            Boolean @default(true)
+  imageLoadingEffect     String  @default("skeleton") // "blur" | "skeleton" | "spinner"
+  imagePlaceholder       String  @default("📦")
 
   // Size Guide Settings
   sizeGuideEnabled       Boolean @default(true)

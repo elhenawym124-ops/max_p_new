@@ -8,8 +8,6 @@ import {
   ClockIcon,
   BellIcon,
   EyeSlashIcon,
-  MagnifyingGlassIcon,
-  VideoCameraIcon,
   ScaleIcon,
   ShareIcon,
   TagIcon,
@@ -400,47 +398,6 @@ const StorefrontFeaturesSettings: React.FC = () => {
             min={7}
             max={90}
             disabled={!settings.recentlyViewedEnabled}
-          />
-        </SettingsSection>
-
-        {/* Image Zoom Section */}
-        <SettingsSection
-          title="تكبير الصور"
-          icon={MagnifyingGlassIcon}
-          enabled={settings.imageZoomEnabled}
-          onToggle={(enabled) => updateSetting('imageZoomEnabled', enabled)}
-        >
-          <SelectSetting
-            label="نوع التكبير"
-            value={settings.imageZoomType}
-            onChange={(value) => updateSetting('imageZoomType', value)}
-            options={[
-              { value: 'hover', label: 'عند التمرير' },
-              { value: 'click', label: 'عند النقر' },
-              { value: 'both', label: 'الاثنان معاً' },
-            ]}
-            disabled={!settings.imageZoomEnabled}
-          />
-        </SettingsSection>
-
-        {/* Product Videos Section */}
-        <SettingsSection
-          title="فيديوهات المنتجات"
-          icon={VideoCameraIcon}
-          enabled={settings.productVideosEnabled}
-          onToggle={(enabled) => updateSetting('productVideosEnabled', enabled)}
-        >
-          <ToggleSetting
-            label="تشغيل تلقائي"
-            value={settings.videoAutoplay}
-            onChange={(value) => updateSetting('videoAutoplay', value)}
-            disabled={!settings.productVideosEnabled}
-          />
-          <ToggleSetting
-            label="إظهار عناصر التحكم"
-            value={settings.videoShowControls}
-            onChange={(value) => updateSetting('videoShowControls', value)}
-            disabled={!settings.productVideosEnabled}
           />
         </SettingsSection>
 

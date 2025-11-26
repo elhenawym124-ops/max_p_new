@@ -126,16 +126,16 @@ class AIQualityEvaluator {
       //console.log(`🔍 [AI-EVALUATOR] Evaluating response: ${messageId}`);
 
       // 1. تحليل ملاءمة الرد للسؤال (باستخدام AI الذكي)
-      const relevanceScore = await this.evaluateRelevance(userMessage, botResponse);
+      const relevanceScore = await this.evaluateRelevance(userMessage, botResponse, companyId);
 
       // 2. تحليل دقة المعلومات (باستخدام AI الذكي)
-      const accuracyScore = await this.evaluateAccuracy(userMessage, botResponse, ragData);
+      const accuracyScore = await this.evaluateAccuracy(userMessage, botResponse, ragData, companyId);
 
       // 3. تحليل وضوح الرد (باستخدام AI الذكي)
-      const clarityScore = await this.evaluateClarity(userMessage, botResponse);
+      const clarityScore = await this.evaluateClarity(userMessage, botResponse, companyId);
 
       // 4. تحليل اكتمال الإجابة (باستخدام AI الذكي)
-      const completenessScore = await this.evaluateCompleteness(userMessage, botResponse);
+      const completenessScore = await this.evaluateCompleteness(userMessage, botResponse, companyId);
 
       // 5. تحليل استخدام قاعدة المعرفة
       const ragUsageScore = this.evaluateRAGUsage(ragData, botResponse);
@@ -148,19 +148,24 @@ class AIQualityEvaluator {
       // 6. تحليل المشاعر والرضا (جديد)
       let sentimentAnalysis = null;
       try {
-        // تحليل مشاعر العميل من رسالته الأصلية ونوعية طلبه
-        if (userMessage && userMessage.trim().length > 0) {
-          sentimentAnalysis = await this.analyzeSentiment(userMessage, botResponse, responseData.companyId);
-          //console.log(`😊 [SENTIMENT] Customer sentiment from original message: ${sentimentAnalysis.level} (${sentimentAnalysis.score}%)`);
-        }
+        // ✅ التأكد من وجود companyId قبل تحليل المشاعر
+        if (!companyId) {
+          console.warn('⚠️ [SENTIMENT] No companyId provided - skipping sentiment analysis');
+        } else {
+          // تحليل مشاعر العميل من رسالته الأصلية ونوعية طلبه
+          if (userMessage && userMessage.trim().length > 0) {
+            sentimentAnalysis = await this.analyzeSentiment(userMessage, botResponse, companyId);
+            //console.log(`😊 [SENTIMENT] Customer sentiment from original message: ${sentimentAnalysis.level} (${sentimentAnalysis.score}%)`);
+          }
 
-        // إذا كان هناك رد تالي من العميل، نحلله أيضاً (للمستقبل)
-        const customerFollowUp = responseData.customerFollowUp || '';
-        if (customerFollowUp && customerFollowUp.trim().length > 0) {
-          const followUpSentiment = await this.analyzeSentiment(customerFollowUp, botResponse, responseData.companyId);
-          //console.log(`😊 [SENTIMENT] Customer follow-up sentiment: ${followUpSentiment.level} (${followUpSentiment.score}%)`);
-          // استخدام رد العميل التالي إذا كان متاح (أكثر دقة)
-          sentimentAnalysis = followUpSentiment;
+          // إذا كان هناك رد تالي من العميل، نحلله أيضاً (للمستقبل)
+          const customerFollowUp = responseData.customerFollowUp || '';
+          if (customerFollowUp && customerFollowUp.trim().length > 0) {
+            const followUpSentiment = await this.analyzeSentiment(customerFollowUp, botResponse, companyId);
+            //console.log(`😊 [SENTIMENT] Customer follow-up sentiment: ${followUpSentiment.level} (${followUpSentiment.score}%)`);
+            // استخدام رد العميل التالي إذا كان متاح (أكثر دقة)
+            sentimentAnalysis = followUpSentiment;
+          }
         }
       } catch (error) {
         console.error('⚠️ [SENTIMENT] Error analyzing sentiment:', error);
@@ -260,12 +265,12 @@ class AIQualityEvaluator {
    * @param {string} botResponse - رد البوت
    * @returns {Promise<number>} - نقاط الملاءمة (0-100)
    */
-  async evaluateRelevance(userMessage, botResponse) {
+  async evaluateRelevance(userMessage, botResponse, companyId = null) {
     try {
       //console.log(`🧠 [AI-RELEVANCE] Evaluating relevance with AI...`);
 
       // محاولة التقييم بالـ AI أولاً
-      const aiScore = await this.evaluateRelevanceWithAI(userMessage, botResponse);
+      const aiScore = await this.evaluateRelevanceWithAI(userMessage, botResponse, companyId);
       if (aiScore !== null) {
         //console.log(`✅ [AI-RELEVANCE] AI evaluation successful: ${aiScore}%`);
         return aiScore;
@@ -288,7 +293,7 @@ class AIQualityEvaluator {
    * @param {string} botResponse - رد البوت
    * @returns {Promise<number|null>} - نقاط الملاءمة أو null في حالة الفشل
    */
-  async evaluateRelevanceWithAI(userMessage, botResponse) {
+  async evaluateRelevanceWithAI(userMessage, botResponse, companyId = null) {
     try {
       const prompt = `أنت خبير في تقييم جودة المحادثات وخدمة العملاء. قيم مدى ملاءمة الرد للسؤال.
 
@@ -316,7 +321,7 @@ class AIQualityEvaluator {
 
 أعطي فقط الرقم من 0-100 بدون تفسير.`;
 
-      const response = await this.callGeminiForEvaluation(`${userMessage}|||${botResponse}|||RELEVANCE`, userMessage, botResponse);
+      const response = await this.callGeminiForEvaluation(`${userMessage}|||${botResponse}|||RELEVANCE`, userMessage, botResponse, companyId);
 
       if (response && response.score !== undefined) {
         const score = Math.min(100, Math.max(0, Math.round(response.score * 20))); // تحويل من 1-5 إلى 20-100
@@ -370,12 +375,12 @@ class AIQualityEvaluator {
    * @param {Object} ragData - بيانات قاعدة المعرفة
    * @returns {Promise<number>} - نقاط الدقة (0-100)
    */
-  async evaluateAccuracy(userMessage, botResponse, ragData) {
+  async evaluateAccuracy(userMessage, botResponse, ragData, companyId = null) {
     try {
       //console.log(`🧠 [AI-ACCURACY] Evaluating accuracy with AI...`);
 
       // محاولة التقييم بالـ AI أولاً
-      const aiScore = await this.evaluateAccuracyWithAI(userMessage, botResponse, ragData);
+      const aiScore = await this.evaluateAccuracyWithAI(userMessage, botResponse, ragData, companyId);
       if (aiScore !== null) {
         //console.log(`✅ [AI-ACCURACY] AI evaluation successful: ${aiScore}%`);
         return aiScore;
@@ -399,7 +404,7 @@ class AIQualityEvaluator {
    * @param {Object} ragData - بيانات قاعدة المعرفة
    * @returns {Promise<number|null>} - نقاط الدقة أو null في حالة الفشل
    */
-  async evaluateAccuracyWithAI(userMessage, botResponse, ragData) {
+  async evaluateAccuracyWithAI(userMessage, botResponse, ragData, companyId = null) {
     try {
       // إعداد معلومات إضافية للسياق
       let contextInfo = '';
@@ -442,7 +447,7 @@ class AIQualityEvaluator {
 
 أعطي فقط الرقم من 0-100 بدون تفسير.`;
 
-      const response = await this.callGeminiForEvaluation(`${userMessage}|||${botResponse}|||ACCURACY`, userMessage, botResponse);
+      const response = await this.callGeminiForEvaluation(`${userMessage}|||${botResponse}|||ACCURACY`, userMessage, botResponse, companyId);
 
       if (response && response.score !== undefined) {
         const score = Math.min(100, Math.max(0, Math.round(response.score * 20))); // تحويل من 1-5 إلى 20-100
@@ -500,12 +505,12 @@ class AIQualityEvaluator {
    * @param {string} botResponse - رد البوت
    * @returns {Promise<number>} - نقاط الوضوح (0-100)
    */
-  async evaluateClarity(userMessage, botResponse) {
+  async evaluateClarity(userMessage, botResponse, companyId = null) {
     try {
       //console.log(`🧠 [AI-CLARITY] Evaluating clarity with AI...`);
 
       // محاولة التقييم بالـ AI أولاً
-      const aiScore = await this.evaluateClarityWithAI(userMessage, botResponse);
+      const aiScore = await this.evaluateClarityWithAI(userMessage, botResponse, companyId);
       if (aiScore !== null) {
         //console.log(`✅ [AI-CLARITY] AI evaluation successful: ${aiScore}%`);
         return aiScore;
@@ -528,7 +533,7 @@ class AIQualityEvaluator {
    * @param {string} botResponse - رد البوت
    * @returns {Promise<number|null>} - نقاط الوضوح أو null في حالة الفشل
    */
-  async evaluateClarityWithAI(userMessage, botResponse) {
+  async evaluateClarityWithAI(userMessage, botResponse, companyId = null) {
     try {
       const prompt = `أنت خبير في تقييم وضوح التواصل وجودة الكتابة. قيم مدى وضوح الرد للعميل.
 
@@ -566,7 +571,7 @@ class AIQualityEvaluator {
 
 أعطي فقط الرقم من 0-100 بدون تفسير.`;
 
-      const response = await this.callGeminiForEvaluation(`${userMessage}|||${botResponse}|||CLARITY`, userMessage, botResponse);
+      const response = await this.callGeminiForEvaluation(`${userMessage}|||${botResponse}|||CLARITY`, userMessage, botResponse, companyId);
 
       if (response && response.score !== undefined) {
         const score = Math.min(100, Math.max(0, Math.round(response.score * 20))); // تحويل من 1-5 إلى 20-100
@@ -632,12 +637,12 @@ class AIQualityEvaluator {
    * @param {string} botResponse - رد البوت
    * @returns {Promise<number>} - نقاط الاكتمال (0-100)
    */
-  async evaluateCompleteness(userMessage, botResponse) {
+  async evaluateCompleteness(userMessage, botResponse, companyId = null) {
     try {
       //console.log(`🧠 [AI-COMPLETENESS] Evaluating completeness with AI...`);
 
       // محاولة التقييم بالـ AI أولاً
-      const aiScore = await this.evaluateCompletenessWithAI(userMessage, botResponse);
+      const aiScore = await this.evaluateCompletenessWithAI(userMessage, botResponse, companyId);
       if (aiScore !== null) {
         //console.log(`✅ [AI-COMPLETENESS] AI evaluation successful: ${aiScore}%`);
         return aiScore;
@@ -660,7 +665,7 @@ class AIQualityEvaluator {
    * @param {string} botResponse - رد البوت
    * @returns {Promise<number|null>} - نقاط الاكتمال أو null في حالة الفشل
    */
-  async evaluateCompletenessWithAI(userMessage, botResponse) {
+  async evaluateCompletenessWithAI(userMessage, botResponse, companyId = null) {
     try {
       const prompt = `أنت خبير في تقييم اكتمال الإجابات في خدمة العملاء. قيم مدى اكتمال الرد للسؤال.
 
@@ -693,7 +698,7 @@ class AIQualityEvaluator {
 
 أعطي فقط الرقم من 0-100 بدون تفسير.`;
 
-      const response = await this.callGeminiForEvaluation(`${userMessage}|||${botResponse}|||COMPLETENESS`, userMessage, botResponse);
+      const response = await this.callGeminiForEvaluation(`${userMessage}|||${botResponse}|||COMPLETENESS`, userMessage, botResponse, companyId);
 
       if (response && response.score !== undefined) {
         const score = Math.min(100, Math.max(0, Math.round(response.score * 20))); // تحويل من 1-5 إلى 20-100
@@ -1027,7 +1032,7 @@ class AIQualityEvaluator {
    * @param {string} botResponse - رد البوت (اختياري للسياق)
    * @returns {Object} نتيجة تحليل المشاعر
    */
-  async analyzeSentiment(customerMessage, botResponse = '') {
+  async analyzeSentiment(customerMessage, botResponse = '', companyId = null) {
     try {
       // إذا كانت الرسالة فارغة أو قصيرة جداً
       if (!customerMessage || customerMessage.trim().length < 2) {
@@ -1048,7 +1053,12 @@ class AIQualityEvaluator {
         return quickAnalysis;
       }
 
-      // استخدام AI للتحليل المتقدم
+      // ✅ استخدام AI للتحليل المتقدم - فقط إذا كان companyId متوفر
+      if (!companyId) {
+        // إذا لم يكن companyId متوفر، نرجع التحليل السريع فقط
+        return quickAnalysis;
+      }
+
       const aiAnalysis = await this.aiSentimentAnalysis(customerMessage, botResponse, companyId);
 
       // دمج النتائج
@@ -1705,15 +1715,21 @@ ${botResponse ? `رد البوت: "${botResponse}"` : ''}
    * @param {string} botResponse - رد البوت (اختياري)
    * @returns {Promise<Object|null>} - نتيجة التقييم
    */
-  async callGeminiForEvaluation(prompt, userMessage = null, botResponse = null) {
+  async callGeminiForEvaluation(prompt, userMessage = null, botResponse = null, companyId = null) {
     //console.log(`🧠 [AI-EVALUATION] بدء التقييم المحسن...`);
 
     try {
+      // ✅ إذا لم يكن companyId متوفر، لا يمكن المتابعة
+      if (!companyId) {
+        console.error('❌ [AI-EVALUATION] No companyId provided - cannot get active model');
+        return null;
+      }
+
       // استخدام نظام مباشر مع Gemini للتقييم السريع
       const aiAgentService = require('./aiAgentService');
 
-      // الحصول على النموذج النشط الحالي
-      const currentModel = await aiAgentService.getCurrentActiveModel();
+      // ✅ الحصول على النموذج النشط الحالي مع تمرير companyId
+      const currentModel = await aiAgentService.getCurrentActiveModel(companyId);
       if (!currentModel) {
         console.error('❌ [AI-EVALUATION] No active model found');
         return null;

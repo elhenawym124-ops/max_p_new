@@ -10,6 +10,7 @@ import {
   DocumentTextIcon,
   GlobeAltIcon,
   HomeIcon,
+  PhotoIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { storeSettingsService, Branch, ShippingZone } from '../../services/storeSettingsService';
@@ -24,7 +25,7 @@ import { ShippingModal } from '../../components/store/ShippingModal';
 
 const StoreSettings: React.FC = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'branches' | 'shipping' | 'checkout' | 'footer' | 'promotion' | 'delivery' | 'recommendations' | 'features' | 'homepage'>('branches');
+  const [activeTab, setActiveTab] = useState<'branches' | 'shipping' | 'checkout' | 'footer' | 'promotion' | 'delivery' | 'recommendations' | 'features' | 'homepage' | 'product-images'>('branches');
   const [branches, setBranches] = useState<Branch[]>([]);
   const [shippingZones, setShippingZones] = useState<ShippingZone[]>([]);
   const [checkoutSettings, setCheckoutSettings] = useState<Partial<CheckoutFormSettings>>({});
@@ -385,6 +386,13 @@ const StoreSettings: React.FC = () => {
               >
                 <GlobeAltIcon className="h-5 w-5 ml-3" />
                 ميزات الواجهة
+              </button>
+              <button
+                onClick={() => navigate('/settings/product-images')}
+                className="w-full px-4 py-3 text-sm font-medium rounded-lg flex items-center transition-colors text-gray-700 hover:bg-gray-50 hover:text-gray-900"
+              >
+                <PhotoIcon className="h-5 w-5 ml-3" />
+                إعدادات صور المنتج
               </button>
               <button
                 onClick={() => setActiveTab('recommendations')}

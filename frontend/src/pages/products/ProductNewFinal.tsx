@@ -34,6 +34,7 @@ interface ProductFormData {
   showAddToCartButton: boolean;
   saleStartDate: string;
   saleEndDate: string;
+  sizeGuide: string; // 📏 دليل المقاسات
   tags: string[];
   weight?: number | undefined;
   dimensions?: { length?: number; width?: number; height?: number; } | undefined;
@@ -120,6 +121,7 @@ const ProductNewFinal: React.FC = () => {
     showAddToCartButton: true,
     saleStartDate: '',
     saleEndDate: '',
+    sizeGuide: '', // 📏 دليل المقاسات
     tags: [],
     weight: undefined,
     dimensions: undefined,
@@ -204,6 +206,7 @@ const ProductNewFinal: React.FC = () => {
             showAddToCartButton: product.showAddToCartButton !== false,
             saleStartDate: product.saleStartDate ? product.saleStartDate.split('T')[0] : '',
             saleEndDate: product.saleEndDate ? product.saleEndDate.split('T')[0] : '',
+            sizeGuide: product.sizeGuide || '', // 📏 دليل المقاسات
             tags: product.tags ? (typeof product.tags === 'string' ? JSON.parse(product.tags) : product.tags) : [],
             weight: product.weight ? parseFloat(product.weight) : undefined,
             dimensions: product.dimensions ? (typeof product.dimensions === 'string' ? JSON.parse(product.dimensions) : product.dimensions) : undefined,
@@ -700,6 +703,7 @@ const ProductNewFinal: React.FC = () => {
         showAddToCartButton: formData.showAddToCartButton,
         saleStartDate: formData.saleStartDate ? new Date(formData.saleStartDate).toISOString() : null,
         saleEndDate: formData.saleEndDate ? new Date(formData.saleEndDate).toISOString() : null,
+        sizeGuide: formData.sizeGuide?.trim() || null, // 📏 دليل المقاسات
         tags: formData.tags,
         weight: formData.weight || null,
         dimensions: formData.dimensions || null,
@@ -1892,6 +1896,38 @@ const ProductNewFinal: React.FC = () => {
                       </label>
                     </div>
                     <p className="mr-6 text-xs text-gray-500">عند إلغاء التفعيل، لن يظهر زر "أضف للسلة"</p>
+                  </div>
+
+                  {/* Size Guide */}
+                  <div className="space-y-4 border-b border-gray-200 pb-6">
+                    <h4 className="text-md font-medium text-gray-900">📏 دليل المقاسات</h4>
+                    <div>
+                      <label htmlFor="sizeGuide" className="block text-sm font-medium text-gray-700 mb-2">
+                        دليل المقاسات
+                      </label>
+                      <textarea
+                        id="sizeGuide"
+                        name="sizeGuide"
+                        value={formData.sizeGuide}
+                        onChange={handleInputChange}
+                        rows={8}
+                        className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                        placeholder="أدخل دليل المقاسات هنا... يمكنك استخدام Markdown أو HTML
+
+مثال:
+# دليل المقاسات
+
+| المقاس | الطول (سم) | العرض (سم) |
+|--------|------------|------------|
+| S      | 65         | 48         |
+| M      | 68         | 50         |
+| L      | 71         | 52         |
+| XL     | 74         | 54         |"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        يمكنك إضافة جدول مقاسات للمنتج. سيظهر للعملاء في صفحة المنتج.
+                      </p>
+                    </div>
                   </div>
 
                   {/* Recommended Products */}

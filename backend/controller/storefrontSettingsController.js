@@ -356,10 +356,30 @@ exports.updateStorefrontSettings = async (req, res) => {
       'backInStockEnabled', 'backInStockNotifyEmail', 'backInStockNotifySMS',
       // Recently Viewed
       'recentlyViewedEnabled', 'recentlyViewedCount', 'recentlyViewedDays',
-      // Image Zoom
-      'imageZoomEnabled', 'imageZoomType',
-      // Product Videos
-      'productVideosEnabled', 'videoAutoplay', 'videoShowControls',
+      // Gallery Layout Settings
+      'galleryLayout', 'galleryStyle', 'thumbnailSize', 'thumbnailsPerRow',
+      'thumbnailSpacing', 'thumbnailBorderRadius', 'mainImageAspectRatio',
+      // Slider/Carousel Settings
+      'sliderEnabled', 'sliderAutoplay', 'sliderAutoplaySpeed', 'sliderShowArrows',
+      'sliderShowDots', 'sliderInfiniteLoop', 'sliderTransitionEffect', 'sliderTransitionSpeed',
+      // Image Zoom (Enhanced)
+      'imageZoomEnabled', 'imageZoomType', 'zoomStyle', 'zoomLensShape', 'zoomLensSize',
+      'zoomLevel', 'zoomWindowPosition', 'zoomWindowSize', 'mouseWheelZoom',
+      // Lightbox Settings
+      'lightboxEnabled', 'lightboxShowThumbnails', 'lightboxShowArrows', 'lightboxShowCounter',
+      'lightboxZoomEnabled', 'lightboxKeyboardNav', 'lightboxBackgroundColor', 'lightboxCloseOnOverlay',
+      // Product Videos (Enhanced)
+      'productVideosEnabled', 'videoAutoplay', 'videoShowControls', 'videoSources',
+      'videoMuted', 'videoPlayMode', 'videoPosition', 'videoThumbnailIcon',
+      // Variation Images Settings
+      'variationImagesEnabled', 'variationImagesBehavior', 'variationImagesAnimation',
+      // Mobile Gallery Settings
+      'mobileSwipeEnabled', 'mobilePinchZoom', 'mobileFullscreenOnTap',
+      'mobileGalleryLayout', 'mobileShowThumbnails',
+      // 360 View Settings
+      'view360Enabled', 'view360AutoRotate', 'view360RotateSpeed', 'view360ShowControls',
+      // Visual Effects Settings
+      'imageHoverEffect', 'imageBorderRadius', 'imageShadow', 'imageLoadingEffect', 'imagePlaceholder',
       // Size Guide
       'sizeGuideEnabled', 'sizeGuideShowOnProduct',
       // Social Sharing
@@ -446,7 +466,13 @@ exports.updateStorefrontSettings = async (req, res) => {
           'onlineVisitorsType', 'onlineVisitorsText',
           'estimatedDeliveryDefaultText',
           'fomoType', 'fomoTrigger', 'fomoMessage',
-          'defaultLanguage', 'pixelStatus', 'capiStatus'
+          'defaultLanguage', 'pixelStatus', 'capiStatus',
+          // Product Image Gallery String Fields
+          'galleryLayout', 'galleryStyle', 'thumbnailSize', 'mainImageAspectRatio',
+          'sliderTransitionEffect', 'zoomStyle', 'zoomLensShape', 'zoomWindowPosition',
+          'lightboxBackgroundColor', 'videoSources', 'videoPlayMode', 'videoPosition',
+          'variationImagesBehavior', 'variationImagesAnimation',
+          'mobileGalleryLayout', 'imageHoverEffect', 'imageLoadingEffect', 'imagePlaceholder'
         ];
         
         if (stringFields.includes(field)) {
@@ -569,11 +595,25 @@ exports.updateStorefrontSettings = async (req, res) => {
           continue; // Skip to next field
         }
         
-        // Numeric fields
-        if (field === 'minRatingToDisplay' || field === 'fomoDelay' ||
+        // Numeric fields (Integer)
+        const intFields = [
+          'minRatingToDisplay', 'fomoDelay',
+          // Product Image Gallery Int Fields
+          'thumbnailsPerRow', 'thumbnailSpacing', 'thumbnailBorderRadius',
+          'sliderAutoplaySpeed', 'sliderTransitionSpeed',
+          'zoomLensSize', 'zoomWindowSize',
+          'view360RotateSpeed', 'imageBorderRadius'
+        ];
+        if (intFields.includes(field) ||
             field.includes('Count') || field.includes('Days') || field.includes('Items') || 
             field.includes('Products') || field.includes('Threshold') || field.includes('Interval')) {
           updateData[field] = parseInt(settingsData[field]) || 0;
+          continue; // Skip to next field
+        }
+        
+        // Float fields
+        if (field === 'zoomLevel') {
+          updateData[field] = parseFloat(settingsData[field]) || 2.5;
           continue; // Skip to next field
         }
         
@@ -589,8 +629,35 @@ exports.updateStorefrontSettings = async (req, res) => {
           'onlineVisitorsType', 'onlineVisitorsText',
           'estimatedDeliveryDefaultText',
           'fomoType', 'fomoTrigger', 'fomoMessage',
-          'defaultLanguage', 'pixelStatus', 'capiStatus'
+          'defaultLanguage', 'pixelStatus', 'capiStatus',
+          // Product Image Gallery String Fields
+          'galleryLayout', 'galleryStyle', 'thumbnailSize', 'mainImageAspectRatio',
+          'sliderTransitionEffect', 'zoomStyle', 'zoomLensShape', 'zoomWindowPosition',
+          'lightboxBackgroundColor', 'videoSources', 'videoPlayMode', 'videoPosition',
+          'variationImagesBehavior', 'variationImagesAnimation',
+          'mobileGalleryLayout', 'imageHoverEffect', 'imageLoadingEffect', 'imagePlaceholder'
         ];
+        
+        // Product Image Gallery Boolean fields
+        const imageGalleryBooleanFields = [
+          'sliderEnabled', 'sliderAutoplay', 'sliderShowArrows', 'sliderShowDots', 'sliderInfiniteLoop',
+          'lightboxEnabled', 'lightboxShowThumbnails', 'lightboxShowArrows', 'lightboxShowCounter',
+          'lightboxZoomEnabled', 'lightboxKeyboardNav', 'lightboxCloseOnOverlay',
+          'videoMuted', 'videoThumbnailIcon',
+          'variationImagesEnabled',
+          'mobileSwipeEnabled', 'mobilePinchZoom', 'mobileFullscreenOnTap', 'mobileShowThumbnails',
+          'view360Enabled', 'view360AutoRotate', 'view360ShowControls',
+          'imageShadow', 'mouseWheelZoom'
+        ];
+        
+        if (imageGalleryBooleanFields.includes(field)) {
+          // Convert to boolean - handle 0/1 and true/false
+          const value = settingsData[field];
+          const boolValue = value === 1 || value === '1' || value === true || value === 'true';
+          console.log(`🔍 [STOREFRONT-SETTINGS] ImageGallery Boolean field: ${field}, raw=${value} (${typeof value}), converted=${boolValue}`);
+          updateData[field] = boolValue;
+          continue; // Skip to next field
+        }
         
         if ((field.includes('Enabled') || field.includes('Show') || field.includes('Require') || 
             field.includes('Moderation') || field.includes('Autoplay') || field.includes('Controls') ||
@@ -791,8 +858,30 @@ exports.updateStorefrontSettings = async (req, res) => {
           console.warn(`⚠️ [STOREFRONT-SETTINGS] ${key} has unexpected type: ${typeof value}, skipping`);
         }
       } else {
-        // Non-String fields - keep as is
-        cleanUpdateData[key] = value;
+        // Non-String fields - check for Boolean fields that might have Int values
+        const imageGalleryBooleanFields = [
+          'sliderEnabled', 'sliderAutoplay', 'sliderShowArrows', 'sliderShowDots', 'sliderInfiniteLoop',
+          'lightboxEnabled', 'lightboxShowThumbnails', 'lightboxShowArrows', 'lightboxShowCounter',
+          'lightboxZoomEnabled', 'lightboxKeyboardNav', 'lightboxCloseOnOverlay',
+          'videoMuted', 'videoThumbnailIcon',
+          'variationImagesEnabled',
+          'mobileSwipeEnabled', 'mobilePinchZoom', 'mobileFullscreenOnTap', 'mobileShowThumbnails',
+          'view360Enabled', 'view360AutoRotate', 'view360ShowControls',
+          'imageShadow', 'mouseWheelZoom',
+          'imageZoomEnabled', 'productVideosEnabled', 'videoAutoplay', 'videoShowControls'
+        ];
+        
+        if (imageGalleryBooleanFields.includes(key)) {
+          // Ensure it's a proper boolean
+          if (typeof value === 'number') {
+            console.log(`🔧 [STOREFRONT-SETTINGS] Converting ${key} from number ${value} to boolean ${value === 1}`);
+            cleanUpdateData[key] = value === 1;
+          } else {
+            cleanUpdateData[key] = Boolean(value);
+          }
+        } else {
+          cleanUpdateData[key] = value;
+        }
       }
     }
 
@@ -827,6 +916,26 @@ exports.updateStorefrontSettings = async (req, res) => {
       supportedLanguages: cleanUpdateData.supportedLanguages || ["ar"]
     };
     
+    // Fix ALL Boolean fields in createData that might have Int values
+    const allBooleanFields = [
+      'sliderEnabled', 'sliderAutoplay', 'sliderShowArrows', 'sliderShowDots', 'sliderInfiniteLoop',
+      'lightboxEnabled', 'lightboxShowThumbnails', 'lightboxShowArrows', 'lightboxShowCounter',
+      'lightboxZoomEnabled', 'lightboxKeyboardNav', 'lightboxCloseOnOverlay',
+      'videoMuted', 'videoThumbnailIcon',
+      'variationImagesEnabled',
+      'mobileSwipeEnabled', 'mobilePinchZoom', 'mobileFullscreenOnTap', 'mobileShowThumbnails',
+      'view360Enabled', 'view360AutoRotate', 'view360ShowControls',
+      'imageShadow', 'mouseWheelZoom',
+      'imageZoomEnabled', 'productVideosEnabled', 'videoAutoplay', 'videoShowControls'
+    ];
+    
+    allBooleanFields.forEach(field => {
+      if (createData[field] !== undefined && typeof createData[field] === 'number') {
+        console.log(`🔧 [STOREFRONT-SETTINGS] Fixing createData.${field} from number ${createData[field]} to boolean`);
+        createData[field] = createData[field] === 1;
+      }
+    });
+    
     console.log('🔍 [STOREFRONT-SETTINGS] === Checking createData String fields ===');
     allStringFields.forEach(field => {
       if (createData[field] !== undefined) {
@@ -851,6 +960,98 @@ exports.updateStorefrontSettings = async (req, res) => {
 
     console.log('🔄 [STOREFRONT-SETTINGS] Attempting upsert with cleanUpdateData keys:', Object.keys(cleanUpdateData));
     console.log('🔄 [STOREFRONT-SETTINGS] cleanUpdateData sample (first 5):', Object.fromEntries(Object.entries(cleanUpdateData).slice(0, 5)));
+    
+    // Debug: Check ALL fields for type mismatches
+    console.log('🔍🔍🔍 [STOREFRONT-SETTINGS] === FINAL TYPE CHECK BEFORE UPSERT ===');
+    Object.entries(cleanUpdateData).forEach(([field, val]) => {
+      const valType = typeof val;
+      // Check Boolean fields
+      if ((field.includes('Enabled') || field.includes('Show') || field.includes('Autoplay') || 
+           field.includes('Require') || field.includes('Moderation') || field.includes('Controls') ||
+           field.startsWith('badge') || field.startsWith('tab') || field.startsWith('share') ||
+           field.startsWith('seo') || field.includes('Zoom') || field.includes('Loop') ||
+           field.includes('Muted') || field.includes('Icon') || field.includes('Shadow') ||
+           field.includes('Wheel') || field.includes('Swipe') || field.includes('Pinch') ||
+           field.includes('Fullscreen') || field.includes('Thumbnails') || field.includes('Arrows') ||
+           field.includes('Counter') || field.includes('Nav') || field.includes('Overlay') ||
+           field.includes('Rotate') || field.includes('Keyboard')) && valType === 'number') {
+        console.error(`❌❌❌ [STOREFRONT-SETTINGS] BOOLEAN FIELD HAS INT: ${field} = ${val} (type: ${valType})`);
+      }
+    });
+    
+    // FINAL FIX: Force convert ALL Boolean fields to proper boolean type
+    const forceBooleanFields = [
+      'quickViewEnabled', 'quickViewShowAddToCart', 'quickViewShowWishlist',
+      'comparisonEnabled', 'comparisonShowPrice', 'comparisonShowSpecs',
+      'wishlistEnabled', 'wishlistRequireLogin',
+      'advancedFiltersEnabled', 'filterByPrice', 'filterByRating', 'filterByBrand', 'filterByAttributes',
+      'reviewsEnabled', 'reviewsRequirePurchase', 'reviewsModerationEnabled', 'reviewsShowRating',
+      'countdownEnabled', 'countdownShowOnProduct', 'countdownShowOnListing',
+      'backInStockEnabled', 'backInStockNotifyEmail', 'backInStockNotifySMS',
+      'recentlyViewedEnabled',
+      'sliderEnabled', 'sliderAutoplay', 'sliderShowArrows', 'sliderShowDots', 'sliderInfiniteLoop',
+      'imageZoomEnabled', 'mouseWheelZoom',
+      'lightboxEnabled', 'lightboxShowThumbnails', 'lightboxShowArrows', 'lightboxShowCounter',
+      'lightboxZoomEnabled', 'lightboxKeyboardNav', 'lightboxCloseOnOverlay',
+      'productVideosEnabled', 'videoAutoplay', 'videoShowControls', 'videoMuted', 'videoThumbnailIcon',
+      'variationImagesEnabled',
+      'mobileSwipeEnabled', 'mobilePinchZoom', 'mobileFullscreenOnTap', 'mobileShowThumbnails',
+      'view360Enabled', 'view360AutoRotate', 'view360ShowControls',
+      'imageShadow',
+      'sizeGuideEnabled', 'sizeGuideShowOnProduct',
+      'socialSharingEnabled', 'shareFacebook', 'shareTwitter', 'shareWhatsApp', 'shareTelegram',
+      'badgesEnabled', 'badgeNew', 'badgeBestSeller', 'badgeOnSale', 'badgeOutOfStock',
+      'tabsEnabled', 'tabDescription', 'tabSpecifications', 'tabReviews', 'tabShipping',
+      'stickyAddToCartEnabled', 'stickyShowOnMobile', 'stickyShowOnDesktop', 'stickyShowBuyNow',
+      'stickyShowAddToCartButton', 'stickyShowQuantity', 'stickyShowProductImage', 'stickyShowProductName',
+      'stickyTrackAnalytics', 'stickyAutoScrollToCheckout',
+      'navigationEnabled', 'showNavigationButtons', 'keyboardShortcuts',
+      'soldNumberEnabled', 'variantColorShowName', 'variantSizeShowGuide', 'variantSizeShowStock',
+      'stockProgressEnabled',
+      'securityBadgesEnabled', 'badgeSecurePayment', 'badgeFreeShipping', 'badgeQualityGuarantee',
+      'badgeCashOnDelivery', 'badgeBuyerProtection', 'badgeHighRating', 'badgeCustom1', 'badgeCustom2',
+      'reasonsToPurchaseEnabled', 'onlineVisitorsEnabled',
+      'estimatedDeliveryEnabled', 'estimatedDeliveryShowOnProduct',
+      'fomoEnabled', 'fomoShowOncePerSession',
+      'productPageLayoutEnabled', 'productPageShowTitle', 'productPageShowCategory',
+      'productPageShowSocialSharing', 'productPageShowBadges', 'productPageShowPrice',
+      'productPageShowCountdown', 'productPageShowStockStatus', 'productPageShowStockProgress',
+      'productPageShowBackInStock', 'productPageShowSecurityBadges', 'productPageShowSoldNumber',
+      'productPageShowOnlineVisitors', 'productPageShowEstimatedDelivery', 'productPageShowFreeShipping',
+      'productPageShowPreOrder', 'productPageShowVariants', 'productPageShowSizeGuide',
+      'productPageShowQuantity', 'productPageShowVolumeDiscounts', 'productPageShowReasonsToPurchase',
+      'productPageShowActions', 'productPageShowTabs', 'productPageShowDescription',
+      'productPageShowSKU', 'productPageShowCheckoutForm',
+      'seoEnabled', 'seoMetaDescription', 'seoStructuredData', 'seoSitemap', 'seoOpenGraph',
+      'multiLanguageEnabled',
+      'facebookPixelEnabled', 'pixelTrackPageView', 'pixelTrackViewContent', 'pixelTrackAddToCart',
+      'pixelTrackInitiateCheckout', 'pixelTrackPurchase', 'pixelTrackSearch', 'pixelTrackAddToWishlist',
+      'facebookConvApiEnabled', 'capiTrackPageView', 'capiTrackViewContent', 'capiTrackAddToCart',
+      'capiTrackInitiateCheckout', 'capiTrackPurchase', 'capiTrackSearch',
+      'eventDeduplicationEnabled', 'gdprCompliant', 'hashUserData'
+    ];
+    
+    forceBooleanFields.forEach(field => {
+      if (cleanUpdateData[field] !== undefined) {
+        const val = cleanUpdateData[field];
+        if (typeof val !== 'boolean') {
+          cleanUpdateData[field] = val === 1 || val === '1' || val === true || val === 'true';
+        }
+      }
+      if (createData[field] !== undefined) {
+        const val = createData[field];
+        if (typeof val !== 'boolean') {
+          createData[field] = val === 1 || val === '1' || val === true || val === 'true';
+        }
+      }
+    });
+    
+    console.log('🔍 [STOREFRONT-SETTINGS] Final cleanUpdateData Boolean check:');
+    forceBooleanFields.forEach(field => {
+      if (cleanUpdateData[field] !== undefined && typeof cleanUpdateData[field] !== 'boolean') {
+        console.error(`❌ STILL NOT BOOLEAN: ${field} = ${cleanUpdateData[field]} (${typeof cleanUpdateData[field]})`);
+      }
+    });
     
     try {
       const settings = await prisma.storefrontSettings.upsert({

@@ -77,10 +77,53 @@ const ModelPrioritiesManagement: React.FC = () => {
 
       const result = await response.json();
       if (result.success) {
+        // ✅ قائمة النماذج المعطلة (يجب إخفاؤها) - نفس القائمة في modelManager.js
+        const disabledModels = [
+          'gemini-3-pro',
+          'gemini-3-pro-preview',
+          'gemini-2.5-pro-preview-05-06',
+          'gemini-2.0-flash-exp',
+          'gemini-1.5-pro',
+          'gemini-1.5-flash',
+          'gemini-pro',
+          'gemini-flash',
+          'gemini-2.5-flash-preview-05-20',
+          'gemini-2.5-flash-live',
+          'gemini-2.0-flash-live',
+          'gemini-2.5-flash-native-audio-dialog',
+          'gemini-2.5-flash-tts',
+          'gemma-3-27b',
+          'gemma-3-12b',
+          'gemma-3-4b',
+          'gemma-3-2b',
+          'gemma-3-1b',
+          'gemma-2-27b-it',
+          'gemma-2-9b-it'
+        ];
+        
+        // ✅ قائمة النماذج المفعلة فقط (7 نماذج)
+        const allowedModels = [
+          'gemini-2.5-pro',
+          'gemini-robotics-er-1.5-preview',
+          'learnlm-2.0-flash-experimental',
+          'gemini-2.5-flash',
+          'gemini-2.0-flash-lite',
+          'gemini-2.0-flash',
+          'gemini-2.5-flash-lite'
+        ];
+        
         // Group by model name and get average priority
         const modelMap: { [key: string]: ModelPriority } = {};
         
         result.data.forEach((model: any) => {
+          // ✅ إخفاء النماذج المعطلة (isEnabled: false أو في قائمة المعطلة)
+          // ✅ عرض فقط النماذج المفعلة (في قائمة allowedModels)
+          if (!model.isEnabled || 
+              disabledModels.includes(model.model) || 
+              !allowedModels.includes(model.model)) {
+            return; // تخطي النماذج المعطلة أو غير المفعلة
+          }
+          
           if (!modelMap[model.model]) {
             modelMap[model.model] = {
               model: model.model,
@@ -101,7 +144,11 @@ const ModelPrioritiesManagement: React.FC = () => {
           }
         });
 
-        setModels(Object.values(modelMap).sort((a, b) => a.currentPriority - b.currentPriority));
+        // ✅ تصفية النماذج التي ليس لها enabledInstances (معطلة بالكامل)
+        // ✅ أيضاً تصفية النماذج المعطلة من القائمة
+        const filteredModels = Object.values(modelMap)
+          .filter(m => m.enabledInstances > 0 && !disabledModels.includes(m.model));
+        setModels(filteredModels.sort((a, b) => a.currentPriority - b.currentPriority));
       }
     } catch (error: any) {
       console.error('Error loading model priorities:', error);

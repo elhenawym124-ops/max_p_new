@@ -8,3 +8,4 @@ MODIFY COLUMN `usage` TEXT NOT NULL;
 -- ملاحظة: بعد تنفيذ هذه Migration، يجب إصلاح النماذج المقطوعة
 -- يمكن استخدام السكريبت: backend/scripts/fixAllTruncatedModels.js
 
+

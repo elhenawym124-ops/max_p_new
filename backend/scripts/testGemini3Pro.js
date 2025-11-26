@@ -1,77 +1,111 @@
 /**
- * اختبار نموذج gemini-3-pro للتأكد من أنه متوفر في API
+ * اختبار نموذج Gemini 3 Pro Preview
  */
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { getSharedPrismaClient } = require('../services/sharedDatabase');
+
+const MODEL_NAME = 'gemini-3-pro-preview';
 
 async function testGemini3Pro() {
+    const prisma = getSharedPrismaClient();
+    
     try {
-        console.log('\n🔍 ========== اختبار نموذج gemini-3-pro ==========\n');
-
-        // الحصول على مفتاح مركزي للاختبار
-        const { getSharedPrismaClient } = require('../services/sharedDatabase');
-        const prisma = getSharedPrismaClient();
-
-        const centralKey = await prisma.geminiKey.findFirst({
-            where: {
-                keyType: 'CENTRAL',
-                companyId: null,
-                isActive: true
-            },
-            orderBy: { priority: 'asc' }
-        });
-
-        if (!centralKey) {
-            console.error('❌ لا يوجد مفتاح مركزي نشط للاختبار');
-            await prisma.$disconnect();
-            return;
-        }
-
-        console.log(`✅ تم العثور على مفتاح مركزي: ${centralKey.name}`);
-        console.log(`🔑 API Key: ${centralKey.apiKey.substring(0, 20)}...\n`);
-
-        // اختبار نموذج gemini-3-pro
-        console.log('🧪 اختبار نموذج: gemini-3-pro\n');
-
-        const genAI = new GoogleGenerativeAI(centralKey.apiKey);
-        const model = genAI.getGenerativeModel({ 
-            model: 'gemini-3-pro'
-        });
-
-        console.log('📤 إرسال طلب اختبار بسيط...\n');
-
-        const prompt = 'Hello! Please respond with just "OK" to confirm you are working.';
+        console.log('\n🧪 اختبار Gemini 3 Pro Preview...\n');
         
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text();
-
-        console.log('✅ النموذج يعمل بشكل صحيح!');
-        console.log(`📥 الرد: ${text.substring(0, 100)}...\n`);
-
-        console.log('✅ ========== النموذج متوفر ويعمل ==========\n');
-
-    } catch (error) {
-        console.error('\n❌ ========== فشل الاختبار ==========\n');
-        console.error(`❌ الخطأ: ${error.message}\n`);
-
-        // فحص نوع الخطأ
-        if (error.message?.includes('404') || error.message?.includes('not found')) {
-            console.error('⚠️ النموذج غير متوفر في API (404 Not Found)');
-            console.error('💡 يجب إبقاء النموذج في قائمة المعطلة\n');
-        } else if (error.message?.includes('403') || error.message?.includes('permission')) {
-            console.error('⚠️ خطأ في الصلاحيات (403) - قد يكون المفتاح لا يدعم هذا النموذج\n');
-        } else if (error.message?.includes('429') || error.message?.includes('quota')) {
-            console.error('⚠️ تجاوز الحد المسموح (429) - المشكلة في المفتاح وليس النموذج\n');
-        } else {
-            console.error('⚠️ خطأ غير معروف\n');
+        // استخدام المفتاح الجديد مباشرة
+        const API_KEY = 'AIzaSyABpe0IADxKZ_2AGsJU9NfQavFUnBXlijQ';
+        
+        console.log(`🔑 استخدام المفتاح الجديد: ${API_KEY.substring(0, 20)}...\n`);
+        console.log('='.repeat(80));
+        
+        // ✅ تجربة إصدارات API المختلفة
+        const apiVersions = ['v1beta', 'v1alpha', 'v1'];
+        let success = false;
+        let lastError = null;
+        
+        for (const apiVersion of apiVersions) {
+            try {
+                console.log(`\n🔍 محاولة مع ${apiVersion}...`);
+                
+                const genAI = new GoogleGenerativeAI(API_KEY);
+                const model = genAI.getGenerativeModel({ 
+                    model: MODEL_NAME,
+                    ...(apiVersion !== 'v1' ? { apiVersion } : {})
+                });
+                
+                // اختبار بسيط
+                const prompt = 'Say "Hello from Gemini 3" in one sentence.';
+                console.log(`📝 Prompt: "${prompt}"`);
+                
+                const result = await model.generateContent(prompt, {
+                    timeout: 20000
+                });
+                
+                const response = await result.response;
+                const text = response.text();
+                
+                console.log(`\n✅ نجح مع ${apiVersion}!`);
+                console.log(`📤 Response: ${text.trim()}`);
+                console.log(`\n📊 معلومات الاستجابة:`);
+                console.log(`   - Finish Reason: ${response.candidates?.[0]?.finishReason || 'N/A'}`);
+                console.log(`   - Usage Metadata:`, JSON.stringify(response.usageMetadata || {}, null, 2));
+                
+                success = true;
+                break;
+                
+            } catch (error) {
+                lastError = error;
+                const statusCode = error.response?.status || error.status;
+                const errorMessage = error.message || 'Unknown error';
+                
+                console.log(`\n❌ فشل مع ${apiVersion}`);
+                console.log(`   Status: ${statusCode || 'N/A'}`);
+                console.log(`   Error: ${errorMessage.substring(0, 100)}`);
+                
+                if (statusCode === 429) {
+                    console.log(`\n⚠️ Rate Limit Exceeded - المفتاح تجاوز الحد المسموح`);
+                    console.log(`   الحل: استخدام مفتاح آخر أو الانتظار حتى يتم إعادة تعيين الحد`);
+                    break; // لا نحاول إصدارات أخرى عند 429
+                }
+                
+                if (statusCode === 404) {
+                    console.log(`   ⚠️ النموذج غير متوفر في ${apiVersion}، جرب إصدار آخر...`);
+                    continue; // جرب إصدار API التالي
+                }
+                
+                // للأخطاء الأخرى، جرب إصدار API التالي
+                continue;
+            }
         }
+        
+        console.log('\n' + '='.repeat(80));
+        
+        if (success) {
+            console.log('\n✅ النتيجة: Gemini 3 Pro Preview يعمل!');
+        } else {
+            console.log('\n❌ النتيجة: فشل الاختبار');
+            if (lastError) {
+                const statusCode = lastError.response?.status || lastError.status;
+                if (statusCode === 429) {
+                    console.log('   السبب: تجاوز حد الاستخدام (Rate Limit)');
+                    console.log('   الحل: استخدام مفتاح آخر أو الانتظار');
+                } else if (statusCode === 404) {
+                    console.log('   السبب: النموذج غير متوفر');
+                } else {
+                    console.log(`   السبب: ${lastError.message || 'Unknown error'}`);
+                }
+            }
+        }
+        
+        console.log('\n');
+        
+    } catch (error) {
+        console.error('❌ خطأ عام:', error.message);
+        console.error(error.stack);
     } finally {
-        const { getSharedPrismaClient } = require('../services/sharedDatabase');
-        const prisma = getSharedPrismaClient();
         await prisma.$disconnect();
     }
 }
 
 testGemini3Pro();
-

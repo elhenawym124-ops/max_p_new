@@ -418,39 +418,36 @@ const addGeminiKey = async (req, res) => {
         }
 
 
-        // Create all available models for this key (18 models total)
-        // قائمة النماذج مع Rate Limits الحقيقية من Google AI Studio
-        // الأولويات: الأذكى أولاً (Pro models أعلى أولوية)
+        // Create all available models for this key
+        // ✅ فقط النماذج المستخدمة فعلياً (7 نماذج) - بناءً على صورة Google AI Studio
         const availableModels = [
-            // 🧠 نماذج Pro (الأذكى)
-            { model: 'gemini-3-pro', rpm: 2, tpm: 125000, rpd: 50, priority: 1 },
-            { model: 'gemini-2.5-pro', rpm: 2, tpm: 125000, rpd: 50, priority: 2 },
-            { model: 'gemini-1.5-pro', rpm: 2, tpm: 32000, rpd: 50, priority: 3 },
+            // ✅ النماذج المستخدمة فعلياً (مفعلة)
+            { model: 'gemini-2.5-pro', rpm: 2, tpm: 125000, rpd: 50, priority: 1, isEnabled: true },
+            { model: 'gemini-robotics-er-1.5-preview', rpm: 10, tpm: 250000, rpd: 250, priority: 2, isEnabled: true },
+            { model: 'learnlm-2.0-flash-experimental', rpm: 15, tpm: 1500000, rpd: 1500, priority: 3, isEnabled: true },
+            { model: 'gemini-2.5-flash', rpm: 10, tpm: 250000, rpd: 250, priority: 4, isEnabled: true },
+            { model: 'gemini-2.0-flash-lite', rpm: 30, tpm: 1000000, rpd: 200, priority: 5, isEnabled: true },
+            { model: 'gemini-2.0-flash', rpm: 15, tpm: 1000000, rpd: 200, priority: 6, isEnabled: true },
+            { model: 'gemini-2.5-flash-lite', rpm: 15, tpm: 250000, rpd: 1000, priority: 7, isEnabled: true },
+
+            // ❌ باقي النماذج معطلة (غير مستخدمة)
+            // نماذج مدفوعة أو تجريبية
+            { model: 'gemini-3-pro', rpm: 2, tpm: 125000, rpd: 50, priority: 90, isEnabled: false },
+            { model: 'gemini-3-pro-preview', rpm: 2, tpm: 125000, rpd: 50, priority: 91, isEnabled: false },
+            { model: 'gemini-2.0-flash-exp', rpm: 10, tpm: 250000, rpd: 50, priority: 92, isEnabled: false },
             
-            // ⚡ نماذج Flash (سريعة وذكية)
-            { model: 'gemini-2.5-flash', rpm: 10, tpm: 250000, rpd: 250, priority: 4 },
-            { model: 'gemini-2.5-flash-lite', rpm: 15, tpm: 250000, rpd: 1000, priority: 5 },
-            { model: 'gemini-1.5-flash', rpm: 15, tpm: 1000000, rpd: 1500, priority: 6 },
-            { model: 'gemini-2.0-flash', rpm: 15, tpm: 1000000, rpd: 200, priority: 7 },
-            { model: 'gemini-2.0-flash-lite', rpm: 30, tpm: 1000000, rpd: 200, priority: 8 },
-            
-            // 🔴 نماذج Live API
-            { model: 'gemini-2.5-flash-live', rpm: 15, tpm: 250000, rpd: 1000, priority: 9 },
-            { model: 'gemini-2.0-flash-live', rpm: 15, tpm: 1000000, rpd: 200, priority: 10 },
-            { model: 'gemini-2.5-flash-native-audio-dialog', rpm: 15, tpm: 250000, rpd: 1000, priority: 11 },
-            
-            // 🎤 نماذج الصوت
-            { model: 'gemini-2.5-flash-tts', rpm: 3, tpm: 10000, rpd: 15, priority: 12 },
-            
-            // 🔬 نماذج متخصصة
-            { model: 'learnlm-2.0-flash-experimental', rpm: 15, tpm: 1500000, rpd: 1500, priority: 13 },
-            { model: 'gemini-robotics-er-1.5-preview', rpm: 15, tpm: 250000, rpd: 250, priority: 14 },
-            
-            // 💎 نماذج Gemma
-            { model: 'gemma-3-27b', rpm: 15, tpm: 14400, rpd: 1440, priority: 15 },
-            { model: 'gemma-3-12b', rpm: 15, tpm: 14400, rpd: 1440, priority: 16 },
-            { model: 'gemma-3-4b', rpm: 15, tpm: 14400, rpd: 1440, priority: 17 },
-            { model: 'gemma-3-2b', rpm: 15, tpm: 14400, rpd: 1440, priority: 18 }
+            // نماذج Gemma (غير متوفرة في Google AI Studio API)
+            { model: 'gemma-3-27b', rpm: 30, tpm: 15000, rpd: 14400, priority: 93, isEnabled: false },
+            { model: 'gemma-3-12b', rpm: 30, tpm: 15000, rpd: 14400, priority: 94, isEnabled: false },
+            { model: 'gemma-3-4b', rpm: 30, tpm: 15000, rpd: 14400, priority: 95, isEnabled: false },
+            { model: 'gemma-3-2b', rpm: 30, tpm: 15000, rpd: 14400, priority: 96, isEnabled: false },
+            { model: 'gemma-3-1b', rpm: 30, tpm: 15000, rpd: 14400, priority: 97, isEnabled: false },
+
+            // نماذج Live/Audio (غير مستخدمة)
+            { model: 'gemini-2.5-flash-live', rpm: 15, tpm: 1000000, rpd: 1000, priority: 98, isEnabled: false },
+            { model: 'gemini-2.0-flash-live', rpm: 15, tpm: 1000000, rpd: 200, priority: 99, isEnabled: false },
+            { model: 'gemini-2.5-flash-native-audio-dialog', rpm: 15, tpm: 1000000, rpd: 1000, priority: 100, isEnabled: false },
+            { model: 'gemini-2.5-flash-tts', rpm: 3, tpm: 10000, rpd: 15, priority: 101, isEnabled: false }
         ];
 
         const createdModels = [];
@@ -484,7 +481,7 @@ const addGeminiKey = async (req, res) => {
                                 windowStart: null
                             }
                         }),
-                        isEnabled: true,
+                        isEnabled: modelInfo.isEnabled !== undefined ? modelInfo.isEnabled : true,
                         priority: modelInfo.priority
                     }
                 });

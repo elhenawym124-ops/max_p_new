@@ -42,13 +42,8 @@ import ConversationsSimpleTest from './pages/conversations/ConversationsSimpleTe
 import MessengerChat from './pages/conversations/MessengerChat-final';
 import AITestChat from './pages/testChat/AITestChat';
 import Products from './pages/products/Products';
-import ProductNew from './pages/products/ProductNew';
-import ProductNewTabsDemo from './pages/products/ProductNewTabsDemo';
 import ProductNewFinal from './pages/products/ProductNewFinal';
 import ProductView from './pages/products/ProductView';
-import ProductEdit from './pages/products/ProductEdit';
-import ProductEditNew from './pages/products/ProductEditNew';
-import ProductEditTest from './pages/products/ProductEditTest';
 import EasyOrdersImport from './pages/products/EasyOrdersImport';
 import WooCommerceImport from './pages/products/WooCommerceImport';
 import ProductReviewsSimple from './pages/products/ProductReviewsSimple';
@@ -67,6 +62,7 @@ import RecommendationSettings from './pages/settings/RecommendationSettings';
 import HomepageSettings from './pages/settings/HomepageSettings';
 import HomepageEditor from './pages/settings/HomepageEditor';
 import HomepagePreview from './pages/settings/HomepagePreview';
+import ProductImageSettings from './pages/settings/ProductImageSettings';
 
 // Advertising
 import FacebookPixelSettings from './pages/advertising/FacebookPixelSettings';
@@ -85,6 +81,7 @@ import OrderDemo from './pages/OrderDemo';
 import Opportunities from './pages/opportunities/Opportunities';
 import Tasks from './pages/tasks/Tasks';
 import AdvancedReports from './pages/reports/AdvancedReports';
+import PosPage from './pages/pos/PosPage';
 
 // Storefront (Public Pages)
 import Homepage from './pages/storefront/Homepage';
@@ -137,6 +134,7 @@ import CentralKeysManagement from './pages/super-admin/CentralKeysManagement';
 import ModelsManagement from './pages/super-admin/ModelsManagement';
 import ModelTypesManagement from './pages/super-admin/ModelTypesManagement';
 import ModelPrioritiesManagement from './pages/super-admin/ModelPrioritiesManagement';
+import QuotaMonitoringDashboard from './pages/super-admin/QuotaMonitoringDashboard';
 import RateLimitsMonitoring from './pages/super-admin/RateLimitsMonitoring';
 import PaymentPage from './pages/PaymentPage';
 import WalletManagement from './pages/WalletManagement';
@@ -264,6 +262,7 @@ const AppContent = () => {
         <Route path="/super-admin/models" element={<SuperAdminLayout><ModelsManagement /></SuperAdminLayout>} />
         <Route path="/super-admin/model-types" element={<SuperAdminLayout><ModelTypesManagement /></SuperAdminLayout>} />
         <Route path="/super-admin/model-priorities" element={<SuperAdminLayout><ModelPrioritiesManagement /></SuperAdminLayout>} />
+        <Route path="/super-admin/quota-monitoring" element={<SuperAdminLayout><QuotaMonitoringDashboard /></SuperAdminLayout>} />
         <Route path="/super-admin/rate-limits" element={<SuperAdminLayout><RateLimitsMonitoring /></SuperAdminLayout>} />
         <Route path="/super-admin/wallet-management" element={<SuperAdminLayout><WalletManagement /></SuperAdminLayout>} />
 
@@ -302,15 +301,9 @@ const AppContent = () => {
             <Route path="/messenger-chat" element={<Layout><MessengerChat /></Layout>} />
             <Route path="/products" element={<Layout><Products /></Layout>} />
             <Route path="/products/new" element={<Layout><ProductNewFinal /></Layout>} />
-            <Route path="/products/new-old" element={<Layout><ProductNew /></Layout>} />
-            <Route path="/products/new-tabs" element={<Layout><ProductNewTabsDemo /></Layout>} />
             <Route path="/products/import-easy-orders" element={<Layout><EasyOrdersImport /></Layout>} />
             <Route path="/products/import-woocommerce" element={<Layout><WooCommerceImport /></Layout>} />
-            <Route path="/products/:id/edit-final" element={<Layout><ProductNewFinal /></Layout>} />
             <Route path="/products/:id/edit" element={<Layout><ProductNewFinal /></Layout>} />
-            <Route path="/products/:id/edit-old" element={<Layout><ProductEditNew /></Layout>} />
-            <Route path="/products/:id/edit-legacy" element={<Layout><ProductEdit /></Layout>} />
-            <Route path="/products/:id/edit-test" element={<Layout><ProductEditTest /></Layout>} />
             <Route path="/products/:id" element={<Layout><ProductView /></Layout>} />
             
             <Route path="/categories" element={<Layout><Categories /></Layout>} />
@@ -329,6 +322,7 @@ const AppContent = () => {
             <Route path="/tasks" element={<Layout><Tasks /></Layout>} />
             <Route path="/reports" element={<Layout><Reports /></Layout>} />
             <Route path="/analytics" element={<Layout><AdvancedReports /></Layout>} />
+            <Route path="/pos" element={<Layout><PosPage /></Layout>} />
 
             {/* AI Management */}
             <Route path="/ai-management" element={<Layout><AIManagement /></Layout>} />
@@ -369,6 +363,7 @@ const AppContent = () => {
             <Route path="/settings/store" element={<Layout><StoreSettings /></Layout>} />
             <Route path="/settings/store-pages" element={<Layout><StorePages /></Layout>} />
             <Route path="/settings/storefront-features" element={<Layout><StorefrontFeaturesSettings /></Layout>} />
+            <Route path="/settings/product-images" element={<Layout><ProductImageSettings /></Layout>} />
             <Route path="/settings/delivery-options" element={<Layout><DeliveryOptions /></Layout>} />
             <Route path="/settings/promotion" element={<Layout><PromotionSettings /></Layout>} />
             <Route path="/settings/recommendations" element={<Layout><RecommendationSettings /></Layout>} />

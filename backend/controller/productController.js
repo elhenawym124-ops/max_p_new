@@ -120,7 +120,18 @@ const createNewCategory = async(req , res)=>{
       });
     }
 
-    const { name, description, parentId } = req.body;
+    const { 
+      name, 
+      slug,
+      description, 
+      image,
+      parentId,
+      isActive,
+      sortOrder,
+      displayType,
+      metaTitle,
+      metaDescription 
+    } = req.body;
 
     if (!name) {
       return res.status(400).json({
@@ -128,6 +139,13 @@ const createNewCategory = async(req , res)=>{
         error: 'Category name is required'
       });
     }
+
+    // Generate slug if not provided
+    const categorySlug = slug?.trim() || name.trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^\w\u0600-\u06FF-]/g, '')
+      .replace(/--+/g, '-');
 
     // Check if category already exists in the same company
     const existingCategory = await prisma.category.findFirst({
@@ -150,8 +168,15 @@ const createNewCategory = async(req , res)=>{
     const newCategory = await prisma.category.create({
       data: {
         name: name.trim(),
+        slug: categorySlug,
         description: description?.trim() || null,
+        image: image || null,
         parentId: parentId || null,
+        isActive: isActive !== false,
+        sortOrder: sortOrder || 0,
+        displayType: displayType || 'default',
+        metaTitle: metaTitle?.trim() || null,
+        metaDescription: metaDescription?.trim() || null,
         companyId // 🔐 استخدام companyId من المستخدم المصادق عليه
       }
     });
@@ -172,10 +197,7 @@ const createNewCategory = async(req , res)=>{
 };
 
 const updateCategory = async(req , res)=>{
-      try {
-    //console.log(`🔍 [server] PUT /api/v1/products/categories/${req.params.id}`);
-    //console.log('📤 [server] Request body:', req.body);
-
+  try {
     // 🔐 التحقق من المصادقة والشركة
     const companyId = req.user?.companyId;
     if (!companyId) {
@@ -187,7 +209,18 @@ const updateCategory = async(req , res)=>{
     }
 
     const { id } = req.params;
-    const { name, description, parentId } = req.body;
+    const { 
+      name, 
+      slug,
+      description, 
+      image,
+      parentId,
+      isActive,
+      sortOrder,
+      displayType,
+      metaTitle,
+      metaDescription 
+    } = req.body;
 
     if (!name) {
       return res.status(400).json({
@@ -200,7 +233,7 @@ const updateCategory = async(req , res)=>{
     const existingCategory = await prisma.category.findFirst({
       where: {
         id,
-        companyId // 🔐 التأكد أن الفئة تنتمي لنفس الشركة
+        companyId
       }
     });
 
@@ -211,10 +244,18 @@ const updateCategory = async(req , res)=>{
       });
     }
 
+    // Generate slug if not provided
+    const categorySlug = slug?.trim() || name.trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^\w\u0600-\u06FF-]/g, '')
+      .replace(/--+/g, '-');
+
     // Check if name is already taken by another category
     const duplicateCategory = await prisma.category.findFirst({
       where: {
         name: name.trim(),
+        companyId,
         id: { not: id }
       }
     });
@@ -231,12 +272,18 @@ const updateCategory = async(req , res)=>{
       where: { id },
       data: {
         name: name.trim(),
+        slug: categorySlug,
         description: description?.trim() || null,
-        parentId: parentId || null
+        image: image || null,
+        parentId: parentId || null,
+        isActive: isActive !== false,
+        sortOrder: sortOrder || 0,
+        displayType: displayType || 'default',
+        metaTitle: metaTitle?.trim() || null,
+        metaDescription: metaDescription?.trim() || null
       }
     });
 
-    //console.log(`✅ [server] Updated category: ${updatedCategory.name}`);
     res.json({
       success: true,
       data: updatedCategory

@@ -10,6 +10,11 @@ const getAllModels = async (req, res) => {
         console.log('🔍 [ADMIN-MODELS] getAllModels called');
         const { keyId, keyType, companyId, model, isEnabled } = req.query;
 
+        // ✅ جلب قائمة النماذج المعطلة من modelManager
+        const ModelManager = require('../services/aiAgent/modelManager');
+        const modelManager = new ModelManager(null);
+        const disabledModels = modelManager.getDisabledModels();
+
         let whereClause = {};
         
         // Filter by keyId if provided
@@ -25,6 +30,11 @@ const getAllModels = async (req, res) => {
         // Filter by isEnabled if provided
         if (isEnabled !== undefined) {
             whereClause.isEnabled = isEnabled === 'true';
+        }
+        
+        // ✅ إذا كان isEnabled غير محدد، نعرض فقط النماذج المفعلة
+        if (isEnabled === undefined) {
+            whereClause.isEnabled = true;
         }
 
         const models = await prisma.geminiKeyModel.findMany({
@@ -61,6 +71,14 @@ const getAllModels = async (req, res) => {
         
         if (companyId) {
             filteredModels = filteredModels.filter(m => m.key.companyId === companyId);
+        }
+        
+        // ✅ تصفية النماذج المعطلة (إخفاؤها من النتائج)
+        // إذا كان isEnabled غير محدد، نعرض فقط النماذج المفعلة وغير المعطلة
+        if (isEnabled === undefined) {
+            filteredModels = filteredModels.filter(m => 
+                m.isEnabled && !disabledModels.includes(m.model)
+            );
         }
 
         // Parse usage for each model

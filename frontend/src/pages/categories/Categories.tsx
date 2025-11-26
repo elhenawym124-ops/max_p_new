@@ -14,22 +14,37 @@ import {
 interface Category {
   id: string;
   name: string;
+  slug?: string;
   description?: string;
+  image?: string;
   parentId?: string;
+  parent?: Category;
+  children?: Category[];
+  isActive?: boolean;
+  sortOrder?: number;
+  displayType?: string;
+  metaTitle?: string;
+  metaDescription?: string;
   companyId?: string;
   createdAt?: string;
   updatedAt?: string;
   _count?: {
     products: number;
   };
-  // For backward compatibility with mock data
   productCount?: number;
 }
 
 interface CategoryFormData {
   name: string;
+  slug: string;
   description: string;
+  image: string;
   parentId: string;
+  isActive: boolean;
+  sortOrder: number;
+  displayType: string;
+  metaTitle: string;
+  metaDescription: string;
 }
 
 const Categories: React.FC = () => {
@@ -42,8 +57,15 @@ const Categories: React.FC = () => {
 
   const [formData, setFormData] = useState<CategoryFormData>({
     name: '',
+    slug: '',
     description: '',
-    parentId: ''
+    image: '',
+    parentId: '',
+    isActive: true,
+    sortOrder: 0,
+    displayType: 'default',
+    metaTitle: '',
+    metaDescription: ''
   });
 
   // Load categories
@@ -103,14 +125,21 @@ const Categories: React.FC = () => {
     try {
       const response = await apiClient.post('/products/categories', {
         name: formData.name.trim(),
+        slug: formData.slug.trim() || generateSlug(formData.name),
         description: formData.description.trim() || undefined,
-        parentId: formData.parentId || undefined
+        image: formData.image || undefined,
+        parentId: formData.parentId || undefined,
+        isActive: formData.isActive,
+        sortOrder: formData.sortOrder,
+        displayType: formData.displayType,
+        metaTitle: formData.metaTitle.trim() || undefined,
+        metaDescription: formData.metaDescription.trim() || undefined
       });
 
       if (response.data.success) {
         toast.success('تم إنشاء الفئة بنجاح');
         setShowCreateModal(false);
-        setFormData({ name: '', description: '', parentId: '' });
+        resetFormData();
         loadCategories();
       }
     } catch (error: any) {
@@ -130,15 +159,22 @@ const Categories: React.FC = () => {
     try {
       const response = await apiClient.put(`/products/categories/${editingCategory.id}`, {
         name: formData.name.trim(),
+        slug: formData.slug.trim() || generateSlug(formData.name),
         description: formData.description.trim() || undefined,
-        parentId: formData.parentId || undefined
+        image: formData.image || undefined,
+        parentId: formData.parentId || undefined,
+        isActive: formData.isActive,
+        sortOrder: formData.sortOrder,
+        displayType: formData.displayType,
+        metaTitle: formData.metaTitle.trim() || undefined,
+        metaDescription: formData.metaDescription.trim() || undefined
       });
 
       if (response.data.success) {
         toast.success('تم تحديث الفئة بنجاح');
         setShowEditModal(false);
         setEditingCategory(null);
-        setFormData({ name: '', description: '', parentId: '' });
+        resetFormData();
         loadCategories();
       }
     } catch (error: any) {
@@ -175,13 +211,47 @@ const Categories: React.FC = () => {
     }
   };
 
+  // Generate slug from name
+  const generateSlug = (name: string) => {
+    return name
+      .toLowerCase()
+      .replace(/[\u0600-\u06FF]/g, (char) => char) // Keep Arabic
+      .replace(/\s+/g, '-')
+      .replace(/[^\w\u0600-\u06FF-]/g, '')
+      .replace(/--+/g, '-')
+      .trim();
+  };
+
+  // Reset form data
+  const resetFormData = () => {
+    setFormData({
+      name: '',
+      slug: '',
+      description: '',
+      image: '',
+      parentId: '',
+      isActive: true,
+      sortOrder: 0,
+      displayType: 'default',
+      metaTitle: '',
+      metaDescription: ''
+    });
+  };
+
   // Handle edit
   const handleEdit = (category: Category) => {
     setEditingCategory(category);
     setFormData({
       name: category.name,
+      slug: category.slug || '',
       description: category.description || '',
-      parentId: category.parentId || ''
+      image: category.image || '',
+      parentId: category.parentId || '',
+      isActive: category.isActive !== false,
+      sortOrder: category.sortOrder || 0,
+      displayType: category.displayType || 'default',
+      metaTitle: category.metaTitle || '',
+      metaDescription: category.metaDescription || ''
     });
     setShowEditModal(true);
   };
@@ -414,27 +484,45 @@ const Categories: React.FC = () => {
         </div>
       </div>
 
-      {/* Create Category Modal */}
-      {showCreateModal && (
+      {/* Create/Edit Category Modal */}
+      {(showCreateModal || showEditModal) && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+          <div className="relative top-10 mx-auto p-5 border max-w-2xl shadow-lg rounded-md bg-white">
             <div className="mt-3">
               <h3 className="text-lg font-medium text-gray-900 text-center mb-4">
-                إنشاء فئة جديدة
+                {showEditModal ? `تعديل الفئة: ${editingCategory?.name}` : 'إنشاء فئة جديدة'}
               </h3>
 
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    اسم الفئة *
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                    placeholder="أدخل اسم الفئة"
-                  />
+              <div className="space-y-4 max-h-[70vh] overflow-y-auto px-2">
+                {/* Basic Info */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      اسم الفئة *
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.name}
+                      onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                      placeholder="أدخل اسم الفئة"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Slug (للرابط)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.slug}
+                      onChange={(e) => setFormData(prev => ({ ...prev, slug: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                      placeholder="category-name"
+                      dir="ltr"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">سيتم إنشاؤه تلقائياً إذا تركته فارغاً</p>
+                  </div>
                 </div>
 
                 <div>
@@ -449,83 +537,150 @@ const Categories: React.FC = () => {
                     placeholder="وصف الفئة (اختياري)"
                   />
                 </div>
+
+                {/* Image */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    صورة الفئة
+                  </label>
+                  <div className="flex items-center gap-4">
+                    {formData.image && (
+                      <img src={formData.image} alt="Category" className="w-16 h-16 object-cover rounded-lg border" />
+                    )}
+                    <input
+                      type="text"
+                      value={formData.image}
+                      onChange={(e) => setFormData(prev => ({ ...prev, image: e.target.value }))}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                      placeholder="رابط الصورة"
+                    />
+                  </div>
+                </div>
+
+                {/* Parent & Display */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      الفئة الأب
+                    </label>
+                    <select
+                      value={formData.parentId}
+                      onChange={(e) => setFormData(prev => ({ ...prev, parentId: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                      <option value="">بدون (فئة رئيسية)</option>
+                      {categories
+                        .filter(c => c.id !== editingCategory?.id)
+                        .map(cat => (
+                          <option key={cat.id} value={cat.id}>{cat.name}</option>
+                        ))
+                      }
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      نوع العرض
+                    </label>
+                    <select
+                      value={formData.displayType}
+                      onChange={(e) => setFormData(prev => ({ ...prev, displayType: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                      <option value="default">افتراضي</option>
+                      <option value="products">المنتجات فقط</option>
+                      <option value="subcategories">الفئات الفرعية فقط</option>
+                      <option value="both">المنتجات والفئات الفرعية</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Sort & Status */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      ترتيب العرض
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.sortOrder}
+                      onChange={(e) => setFormData(prev => ({ ...prev, sortOrder: parseInt(e.target.value) || 0 }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                      placeholder="0"
+                      min="0"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">الأرقام الأصغر تظهر أولاً</p>
+                  </div>
+
+                  <div className="flex items-center pt-6">
+                    <input
+                      type="checkbox"
+                      id="isActive"
+                      checked={formData.isActive}
+                      onChange={(e) => setFormData(prev => ({ ...prev, isActive: e.target.checked }))}
+                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="isActive" className="mr-2 block text-sm text-gray-900">
+                      الفئة نشطة ومرئية
+                    </label>
+                  </div>
+                </div>
+
+                {/* SEO Section */}
+                <div className="border-t pt-4 mt-4">
+                  <h4 className="text-sm font-medium text-gray-900 mb-3">🔍 إعدادات SEO</h4>
+                  
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        عنوان SEO
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.metaTitle}
+                        onChange={(e) => setFormData(prev => ({ ...prev, metaTitle: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                        placeholder="عنوان يظهر في نتائج البحث"
+                        maxLength={60}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">{formData.metaTitle.length}/60 حرف</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        وصف SEO
+                      </label>
+                      <textarea
+                        value={formData.metaDescription}
+                        onChange={(e) => setFormData(prev => ({ ...prev, metaDescription: e.target.value }))}
+                        rows={2}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                        placeholder="وصف يظهر في نتائج البحث"
+                        maxLength={160}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">{formData.metaDescription.length}/160 حرف</p>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div className="flex justify-end space-x-3 space-x-reverse mt-6">
+              <div className="flex justify-end space-x-3 space-x-reverse mt-6 pt-4 border-t">
                 <button
                   onClick={() => {
                     setShowCreateModal(false);
-                    setFormData({ name: '', description: '', parentId: '' });
-                  }}
-                  className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
-                >
-                  إلغاء
-                </button>
-                <button
-                  onClick={createCategory}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-                >
-                  إنشاء
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Category Modal */}
-      {showEditModal && editingCategory && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-            <div className="mt-3">
-              <h3 className="text-lg font-medium text-gray-900 text-center mb-4">
-                تعديل الفئة: {editingCategory.name}
-              </h3>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    اسم الفئة *
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                    placeholder="أدخل اسم الفئة"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    الوصف
-                  </label>
-                  <textarea
-                    value={formData.description}
-                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                    placeholder="وصف الفئة (اختياري)"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-3 space-x-reverse mt-6">
-                <button
-                  onClick={() => {
                     setShowEditModal(false);
                     setEditingCategory(null);
-                    setFormData({ name: '', description: '', parentId: '' });
+                    resetFormData();
                   }}
                   className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
                 >
                   إلغاء
                 </button>
                 <button
-                  onClick={updateCategory}
+                  onClick={showEditModal ? updateCategory : createCategory}
                   className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
                 >
-                  حفظ التغييرات
+                  {showEditModal ? 'حفظ التغييرات' : 'إنشاء'}
                 </button>
               </div>
             </div>

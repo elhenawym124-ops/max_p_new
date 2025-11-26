@@ -31,7 +31,8 @@ import {
   VpnKey as KeyIcon,
   Psychology as ModelsIcon,
   Timeline as TimelineIcon,
-  Speed as SpeedIcon
+  Speed as SpeedIcon,
+  BarChart as BarChartIcon
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuthSimple';
@@ -137,6 +138,11 @@ const SuperAdminLayout: React.FC<SuperAdminLayoutProps> = ({ children }) => {
       text: 'متابعة Rate Limits',
       icon: <SpeedIcon />,
       path: '/super-admin/rate-limits'
+    },
+    {
+      text: 'متابعة الكوتة وRound-Robin',
+      icon: <BarChartIcon />,
+      path: '/super-admin/quota-monitoring'
     },
     {
       text: 'إدارة أنظمة النظام',
