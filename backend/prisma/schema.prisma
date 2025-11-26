@@ -69,6 +69,7 @@ model Company {
   guestOrders            GuestOrder[] // 📦 طلبات الزوار
   checkoutFormSettings   CheckoutFormSettings? // 📋 إعدادات فورم الشيك أوت
   imageGallery           ImageGallery[] // 🖼️ حافظة الصور
+  textGallery            TextGallery[] // 📝 حافظة النصوص
   storePromotionSettings StorePromotionSettings? // 🎯 إعدادات الترويج
   storefrontSettings     StorefrontSettings? // 🛍️ إعدادات واجهة المتجر
   deliveryOptions        DeliveryOption[] // 🚚 خيارات التوصيل
@@ -115,6 +116,7 @@ model User {
   createdTasks          Task[]           @relation("TaskCreatedBy")
   managedProjects       Project[]
   imageGallery          ImageGallery[]
+  textGallery           TextGallery[] // 📝 حافظة النصوص
 
   @@index([companyId], map: "users_companyId_idx")
   @@map("users")
@@ -2292,6 +2294,25 @@ model ImageGallery {
   @@index([companyId])
   @@index([createdAt])
   @@map("image_gallery")
+}
+
+// 📝 حافظة النصوص للمستخدمين
+model TextGallery {
+  id        String   @id @default(cuid())
+  userId    String
+  companyId String
+  title     String?  // عنوان النص (اختياري)
+  content   String   @db.Text // محتوى النص
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([companyId])
+  @@index([createdAt])
+  @@map("text_gallery")
 }
 
 // 📊 Model for Post Tracking (تتبع البوستات)

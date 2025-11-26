@@ -1,0 +1,18 @@
+const express = require('express');
+const router = express.Router();
+const textGalleryController = require('../controller/textGalleryController');
+const verifyToken = require('../utils/verifyToken');
+
+// جميع المسارات تحتاج authentication
+
+// 📥 الحصول على جميع النصوص المحفوظة
+router.get('/', verifyToken.authenticateToken, textGalleryController.getTextGallery);
+
+// ➕ حفظ نص جديد
+router.post('/', verifyToken.authenticateToken, textGalleryController.saveTextToGallery);
+
+// 🗑️ حذف نص
+router.delete('/:id', verifyToken.authenticateToken, textGalleryController.deleteTextFromGallery);
+
+module.exports = router;
+

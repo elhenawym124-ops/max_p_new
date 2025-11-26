@@ -183,6 +183,27 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   
   // حالة رفع صور للحافظة مباشرة
   const [uploadingToGallery, setUploadingToGallery] = useState(false);
+  
+  // حالة حذف صورة من الحافظة
+  const [deletingImageId, setDeletingImageId] = useState<string | null>(null);
+  
+  // حالة الصور المختارة للإرسال المتعدد
+  const [selectedImagesForSend, setSelectedImagesForSend] = useState<Set<string>>(new Set());
+  const [sendingMultipleImages, setSendingMultipleImages] = useState(false);
+  
+  // حالات حافظة النصوص
+  const [showTextGallery, setShowTextGallery] = useState(false);
+  const [savedTexts, setSavedTexts] = useState<Array<{
+    id: string;
+    title: string;
+    content: string;
+    createdAt: Date;
+  }>>([]);
+  const [loadingTextGallery, setLoadingTextGallery] = useState(false);
+  const [deletingTextId, setDeletingTextId] = useState<string | null>(null);
+  const [newTextTitle, setNewTextTitle] = useState('');
+  const [newTextContent, setNewTextContent] = useState('');
+  const [savingText, setSavingText] = useState(false);
 
   // المراجع
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -319,14 +340,22 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         setConversationsPage(page);
       } else {
         // ✅ FIX: عند refresh، ندمج المحادثات الجديدة مع الموجودة لتجنب فقدان المحادثات المفتوحة
+        // ✅ FIX: أيضاً نزيل أي محادثات من شركات أخرى قد تكون موجودة
         setConversations(prev => {
-          // إنشاء map للمحادثات الجديدة من السيرفر
-          const newConversationsMap = new Map(formattedConversations.map(c => [c.id, c]));
+          // إنشاء map للمحادثات الجديدة من السيرفر (هذه محادثات الشركة الحالية فقط)
+          const newConversationsMap = new Set(formattedConversations.map(c => c.id));
+          
+          // ✅ FIX: إزالة أي محادثات من القائمة القديمة التي لا توجد في القائمة الجديدة
+          // (هذا يزيل المحادثات من شركات أخرى التي قد تكون أضيفت من Socket.IO)
+          const validPrevConversations = prev.filter(oldConv => {
+            // نحتفظ فقط بالمحادثات الموجودة في القائمة الجديدة أو المحادثة المختارة حالياً
+            return newConversationsMap.has(oldConv.id) || oldConv.id === selectedConversation?.id;
+          });
           
           // دمج المحادثات: نستخدم الجديدة من السيرفر، ونحتفظ بالقديمة التي لم تأت في الاستجابة
           // لكن فقط إذا كانت المحادثة المختارة حالياً (للمحافظة على الرسائل المحملة)
           const merged = formattedConversations.map(newConv => {
-            const existing = prev.find(c => c.id === newConv.id);
+            const existing = validPrevConversations.find(c => c.id === newConv.id);
             // إذا كانت المحادثة موجودة مسبقاً ولديها رسائل محملة، نحتفظ بالرسائل
             if (existing && existing.messages && existing.messages.length > 0) {
               return {
@@ -337,9 +366,9 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             return newConv;
           });
           
-          // إضافة محادثات قديمة لم تأت في الاستجابة الجديدة (فقط إذا كانت مفتوحة)
+          // إضافة محادثة قديمة لم تأت في الاستجابة الجديدة (فقط إذا كانت مفتوحة)
           const selectedId = selectedConversation?.id;
-          prev.forEach(oldConv => {
+          validPrevConversations.forEach(oldConv => {
             if (!newConversationsMap.has(oldConv.id) && oldConv.id === selectedId) {
               // إذا كانت المحادثة المختارة لم تأت في الاستجابة، نضيفها
               merged.push(oldConv);
@@ -381,6 +410,12 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         throw new Error('رمز المصادقة غير موجود');
       }
 
+      // ✅ FIX: التحقق من وجود companyId قبل التحميل
+      if (!companyId) {
+        console.warn('⚠️ [LOAD-SPECIFIC] Company ID not found, skipping conversation load');
+        return;
+      }
+
       console.log('🔄 Loading specific conversation:', conversationId);
       const response = await fetch(buildApiUrl(`conversations/${conversationId}`), {
         headers: {
@@ -390,6 +425,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       });
 
       if (!response.ok) {
+        if (response.status === 403 || response.status === 404) {
+          console.warn(`⚠️ [LOAD-SPECIFIC] Conversation ${conversationId} not accessible (403/404) - likely different company`);
+          return; // تجاهل المحادثة إذا كانت من شركة أخرى
+        }
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
@@ -398,6 +437,18 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
       if (result.success && result.data) {
         const conv = result.data;
+        
+        // ✅ FIX: التحقق من أن المحادثة تخص نفس الشركة
+        const convCompanyId = conv.companyId;
+        if (convCompanyId && companyId && String(convCompanyId) !== String(companyId)) {
+          console.warn(`🔕 [LOAD-SPECIFIC] Ignoring conversation from different company:`, {
+            conversationId: conversationId,
+            convCompanyId: convCompanyId,
+            currentCompanyId: companyId
+          });
+          return; // تجاهل المحادثة إذا كانت من شركة أخرى
+        }
+
         const formattedConversation: Conversation = {
           id: conv.id,
           customerId: conv.customerId || conv.id,
@@ -1792,6 +1843,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
     }
   };
 
+  // إرسال صورة واحدة من الحافظة
   const selectImageFromGallery = async (imageUrl: string, filename: string) => {
     if (!selectedConversation) return;
     
@@ -1830,6 +1882,260 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       console.error('❌ Error sending image from gallery:', error);
       alert('حدث خطأ أثناء إرسال الصورة');
     }
+  };
+
+  // إرسال عدة صور من الحافظة في مرة واحدة
+  const sendMultipleImagesFromGallery = async () => {
+    if (!selectedConversation || selectedImagesForSend.size === 0) return;
+    
+    try {
+      setSendingMultipleImages(true);
+      const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+      if (!token) {
+        alert('يرجى تسجيل الدخول أولاً');
+        return;
+      }
+
+      // تجهيز قائمة الصور المختارة
+      const imagesToSend = savedImages.filter(img => selectedImagesForSend.has(img.id));
+      console.log(`📤 Sending ${imagesToSend.length} image(s) from gallery`);
+
+      // إرسال كل صورة على حدة (Facebook يتطلب إرسال كل صورة في رسالة منفصلة)
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const image of imagesToSend) {
+        try {
+          const response = await fetch(buildApiUrl(`conversations/${selectedConversation.id}/send-existing-image`), {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              imageUrl: image.url,
+              filename: image.filename
+            })
+          });
+
+          if (response.ok) {
+            successCount++;
+            console.log(`✅ Image ${successCount}/${imagesToSend.length} sent: ${image.filename}`);
+            // إضافة تأخير صغير بين الصور لتجنب rate limiting
+            if (successCount < imagesToSend.length) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+          } else {
+            failCount++;
+            console.error(`❌ Failed to send image: ${image.filename}`);
+          }
+        } catch (error) {
+          failCount++;
+          console.error(`❌ Error sending image ${image.filename}:`, error);
+        }
+      }
+
+      // إغلاق الحافظة ومسح الاختيارات
+      setShowImageGallery(false);
+      setSelectedImagesForSend(new Set());
+
+      // إظهار رسالة النتيجة
+      if (successCount > 0 && failCount === 0) {
+        alert(`✅ تم إرسال ${successCount} صورة بنجاح!`);
+      } else if (successCount > 0) {
+        alert(`⚠️ تم إرسال ${successCount} صورة، وفشل إرسال ${failCount} صورة`);
+      } else {
+        alert(`❌ فشل إرسال جميع الصور`);
+      }
+    } catch (error) {
+      console.error('❌ Error sending multiple images:', error);
+      alert('حدث خطأ أثناء إرسال الصور');
+    } finally {
+      setSendingMultipleImages(false);
+    }
+  };
+
+  // تبديل اختيار صورة
+  const toggleImageSelection = (imageId: string, event?: React.MouseEvent) => {
+    if (event) {
+      event.stopPropagation();
+    }
+    setSelectedImagesForSend(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(imageId)) {
+        newSet.delete(imageId);
+      } else {
+        newSet.add(imageId);
+      }
+      return newSet;
+    });
+  };
+
+  // 🗑️ حذف صورة من الحافظة
+  const deleteImageFromGallery = async (imageId: string, event: React.MouseEvent) => {
+    event.stopPropagation(); // منع فتح الصورة عند الضغط على زر الحذف
+    
+    if (!confirm('هل أنت متأكد من حذف هذه الصورة من الحافظة؟')) {
+      return;
+    }
+
+    try {
+      setDeletingImageId(imageId);
+      const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+      if (!token) {
+        alert('يرجى تسجيل الدخول أولاً');
+        return;
+      }
+
+      const response = await fetch(buildApiUrl(`user/image-gallery/${imageId}`), {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        console.log('✅ Image deleted from gallery');
+        // تحديث القائمة بإزالة الصورة المحذوفة
+        setSavedImages(prev => prev.filter(img => img.id !== imageId));
+      } else {
+        const errorData = await response.json();
+        console.error('❌ Failed to delete image:', errorData);
+        alert('فشل حذف الصورة. حاول مرة أخرى.');
+      }
+    } catch (error) {
+      console.error('❌ Error deleting image from gallery:', error);
+      alert('حدث خطأ أثناء حذف الصورة');
+    } finally {
+      setDeletingImageId(null);
+    }
+  };
+
+  // ✅ دوال حافظة النصوص
+  const loadTextGallery = async () => {
+    try {
+      setLoadingTextGallery(true);
+      const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+      if (!token) return;
+
+      const response = await fetch(buildApiUrl('user/text-gallery'), {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setSavedTexts(data.texts || []);
+        console.log('✅ Loaded', data.texts?.length || 0, 'texts from gallery');
+      } else {
+        console.error('❌ Failed to load text gallery:', response.status);
+      }
+    } catch (error) {
+      console.error('❌ Error loading text gallery:', error);
+    } finally {
+      setLoadingTextGallery(false);
+    }
+  };
+
+  const saveTextToGallery = async () => {
+    if (!newTextContent.trim()) {
+      alert('يرجى إدخال محتوى النص');
+      return;
+    }
+
+    try {
+      setSavingText(true);
+      const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+      if (!token) {
+        alert('يرجى تسجيل الدخول أولاً');
+        return;
+      }
+
+      const response = await fetch(buildApiUrl('user/text-gallery'), {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          title: newTextTitle.trim() || null,
+          content: newTextContent.trim()
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Text saved to gallery:', data);
+        // تحديث القائمة
+        await loadTextGallery();
+        // مسح الحقول
+        setNewTextTitle('');
+        setNewTextContent('');
+        alert('✅ تم حفظ النص بنجاح!');
+      } else {
+        const errorData = await response.json();
+        console.error('❌ Failed to save text:', errorData);
+        alert('فشل حفظ النص. حاول مرة أخرى.');
+      }
+    } catch (error) {
+      console.error('❌ Error saving text to gallery:', error);
+      alert('حدث خطأ أثناء حفظ النص');
+    } finally {
+      setSavingText(false);
+    }
+  };
+
+  const deleteTextFromGallery = async (textId: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    
+    if (!confirm('هل أنت متأكد من حذف هذا النص من الحافظة؟')) {
+      return;
+    }
+
+    try {
+      setDeletingTextId(textId);
+      const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+      if (!token) {
+        alert('يرجى تسجيل الدخول أولاً');
+        return;
+      }
+
+      const response = await fetch(buildApiUrl(`user/text-gallery/${textId}`), {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        console.log('✅ Text deleted from gallery');
+        setSavedTexts(prev => prev.filter(text => text.id !== textId));
+      } else {
+        const errorData = await response.json();
+        console.error('❌ Failed to delete text:', errorData);
+        alert('فشل حذف النص. حاول مرة أخرى.');
+      }
+    } catch (error) {
+      console.error('❌ Error deleting text from gallery:', error);
+      alert('حدث خطأ أثناء حذف النص');
+    } finally {
+      setDeletingTextId(null);
+    }
+  };
+
+  const selectTextFromGallery = (content: string) => {
+    if (!selectedConversation) return;
+    
+    setNewMessage(content);
+    setShowTextGallery(false);
+    // التركيز على textarea
+    setTimeout(() => {
+      textareaRef.current?.focus();
+    }, 100);
   };
 
   // وظائف الطلبات
@@ -1909,10 +2215,20 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         fullMetadata: data.metadata
       });
 
+      // ✅ FIX: التحقق من أن الرسالة تخص نفس الشركة قبل معالجتها
+      const messageCompanyId = data.companyId || data.metadata?.companyId || data.conversation?.companyId;
+      if (messageCompanyId && companyId && String(messageCompanyId) !== String(companyId)) {
+        console.log('🔕 [SOCKET] Ignoring message from different company:', { 
+          messageCompanyId, 
+          currentCompanyId: companyId,
+          conversationId: data.conversationId 
+        });
+        return; // تجاهل الرسالة تماماً إذا كانت من شركة أخرى
+      }
+
       // 🔔 تشغيل صوت التنبيه للرسائل من العملاء (مع عزل الشركات)
       if (data.isFromCustomer) {
         // ✅ التحقق من أن الرسالة تخص نفس الشركة
-        const messageCompanyId = data.companyId || data.metadata?.companyId;
         if (messageCompanyId && companyId && String(messageCompanyId) === String(companyId)) {
           console.log('🔔 Playing notification sound for new customer message');
           socketService.playNotificationSound();
@@ -2005,7 +2321,32 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         const conversationExists = prev.some(conv => conv.id === data.conversationId);
         
         if (!conversationExists) {
-          console.log(`⚠️ [SOCKET] Conversation ${data.conversationId} not found in list, creating temporary conversation with message...`);
+          // ✅ FIX: التحقق مرة أخرى من companyId قبل إنشاء المحادثة المؤقتة
+          // (تم التحقق في بداية handleNewMessage، لكن نتحقق مرة أخرى للتأكد)
+          if (messageCompanyId && companyId && String(messageCompanyId) !== String(companyId)) {
+            console.log(`🔕 [SOCKET] Ignoring conversation creation - different company:`, {
+              conversationId: data.conversationId,
+              messageCompanyId,
+              currentCompanyId: companyId
+            });
+            return prev; // لا نضيف المحادثة إذا كانت من شركة أخرى
+          }
+
+          // ✅ FIX: لا ننشئ محادثة مؤقتة لرسائل الموظفين - فقط رسائل العملاء
+          // رسائل الموظفين لا يجب أن تنشئ محادثات جديدة
+          if (!data.isFromCustomer) {
+            console.log(`ℹ️ [SOCKET] Message from staff for unknown conversation ${data.conversationId}, ignoring (won't create new conversation)`);
+            // نحاول تحميل المحادثة من API فقط إذا كانت مفتوحة حالياً
+            if (selectedConversation?.id === data.conversationId) {
+              console.log(`🔄 [SOCKET] Conversation is selected, loading from API...`);
+              loadSpecificConversation(data.conversationId, false).catch(err => {
+                console.error(`❌ [SOCKET] Failed to load conversation:`, err);
+              });
+            }
+            return prev; // لا نضيف محادثة جديدة لرسائل الموظفين
+          }
+
+          console.log(`⚠️ [SOCKET] Conversation ${data.conversationId} not found in list, creating temporary conversation with customer message...`);
           console.log(`📥 [SOCKET] Message data:`, {
             conversationId: data.conversationId,
             content: data.content?.substring(0, 50),
@@ -2014,7 +2355,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             companyId: data.companyId || data.metadata?.companyId
           });
           
-          // ✅ FIX: إنشاء محادثة مؤقتة مع الرسالة فوراً حتى لا تضيع الرسالة
+          // ✅ FIX: إنشاء محادثة مؤقتة فقط لرسائل العملاء
           const tempConversation: Conversation = {
             id: data.conversationId,
             customerId: data.customerId || data.senderId || data.conversationId,
@@ -2035,6 +2376,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           const updatedWithTemp = [tempConversation, ...prev];
           
           // ✅ تحميل المحادثة الكاملة من API في الخلفية ودمجها
+          // (loadSpecificConversation سيتحقق من companyId مرة أخرى)
           const shouldAutoSelect = !selectedConversation || selectedConversation.id === data.conversationId;
           console.log(`🔄 [SOCKET] Loading full conversation ${data.conversationId}, autoSelect: ${shouldAutoSelect}`);
           
@@ -2270,6 +2612,17 @@ const ConversationsImprovedFixedContent: React.FC = () => {
     const handleConversationCreated = (data: any) => {
       console.log('🆕 [SOCKET] New conversation created:', data);
 
+      // ✅ FIX: التحقق من أن المحادثة تخص نفس الشركة قبل إضافتها
+      const conversationCompanyId = data.companyId;
+      if (conversationCompanyId && companyId && String(conversationCompanyId) !== String(companyId)) {
+        console.log('🔕 [SOCKET] Ignoring conversation from different company:', { 
+          conversationCompanyId, 
+          currentCompanyId: companyId,
+          conversationId: data.id 
+        });
+        return; // تجاهل المحادثة تماماً إذا كانت من شركة أخرى
+      }
+
       const formattedConversation: Conversation = {
         id: data.id,
         customerId: data.customerId || data.id,
@@ -2306,7 +2659,6 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         }
         
         // 🔔 تشغيل صوت التنبيه للمحادثة الجديدة (مع عزل الشركات)
-        const conversationCompanyId = data.companyId;
         if (conversationCompanyId && companyId && String(conversationCompanyId) === String(companyId)) {
           console.log('🔔 Playing notification sound for new conversation');
           socketService.playNotificationSound();
@@ -2549,6 +2901,56 @@ const ConversationsImprovedFixedContent: React.FC = () => {
     }, 60000); // كل دقيقة
 
     return () => clearInterval(intervalId);
+  }, []);
+
+  // ✅ FIX: منع scroll تلقائي عند focus على input في الموبايل
+  useEffect(() => {
+    if (typeof window === 'undefined' || window.innerWidth > 768) return;
+    
+    let savedScrollY = 0;
+    let isInputFocused = false;
+    
+    const handleFocus = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {
+        isInputFocused = true;
+        savedScrollY = window.scrollY;
+      }
+    };
+    
+    const handleBlur = () => {
+      isInputFocused = false;
+    };
+    
+    const preventScroll = () => {
+      if (isInputFocused) {
+        window.scrollTo(0, savedScrollY);
+      }
+    };
+    
+    // منع scroll التلقائي عند focus
+    document.addEventListener('focusin', handleFocus, true);
+    document.addEventListener('focusout', handleBlur, true);
+    
+    // منع scroll التلقائي
+    let scrollTimeout: NodeJS.Timeout;
+    const handleScroll = () => {
+      if (isInputFocused) {
+        clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(() => {
+          window.scrollTo(0, savedScrollY);
+        }, 10);
+      }
+    };
+    
+    window.addEventListener('scroll', handleScroll, { passive: false });
+    
+    return () => {
+      document.removeEventListener('focusin', handleFocus, true);
+      document.removeEventListener('focusout', handleBlur, true);
+      window.removeEventListener('scroll', handleScroll);
+      clearTimeout(scrollTimeout);
+    };
   }, []);
 
   // دالة لإزالة الرسائل المكررة
@@ -3033,7 +3435,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       </div>
 
       {/* منطقة المحادثة */}
-      <div className="flex-1 flex flex-col overflow-hidden" style={{ height: '90vh' }}>
+      <div className="flex-1 flex flex-col overflow-hidden" style={{ height: '90vh' }} id="conversation-area">
         {selectedConversation ? (
           <>
             {/* شريط علوي مع معلومات المحادثة */}
@@ -3302,7 +3704,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             {/* منطقة الرسائل */}
             <div
               ref={messagesContainerRef}
-              className={`flex-1 overflow-y-auto p-4 space-y-4 relative transition-all min-h-0 ${
+              className={`flex-1 overflow-y-auto p-4 space-y-4 relative transition-all min-h-0 messages-container ${
                 isDraggingOver ? 'bg-blue-50 border-4 border-dashed border-blue-400' : ''
               }`}
               onScroll={handleScroll}
@@ -3520,7 +3922,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                               </button>
                             </div>
                           ) : (
-                            <p className="text-sm">{message.content}</p>
+                            <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
                           )}
 
                           <div className="flex items-center justify-between text-xs mt-1 opacity-70">
@@ -3659,7 +4061,14 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             )}
 
             {/* منطقة إدخال الرسالة */}
-            <div className="bg-white border-t border-gray-200 p-4 flex-shrink-0">
+            <div 
+              className="bg-white border-t border-gray-200 p-4 flex-shrink-0"
+              id="message-input-area"
+              style={{
+                scrollMarginBottom: '20px',
+                scrollPaddingBottom: '20px'
+              }}
+            >
               {isAiTyping && (
                 <div className="mb-2 text-sm text-blue-600 flex items-center gap-2">
                   <CpuChipIcon className="w-4 h-4 animate-pulse" />
@@ -3701,16 +4110,113 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                 </button>
+                
+                {/* زر حافظة النصوص */}
+                <button
+                  onClick={() => {
+                    setShowTextGallery(true);
+                    loadTextGallery();
+                  }}
+                  className="p-2 text-gray-400 hover:text-green-600 rounded-full hover:bg-green-50 cursor-pointer transition-colors"
+                  title="حافظة النصوص"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </button>
                 <div className="flex-1 relative">
                   <textarea
                     ref={textareaRef}
                     value={newMessage}
                     onChange={(e) => handleTyping(e.target.value)}
                     onKeyDown={handleKeyDown}
+                    onFocus={(e) => {
+                      // ✅ FIX: منع zoom و scroll تلقائي في الموبايل
+                      if (window.innerWidth <= 768) {
+                        // حفظ موضع scroll الحالي قبل أي تغيير
+                        const currentScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop;
+                        const currentScrollX = window.scrollX || window.pageXOffset || document.documentElement.scrollLeft;
+                        
+                        // تحديث viewport لمنع zoom
+                        const viewport = document.querySelector('meta[name="viewport"]');
+                        if (viewport) {
+                          viewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+                        }
+                        
+                        // ✅ FIX: منع scroll التلقائي فوراً
+                        const preventScroll = () => {
+                          const newScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop;
+                          const newScrollX = window.scrollX || window.pageXOffset || document.documentElement.scrollLeft;
+                          
+                          if (Math.abs(newScrollY - currentScrollY) > 1 || Math.abs(newScrollX - currentScrollX) > 1) {
+                            window.scrollTo({
+                              top: currentScrollY,
+                              left: currentScrollX,
+                              behavior: 'instant'
+                            });
+                            document.documentElement.scrollTop = currentScrollY;
+                            document.documentElement.scrollLeft = currentScrollX;
+                            document.body.scrollTop = currentScrollY;
+                            document.body.scrollLeft = currentScrollX;
+                          }
+                        };
+                        
+                        // منع scroll فوراً وبعد فترات متعددة
+                        preventScroll();
+                        requestAnimationFrame(preventScroll);
+                        setTimeout(preventScroll, 0);
+                        setTimeout(preventScroll, 10);
+                        setTimeout(preventScroll, 20);
+                        setTimeout(preventScroll, 50);
+                        setTimeout(preventScroll, 100);
+                        setTimeout(preventScroll, 150);
+                        setTimeout(preventScroll, 200);
+                        setTimeout(preventScroll, 300);
+                        setTimeout(preventScroll, 500);
+                        setTimeout(preventScroll, 800);
+                        setTimeout(preventScroll, 1000);
+                        
+                        // إضافة event listeners لمنع scroll
+                        const scrollHandler = (e: Event) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          preventScroll();
+                        };
+                        
+                        window.addEventListener('scroll', scrollHandler, { passive: false, capture: true });
+                        document.addEventListener('scroll', scrollHandler, { passive: false, capture: true });
+                        window.addEventListener('touchmove', preventScroll, { passive: false });
+                        
+                        // إزالة event listeners بعد 3 ثواني
+                        setTimeout(() => {
+                          window.removeEventListener('scroll', scrollHandler, { capture: true });
+                          document.removeEventListener('scroll', scrollHandler, { capture: true });
+                          window.removeEventListener('touchmove', preventScroll);
+                        }, 3000);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      // ✅ FIX: إعادة تفعيل zoom بعد فقدان التركيز (اختياري)
+                      if (window.innerWidth <= 768) {
+                        const viewport = document.querySelector('meta[name="viewport"]');
+                        if (viewport) {
+                          viewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes');
+                        }
+                      }
+                    }}
                     placeholder={t('conversations.typeMessage', 'Type a message...')}
                     rows={1}
                     className="w-full px-5 py-3 text-base border border-gray-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none overflow-y-auto"
-                    style={{ minHeight: '56px', maxHeight: '150px' }}
+                    style={{ 
+                      minHeight: '56px', 
+                      maxHeight: '150px', 
+                      fontSize: '18px',
+                      WebkitTextSizeAdjust: '100%',
+                      textSizeAdjust: '100%',
+                      touchAction: 'manipulation',
+                      transform: 'scale(1)',
+                      zoom: 1
+                    }}
                   />
                   
                   {/* Emoji Picker */}
@@ -3951,26 +4457,260 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                 </div>
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {savedImages.map((image) => (
-                    <div
-                      key={image.id}
-                      className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-gray-200 hover:border-blue-500 transition-all"
-                      onClick={() => selectImageFromGallery(image.url, image.filename)}
-                    >
-                      <img
-                        src={image.url}
-                        alt={image.filename}
-                        className="w-full h-40 object-cover"
-                      />
-                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all flex items-center justify-center">
-                        <div className="transform scale-0 group-hover:scale-100 transition-transform">
-                          <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                          </svg>
+                  {savedImages.map((image) => {
+                    const isSelected = selectedImagesForSend.has(image.id);
+                    return (
+                      <div
+                        key={image.id}
+                        className={`relative group cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
+                          isSelected 
+                            ? 'border-blue-500 ring-2 ring-blue-300' 
+                            : 'border-gray-200 hover:border-blue-500'
+                        }`}
+                        onClick={(e) => {
+                          // إذا كان هناك صور مختارة، استخدم وضع الاختيار المتعدد
+                          if (selectedImagesForSend.size > 0) {
+                            toggleImageSelection(image.id, e);
+                          } else {
+                            // إذا لم يكن هناك صور مختارة، أرسل مباشرة
+                            selectImageFromGallery(image.url, image.filename);
+                          }
+                        }}
+                      >
+                        <img
+                          src={image.url}
+                          alt={image.filename}
+                          className="w-full h-40 object-cover"
+                        />
+                        <div className={`absolute inset-0 bg-black transition-all ${
+                          isSelected 
+                            ? 'bg-opacity-30' 
+                            : 'bg-opacity-0 group-hover:bg-opacity-50'
+                        } flex items-center justify-center`}>
+                          {!isSelected && (
+                            <div className="transform scale-0 group-hover:scale-100 transition-transform">
+                              <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                        {/* Checkbox للاختيار المتعدد - يظهر فوق الـ overlay */}
+                        <button
+                          onClick={(e) => toggleImageSelection(image.id, e)}
+                          className={`absolute top-2 left-2 w-8 h-8 rounded border-2 flex items-center justify-center transition-all z-20 ${
+                            isSelected 
+                              ? 'bg-blue-600 border-blue-600 opacity-100' 
+                              : 'bg-white border-gray-300 opacity-0 group-hover:opacity-100'
+                          } hover:bg-blue-500 hover:border-blue-500`}
+                          title={isSelected ? "إلغاء التحديد" : "تحديد الصورة"}
+                        >
+                          {isSelected && (
+                            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                          {!isSelected && (
+                            <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                            </svg>
+                          )}
+                        </button>
+                        {/* زر الحذف */}
+                        <button
+                          onClick={(e) => deleteImageFromGallery(image.id, e)}
+                          disabled={deletingImageId === image.id}
+                          className="absolute top-2 right-2 p-2 bg-red-600 text-white rounded-full hover:bg-red-700 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50 disabled:cursor-not-allowed z-10"
+                          title="حذف الصورة"
+                        >
+                          {deletingImageId === image.id ? (
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          ) : (
+                            <TrashIcon className="w-4 h-4" />
+                          )}
+                        </button>
+                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-2">
+                          <p className="text-white text-xs truncate">{image.filename}</p>
                         </div>
                       </div>
-                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-2">
-                        <p className="text-white text-xs truncate">{image.filename}</p>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="border-t p-4 bg-gray-50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  {selectedImagesForSend.size > 0 ? (
+                    <>
+                      <p className="text-sm text-blue-600 font-medium">
+                        ✓ تم اختيار {selectedImagesForSend.size} صورة
+                      </p>
+                      <button
+                        onClick={() => setSelectedImagesForSend(new Set())}
+                        className="text-sm text-gray-600 hover:text-gray-800 underline"
+                      >
+                        إلغاء الاختيار
+                      </button>
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-600">
+                      💡 اضغط على أي صورة لإرسالها مباشرة، أو اختر عدة صور للإرسال المتعدد
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center space-x-2">
+                  {selectedImagesForSend.size > 0 && (
+                    <button
+                      onClick={sendMultipleImagesFromGallery}
+                      disabled={sendingMultipleImages}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                    >
+                      {sendingMultipleImages ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                          <span>جاري الإرسال...</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                          </svg>
+                          <span>إرسال {selectedImagesForSend.size} صورة</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setShowImageGallery(false);
+                      setSelectedImagesForSend(new Set());
+                    }}
+                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+                  >
+                    إغلاق
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Text Gallery Modal */}
+      {showTextGallery && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b">
+              <div className="flex items-center space-x-3">
+                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <h3 className="text-xl font-bold text-gray-900">حافظة النصوص المحفوظة</h3>
+                <span className="text-sm text-gray-500">({savedTexts.length} نص)</span>
+              </div>
+              
+              <button
+                onClick={() => setShowTextGallery(false)}
+                className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {/* Form لإضافة نص جديد */}
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">إضافة نص جديد</h4>
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    placeholder="عنوان النص (اختياري)"
+                    value={newTextTitle}
+                    onChange={(e) => setNewTextTitle(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                  <textarea
+                    placeholder="محتوى النص..."
+                    value={newTextContent}
+                    onChange={(e) => setNewTextContent(e.target.value)}
+                    rows={4}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
+                  />
+                  <button
+                    onClick={saveTextToGallery}
+                    disabled={savingText || !newTextContent.trim()}
+                    className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {savingText ? (
+                      <div className="flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        <span>جاري الحفظ...</span>
+                      </div>
+                    ) : (
+                      'حفظ النص'
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {loadingTextGallery ? (
+                <div className="flex items-center justify-center h-64">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-4"></div>
+                    <p className="text-gray-600">جاري تحميل النصوص...</p>
+                  </div>
+                </div>
+              ) : savedTexts.length === 0 ? (
+                <div className="flex items-center justify-center h-64 text-center">
+                  <div>
+                    <svg className="w-24 h-24 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <p className="text-gray-600 text-lg mb-2">لا توجد نصوص محفوظة</p>
+                    <p className="text-gray-500 text-sm">احفظ النصوص الشائعة هنا للإرسال السريع لاحقاً</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {savedTexts.map((text) => (
+                    <div
+                      key={text.id}
+                      className="p-4 bg-white border border-gray-200 rounded-lg hover:border-green-500 hover:shadow-md transition-all cursor-pointer group"
+                      onClick={() => selectTextFromGallery(text.content)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <h5 className="font-semibold text-gray-900 mb-2">{text.title || 'بدون عنوان'}</h5>
+                          <p className="text-sm text-gray-600 whitespace-pre-wrap break-words line-clamp-3">
+                            {text.content}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-2">
+                            {new Date(text.createdAt).toLocaleDateString('ar-EG', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric'
+                            })}
+                          </p>
+                        </div>
+                        <button
+                          onClick={(e) => deleteTextFromGallery(text.id, e)}
+                          disabled={deletingTextId === text.id}
+                          className="ml-3 p-2 text-red-600 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="حذف النص"
+                        >
+                          {deletingTextId === text.id ? (
+                            <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin"></div>
+                          ) : (
+                            <TrashIcon className="w-4 h-4" />
+                          )}
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -3982,10 +4722,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             <div className="border-t p-4 bg-gray-50">
               <div className="flex items-center justify-between">
                 <p className="text-sm text-gray-600">
-                  💡 اضغط على أي صورة لإرسالها مباشرة بدون رفع جديد
+                  💡 اضغط على أي نص لإرساله مباشرة
                 </p>
                 <button
-                  onClick={() => setShowImageGallery(false)}
+                  onClick={() => setShowTextGallery(false)}
                   className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
                 >
                   إغلاق

@@ -104,6 +104,7 @@ const deliveryOptionRoutes = require('./routes/deliveryOptionRoutes'); // 🚚 �
 const publicPromotionRoutes = require('./routes/publicPromotionRoutes'); // 🌐 Public routes للترويج
 const publicProductsRoutes = require('./routes/publicProductsRoutes');
 const imageGalleryRoutes = require('./routes/imageGalleryRoutes'); // 🖼️ حافظة الصور
+const textGalleryRoutes = require('./routes/textGalleryRoutes'); // 📝 حافظة النصوص
 const publicCartRoutes = require('./routes/publicCartRoutes');
 const publicOrdersRoutes = require('./routes/publicOrdersRoutes');
 const wishlistRoutes = require('./routes/wishlistRoutes'); // ❤️ قائمة الرغبات
@@ -536,6 +537,7 @@ app.use("/api/v1/integrations/", facebookIntegrationRoutes)
 app.use("/api/v1/messages/", messageFixRoutes)
 app.use("/api/v1/comments/", commentRoutes)
 app.use("/api/v1/user/image-gallery", imageGalleryRoutes) // 🖼️ حافظة الصور
+app.use("/api/v1/user/text-gallery", textGalleryRoutes) // 📝 حافظة النصوص
 // Homepage routes moved before globalSecurity middleware (line 434)
 
 // ==================== SERVER STARTUP ====================
