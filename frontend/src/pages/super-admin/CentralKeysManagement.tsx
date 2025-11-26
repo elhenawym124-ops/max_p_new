@@ -73,11 +73,22 @@ const CentralKeysManagement: React.FC = () => {
   const [keys, setKeys] = useState<GeminiKey[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<'all' | 'CENTRAL' | 'COMPANY'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [selectedCompany, setSelectedCompany] = useState<string>('');
   const [companies, setCompanies] = useState<any[]>([]);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [testingKey, setTestingKey] = useState<string | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [bulkAction, setBulkAction] = useState<'none' | 'activate' | 'deactivate' | 'delete'>('none');
+  const [statistics, setStatistics] = useState({
+    totalKeys: 0,
+    centralKeys: 0,
+    companyKeys: 0,
+    activeKeys: 0,
+    totalModels: 0,
+    availableModels: 0
+  });
   const [newKey, setNewKey] = useState({
     name: '',
     apiKey: '',
@@ -89,7 +100,7 @@ const CentralKeysManagement: React.FC = () => {
   useEffect(() => {
     loadKeys();
     loadCompanies();
-  }, [filter, selectedCompany]);
+  }, [filter, selectedCompany, activeFilter]);
 
   const loadCompanies = async () => {
     try {
@@ -151,7 +162,7 @@ const CentralKeysManagement: React.FC = () => {
       
       if (data.success) {
         // Ensure all keys have required fields and keyType
-        const processedKeys = (data.data || []).map((key: any) => ({
+        let processedKeys = (data.data || []).map((key: any) => ({
           ...key,
           keyType: key.keyType || (key.companyId ? 'COMPANY' : 'CENTRAL'),
           models: key.models || [],
@@ -160,8 +171,28 @@ const CentralKeysManagement: React.FC = () => {
           usage: key.usage || { used: 0, limit: 0 },
           createdAt: key.createdAt || new Date().toISOString()
         }));
+        
+        // Apply active filter
+        if (activeFilter === 'active') {
+          processedKeys = processedKeys.filter(key => key.isActive);
+        } else if (activeFilter === 'inactive') {
+          processedKeys = processedKeys.filter(key => !key.isActive);
+        }
+        
         console.log('✅ [CENTRAL-KEYS] Processed keys:', processedKeys.length);
         setKeys(processedKeys);
+        
+        // Update statistics if available
+        if (data.summary) {
+          setStatistics({
+            totalKeys: data.summary.totalKeys || 0,
+            centralKeys: data.summary.centralKeys || 0,
+            companyKeys: data.summary.companyKeys || 0,
+            activeKeys: data.summary.activeKeys || 0,
+            totalModels: data.summary.totalModels || 0,
+            availableModels: data.summary.availableModels || 0
+          });
+        }
       } else {
         console.error('❌ [CENTRAL-KEYS] API returned success=false:', data.error);
         setKeys([]);
@@ -303,6 +334,97 @@ const CentralKeysManagement: React.FC = () => {
     }
   };
 
+  const handleSelectKey = (keyId: string) => {
+    const newSelected = new Set(selectedKeys);
+    if (newSelected.has(keyId)) {
+      newSelected.delete(keyId);
+    } else {
+      newSelected.add(keyId);
+    }
+    setSelectedKeys(newSelected);
+  };
+
+  const handleSelectAll = () => {
+    if (selectedKeys.size === keys.length && keys.length > 0) {
+      setSelectedKeys(new Set());
+    } else {
+      setSelectedKeys(new Set(keys.map(k => k.id)));
+    }
+  };
+
+  const handleBulkAction = async () => {
+    if (selectedKeys.size === 0) {
+      alert('يرجى اختيار مفاتيح أولاً');
+      return;
+    }
+
+    if (bulkAction === 'none') {
+      alert('يرجى اختيار إجراء جماعي');
+      return;
+    }
+
+    if (bulkAction === 'delete' && !confirm(`هل أنت متأكد من حذف ${selectedKeys.size} مفتاح؟`)) {
+      return;
+    }
+
+    try {
+      const keyIds = Array.from(selectedKeys);
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const keyId of keyIds) {
+        try {
+          if (bulkAction === 'delete') {
+            const response = await fetch(buildApiUrl(`admin/gemini-keys/${keyId}`), {
+              method: 'DELETE',
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+                'Content-Type': 'application/json'
+              }
+            });
+            const data = await response.json();
+            if (data.success) {
+              successCount++;
+            } else {
+              errorCount++;
+            }
+          } else if (bulkAction === 'activate' || bulkAction === 'deactivate') {
+            // Get current key status
+            const key = keys.find(k => k.id === keyId);
+            if (key && key.isActive !== (bulkAction === 'activate')) {
+              const response = await fetch(buildApiUrl(`admin/gemini-keys/${keyId}/toggle`), {
+                method: 'PUT',
+                headers: {
+                  'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+                  'Content-Type': 'application/json'
+                }
+              });
+              const data = await response.json();
+              if (data.success) {
+                successCount++;
+              } else {
+                errorCount++;
+              }
+            } else {
+              successCount++; // Already in desired state
+            }
+          }
+        } catch (error) {
+          console.error(`Error processing key ${keyId}:`, error);
+          errorCount++;
+        }
+      }
+
+      alert(`${bulkAction === 'delete' ? 'حذف' : bulkAction === 'activate' ? 'تفعيل' : 'إيقاف'} ${successCount} مفتاح بنجاح${errorCount > 0 ? `\n${errorCount} فشل` : ''}`);
+      setSelectedKeys(new Set());
+      setBulkAction('none');
+      loadKeys();
+    } catch (error) {
+      console.error('Error in bulk action:', error);
+      alert('حدث خطأ في تنفيذ الإجراء الجماعي');
+    }
+  };
+
   const getModelBadges = (modelName: string) => {
     const badges = [];
     if (modelName.includes('2.5')) {
@@ -344,10 +466,53 @@ const CentralKeysManagement: React.FC = () => {
         </Button>
       </Box>
 
+      {/* Statistics Cards */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: '1fr 1fr 1fr' }, gap: 2, mb: 3 }}>
+        <Card sx={{ bgcolor: 'primary.main', color: 'primary.contrastText' }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              المفاتيح المركزية
+            </Typography>
+            <Typography variant="h4" component="div">
+              {statistics.centralKeys}
+            </Typography>
+            <Typography variant="body2" sx={{ opacity: 0.8 }}>
+              {statistics.activeKeys > 0 ? `${statistics.activeKeys} نشط` : 'لا توجد مفاتيح نشطة'}
+            </Typography>
+          </CardContent>
+        </Card>
+        <Card sx={{ bgcolor: 'secondary.main', color: 'secondary.contrastText' }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              مفاتيح الشركات
+            </Typography>
+            <Typography variant="h4" component="div">
+              {statistics.companyKeys}
+            </Typography>
+            <Typography variant="body2" sx={{ opacity: 0.8 }}>
+              مفاتيح خاصة بالشركات
+            </Typography>
+          </CardContent>
+        </Card>
+        <Card sx={{ bgcolor: 'success.main', color: 'success.contrastText' }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              إجمالي المفاتيح
+            </Typography>
+            <Typography variant="h4" component="div">
+              {statistics.totalKeys}
+            </Typography>
+            <Typography variant="body2" sx={{ opacity: 0.8 }}>
+              {statistics.totalModels} نموذج | {statistics.availableModels} متاح
+            </Typography>
+          </CardContent>
+        </Card>
+      </Box>
+
       {/* Filters */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
-          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
             <FormControl size="small" sx={{ minWidth: 200 }}>
               <InputLabel>نوع المفاتيح</InputLabel>
               <Select
@@ -358,6 +523,19 @@ const CentralKeysManagement: React.FC = () => {
                 <MenuItem value="all">الكل</MenuItem>
                 <MenuItem value="CENTRAL">مركزية</MenuItem>
                 <MenuItem value="COMPANY">خاصة بالشركات</MenuItem>
+              </Select>
+            </FormControl>
+
+            <FormControl size="small" sx={{ minWidth: 200 }}>
+              <InputLabel>حالة المفاتيح</InputLabel>
+              <Select
+                value={activeFilter}
+                label="حالة المفاتيح"
+                onChange={(e) => setActiveFilter(e.target.value as any)}
+              >
+                <MenuItem value="all">الكل</MenuItem>
+                <MenuItem value="active">نشطة فقط</MenuItem>
+                <MenuItem value="inactive">غير نشطة فقط</MenuItem>
               </Select>
             </FormControl>
 
@@ -383,6 +561,47 @@ const CentralKeysManagement: React.FC = () => {
               <RefreshIcon />
             </IconButton>
           </Box>
+
+          {/* Bulk Actions */}
+          {selectedKeys.size > 0 && (
+            <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid #e0e0e0', display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Typography variant="body2" color="text.secondary">
+                {selectedKeys.size} مفتاح محدد
+              </Typography>
+              <FormControl size="small" sx={{ minWidth: 150 }}>
+                <InputLabel>إجراء جماعي</InputLabel>
+                <Select
+                  value={bulkAction}
+                  label="إجراء جماعي"
+                  onChange={(e) => setBulkAction(e.target.value as any)}
+                >
+                  <MenuItem value="none">اختر إجراء</MenuItem>
+                  <MenuItem value="activate">تفعيل</MenuItem>
+                  <MenuItem value="deactivate">إيقاف</MenuItem>
+                  <MenuItem value="delete">حذف</MenuItem>
+                </Select>
+              </FormControl>
+              <Button
+                variant="contained"
+                color="primary"
+                size="small"
+                onClick={handleBulkAction}
+                disabled={bulkAction === 'none'}
+              >
+                تنفيذ
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => {
+                  setSelectedKeys(new Set());
+                  setBulkAction('none');
+                }}
+              >
+                إلغاء
+              </Button>
+            </Box>
+          )}
         </CardContent>
       </Card>
 
@@ -401,11 +620,33 @@ const CentralKeysManagement: React.FC = () => {
         </Card>
       ) : (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {/* Select All Checkbox */}
+          {keys.length > 0 && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+              <input
+                type="checkbox"
+                checked={selectedKeys.size === keys.length && keys.length > 0}
+                onChange={handleSelectAll}
+                style={{ width: 18, height: 18, cursor: 'pointer' }}
+              />
+              <Typography variant="body2" color="text.secondary">
+                تحديد الكل ({selectedKeys.size} محدد)
+              </Typography>
+            </Box>
+          )}
+
           {keys.map((key) => (
             <Card key={key.id} sx={{ borderLeft: `4px solid ${key.isActive ? '#4caf50' : '#9e9e9e'}` }}>
               <CardContent>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-                  <Box sx={{ flex: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, flex: 1 }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedKeys.has(key.id)}
+                      onChange={() => handleSelectKey(key.id)}
+                      style={{ width: 18, height: 18, cursor: 'pointer', marginTop: 4 }}
+                    />
+                    <Box sx={{ flex: 1 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                       <Typography variant="h6" component="div">
                         {key.name}
@@ -449,6 +690,7 @@ const CentralKeysManagement: React.FC = () => {
                         </Typography>
                       )}
                     </Box>
+                  </Box>
                   </Box>
                   <Box sx={{ display: 'flex', gap: 1 }}>
                     <Tooltip title="اختبار المفتاح">

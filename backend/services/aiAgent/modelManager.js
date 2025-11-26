@@ -1455,6 +1455,185 @@ class ModelManager {
   }
 
   /**
+   * منطق حساب الكوتة من قائمة النماذج (مشترك بين calculateTotalQuota و calculateTotalQuotaWithPreFetchedModels)
+   */
+  async _calculateQuotaFromModels(modelName, companyId, allModels, now) {
+    if (allModels.length === 0) {
+      const emptyResult = {
+        totalRPM: 0,
+        totalRPMUsed: 0,
+        totalTPM: 0,
+        totalTPMUsed: 0,
+        totalRPD: 0,
+        totalRPDUsed: 0,
+        rpmPercentage: 0,
+        tpmPercentage: 0,
+        rpdPercentage: 0,
+        availableModels: [],
+        totalModels: 0
+      };
+      
+      const cacheKey = `${modelName}_${companyId}`;
+      this.quotaCache.set(cacheKey, {
+        timestamp: now,
+        data: emptyResult
+      });
+      
+      return emptyResult;
+    }
+
+    // الحصول على القيم الافتراضية للنموذج
+    const modelDefaults = this.getModelDefaults(modelName);
+    const nowDate = new Date();
+    
+    let totalRPM = 0;
+    let totalRPMUsed = 0;
+    let totalTPM = 0;
+    let totalTPMUsed = 0;
+    let totalRPD = 0;
+    let totalRPDUsed = 0;
+    const availableModels = [];
+
+    // جلب كل الاستثناءات دفعة واحدة (BATCH QUERY)
+    const keyIds = allModels.map(m => m.keyId).filter(Boolean);
+    const excludedSet = new Set();
+    
+    if (keyIds.length > 0) {
+      const excludedRecords = await this.prisma.excludedModel.findMany({
+        where: {
+          modelName,
+          keyId: { in: keyIds },
+          companyId: companyId,
+          retryAt: { gt: nowDate }
+        },
+        select: { keyId: true }
+      });
+      
+      excludedRecords.forEach(ex => {
+        excludedSet.add(ex.keyId);
+      });
+    }
+
+    // حساب الكوتة من كل نموذج
+    for (const modelRecord of allModels) {
+      let usage;
+      try {
+        usage = JSON.parse(modelRecord.usage || '{}');
+      } catch (e) {
+        console.warn(`⚠️ [QUOTA-CALC] خطأ في تحليل JSON للنموذج ${modelRecord.model}:`, e.message);
+        usage = {
+          used: 0,
+          limit: modelDefaults.limit,
+          rpm: { used: 0, limit: modelDefaults.rpm, windowStart: null },
+          rph: { used: 0, limit: modelDefaults.rph, windowStart: null },
+          rpd: { used: 0, limit: modelDefaults.rpd, windowStart: null },
+          tpm: { used: 0, limit: modelDefaults.tpm || 125000, windowStart: null }
+        };
+      }
+
+      const rpmLimit = modelDefaults.rpm || 0;
+      const tpmLimit = modelDefaults.tpm || 0;
+      const rpdLimit = modelDefaults.rpd || 0;
+
+      let isAvailable = true;
+
+      // RPM
+      if (rpmLimit > 0) {
+        totalRPM += rpmLimit;
+        
+        if (usage.rpm && usage.rpm.windowStart) {
+          const windowStart = new Date(usage.rpm.windowStart);
+          const windowMs = 60 * 1000; // 1 دقيقة
+          
+          if ((nowDate - windowStart) < windowMs) {
+            const rpmUsed = usage.rpm.used || 0;
+            totalRPMUsed += rpmUsed;
+            
+            if (rpmUsed >= rpmLimit) {
+              isAvailable = false;
+            }
+          }
+        }
+      }
+
+      // TPM
+      if (tpmLimit > 0) {
+        totalTPM += tpmLimit;
+        
+        if (usage.tpm && usage.tpm.windowStart) {
+          const windowStart = new Date(usage.tpm.windowStart);
+          const windowMs = 60 * 1000; // 1 دقيقة
+          
+          if ((nowDate - windowStart) < windowMs) {
+            const tpmUsed = usage.tpm.used || 0;
+            totalTPMUsed += tpmUsed;
+            
+            if (tpmUsed >= tpmLimit) {
+              isAvailable = false;
+            }
+          }
+        }
+      }
+
+      // RPD
+      if (rpdLimit > 0) {
+        totalRPD += rpdLimit;
+        
+        if (usage.rpd && usage.rpd.windowStart) {
+          const windowStart = new Date(usage.rpd.windowStart);
+          const windowMs = 24 * 60 * 60 * 1000; // 1 يوم
+          
+          if ((nowDate - windowStart) < windowMs) {
+            const rpdUsed = usage.rpd.used || 0;
+            totalRPDUsed += rpdUsed;
+            
+            if (rpdUsed >= rpdLimit) {
+              isAvailable = false;
+            }
+          }
+        }
+      }
+
+      // فحص الاستثناءات
+      if (excludedSet.has(modelRecord.keyId)) {
+        isAvailable = false;
+      }
+
+      if (isAvailable) {
+        availableModels.push(modelRecord);
+      }
+    }
+
+    // حساب النسب المئوية
+    const rpmPercentage = totalRPM > 0 ? (totalRPMUsed / totalRPM) * 100 : 0;
+    const tpmPercentage = totalTPM > 0 ? (totalTPMUsed / totalTPM) * 100 : 0;
+    const rpdPercentage = totalRPD > 0 ? (totalRPDUsed / totalRPD) * 100 : 0;
+
+    const result = {
+      totalRPM,
+      totalRPMUsed,
+      totalTPM,
+      totalTPMUsed,
+      totalRPD,
+      totalRPDUsed,
+      rpmPercentage,
+      tpmPercentage,
+      rpdPercentage,
+      availableModels,
+      totalModels: allModels.length
+    };
+
+    // حفظ في Cache
+    const cacheKey = `${modelName}_${companyId}`;
+    this.quotaCache.set(cacheKey, {
+      timestamp: now,
+      data: result
+    });
+
+    return result;
+  }
+
+  /**
    * اختيار المفتاح التالي (Round-Robin) مع Optimistic Locking
    * آخر مفتاح استخدمته النظام ككل → المفتاح التالي
    * @param {Array} availableModels - قائمة النماذج المتاحة

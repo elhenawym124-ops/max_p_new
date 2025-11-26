@@ -6,7 +6,6 @@ import {
   Typography,
   Chip,
   IconButton,
-  Button,
   CircularProgress,
   LinearProgress,
   Tooltip,
@@ -109,18 +108,18 @@ const QuotaMonitoringDashboard: React.FC = () => {
   const [roundRobinKeys, setRoundRobinKeys] = useState<RoundRobinKey[]>([]);
   const [lastUsedKey, setLastUsedKey] = useState<any>(null);
   const [activeTab, setActiveTab] = useState(0);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoRefresh] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
 
   useEffect(() => {
     if (!isAuthenticated || !user) {
       navigate('/super-admin/login');
-      return;
+      return undefined;
     }
 
     if (user.role !== 'SUPER_ADMIN') {
       navigate('/super-admin/login');
-      return;
+      return undefined;
     }
 
     loadData();
@@ -133,6 +132,8 @@ const QuotaMonitoringDashboard: React.FC = () => {
 
       return () => clearInterval(interval);
     }
+    
+    return undefined;
   }, [isAuthenticated, user, navigate, autoRefresh]);
 
   const loadData = async () => {
@@ -216,27 +217,14 @@ const QuotaMonitoringDashboard: React.FC = () => {
       }
 
       setLastUpdate(new Date());
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ [QUOTA-MONITORING] Error loading quota monitoring data:', error);
       console.error('❌ [QUOTA-MONITORING] Error details:', {
-        message: error.message,
-        stack: error.stack
+        message: error?.message || 'Unknown error',
+        stack: error?.stack
       });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'healthy':
-        return 'success';
-      case 'warning':
-        return 'warning';
-      case 'error':
-        return 'error';
-      default:
-        return 'default';
     }
   };
 
@@ -249,7 +237,7 @@ const QuotaMonitoringDashboard: React.FC = () => {
       case 'error':
         return <ErrorIcon color="error" />;
       default:
-        return null;
+        return <CheckCircleIcon />;
     }
   };
 
@@ -382,6 +370,100 @@ const QuotaMonitoringDashboard: React.FC = () => {
         </Grid>
       </Grid>
 
+      {/* Total Quota Cards - إجماليات الكوتة لجميع النماذج */}
+      {modelQuotas.length > 0 && (() => {
+        const totalRPM = modelQuotas.reduce((sum, q) => sum + q.totalRPM, 0);
+        const totalRPMUsed = modelQuotas.reduce((sum, q) => sum + q.totalRPMUsed, 0);
+        const totalRPMRemaining = totalRPM - totalRPMUsed;
+        const totalRPMPercentage = totalRPM > 0 ? (totalRPMUsed / totalRPM) * 100 : 0;
+
+        const totalTPM = modelQuotas.reduce((sum, q) => sum + q.totalTPM, 0);
+        const totalTPMUsed = modelQuotas.reduce((sum, q) => sum + q.totalTPMUsed, 0);
+        const totalTPMRemaining = totalTPM - totalTPMUsed;
+        const totalTPMPercentage = totalTPM > 0 ? (totalTPMUsed / totalTPM) * 100 : 0;
+
+        const totalRPD = modelQuotas.reduce((sum, q) => sum + q.totalRPD, 0);
+        const totalRPDUsed = modelQuotas.reduce((sum, q) => sum + q.totalRPDUsed, 0);
+        const totalRPDRemaining = totalRPD - totalRPDUsed;
+        const totalRPDPercentage = totalRPD > 0 ? (totalRPDUsed / totalRPD) * 100 : 0;
+
+        return (
+          <Grid container spacing={3} sx={{ mb: 3 }}>
+            <Grid item xs={12} md={4}>
+              <Card sx={{ bgcolor: 'primary.main', color: 'primary.contrastText' }}>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    📊 إجمالي RPM (كل دقيقة)
+                  </Typography>
+                  <Typography variant="h4" component="div" sx={{ mb: 1 }}>
+                    {totalRPMRemaining.toLocaleString()}
+                  </Typography>
+                  <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                    متاح من {totalRPM.toLocaleString()} ({totalRPMPercentage.toFixed(1)}% مستخدم)
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: 'block', mt: 1, opacity: 0.8 }}>
+                    المستهلك: {totalRPMUsed.toLocaleString()} / {totalRPM.toLocaleString()}
+                  </Typography>
+                  <LinearProgress
+                    variant="determinate"
+                    value={Math.min(totalRPMPercentage, 100)}
+                    sx={{ mt: 1, bgcolor: 'rgba(255,255,255,0.3)', '& .MuiLinearProgress-bar': { bgcolor: 'white' } }}
+                  />
+                </CardContent>
+              </Card>
+            </Grid>
+
+            <Grid item xs={12} md={4}>
+              <Card sx={{ bgcolor: 'info.main', color: 'info.contrastText' }}>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    🚀 إجمالي TPM (كل دقيقة)
+                  </Typography>
+                  <Typography variant="h4" component="div" sx={{ mb: 1 }}>
+                    {totalTPMRemaining.toLocaleString()}
+                  </Typography>
+                  <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                    متاح من {totalTPM.toLocaleString()} ({totalTPMPercentage.toFixed(1)}% مستخدم)
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: 'block', mt: 1, opacity: 0.8 }}>
+                    المستهلك: {totalTPMUsed.toLocaleString()} / {totalTPM.toLocaleString()}
+                  </Typography>
+                  <LinearProgress
+                    variant="determinate"
+                    value={Math.min(totalTPMPercentage, 100)}
+                    sx={{ mt: 1, bgcolor: 'rgba(255,255,255,0.3)', '& .MuiLinearProgress-bar': { bgcolor: 'white' } }}
+                  />
+                </CardContent>
+              </Card>
+            </Grid>
+
+            <Grid item xs={12} md={4}>
+              <Card sx={{ bgcolor: 'success.main', color: 'success.contrastText' }}>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    📅 إجمالي RPD (كل يوم)
+                  </Typography>
+                  <Typography variant="h4" component="div" sx={{ mb: 1 }}>
+                    {totalRPDRemaining.toLocaleString()}
+                  </Typography>
+                  <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                    متاح من {totalRPD.toLocaleString()} ({totalRPDPercentage.toFixed(1)}% مستخدم)
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: 'block', mt: 1, opacity: 0.8 }}>
+                    المستهلك اليوم: {totalRPDUsed.toLocaleString()} / {totalRPD.toLocaleString()}
+                  </Typography>
+                  <LinearProgress
+                    variant="determinate"
+                    value={Math.min(totalRPDPercentage, 100)}
+                    sx={{ mt: 1, bgcolor: 'rgba(255,255,255,0.3)', '& .MuiLinearProgress-bar': { bgcolor: 'white' } }}
+                  />
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+        );
+      })()}
+
       {/* Errors and Warnings Summary */}
       {(errors.length > 0 || warnings.length > 0) && (
         <Box sx={{ mb: 3 }}>
@@ -408,7 +490,7 @@ const QuotaMonitoringDashboard: React.FC = () => {
 
       {/* Tabs */}
       <Paper sx={{ mb: 3 }}>
-        <Tabs value={activeTab} onChange={(e, newValue) => setActiveTab(newValue)}>
+        <Tabs value={activeTab} onChange={(_e, newValue) => setActiveTab(newValue)}>
           <Tab label={`حالة الكوتة (${modelQuotas.length})`} />
           <Tab label={
             <Badge badgeContent={excludedModels.length} color="warning">
