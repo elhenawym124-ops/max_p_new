@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { authService } from '../../services/authService';
 import { useCurrency } from '../../hooks/useCurrency';
 import { buildApiUrl } from '../../utils/urlHelper';
+import { convertToPublicUrl } from '../../utils/urlConverter';
 import {
   ArrowLeftIcon,
   PencilIcon,
@@ -236,35 +237,67 @@ const ProductView: React.FC = () => {
   };
 
   const getVariantImages = () => {
+    let images: string[] = [];
+    
     // First try to get variant images
     if (selectedVariant?.images) {
       try {
         const variantImages = JSON.parse(selectedVariant.images);
-        return Array.isArray(variantImages) ? variantImages : [];
-      } catch {
-        return [];
+        images = Array.isArray(variantImages) ? variantImages : [];
+        console.log('📸 [PRODUCT-IMAGES] Loaded variant images:', images.length);
+      } catch (e) {
+        console.warn('⚠️ [PRODUCT-IMAGES] Failed to parse variant images:', e);
+        images = [];
       }
     }
 
-    // Then try to get product images
-    if (product?.images) {
-      // If images is already an array, return it
+    // Then try to get product images if variant images are empty
+    if (images.length === 0 && product?.images) {
+      // If images is already an array, use it
       if (Array.isArray(product.images)) {
-        return product.images;
+        images = product.images;
+        console.log('📸 [PRODUCT-IMAGES] Loaded product images (array):', images.length);
       }
-
       // If images is a string (JSON), try to parse it
-      if (typeof product.images === 'string') {
+      else if (typeof product.images === 'string') {
         try {
           const productImages = JSON.parse(product.images);
-          return Array.isArray(productImages) ? productImages : [];
-        } catch {
-          return [];
+          images = Array.isArray(productImages) ? productImages : [];
+          console.log('📸 [PRODUCT-IMAGES] Loaded product images (parsed):', images.length);
+        } catch (e) {
+          console.warn('⚠️ [PRODUCT-IMAGES] Failed to parse product images:', e);
+          images = [];
         }
       }
     }
 
-    return [];
+    // معالجة روابط الصور لضمان عرضها بشكل صحيح
+    const processedImages = images.map(imageUrl => {
+      if (!imageUrl) {
+        console.warn('⚠️ [PRODUCT-IMAGES] Empty image URL found');
+        return imageUrl;
+      }
+      
+      let processedUrl = imageUrl;
+      
+      // إذا كان الرابط نسبي، أضف base URL
+      if (imageUrl.startsWith('/uploads/') || imageUrl.startsWith('uploads/')) {
+        processedUrl = buildApiUrl(imageUrl.replace(/^\//, ''));
+        console.log('🔄 [PRODUCT-IMAGES] Converted relative URL:', imageUrl, '->', processedUrl);
+      } else {
+        // معالجة الروابط باستخدام convertToPublicUrl
+        processedUrl = convertToPublicUrl(imageUrl);
+        if (processedUrl !== imageUrl) {
+          console.log('🔄 [PRODUCT-IMAGES] Converted public URL:', imageUrl, '->', processedUrl);
+        }
+      }
+      
+      return processedUrl;
+    }).filter(url => url); // إزالة أي روابط فارغة
+    
+    console.log('✅ [PRODUCT-IMAGES] Final processed images:', processedImages.length, processedImages);
+    
+    return processedImages;
   };
 
   if (loading) {
@@ -561,10 +594,27 @@ const ProductView: React.FC = () => {
                         src={images[selectedImageIndex] || images[0]}
                         alt={product.name}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                        onClick={() => window.open(images[selectedImageIndex] || images[0], '_blank')}
+                        onClick={() => {
+                          const imageUrl = images[selectedImageIndex] || images[0];
+                          if (imageUrl) {
+                            window.open(imageUrl, '_blank');
+                          }
+                        }}
                         onError={(e) => {
                           const target = e.target as HTMLImageElement;
-                          target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMDAgMTAwTDEwMCAxMDBaIiBzdHJva2U9IiM5Q0EzQUYiIHN0cm9rZS13aWR0aD0iMiIvPgo8L3N2Zz4K';
+                          console.error('❌ [PRODUCT-IMAGE] Failed to load image:', target.src);
+                          // محاولة استخدام proxy إذا كان الرابط من نفس الدومين
+                          const originalSrc = target.src;
+                          if (originalSrc && !originalSrc.includes('/api/proxy-image')) {
+                            try {
+                              const proxyUrl = `${buildApiUrl('').replace('/api/v1', '')}/api/proxy-image?url=${encodeURIComponent(originalSrc)}`;
+                              target.src = proxyUrl;
+                            } catch {
+                              target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMDAgMTAwTDEwMCAxMDBaIiBzdHJva2U9IiM5Q0EzQUYiIHN0cm9rZS13aWR0aD0iMiIvPgo8L3N2Zz4K';
+                            }
+                          } else {
+                            target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMDAgMTAwTDEwMCAxMDBaIiBzdHJva2U9IiM5Q0EzQUYiIHN0cm9rZS13aWR0aD0iMiIvPgo8L3N2Zz4K';
+                          }
                         }}
                       />
                       {/* Overlay hint */}
@@ -594,7 +644,19 @@ const ProductView: React.FC = () => {
                               onClick={() => setSelectedImageIndex(index)}
                               onError={(e) => {
                                 const target = e.target as HTMLImageElement;
-                                target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMDAgMTAwTDEwMCAxMDBaIiBzdHJva2U9IiM5Q0EzQUYiIHN0cm9rZS13aWR0aD0iMiIvPgo8L3N2Zz4K';
+                                console.error('❌ [PRODUCT-IMAGE] Failed to load thumbnail:', target.src);
+                                // محاولة استخدام proxy إذا كان الرابط من نفس الدومين
+                                const originalSrc = target.src;
+                                if (originalSrc && !originalSrc.includes('/api/proxy-image')) {
+                                  try {
+                                    const proxyUrl = `${buildApiUrl('').replace('/api/v1', '')}/api/proxy-image?url=${encodeURIComponent(originalSrc)}`;
+                                    target.src = proxyUrl;
+                                  } catch {
+                                    target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMDAgMTAwTDEwMCAxMDBaIiBzdHJva2U9IiM5Q0EzQUYiIHN0cm9rZS13aWR0aD0iMiIvPgo8L3N2Zz4K';
+                                  }
+                                } else {
+                                  target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMDAgMTAwTDEwMCAxMDBaIiBzdHJva2U9IiM5Q0EzQUYiIHN0cm9rZS13aWR0aD0iMiIvPgo8L3N2Zz4K';
+                                }
                               }}
                             />
                           </div>
@@ -648,3 +710,4 @@ const ProductView: React.FC = () => {
 };
 
 export default ProductView;
+
