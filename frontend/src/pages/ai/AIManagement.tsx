@@ -16,6 +16,7 @@ import {
 import { companyAwareApi } from '../../services/companyAwareApi';
 import { useAuth } from '../../hooks/useAuthSimple';
 import { buildApiUrl } from '../../utils/urlHelper';
+import ResponseRulesSettings from '../../components/ai/ResponseRulesSettings';
 
 // Add custom CSS for better styling
 const customStyles = `
@@ -356,11 +357,12 @@ const AIManagement: React.FC = () => {
   const [queueSaving, setQueueSaving] = useState(false);
 
   // ✨ Advanced AI Settings State (NEW)
+  // ⚠️ هذا هو المصدر الوحيد للقيم الافتراضية - أي تعديل هنا يؤثر على النظام بالكامل
   const [advancedSettings, setAdvancedSettings] = useState<AdvancedAISettings>({
     temperature: 0.7,
     topP: 0.9,
     topK: 40,
-    maxTokens: 1024,
+    maxTokens: 2048, // ⚠️ المصدر الوحيد للقيمة الافتراضية - تعديل هنا فقط
     responseStyle: 'balanced',
     enableDiversityCheck: true,
     enableToneAdaptation: true,
@@ -422,7 +424,7 @@ const AIManagement: React.FC = () => {
           temperature: settings.aiTemperature ?? 0.7,
           topP: settings.aiTopP ?? 0.9,
           topK: settings.aiTopK ?? 40,
-          maxTokens: settings.aiMaxTokens ?? 1024,
+          maxTokens: settings.aiMaxTokens ?? 2048, // ⚠️ يجب أن تكون نفس القيمة في useState أعلاه
           responseStyle: settings.aiResponseStyle || 'balanced',
           enableDiversityCheck: settings.enableDiversityCheck !== false,
           enableToneAdaptation: settings.enableToneAdaptation !== false,
@@ -1545,6 +1547,7 @@ const AIManagement: React.FC = () => {
           <nav className="bg-white rounded-lg shadow p-2 space-y-1">
             {[
               { id: 'ai-settings', name: '🤖 شخصية المساعد', icon: BoltIcon },
+              { id: 'response-rules', name: '📋 قواعد الاستجابة', icon: CogIcon },
               { id: 'advanced-ai', name: '⚡ إعدادات AI متقدمة', icon: BoltIcon },
               { id: 'gemini', name: '🔑 مفاتيح Gemini', icon: CogIcon },
               { id: 'prompts', name: '💬 البرومبت المتقدم', icon: BoltIcon },
@@ -1692,6 +1695,12 @@ const AIManagement: React.FC = () => {
         </div>
       )}
 
+      {activeTab === 'response-rules' && (
+        <div className="bg-white rounded-lg shadow p-6">
+          <ResponseRulesSettings />
+        </div>
+      )}
+
       {activeTab === 'advanced-ai' && (
         <div className="bg-white rounded-lg shadow">
           <div className="px-6 py-4 border-b border-gray-200">
@@ -1770,13 +1779,34 @@ const AIManagement: React.FC = () => {
                       <input
                         type="range"
                         min="128"
-                        max="2048"
+                        max="8192"
                         step="128"
                         value={advancedSettings.maxTokens}
                         onChange={(e) => setAdvancedSettings({...advancedSettings, maxTokens: parseInt(e.target.value)})}
                         className="w-full"
                       />
-                      <p className="text-xs text-gray-500 mt-1">الحد الأقصى لطول الرد</p>
+                      <div className="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>128</span>
+                        <span>8192</span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        الحد الأقصى لطول الرد (tokens)
+                        {advancedSettings.maxTokens > 4096 && (
+                          <span className="ml-2 text-amber-600 font-medium">
+                            ⚠️ القيم الكبيرة قد تزيد وقت الاستجابة والتكلفة
+                          </span>
+                        )}
+                      </p>
+                      {advancedSettings.maxTokens > 4096 && (
+                        <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
+                          <p className="font-medium mb-1">💡 نصيحة:</p>
+                          <ul className="list-disc list-inside space-y-1">
+                            <li>القيم الكبيرة (4096+) مناسبة للردود الطويلة مثل تفاصيل الطلبات</li>
+                            <li>القيم المتوسطة (2048-4096) مناسبة لمعظم الاستخدامات</li>
+                            <li>القيم الصغيرة (128-1024) مناسبة للردود السريعة</li>
+                          </ul>
+                        </div>
+                      )}
                     </div>
 
                     {/* Response Style */}

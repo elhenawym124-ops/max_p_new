@@ -7,6 +7,10 @@ const PromptEnhancementService = require('./promptEnhancementService');
 const ResponseOptimizer = require('./responseOptimizer');
 const AIErrorHandler = require('./aiErrorHandler'); // نظام معالجة أخطاء الذكاء الاصطناعي
 const aiResponseMonitor = require('./aiResponseMonitor'); // نظام مراقبة ردود AI
+// ✅ استخدام الـ constants المركزي
+const { DEFAULT_AI_SETTINGS } = require('./services/aiAgent/aiConstants');
+// ✅ استخدام قواعد الاستجابة
+const { buildPromptFromRules, getDefaultRules } = require('./services/aiAgent/responseRulesConfig');
 
 const prisma = getSharedPrismaClient(); // Use shared database connection
 
@@ -1361,15 +1365,27 @@ ${imageAnalysis}
     //console.log('✅ استخدام personality prompt مخصص من الشركة');
     prompt += `${companyPrompts.personalityPrompt.trim()}\n\n`;
 
-    // Add response guidelines
+    // ✅ إضافة قواعد الاستجابة (Response Rules Checkpoints)
+    if (companyPrompts.responseRules) {
+      try {
+        const rules = typeof companyPrompts.responseRules === 'string' 
+          ? JSON.parse(companyPrompts.responseRules) 
+          : companyPrompts.responseRules;
+        prompt += buildPromptFromRules(rules);
+      } catch (e) {
+        console.warn('⚠️ [RESPONSE-RULES] Failed to parse responseRules:', e.message);
+        // استخدام القواعد الافتراضية في حالة الخطأ
+        prompt += buildPromptFromRules(getDefaultRules());
+      }
+    } else {
+      // استخدام القواعد الافتراضية إذا لم تكن موجودة
+      prompt += buildPromptFromRules(getDefaultRules());
+    }
+
+    // Add response guidelines (legacy - للتوافق مع الإعدادات القديمة)
+    // ✅ ملاحظة: القواعد الافتراضية تم نقلها إلى buildPromptFromRules لتجنب التكرار
     if (companyPrompts.responsePrompt) {
       prompt += `${companyPrompts.responsePrompt}\n\n`;
-    } else {
-      prompt += `قواعد الرد المهمة:
-1. ⚠️ استخدمي فقط المعلومات الموجودة في قاعدة البيانات المذكورة أدناه
-2. 🚫 لا تذكري أي منتجات أو معلومات غير موجودة في قاعدة البيانات
-3. ✅ قدمي أسعار ومواصفات دقيقة من قاعدة البيانات فقط
-4. ❓ إذا لم تجدي معلومات، اطلبي توضيحاً أو قولي أن المنتج غير متوفر\n\n`;
     }
 
     // Add customer information
@@ -1441,15 +1457,11 @@ ${imageAnalysis}
     // Add customer message
     prompt += `رسالة العميل: "${customerMessage}"\n\n`;
 
-    // Add final instructions
+    // Add final instructions - مختصرة لتجنب التكرار
     if (ragData && ragData.length > 0) {
-      prompt += `🎯 تعليمات الرد النهائية:
-1. ✅ استخدمي فقط المعلومات الموجودة في قاعدة البيانات أعلاه
-2. 🚫 لا تذكري أي منتجات أو معلومات غير موجودة في القائمة
-3. 💰 اذكري الأسعار والتفاصيل الدقيقة كما هي مكتوبة
-4. 📝 إذا سأل عن منتجات، اعرضي المنتجات المتاحة بالتفصيل
-5. ❌ إذا لم يكن المنتج في القائمة، قولي أنه غير متوفر حالياً
-6. 🗣️ استخدمي اللغة العربية الطبيعية والودودة\n\n`;
+      prompt += `<data_rules>
+⚠️ استخدمي فقط المعلومات أعلاه • لا تخترعي منتجات • اذكري الأسعار بدقة
+</data_rules>\n\n`;
     }
 
     return prompt;
@@ -1476,9 +1488,14 @@ ${imageAnalysis}
       // 0. HIGHEST PRIORITY: Check for custom prompt passed in messageData (for comments)
       if (customPrompt && customPrompt.trim()) {
         console.log('✅ [CUSTOM-PROMPT] Using custom prompt from message data');
+        
+        // ✅ جلب responseRules من settings
+        const settings = await this.getSettings(companyId);
+        
         return {
           personalityPrompt: customPrompt,
           responsePrompt: null,
+          responseRules: settings.responseRules, // ✅ إضافة قواعد الاستجابة
           hasCustomPrompts: true,
           source: 'custom_message_prompt',
           promptName: 'Custom Comment/Post Prompt'
@@ -1500,9 +1517,14 @@ ${imageAnalysis}
         if (activeSystemPrompt) {
           //console.log('✅ Found active system prompt:', activeSystemPrompt.name);
           //console.log('📝 Prompt length:', activeSystemPrompt.content.length, 'characters');
+          
+          // ✅ جلب responseRules من settings
+          const settings = await this.getSettings(companyId);
+          
           return {
             personalityPrompt: activeSystemPrompt.content,
             responsePrompt: null,
+            responseRules: settings.responseRules, // ✅ إضافة قواعد الاستجابة
             hasCustomPrompts: true,
             source: 'system_prompt',
             promptName: activeSystemPrompt.name
@@ -1527,6 +1549,7 @@ ${imageAnalysis}
           return {
             personalityPrompt: aiSettings.personalityPrompt,
             responsePrompt: aiSettings.responsePrompt,
+            responseRules: aiSettings.responseRules, // ✅ إضافة قواعد الاستجابة
             hasCustomPrompts: !!(aiSettings.personalityPrompt || aiSettings.responsePrompt),
             source: 'ai_settings'
           };
@@ -1546,9 +1569,14 @@ ${imageAnalysis}
 
         if (company && (company.personalityPrompt || company.responsePrompt)) {
           //console.log('✅ Found prompts in company table');
+          
+          // ✅ جلب responseRules من settings
+          const settings = await this.getSettings(companyId);
+          
           return {
             personalityPrompt: company.personalityPrompt,
             responsePrompt: company.responsePrompt,
+            responseRules: settings.responseRules, // ✅ إضافة قواعد الاستجابة
             hasCustomPrompts: !!(company.personalityPrompt || company.responsePrompt),
             source: 'company'
           };
@@ -1563,6 +1591,7 @@ ${imageAnalysis}
       return {
         personalityPrompt: null,
         responsePrompt: null,
+        responseRules: null, // ✅ إضافة قواعد الاستجابة
         hasCustomPrompts: false,
         source: 'default'
       };
@@ -1571,6 +1600,7 @@ ${imageAnalysis}
       return {
         personalityPrompt: null,
         responsePrompt: null,
+        responseRules: null, // ✅ إضافة قواعد الاستجابة
         hasCustomPrompts: false,
         source: 'error'
       };
@@ -1617,24 +1647,60 @@ ${imageAnalysis}
     //console.log('✅ استخدام personality prompt مخصص من الشركة');
     prompt += `${companyPrompts.personalityPrompt.trim()}\n\n`;
 
-    // ✨ تحليل ذكي مختصر للسياق
+    // ✅ إضافة قواعد الاستجابة (Response Rules Checkpoints)
+    if (companyPrompts.responseRules) {
+      try {
+        const rules = typeof companyPrompts.responseRules === 'string' 
+          ? JSON.parse(companyPrompts.responseRules) 
+          : companyPrompts.responseRules;
+        prompt += buildPromptFromRules(rules);
+        console.log('✅ [BUILD-PROMPT] تم إضافة قواعد الاستجابة');
+      } catch (e) {
+        console.warn('⚠️ [RESPONSE-RULES] Failed to parse responseRules:', e.message);
+        // استخدام القواعد الافتراضية في حالة الخطأ
+        prompt += buildPromptFromRules(getDefaultRules());
+        console.log('✅ [BUILD-PROMPT] تم إضافة القواعد الافتراضية');
+      }
+    } else {
+      // استخدام القواعد الافتراضية إذا لم تكن موجودة
+      prompt += buildPromptFromRules(getDefaultRules());
+      console.log('✅ [BUILD-PROMPT] تم إضافة القواعد الافتراضية (لا توجد قواعد مخصصة)');
+    }
+
+    // ✨ تحليل ذكي متقدم للسياق + أمثلة عملية
     try {
-      const dynamicBuilder = require('./dynamicPromptBuilder');
+      const dynamicBuilder = require('./services/dynamicPromptBuilder');
       
       const emotionalState = dynamicBuilder.detectEmotionalState(customerMessage);
       const customerTone = dynamicBuilder.detectCustomerTone(customerMessage);
       const urgencyLevel = dynamicBuilder.detectUrgencyLevel(customerMessage);
+      const conversationPhase = dynamicBuilder.determineConversationPhase(conversationMemory);
+      
+      // ✅ إضافة أمثلة الردود الجيدة والسيئة (Few-Shot Prompting)
+      prompt += dynamicBuilder.buildGoodBadExamples();
+      console.log('✅ [BUILD-PROMPT] تم إضافة أمثلة الردود');
+      
+      // ✅ إضافة توجيهات عاطفية إذا كان العميل منزعج أو سعيد
+      if (emotionalState && emotionalState !== 'neutral') {
+        const emotionalGuidance = dynamicBuilder.buildEmotionalGuidance(emotionalState, urgencyLevel);
+        prompt += emotionalGuidance;
+        console.log(`✅ [BUILD-PROMPT] تم إضافة توجيهات عاطفية: ${emotionalState}`);
+      }
       
       // إضافة ملاحظات مختصرة فقط عند الضرورة
       let contextNotes = [];
-      if (emotionalState === 'frustrated') contextNotes.push('⚠️ العميل منزعج - تعاطفي معاه');
+      if (emotionalState === 'angry') contextNotes.push('🔴 العميل منزعج - تعاطفي معاه');
+      if (emotionalState === 'worried') contextNotes.push('💙 العميل قلقان - طمنيه');
+      if (emotionalState === 'confused') contextNotes.push('🤔 العميل محتار - ساعديه');
       if (urgencyLevel === 'high') contextNotes.push('⚡ رد سريع ومباشر');
-      if (customerTone === 'formal' && emotionalState !== 'frustrated') contextNotes.push('📝 حافظي على الرسمية');
+      if (customerTone === 'formal') contextNotes.push('📝 حافظي على الرسمية');
+      if (conversationPhase === 'closing') contextNotes.push('🎯 قرب تختمي المحادثة');
       
       if (contextNotes.length > 0) {
-        prompt += `💡 ملاحظات: ${contextNotes.join(' • ')}\n\n`;
+        prompt += `\n💡 ملاحظات السياق: ${contextNotes.join(' • ')}\n\n`;
       }
     } catch (dynamicError) {
+      console.warn('⚠️ [BUILD-PROMPT] خطأ في التحليل الديناميكي:', dynamicError.message);
       // المتابعة بدون التحليل إذا فشل
     }
 
@@ -2074,6 +2140,16 @@ ${imageAnalysis}
       }
     }
 
+    // ✅ إضافة Chain of Thought - تفكير منظم قبل الرد
+    prompt += `\n🧠 قبل ما تردي، فكري في الآتي:
+═══════════════════════════════════
+1️⃣ نية العميل: (شراء / استفسار / شكوى / دردشة)
+2️⃣ المعلومات المطلوبة: هل متوفرة في البيانات أعلاه؟
+3️⃣ الخطوة التالية: إيه أفضل رد يخدم العميل؟
+═══════════════════════════════════
+💡 ملاحظة: لا تكتبي تحليلك - اكتبي الرد النهائي فقط!
+\n`;
+
     console.log('\n✅ [BUILD-PROMPT] تم بناء الـ Prompt بنجاح');
     console.log('📏 [BUILD-PROMPT] طول الـ Prompt النهائي:', prompt.length, 'حرف');
     console.log('📝 [BUILD-PROMPT] أول 200 حرف من الـ Prompt:');
@@ -2092,12 +2168,12 @@ ${imageAnalysis}
       // الحصول على إعدادات AI من قاعدة البيانات
       const settings = await this.getSettings(companyId);
       
-      // الإعدادات الأساسية
+      // ✅ الإعدادات الأساسية (استخدام constants)
       const baseConfig = {
-        temperature: settings.aiTemperature || 0.7,
-        topK: settings.aiTopK || 40,
-        topP: settings.aiTopP || 0.9,
-        maxOutputTokens: settings.aiMaxTokens || 8192, // ✅ Increased for thinking models
+        temperature: settings.aiTemperature ?? DEFAULT_AI_SETTINGS.TEMPERATURE,
+        topK: settings.aiTopK ?? DEFAULT_AI_SETTINGS.TOP_K,
+        topP: settings.aiTopP ?? DEFAULT_AI_SETTINGS.TOP_P,
+        maxOutputTokens: settings.aiMaxTokens ?? DEFAULT_AI_SETTINGS.MAX_OUTPUT_TOKENS, // ✅ استخدام constants
       };
 
       // تعديل الإعدادات حسب نوع الرسالة
@@ -2125,12 +2201,12 @@ ${imageAnalysis}
       
     } catch (error) {
       console.error('❌ [AI-CONFIG] Error building generation config:', error);
-      // إرجاع الإعدادات الافتراضية عند حدوث خطأ
+      // ✅ إرجاع الإعدادات الافتراضية من constants عند حدوث خطأ
       return {
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.9,
-        maxOutputTokens: 8192, // ✅ Increased for thinking models
+        temperature: DEFAULT_AI_SETTINGS.TEMPERATURE,
+        topK: DEFAULT_AI_SETTINGS.TOP_K,
+        topP: DEFAULT_AI_SETTINGS.TOP_P,
+        maxOutputTokens: DEFAULT_AI_SETTINGS.MAX_OUTPUT_TOKENS,
       };
     }
   }
@@ -2527,6 +2603,85 @@ ${imageAnalysis}
             return aiContent;
           } catch (retryError) {
             console.error('❌ [503-FALLBACK] Backup model also failed:', retryError.message);
+            
+            // ✅ FIX: التحقق من نوع الخطأ - إذا كان 429، حاول البحث عن نموذج بديل آخر
+            const is429Error = retryError.status === 429 || 
+                              retryError.message?.includes('429') || 
+                              retryError.message?.includes('Too Many Requests') ||
+                              retryError.message?.includes('quota');
+            
+            if (is429Error) {
+              console.log('🔄 [503-FALLBACK-429] Backup model failed with 429. Attempting to find another backup model...');
+              
+              // محاولة البحث عن نموذج بديل آخر (نموذج ثالث)
+              const secondBackupModel = await this.findNextAvailableModel(companyId);
+              if (secondBackupModel && secondBackupModel.model !== backupModel.model) {
+                console.log(`🔄 [503-FALLBACK-429] Found second backup model: ${secondBackupModel.model}`);
+                
+                try {
+                  const { GoogleGenerativeAI } = require('@google/generative-ai');
+                  const genAI = new GoogleGenerativeAI(secondBackupModel.apiKey);
+                  const model = genAI.getGenerativeModel({ 
+                    model: secondBackupModel.model,
+                    generationConfig: await this.buildGenerationConfig(companyId, messageContext)
+                  });
+
+                  // 🔄 Retry logic مع exponential backoff للنموذج البديل الثاني
+                  let result;
+                  let response;
+                  const maxRetries = 3;
+                  const retryDelays = [1000, 2000, 4000]; // 1s, 2s, 4s
+                  let lastRetryError;
+                  
+                  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                    try {
+                      result = await model.generateContent(prompt);
+                      response = result.response;
+                      break; // Success
+                    } catch (secondRetryError) {
+                      lastRetryError = secondRetryError;
+                      
+                      const isStill503 = secondRetryError.status === 503 || 
+                                       secondRetryError.message?.includes('503') || 
+                                       secondRetryError.message?.includes('Service Unavailable') ||
+                                       secondRetryError.message?.includes('overloaded');
+                      
+                      if (isStill503 && attempt < maxRetries) {
+                        const delay = retryDelays[attempt];
+                        console.log(`🔄 [RETRY-503-SECOND-BACKUP] Second backup model attempt ${attempt + 1}/${maxRetries + 1} failed with 503. Retrying after ${delay}ms...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        continue;
+                      } else {
+                        throw secondRetryError;
+                      }
+                    }
+                  }
+                  
+                  if (!response) {
+                    throw lastRetryError || new Error('Second backup model failed after retries');
+                  }
+                  
+                  const aiContent = response.text();
+
+                  // تحديث عداد الاستخدام للنموذج الجديد
+                  if (secondBackupModel.modelId) {
+                    await this.updateModelUsage(secondBackupModel.modelId);
+                  }
+
+                  // تحديث النموذج النشط للجلسة
+                  this.updateCurrentActiveModel(secondBackupModel);
+
+                  console.log(`✅ [503-FALLBACK-429] Successfully got response from second backup model: ${secondBackupModel.model}`);
+                  return aiContent;
+                } catch (secondBackupError) {
+                  console.error('❌ [503-FALLBACK-429] Second backup model also failed:', secondBackupError.message);
+                  // سقوط إلى throw retryError الأصلي
+                }
+              } else {
+                console.error('❌ [503-FALLBACK-429] No second backup model available');
+              }
+            }
+            
             throw retryError;
           }
         } else {
@@ -3645,31 +3800,29 @@ ${conversationContext ? `سياق المحادثة السابقة:\n${conversati
         }
       }).join(' و ');
 
-      const prompt = `أنت مساعد مبيعات محترف في متجر أحذية مصري. العميل أكد رغبته في الشراء وأنت متحمس لإتمام الطلب.
+      const prompt = `أنت مساعد مبيعات في متجر مصري. العميل أكد رغبته في الشراء.
 
-🛍️ تفاصيل الطلب المؤكد:
+🛍️ تفاصيل الطلب:
 ${orderDetails.productName ? `• المنتج: ${orderDetails.productName}` : ''}
 ${orderDetails.productColor ? `• اللون: ${orderDetails.productColor}` : ''}
 ${orderDetails.productSize ? `• المقاس: ${orderDetails.productSize}` : ''}
 ${orderDetails.productPrice ? `• السعر: ${orderDetails.productPrice} جنيه` : ''}
 
-📋 البيانات المطلوبة لإتمام الطلب: ${missingDataText}
+📋 البيانات المطلوبة: ${missingDataText}
 
 🎯 مهمتك:
-1. اشكر العميل بحماس مناسب على تأكيد الطلب
-2. أظهر تفاصيل الطلب بطريقة جذابة ومحفزة (المنتج واللون والمقاس إذا كانوا متوفرين)
-3. اطلب البيانات المفقودة فقط (الاسم، العنوان، رقم الهاتف، المدينة) بطريقة ودودة وواضحة
-4. لا تطلب السعر أو صورة المنتج أو أي معلومات إضافية أخرى
-5. أكد سرعة التجهيز والشحن
-6. استخدم رموز تعبيرية مناسبة (لكن لا تكثر منها)
-7. اجعل العميل متحمس لإكمال الطلب
+1. اشكر العميل بكلمة بسيطة (تمام/حلو/أوكي)
+2. اطلب البيانات المفقودة مباشرة وبوضوح
 
-📝 أسلوب الكتابة:
-- استخدم العربية العامية المصرية الودودة والمهنية
-- كن مهنياً لكن دافئاً في التعامل
-- اجعل الرد قصير ومركز (لا يزيد عن 80 كلمة)
-- ركز على البيانات المطلوبة فقط
-- لا تستخدم مبالغات زائدة أو عبارات مفرطة في الحماس
+🚫🚫🚫 ممنوع منعاً باتاً (مهم جداً):
+❌ "مبسوطين" أو "فرحانين" أو "يا هلا بيك"
+❌ "اختيار رائع" أو "أحلى حاجة" أو "ولا في الأحلام"
+❌ "في لمح البصر" أو "على طول" أو "مستنينك"
+❌ أكثر من emoji واحد
+❌ أكثر من 3 جمل
+
+✅ مثال صحيح:
+"تمام 👍 محتاجين منك الاسم والعنوان ورقم الموبايل عشان نجهزلك الطلب."
 
 اكتب الرد الآن:`;
 
@@ -6471,7 +6624,8 @@ ${conversationContext}
           enablePatternApplication: true,
           patternPriority: true,
           minQualityScore: true,
-          enableLowQualityAlerts: true
+          enableLowQualityAlerts: true,
+          responseRules: true // ✅ إضافة قواعد الاستجابة
         }
       });
 
@@ -6546,7 +6700,7 @@ ${conversationContext}
         aiTemperature: aiSettings.aiTemperature ?? 0.7,
         aiTopP: aiSettings.aiTopP ?? 0.9,
         aiTopK: aiSettings.aiTopK ?? 40,
-        aiMaxTokens: aiSettings.aiMaxTokens ?? 1024,
+        aiMaxTokens: aiSettings.aiMaxTokens ?? DEFAULT_AI_SETTINGS.MAX_OUTPUT_TOKENS,
         aiResponseStyle: aiSettings.aiResponseStyle || 'balanced',
         // Smart behavior toggles
         enableDiversityCheck: aiSettings.enableDiversityCheck !== false,
@@ -6558,7 +6712,9 @@ ${conversationContext}
         enablePatternApplication: aiSettings.enablePatternApplication !== false,
         patternPriority: aiSettings.patternPriority || 'balanced',
         minQualityScore: aiSettings.minQualityScore ?? 70,
-        enableLowQualityAlerts: aiSettings.enableLowQualityAlerts !== false
+        enableLowQualityAlerts: aiSettings.enableLowQualityAlerts !== false,
+        // ✅ قواعد الاستجابة
+        responseRules: aiSettings.responseRules || null
       };
 
       // ✅ Enhanced logging: Show what we're returning
@@ -8357,7 +8513,7 @@ ${ragData.filter(item => item.type === 'product' && item.metadata)
         aiTemperature: aiSettings.aiTemperature ?? 0.7,
         aiTopP: aiSettings.aiTopP ?? 0.9,
         aiTopK: aiSettings.aiTopK ?? 40,
-        aiMaxTokens: aiSettings.aiMaxTokens ?? 1024,
+        aiMaxTokens: aiSettings.aiMaxTokens ?? DEFAULT_AI_SETTINGS.MAX_OUTPUT_TOKENS,
         aiResponseStyle: aiSettings.aiResponseStyle || 'balanced',
         enableDiversityCheck: aiSettings.enableDiversityCheck !== false,
         enableToneAdaptation: aiSettings.enableToneAdaptation !== false,

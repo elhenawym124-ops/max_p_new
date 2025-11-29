@@ -27,6 +27,7 @@ export interface TestMessage {
   status: 'sending' | 'sent' | 'delivered' | 'read' | 'error';
   conversationId: string;
   isAiGenerated?: boolean;
+  aiResponseInfo?: AITestResponse; // ✅ FIX: إضافة معلومات AI response
 }
 
 export interface AITestResponse {

@@ -329,18 +329,49 @@ router.get('/conversations/:id/messages', async (req, res) => {
     });
 
     // تحويل البيانات للتنسيق المطلوب
-    const formattedMessages = messages.map(msg => ({
-      id: msg.id,
-      content: msg.content || '',
-      senderId: msg.isFromCustomer ? conversation.customerId : 'ai-agent',
-      senderName: msg.isFromCustomer ? 'عميل اختبار' : 'الذكاء الاصطناعي',
-      timestamp: msg.createdAt,
-      type: msg.type?.toLowerCase() || 'text',
-      isFromCustomer: msg.isFromCustomer,
-      status: 'sent',
-      conversationId: msg.conversationId,
-      isAiGenerated: !msg.isFromCustomer
-    }));
+    const formattedMessages = messages.map(msg => {
+      // ✅ FIX: استخراج معلومات AI response من metadata
+      let aiResponseInfo = null;
+      if (msg.metadata && !msg.isFromCustomer) {
+        try {
+          const metadata = JSON.parse(msg.metadata);
+          console.log(`🔍 [TEST-CHAT] Parsed metadata for message ${msg.id}:`, metadata);
+          if (metadata.model || metadata.processingTime || metadata.intent) {
+            aiResponseInfo = {
+              model: metadata.model,
+              processingTime: metadata.processingTime,
+              intent: metadata.intent,
+              sentiment: metadata.sentiment,
+              confidence: metadata.confidence,
+              keyId: metadata.keyId,
+              silent: metadata.silent,
+              error: metadata.error
+            };
+            console.log(`✅ [TEST-CHAT] Created aiResponseInfo for message ${msg.id}:`, aiResponseInfo);
+          }
+        } catch (e) {
+          // إذا فشل parsing، تجاهل
+          console.warn('⚠️ [TEST-CHAT] Failed to parse message metadata:', e);
+          console.warn('⚠️ [TEST-CHAT] Raw metadata:', msg.metadata);
+        }
+      } else if (!msg.isFromCustomer) {
+        console.log(`⚠️ [TEST-CHAT] Message ${msg.id} is from AI but has no metadata`);
+      }
+
+      return {
+        id: msg.id,
+        content: msg.content || '',
+        senderId: msg.isFromCustomer ? conversation.customerId : 'ai-agent',
+        senderName: msg.isFromCustomer ? 'عميل اختبار' : 'الذكاء الاصطناعي',
+        timestamp: msg.createdAt,
+        type: msg.type?.toLowerCase() || 'text',
+        isFromCustomer: msg.isFromCustomer,
+        status: 'sent',
+        conversationId: msg.conversationId,
+        isAiGenerated: !msg.isFromCustomer,
+        aiResponseInfo: aiResponseInfo
+      };
+    });
 
     res.json({
       success: true,
@@ -440,15 +471,32 @@ router.post('/conversations/:id/messages', async (req, res) => {
 
       // حفظ رد AI إذا كان موجوداً
       if (aiResponse && aiResponse.content) {
+        // ✅ FIX: حفظ معلومات AI response في metadata
+        const aiMetadata = {
+          model: aiResponse.model,
+          processingTime: aiResponse.processingTime,
+          intent: aiResponse.intent,
+          sentiment: aiResponse.sentiment,
+          confidence: aiResponse.confidence,
+          keyId: aiResponse.keyId,
+          silent: aiResponse.silent,
+          error: aiResponse.error
+        };
+
+        console.log('💾 [TEST-CHAT] Saving AI message with metadata:', aiMetadata);
+
         aiMessage = await prisma.message.create({
           data: {
             conversationId: id,
             content: aiResponse.content,
             type: 'TEXT',
             isFromCustomer: false,
+            metadata: JSON.stringify(aiMetadata),
             createdAt: new Date()
           }
         });
+
+        console.log('✅ [TEST-CHAT] AI message saved with ID:', aiMessage.id, 'Metadata:', aiMessage.metadata);
 
         // تحديث المحادثة برد AI
         await prisma.conversation.update({
@@ -494,7 +542,17 @@ router.post('/conversations/:id/messages', async (req, res) => {
           isFromCustomer: false,
           status: 'sent',
           conversationId: id,
-          isAiGenerated: true
+          isAiGenerated: true,
+          aiResponseInfo: aiResponse ? {
+            model: aiResponse.model,
+            processingTime: aiResponse.processingTime,
+            intent: aiResponse.intent,
+            sentiment: aiResponse.sentiment,
+            confidence: aiResponse.confidence,
+            keyId: aiResponse.keyId,
+            silent: aiResponse.silent,
+            error: aiResponse.error
+          } : null
         } : null,
         aiResponse: aiResponse ? {
           content: aiResponse.content,
@@ -1607,6 +1665,202 @@ router.get('/analyze-results', async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/v1/test-chat/send-message
+ * إرسال رسالة مباشرة للذكاء الاصطناعي (للاختبار المتوازي)
+ */
+router.post('/send-message', async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const { message, conversationId, senderId } = req.body;
+
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Company ID is required'
+      });
+    }
+
+    if (!message || !message.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Message content is required'
+      });
+    }
+
+    const prisma = getPrisma();
+
+    // البحث عن أو إنشاء customer اختبار
+    let testCustomer = await prisma.customer.findFirst({
+      where: {
+        companyId: companyId,
+        firstName: 'عميل اختبار',
+        lastName: 'Test Customer'
+      }
+    });
+
+    if (!testCustomer) {
+      testCustomer = await prisma.customer.create({
+        data: {
+          companyId: companyId,
+          firstName: 'عميل اختبار',
+          lastName: 'Test Customer',
+          phone: '0000000000',
+          email: `test-${companyId}@test.com`
+        }
+      });
+    }
+
+    // البحث عن أو إنشاء محادثة اختبار
+    let conversation;
+    if (conversationId) {
+      conversation = await prisma.conversation.findFirst({
+        where: {
+          id: conversationId,
+          companyId: companyId,
+          channel: 'TEST'
+        }
+      });
+    }
+
+    if (!conversation) {
+      conversation = await prisma.conversation.create({
+        data: {
+          companyId: companyId,
+          customerId: testCustomer.id,
+          channel: 'TEST',
+          status: 'ACTIVE',
+          lastMessageAt: new Date(),
+          lastMessagePreview: message.trim().length > 100 
+            ? message.trim().substring(0, 100) + '...' 
+            : message.trim()
+        }
+      });
+    }
+
+    // حفظ رسالة المستخدم
+    const userMessage = await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        content: message.trim(),
+        type: 'TEXT',
+        isFromCustomer: true,
+        createdAt: new Date()
+      }
+    });
+
+    // إعداد بيانات الرسالة للذكاء الاصطناعي
+    const messageData = {
+      conversationId: conversation.id,
+      senderId: senderId || testCustomer.id,
+      content: message.trim(),
+      attachments: [],
+      companyId: companyId,
+      customerData: {
+        id: testCustomer.id,
+        name: `${testCustomer.firstName} ${testCustomer.lastName}`,
+        phone: testCustomer.phone || '0000000000',
+        email: testCustomer.email || `test-${companyId}@test.com`,
+        orderCount: 0,
+        companyId: companyId
+      }
+    };
+
+    const startTime = Date.now();
+    let aiResponse = null;
+    let aiMessage = null;
+    let error = null;
+
+    try {
+      // استدعاء الذكاء الاصطناعي
+      aiResponse = await aiAgentService.processCustomerMessage(messageData);
+
+      // حفظ رد AI إذا كان موجوداً
+      if (aiResponse && aiResponse.content) {
+        // ✅ FIX: حفظ معلومات AI response في metadata
+        const aiMetadata = {
+          model: aiResponse.model,
+          processingTime: aiResponse.processingTime || processingTime,
+          intent: aiResponse.intent,
+          sentiment: aiResponse.sentiment,
+          confidence: aiResponse.confidence,
+          keyId: aiResponse.keyId,
+          silent: aiResponse.silent,
+          error: aiResponse.error
+        };
+
+        aiMessage = await prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            content: aiResponse.content,
+            type: 'TEXT',
+            isFromCustomer: false,
+            metadata: JSON.stringify(aiMetadata),
+            createdAt: new Date()
+          }
+        });
+
+        // تحديث المحادثة برد AI
+        await prisma.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            lastMessageAt: new Date(),
+            lastMessagePreview: aiResponse.content.length > 100 
+              ? aiResponse.content.substring(0, 100) + '...' 
+              : aiResponse.content
+          }
+        });
+      }
+    } catch (aiError) {
+      console.error('❌ Error processing AI response:', aiError);
+      error = aiError.message;
+    }
+
+    const processingTime = Date.now() - startTime;
+
+    // إرجاع النتيجة
+    res.json({
+      success: true,
+      data: {
+        conversationId: conversation.id,
+        userMessage: {
+          id: userMessage.id,
+          content: userMessage.content,
+          timestamp: userMessage.createdAt,
+          isFromCustomer: true
+        },
+        aiResponse: aiResponse ? {
+          content: aiResponse.content,
+          intent: aiResponse.intent,
+          sentiment: aiResponse.sentiment,
+          confidence: aiResponse.confidence,
+          processingTime: aiResponse.processingTime || processingTime,
+          model: aiResponse.model,
+          keyId: aiResponse.keyId,
+          silent: aiResponse.silent,
+          error: aiResponse.error
+        } : null,
+        aiMessage: aiMessage ? {
+          id: aiMessage.id,
+          content: aiMessage.content,
+          timestamp: aiMessage.createdAt,
+          isFromCustomer: false
+        } : null,
+        processingTime: processingTime,
+        error: error
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error in send-message endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      processingTime: 0
     });
   }
 });

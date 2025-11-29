@@ -207,6 +207,50 @@ router.get('/currencies', (req, res) => {
   });
 });
 
+// ✅ Get aiMaxTokens value from database (for debugging)
+router.get('/ai/max-tokens-check', async (req, res) => {
+  try {
+    if (!req.user || !req.user.companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'معرف الشركة مطلوب'
+      });
+    }
+
+    const companyId = req.user.companyId;
+    const aiSettings = await prisma.aiSettings.findUnique({
+      where: { companyId },
+      select: {
+        companyId: true,
+        aiMaxTokens: true,
+        updatedAt: true
+      }
+    });
+
+    const { DEFAULT_AI_SETTINGS } = require('../services/aiAgent/aiConstants');
+    
+    res.json({
+      success: true,
+      data: {
+        companyId,
+        aiMaxTokens: aiSettings?.aiMaxTokens ?? null,
+        defaultValue: DEFAULT_AI_SETTINGS.MAX_OUTPUT_TOKENS,
+        actualValue: aiSettings?.aiMaxTokens ?? DEFAULT_AI_SETTINGS.MAX_OUTPUT_TOKENS,
+        lastUpdated: aiSettings?.updatedAt?.toISOString() || null,
+        status: aiSettings?.aiMaxTokens ? 
+          (aiSettings.aiMaxTokens === DEFAULT_AI_SETTINGS.MAX_OUTPUT_TOKENS ? 'default' : 'custom') : 
+          'not_set'
+      }
+    });
+  } catch (error) {
+    console.error('Error checking aiMaxTokens:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
 // Get AI settings (with database fallback)
 router.get('/ai', async (req, res) => {
   try {
@@ -263,7 +307,10 @@ router.get('/ai', async (req, res) => {
           patternPriority: true,
           minQualityScore: true,
           enableLowQualityAlerts: true,
-          companyId: true // إضافة companyId للتحقق
+          companyId: true, // إضافة companyId للتحقق
+          // ✅ FIX: Add personalityPrompt and responsePrompt to select
+          personalityPrompt: true,
+          responsePrompt: true
         }
       });
 
@@ -274,7 +321,7 @@ router.get('/ai', async (req, res) => {
         settings.aiTemperature = settings.aiTemperature ?? 0.7;
         settings.aiTopP = settings.aiTopP ?? 0.9;
         settings.aiTopK = settings.aiTopK ?? 40;
-        settings.aiMaxTokens = settings.aiMaxTokens ?? 1024;
+        settings.aiMaxTokens = settings.aiMaxTokens ?? 2048; // ✅ توحيد: 2048
         settings.aiResponseStyle = settings.aiResponseStyle || 'balanced';
         settings.enableDiversityCheck = settings.enableDiversityCheck !== false;
         settings.enableToneAdaptation = settings.enableToneAdaptation !== false;
@@ -374,7 +421,9 @@ router.put('/ai', async (req, res) => {
       enableDiversityCheck, enableToneAdaptation, enableEmotionalResponse,
       enableSmartSuggestions, enableLongTermMemory,
       maxMessagesPerConversation, memoryRetentionDays,
-      enablePatternApplication, patternPriority, minQualityScore, enableLowQualityAlerts
+      enablePatternApplication, patternPriority, minQualityScore, enableLowQualityAlerts,
+      // ✅ FIX: Add personalityPrompt and responsePrompt
+      personalityPrompt, responsePrompt
     } = req.body;
 
     console.log('🔍 [AI-SETTINGS-API] Request body replyMode:', replyMode);
@@ -405,6 +454,10 @@ router.put('/ai', async (req, res) => {
     if (patternPriority) updateData.patternPriority = patternPriority;
     if (minQualityScore !== undefined) updateData.minQualityScore = minQualityScore;
     if (enableLowQualityAlerts !== undefined) updateData.enableLowQualityAlerts = enableLowQualityAlerts;
+    
+    // ✅ FIX: Add personalityPrompt and responsePrompt to updateData
+    if (personalityPrompt !== undefined) updateData.personalityPrompt = personalityPrompt;
+    if (responsePrompt !== undefined) updateData.responsePrompt = responsePrompt;
 
     // أولاً: محاولة حفظ في قاعدة البيانات
     try {
@@ -419,11 +472,11 @@ router.put('/ai', async (req, res) => {
           multimodalEnabled: multimodalEnabled !== false,
           ragEnabled: ragEnabled !== false,
           replyMode: replyMode || 'all', // ✅ NEW: Default to "all"
-          // Advanced defaults
-          aiTemperature: aiTemperature ?? 0.7,
+          // ✅ Advanced defaults (using constants)
+          aiTemperature: aiTemperature ?? 0.7, // Will be overridden by constants in settingsManager
           aiTopP: aiTopP ?? 0.9,
           aiTopK: aiTopK ?? 40,
-          aiMaxTokens: aiMaxTokens ?? 1024,
+          aiMaxTokens: aiMaxTokens ?? 2048, // ✅ توحيد: 2048 (متوافق مع constants)
           aiResponseStyle: aiResponseStyle || 'balanced',
           enableDiversityCheck: enableDiversityCheck !== undefined ? enableDiversityCheck : true,
           enableToneAdaptation: enableToneAdaptation !== undefined ? enableToneAdaptation : true,
@@ -435,16 +488,21 @@ router.put('/ai', async (req, res) => {
           enablePatternApplication: enablePatternApplication !== undefined ? enablePatternApplication : true,
           patternPriority: patternPriority || 'balanced',
           minQualityScore: minQualityScore ?? 70,
-          enableLowQualityAlerts: enableLowQualityAlerts !== undefined ? enableLowQualityAlerts : true
+          enableLowQualityAlerts: enableLowQualityAlerts !== undefined ? enableLowQualityAlerts : true,
+          // ✅ FIX: Add personalityPrompt and responsePrompt to create
+          personalityPrompt: personalityPrompt || null,
+          responsePrompt: responsePrompt || null
         }
       });
 
       console.log('✅ [AI-SETTINGS-API] Saved to database successfully');
       console.log('🔍 [AI-SETTINGS-API] Saved replyMode value:', aiSettings.replyMode);
+      console.log('🔍 [AI-SETTINGS-API] Saved aiMaxTokens value:', aiSettings.aiMaxTokens); // ✅ إضافة logging للقيمة المحفوظة
       console.log('🔍 [AI-SETTINGS-API] Full saved object:', JSON.stringify({
         id: aiSettings.id,
         companyId: aiSettings.companyId,
         replyMode: aiSettings.replyMode,
+        aiMaxTokens: aiSettings.aiMaxTokens, // ✅ إضافة aiMaxTokens للـ logging
         autoReplyEnabled: aiSettings.autoReplyEnabled
       }));
 

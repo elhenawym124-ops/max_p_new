@@ -30,7 +30,9 @@ import {
   Monitor as MonitorIcon,
   Psychology as PsychologyIcon,
   Refresh as RefreshIcon,
-  PowerSettingsNew as PowerIcon
+  PowerSettingsNew as PowerIcon,
+  Key as KeyIcon,
+  VpnKey as VpnKeyIcon
 } from '@mui/icons-material';
 
 import { buildApiUrl } from '../utils/urlHelper';
@@ -145,6 +147,8 @@ const SuperAdminSystemManagement = () => {
         return <MonitorIcon />;
       case 'security':
         return <SecurityIcon />;
+      case 'api_keys':
+        return <VpnKeyIcon />;
       default:
         return <SettingsIcon />;
     }
@@ -158,6 +162,8 @@ const SuperAdminSystemManagement = () => {
         return 'secondary';
       case 'security':
         return 'error';
+      case 'api_keys':
+        return 'warning';
       default:
         return 'default';
     }
@@ -299,6 +305,7 @@ const SuperAdminSystemManagement = () => {
                 {category === 'ai_learning' && '🤖 أنظمة الذكاء الاصطناعي والتعلم'}
                 {category === 'monitoring' && '📊 أنظمة المراقبة'}
                 {category === 'security' && '🔒 أنظمة الأمان'}
+                {category === 'api_keys' && '🔑 أنظمة مفاتيح API'}
                 {category === 'general' && '⚙️ أنظمة عامة'}
               </Typography>
               <Chip

@@ -74,14 +74,15 @@ class ShippingService {
   }
 
   /**
-   * استخراج اسم المحافظة من رسالة العميل
-   * @param {string} message - رسالة العميل
+   * استخراج اسم المحافظة من رسالة العميل أو المحادثة السابقة
+   * @param {string} message - رسالة العميل الحالية
    * @param {string} companyId - معرف الشركة
+   * @param {Array} conversationMemory - سجل المحادثة (اختياري)
    * @returns {Object} معلومات المحافظة المستخرجة
    */
-  async extractGovernorateFromMessage(message, companyId) {
+  async extractGovernorateFromMessage(message, companyId, conversationMemory = null) {
     try {
-      if (!message || !companyId) {
+      if (!companyId) {
         return { found: false, governorate: null };
       }
 
@@ -103,23 +104,53 @@ class ShippingService {
         }
       });
 
-      // تنظيف الرسالة
-      const normalizedMessage = this.normalizeGovernorate(message);
-
-      // البحث عن تطابق
-      for (const gov of allGovernorates) {
-        const normalizedGov = this.normalizeGovernorate(gov);
-        if (normalizedMessage.includes(normalizedGov)) {
-          console.log(`✅ [SHIPPING] تم استخراج المحافظة من الرسالة: ${gov}`);
-          return {
-            found: true,
-            governorate: gov,
-            normalizedGovernorate: normalizedGov
-          };
+      // ✅ FIX: البحث في الرسالة الحالية أولاً
+      if (message && message.trim().length > 0) {
+        const normalizedMessage = this.normalizeGovernorate(message);
+        
+        for (const gov of allGovernorates) {
+          const normalizedGov = this.normalizeGovernorate(gov);
+          // ✅ FIX: تحسين المطابقة - البحث عن المحافظة ككلمة كاملة أو جزء من الرسالة
+          if (normalizedMessage.includes(normalizedGov) || normalizedGov.includes(normalizedMessage.trim())) {
+            console.log(`✅ [SHIPPING] تم استخراج المحافظة من الرسالة الحالية: ${gov}`);
+            return {
+              found: true,
+              governorate: gov,
+              normalizedGovernorate: normalizedGov,
+              source: 'current_message'
+            };
+          }
         }
       }
 
-      console.log(`❌ [SHIPPING] لم يتم العثور على محافظة في الرسالة`);
+      // ✅ FIX: البحث في المحادثة السابقة إذا لم يتم العثور في الرسالة الحالية
+      if (conversationMemory && Array.isArray(conversationMemory) && conversationMemory.length > 0) {
+        console.log(`🔍 [SHIPPING] البحث في المحادثة السابقة (${conversationMemory.length} رسالة)...`);
+        
+        // البحث من الأحدث للأقدم
+        for (let i = conversationMemory.length - 1; i >= 0; i--) {
+          const msg = conversationMemory[i];
+          if (msg && msg.content && typeof msg.content === 'string') {
+            const normalizedMsg = this.normalizeGovernorate(msg.content);
+            
+            for (const gov of allGovernorates) {
+              const normalizedGov = this.normalizeGovernorate(gov);
+              // ✅ FIX: تحسين المطابقة - البحث عن المحافظة ككلمة كاملة
+              if (normalizedMsg.includes(normalizedGov) || normalizedGov.includes(normalizedMsg.trim())) {
+                console.log(`✅ [SHIPPING] تم استخراج المحافظة من المحادثة السابقة: ${gov} (من رسالة ${i + 1})`);
+                return {
+                  found: true,
+                  governorate: gov,
+                  normalizedGovernorate: normalizedGov,
+                  source: 'conversation_memory'
+                };
+              }
+            }
+          }
+        }
+      }
+
+      console.log(`❌ [SHIPPING] لم يتم العثور على محافظة في الرسالة أو المحادثة`);
       return { found: false, governorate: null };
     } catch (error) {
       console.error('❌ [SHIPPING] خطأ في استخراج المحافظة:', error);
@@ -176,7 +207,13 @@ class ShippingService {
       .trim()
       .toLowerCase()
       .replace(/محافظة/g, '')
+      .replace(/محافظه/g, '')
       .replace(/ال/g, '')
+      .replace(/أ/g, 'ا')
+      .replace(/إ/g, 'ا')
+      .replace(/آ/g, 'ا')
+      .replace(/ة/g, 'ه')
+      .replace(/ى/g, 'ي')
       .replace(/\s+/g, ' ')
       .trim();
   }

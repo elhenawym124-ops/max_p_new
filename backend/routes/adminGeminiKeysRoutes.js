@@ -64,5 +64,12 @@ router.post('/:id/test',
   adminGeminiKeysController.testGeminiKey2
 );
 
+// ✅ Clear all model caches (use after changing key settings)
+router.post('/clear-cache', 
+  verifyToken.authenticateToken, 
+  verifyToken.requireSuperAdmin, 
+  adminGeminiKeysController.clearModelCaches
+);
+
 module.exports = router;
 

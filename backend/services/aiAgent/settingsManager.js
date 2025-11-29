@@ -6,6 +6,8 @@
  */
 
 const { getSharedPrismaClient, safeQuery } = require('../sharedDatabase');
+// ✅ استخدام الـ constants المركزي
+const { DEFAULT_AI_SETTINGS } = require('./aiConstants');
 
 class SettingsManager {
   constructor(aiAgentService) {
@@ -90,6 +92,7 @@ class SettingsManager {
           return {
             personalityPrompt: aiSettings.personalityPrompt,
             responsePrompt: aiSettings.responsePrompt,
+            responseRules: aiSettings.responseRules, // ✅ إضافة قواعد الاستجابة
             hasCustomPrompts: !!(aiSettings.personalityPrompt || aiSettings.responsePrompt),
             source: 'ai_settings'
           };
@@ -306,11 +309,12 @@ class SettingsManager {
         // Memory controls
         maxMessagesPerConversation: aiSettings.maxMessagesPerConversation || 50,
         memoryRetentionDays: aiSettings.memoryRetentionDays || 30,
-        // Dynamic generation config (safe defaults)
-        aiTemperature: aiSettings.aiTemperature ?? 0.7,
-        aiTopP: aiSettings.aiTopP ?? 0.9,
-        aiTopK: aiSettings.aiTopK ?? 40,
-        aiMaxTokens: aiSettings.aiMaxTokens ?? 1024,
+        // ✅ Dynamic generation config (القيم من قاعدة البيانات - مصدرها الواجهة)
+        // ⚠️ القيمة الافتراضية موجودة في الواجهة فقط (AIManagement.tsx)
+        aiTemperature: aiSettings.aiTemperature ?? DEFAULT_AI_SETTINGS.TEMPERATURE,
+        aiTopP: aiSettings.aiTopP ?? DEFAULT_AI_SETTINGS.TOP_P,
+        aiTopK: aiSettings.aiTopK ?? DEFAULT_AI_SETTINGS.TOP_K,
+        aiMaxTokens: aiSettings.aiMaxTokens ?? DEFAULT_AI_SETTINGS.MAX_OUTPUT_TOKENS, // ⚠️ fallback فقط
         aiResponseStyle: aiSettings.aiResponseStyle || 'balanced',
         // Smart behavior toggles
         enableDiversityCheck: aiSettings.enableDiversityCheck !== false,

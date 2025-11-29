@@ -51,6 +51,16 @@ class RateLimitResetService {
    */
   async resetExpiredWindows() {
     try {
+      // ✅ FIX: التحقق من اتصال Prisma قبل الاستخدام
+      try {
+        await prisma.$connect();
+      } catch (connectError) {
+        // Prisma قد يكون متصل بالفعل، تجاهل الخطأ
+        if (!connectError.message?.includes('already connected')) {
+          console.warn('⚠️ [RATE-LIMIT-RESET] Prisma connection warning:', connectError.message);
+        }
+      }
+      
       const now = new Date();
       let resetCount = 0;
 
@@ -135,7 +145,18 @@ class RateLimitResetService {
         console.log(`✅ [RATE-LIMIT-RESET] تم إعادة ضبط ${resetCount} نموذج`);
       }
     } catch (error) {
-      console.error('❌ [RATE-LIMIT-RESET] خطأ عام في إعادة الضبط:', error);
+      // ✅ FIX: معالجة خطأ Prisma connection بشكل أفضل
+      if (error.message?.includes('Engine is not yet connected')) {
+        console.warn('⚠️ [RATE-LIMIT-RESET] Prisma engine not connected, will retry on next interval');
+        // محاولة إعادة الاتصال
+        try {
+          await prisma.$connect();
+        } catch (reconnectError) {
+          console.warn('⚠️ [RATE-LIMIT-RESET] Failed to reconnect:', reconnectError.message);
+        }
+      } else {
+        console.error('❌ [RATE-LIMIT-RESET] خطأ عام في إعادة الضبط:', error);
+      }
     }
   }
 

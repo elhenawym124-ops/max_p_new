@@ -7,7 +7,10 @@ import {
   UserIcon,
   ChatBubbleLeftRightIcon,
   ExclamationTriangleIcon,
-  SparklesIcon
+  SparklesIcon,
+  XMarkIcon,
+  Squares2X2Icon,
+  ArrowPathIcon
 } from '@heroicons/react/24/outline';
 import { testChatService, TestConversation, TestMessage, AITestResponse } from '../../services/testChatService';
 import CompanyProtectedRoute from '../../components/protection/CompanyProtectedRoute';
@@ -15,6 +18,16 @@ import CompanyProtectedRoute from '../../components/protection/CompanyProtectedR
 // إضافة معلومات الرد إلى TestMessage
 interface ExtendedTestMessage extends TestMessage {
   aiResponseInfo?: AITestResponse;
+}
+
+// واجهة للدردشة المفتوحة
+interface OpenChat {
+  conversation: TestConversation;
+  messages: ExtendedTestMessage[];
+  newMessage: string;
+  sending: boolean;
+  isAiTyping: boolean;
+  error: string | null;
 }
 
 const AITestChatContent: React.FC = () => {
@@ -32,6 +45,11 @@ const AITestChatContent: React.FC = () => {
   const [deleting, setDeleting] = useState(false);
   const [runningTest, setRunningTest] = useState(false);
   const [testResults, setTestResults] = useState<any>(null);
+  
+  // ✅ NEW: حالة الدردشات المتعددة
+  const [openChats, setOpenChats] = useState<Map<string, OpenChat>>(new Map());
+  const [multiChatMode, setMultiChatMode] = useState(false);
+  const [sendingToAll, setSendingToAll] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -59,10 +77,17 @@ const AITestChatContent: React.FC = () => {
       console.log('🔄 Loading messages for conversation:', conversationId);
       const messagesData = await testChatService.getMessages(conversationId);
       console.log('✅ Messages loaded:', messagesData.length);
-      setMessages(messagesData.map(msg => ({
-        ...msg,
-        timestamp: new Date(msg.timestamp)
-      })));
+      console.log('🔍 [FRONTEND] Messages with aiResponseInfo:', messagesData.filter(msg => msg.aiResponseInfo));
+      setMessages(messagesData.map(msg => {
+        const mappedMsg = {
+          ...msg,
+          timestamp: new Date(msg.timestamp)
+        };
+        if (msg.aiResponseInfo) {
+          console.log('✅ [FRONTEND] Message has aiResponseInfo:', msg.id, msg.aiResponseInfo);
+        }
+        return mappedMsg;
+      }));
       
       // التمرير للأسفل
       setTimeout(() => {
@@ -116,11 +141,13 @@ const AITestChatContent: React.FC = () => {
 
       // إضافة رد AI إذا كان موجوداً
       if (result.aiMessage) {
+        // ✅ FIX: استخدام aiResponseInfo من aiMessage أولاً، ثم من aiResponse
         const aiMessageWithInfo: ExtendedTestMessage = {
           ...result.aiMessage,
           timestamp: new Date(result.aiMessage.timestamp),
-          aiResponseInfo: result.aiResponse || undefined
+          aiResponseInfo: result.aiMessage.aiResponseInfo || result.aiResponse || undefined
         };
+        console.log('✅ [FRONTEND] Adding AI message with aiResponseInfo:', aiMessageWithInfo.aiResponseInfo);
         setMessages(prev => [...prev, aiMessageWithInfo]);
 
         // تحديث آخر رسالة في المحادثة
@@ -178,6 +205,186 @@ const AITestChatContent: React.FC = () => {
     console.log('🎯 Selecting conversation:', conversation.id);
     setSelectedConversation(conversation);
     await loadMessages(conversation.id);
+  };
+
+  // ✅ NEW: فتح دردشة جديدة في نافذة منفصلة
+  const openChatInNewWindow = async (conversation: TestConversation) => {
+    const messagesData = await testChatService.getMessages(conversation.id);
+    const chatData: OpenChat = {
+      conversation,
+      messages: messagesData.map(msg => ({
+        ...msg,
+        timestamp: new Date(msg.timestamp)
+      })),
+      newMessage: '',
+      sending: false,
+      isAiTyping: false,
+      error: null
+    };
+    
+    setOpenChats(prev => {
+      const newMap = new Map(prev);
+      newMap.set(conversation.id, chatData);
+      return newMap;
+    });
+    
+    if (!multiChatMode) {
+      setMultiChatMode(true);
+    }
+  };
+
+  // ✅ NEW: إغلاق دردشة من النوافذ المتعددة
+  const closeChatWindow = (conversationId: string) => {
+    setOpenChats(prev => {
+      const newMap = new Map(prev);
+      newMap.delete(conversationId);
+      return newMap;
+    });
+    
+    // إذا لم يعد هناك دردشات مفتوحة، إيقاف وضع الدردشات المتعددة
+    if (openChats.size === 1) {
+      setMultiChatMode(false);
+    }
+  };
+
+  // ✅ NEW: إرسال رسالة لدردشة محددة في وضع الدردشات المتعددة
+  const sendMessageToChat = async (conversationId: string, messageContent: string) => {
+    const chat = openChats.get(conversationId);
+    if (!chat || !messageContent.trim()) return;
+
+    // تحديث حالة الإرسال
+    setOpenChats(prev => {
+      const newMap = new Map(prev);
+      const updatedChat = { ...chat, sending: true, isAiTyping: true, newMessage: '' };
+      newMap.set(conversationId, updatedChat);
+      return newMap;
+    });
+
+    // إضافة رسالة المستخدم مؤقتاً
+    const tempUserMessage: ExtendedTestMessage = {
+      id: `temp_user_${Date.now()}_${conversationId}`,
+      content: messageContent,
+      senderId: 'user',
+      senderName: 'أنت',
+      timestamp: new Date(),
+      type: 'text',
+      isFromCustomer: true,
+      status: 'sending',
+      conversationId
+    };
+
+    setOpenChats(prev => {
+      const newMap = new Map(prev);
+      const chat = newMap.get(conversationId);
+      if (chat) {
+        newMap.set(conversationId, {
+          ...chat,
+          messages: [...chat.messages, tempUserMessage]
+        });
+      }
+      return newMap;
+    });
+
+    try {
+      const result = await testChatService.sendMessage(conversationId, messageContent);
+      
+      // تحديث رسالة المستخدم
+      setOpenChats(prev => {
+        const newMap = new Map(prev);
+        const chat = newMap.get(conversationId);
+        if (chat) {
+          const updatedMessages = chat.messages.map(msg =>
+            msg.id === tempUserMessage.id
+              ? { ...result.userMessage, timestamp: new Date(result.userMessage.timestamp) }
+              : msg
+          );
+
+          // إضافة رد AI إذا كان موجوداً
+          if (result.aiMessage) {
+            const aiMessageWithInfo: ExtendedTestMessage = {
+              ...result.aiMessage,
+              timestamp: new Date(result.aiMessage.timestamp),
+              aiResponseInfo: result.aiResponse || undefined
+            };
+            updatedMessages.push(aiMessageWithInfo);
+          } else if (result.aiResponse?.silent) {
+            const silentMessage: ExtendedTestMessage = {
+              id: `silent_${Date.now()}_${conversationId}`,
+              content: '🤐 النظام صامت - لم يتم إرسال رد للعميل',
+              senderId: 'system',
+              senderName: 'النظام',
+              timestamp: new Date(),
+              type: 'text',
+              isFromCustomer: false,
+              status: 'sent',
+              conversationId,
+              aiResponseInfo: result.aiResponse
+            };
+            updatedMessages.push(silentMessage);
+          }
+
+          newMap.set(conversationId, {
+            ...chat,
+            messages: updatedMessages,
+            sending: false,
+            isAiTyping: false
+          });
+        }
+        return newMap;
+      });
+
+      // تحديث آخر رسالة في قائمة المحادثات
+      setConversations(prev => prev.map(conv =>
+        conv.id === conversationId
+          ? {
+              ...conv,
+              lastMessage: result.aiMessage?.content || messageContent,
+              lastMessageTime: new Date()
+            }
+          : conv
+      ));
+    } catch (error: any) {
+      console.error('❌ Error sending message to chat:', error);
+      
+      setOpenChats(prev => {
+        const newMap = new Map(prev);
+        const chat = newMap.get(conversationId);
+        if (chat) {
+          const updatedMessages = chat.messages.map(msg =>
+            msg.id === tempUserMessage.id
+              ? { ...msg, status: 'error' as const }
+              : msg
+          );
+          newMap.set(conversationId, {
+            ...chat,
+            messages: updatedMessages,
+            sending: false,
+            isAiTyping: false,
+            error: error.message,
+            newMessage: messageContent
+          });
+        }
+        return newMap;
+      });
+    }
+  };
+
+  // ✅ NEW: إرسال رسالة لجميع الدردشات المفتوحة
+  const sendMessageToAllChats = async (messageContent: string) => {
+    if (!messageContent.trim() || openChats.size === 0 || sendingToAll) return;
+
+    setSendingToAll(true);
+    const promises = Array.from(openChats.keys()).map(conversationId =>
+      sendMessageToChat(conversationId, messageContent)
+    );
+
+    try {
+      await Promise.all(promises);
+    } catch (error) {
+      console.error('❌ Error sending messages to all chats:', error);
+    } finally {
+      setSendingToAll(false);
+    }
   };
 
   // إنشاء محادثة جديدة
@@ -458,6 +665,26 @@ const AITestChatContent: React.FC = () => {
             محادثة جديدة
           </button>
 
+          {/* ✅ NEW: زر تفعيل وضع الدردشات المتعددة */}
+          <button
+            onClick={() => {
+              if (multiChatMode) {
+                setMultiChatMode(false);
+                setOpenChats(new Map());
+              } else {
+                setMultiChatMode(true);
+              }
+            }}
+            className={`w-full px-4 py-2 rounded-lg transition-colors mb-2 flex items-center justify-center gap-2 ${
+              multiChatMode
+                ? 'bg-red-600 text-white hover:bg-red-700'
+                : 'bg-orange-600 text-white hover:bg-orange-700'
+            }`}
+          >
+            <Squares2X2Icon className="w-5 h-5" />
+            {multiChatMode ? 'إغلاق وضع الدردشات المتعددة' : 'فتح عدة دردشات'}
+          </button>
+
           {/* زر تشغيل اختبار سريع */}
           <button
             onClick={runQuickTest}
@@ -519,10 +746,10 @@ const AITestChatContent: React.FC = () => {
             filteredConversations.map((conversation) => (
               <div
                 key={conversation.id}
-                onClick={() => selectConversation(conversation)}
+                onClick={() => multiChatMode ? openChatInNewWindow(conversation) : selectConversation(conversation)}
                 className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${
                   selectedConversation?.id === conversation.id ? 'bg-blue-50 border-r-4 border-r-blue-500' : ''
-                }`}
+                } ${openChats.has(conversation.id) ? 'bg-orange-50 border-r-4 border-r-orange-500' : ''}`}
               >
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
@@ -535,22 +762,41 @@ const AITestChatContent: React.FC = () => {
                         <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
                           اختبار
                         </span>
+                        {openChats.has(conversation.id) && (
+                          <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded">
+                            مفتوحة
+                          </span>
+                        )}
                       </h3>
                       <p className="text-xs text-gray-500">
                         {formatDate(conversation.lastMessageTime)} • {formatTime(conversation.lastMessageTime)}
                       </p>
                     </div>
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openDeleteModal(conversation);
-                    }}
-                    className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                    title="حذف المحادثة"
-                  >
-                    <TrashIcon className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    {multiChatMode && openChats.has(conversation.id) && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          closeChatWindow(conversation.id);
+                        }}
+                        className="p-1 text-orange-600 hover:text-orange-800 hover:bg-orange-100 rounded transition-colors"
+                        title="إغلاق النافذة"
+                      >
+                        <XMarkIcon className="w-4 h-4" />
+                      </button>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openDeleteModal(conversation);
+                      }}
+                      className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                      title="حذف المحادثة"
+                    >
+                      <TrashIcon className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
                 <p className="text-sm text-gray-600 truncate">
                   {conversation.lastMessage}
@@ -563,7 +809,198 @@ const AITestChatContent: React.FC = () => {
 
       {/* منطقة المحادثة */}
       <div className="flex-1 flex flex-col">
-        {selectedConversation ? (
+        {multiChatMode && openChats.size > 0 ? (
+          /* ✅ NEW: عرض الدردشات المتعددة */
+          <div className="flex-1 flex flex-col bg-gray-50">
+            {/* رأس الدردشات المتعددة */}
+            <div className="bg-white border-b border-gray-200 p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Squares2X2Icon className="w-6 h-6 text-orange-600" />
+                  <h3 className="font-bold text-gray-900">
+                    الدردشات المتعددة ({openChats.size})
+                  </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  {sendingToAll && (
+                    <div className="flex items-center gap-2 text-blue-600">
+                      <ArrowPathIcon className="w-5 h-5 animate-spin" />
+                      <span className="text-sm">جاري الإرسال لجميع الدردشات...</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* شبكة الدردشات */}
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className={`grid gap-4 ${openChats.size === 1 ? 'grid-cols-1' : openChats.size === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                {Array.from(openChats.values()).map((chat) => (
+                  <div key={chat.conversation.id} className="bg-white rounded-lg border border-gray-200 flex flex-col h-[600px]">
+                    {/* رأس الدردشة */}
+                    <div className="bg-gray-50 border-b border-gray-200 p-3 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white font-semibold text-sm">
+                          {chat.conversation.customerName.charAt(0)}
+                        </div>
+                        <div>
+                          <h4 className="font-medium text-sm text-gray-900">{chat.conversation.customerName}</h4>
+                          {chat.sending && (
+                            <p className="text-xs text-blue-600">جاري الإرسال...</p>
+                          )}
+                          {chat.isAiTyping && (
+                            <p className="text-xs text-green-600">AI يكتب...</p>
+                          )}
+                          {chat.error && (
+                            <p className="text-xs text-red-600">❌ {chat.error}</p>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => closeChatWindow(chat.conversation.id)}
+                        className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                        title="إغلاق"
+                      >
+                        <XMarkIcon className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* الرسائل */}
+                    <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                      {chat.messages.length === 0 ? (
+                        <div className="text-center text-gray-500 text-sm mt-4">
+                          لا توجد رسائل
+                        </div>
+                      ) : (
+                        chat.messages.map((message) => (
+                          <div
+                            key={message.id}
+                            className={`flex ${message.isFromCustomer ? 'justify-start' : 'justify-end'}`}
+                          >
+                            <div
+                              className={`max-w-[80%] px-3 py-2 rounded-lg text-sm ${
+                                message.isFromCustomer
+                                  ? 'bg-gray-100 text-gray-800'
+                                  : message.content.includes('النظام صامت')
+                                  ? 'bg-yellow-100 text-yellow-800'
+                                  : 'bg-blue-500 text-white'
+                              }`}
+                            >
+                              <p>{message.content}</p>
+                              {message.aiResponseInfo && (
+                                <div className="mt-1 pt-1 border-t border-white/20 text-xs opacity-90">
+                                  {message.aiResponseInfo.model && (
+                                    <div>🤖 {message.aiResponseInfo.model}</div>
+                                  )}
+                                  {message.aiResponseInfo.processingTime && (
+                                    <div>⏱️ {message.aiResponseInfo.processingTime}ms</div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                      {chat.isAiTyping && (
+                        <div className="flex justify-end">
+                          <div className="bg-green-500 text-white px-3 py-2 rounded-lg text-sm">
+                            <div className="flex items-center gap-2">
+                              <CpuChipIcon className="w-4 h-4" />
+                              <span>AI يكتب...</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* إدخال الرسالة */}
+                    <div className="border-t border-gray-200 p-3">
+                      <div className="flex items-center gap-2">
+                        <textarea
+                          value={chat.newMessage}
+                          onChange={(e) => {
+                            setOpenChats(prev => {
+                              const newMap = new Map(prev);
+                              const updatedChat = { ...chat, newMessage: e.target.value };
+                              newMap.set(chat.conversation.id, updatedChat);
+                              return newMap;
+                            });
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              sendMessageToChat(chat.conversation.id, chat.newMessage);
+                            }
+                          }}
+                          placeholder="اكتب رسالتك..."
+                          rows={1}
+                          className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                          disabled={chat.sending}
+                        />
+                        <button
+                          onClick={() => sendMessageToChat(chat.conversation.id, chat.newMessage)}
+                          disabled={!chat.newMessage.trim() || chat.sending}
+                          className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {chat.sending ? (
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          ) : (
+                            <PaperAirplaneIcon className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ✅ NEW: إرسال لجميع الدردشات */}
+            {openChats.size > 1 && (
+              <div className="bg-white border-t border-gray-200 p-4">
+                <div className="flex items-center gap-2">
+                  <textarea
+                    placeholder={`إرسال رسالة لجميع الدردشات (${openChats.size})...`}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        const textarea = e.target as HTMLTextAreaElement;
+                        sendMessageToAllChats(textarea.value);
+                        textarea.value = '';
+                      }
+                    }}
+                    rows={1}
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none"
+                    disabled={sendingToAll}
+                  />
+                  <button
+                    onClick={(e) => {
+                      const textarea = (e.target as HTMLElement).parentElement?.querySelector('textarea') as HTMLTextAreaElement;
+                      if (textarea) {
+                        sendMessageToAllChats(textarea.value);
+                        textarea.value = '';
+                      }
+                    }}
+                    disabled={sendingToAll}
+                    className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                  >
+                    {sendingToAll ? (
+                      <>
+                        <ArrowPathIcon className="w-5 h-5 animate-spin" />
+                        جاري الإرسال...
+                      </>
+                    ) : (
+                      <>
+                        <PaperAirplaneIcon className="w-5 h-5" />
+                        إرسال للجميع
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : selectedConversation ? (
           <>
             {/* رأس المحادثة */}
             <div className="bg-white border-b border-gray-200 p-4">

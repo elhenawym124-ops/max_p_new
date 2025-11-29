@@ -1299,6 +1299,7 @@ class PatternDetector {
       }
 
       // استدعاء الذكاء الصناعي بالطريقة الصحيحة
+      // ✅ زيادة maxTokens لتجنب قطع الاستجابة (Gemini 2.5 يستخدم tokens كثيرة للتفكير)
       const aiResponse = await aiService.generateAIResponse(
         analysisPrompt,
         [], // conversation memory
@@ -1306,7 +1307,11 @@ class PatternDetector {
         null, // geminiConfig
         this.companyId, // company ID
         null, // conversation ID
-        { context: 'pattern_analysis' } // message context
+        { 
+          context: 'pattern_analysis',
+          maxTokens: 16384, // ✅ زيادة لتجنب MAX_TOKENS error
+          temperature: 0.3 // ✅ دقة عالية للتحليل
+        } // message context
       );
 
       // إذا لم يكن هناك رد من AI (مثل عدم وجود مفتاح نشط)، نرجع null
@@ -1324,9 +1329,19 @@ class PatternDetector {
           // البحث عن JSON في النص
           const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
-            const analysisResult = JSON.parse(jsonMatch[0]);
-            //console.log('✅ [PatternDetector] Successfully parsed AI response as JSON');
-            return analysisResult;
+            try {
+              const analysisResult = JSON.parse(jsonMatch[0]);
+              //console.log('✅ [PatternDetector] Successfully parsed AI response as JSON');
+              return analysisResult;
+            } catch (jsonParseError) {
+              // ✅ محاولة إصلاح JSON المقطوع
+              console.log('⚠️ [PatternDetector] JSON parse failed, attempting to fix truncated JSON');
+              const fixedJson = this.tryFixTruncatedJson(jsonMatch[0]);
+              if (fixedJson) {
+                return fixedJson;
+              }
+              return this.extractPatternsFromText(aiResponse);
+            }
           } else {
             //console.log('⚠️ [PatternDetector] No JSON found, extracting patterns from text');
             return this.extractPatternsFromText(aiResponse);
@@ -1425,6 +1440,45 @@ ${analysisData.unsuccessfulTexts.slice(0, 8).map((text, i) => `${i+1}. "${text}"
       };
     } catch (error) {
       console.error('❌ [PatternDetector] Error converting AI pattern:', error);
+      return null;
+    }
+  }
+
+  /**
+   * محاولة إصلاح JSON المقطوع
+   */
+  tryFixTruncatedJson(jsonString) {
+    try {
+      // محاولة إيجاد patterns array حتى لو كان JSON غير مكتمل
+      const patternsMatch = jsonString.match(/"patterns"\s*:\s*\[([\s\S]*)/);
+      if (!patternsMatch) return null;
+
+      let patternsContent = patternsMatch[1];
+      
+      // البحث عن آخر pattern مكتمل
+      const patterns = [];
+      const patternRegex = /\{[^{}]*"type"[^{}]*"name"[^{}]*"description"[^{}]*\}/g;
+      let match;
+      
+      while ((match = patternRegex.exec(patternsContent)) !== null) {
+        try {
+          const pattern = JSON.parse(match[0]);
+          if (pattern.type && pattern.name) {
+            patterns.push(pattern);
+          }
+        } catch (e) {
+          // تجاهل الأنماط غير الصالحة
+        }
+      }
+
+      if (patterns.length > 0) {
+        console.log(`✅ [PatternDetector] Recovered ${patterns.length} patterns from truncated JSON`);
+        return { patterns, insights: [], recommendations: [] };
+      }
+
+      return null;
+    } catch (error) {
+      console.error('❌ [PatternDetector] Error fixing truncated JSON:', error);
       return null;
     }
   }

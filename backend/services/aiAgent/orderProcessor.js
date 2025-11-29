@@ -500,8 +500,55 @@ class OrderProcessor {
   /**
    * إنشاء رد لطلب البيانات المفقودة باستخدام الذكاء الاصطناعي
    */
-  async generateDataRequestResponse(missingData, orderDetails, companyId) {
+  async generateDataRequestResponse(missingData, orderDetails, companyId, companyPrompts = null, conversationMemory = []) {
     try {
+      // ✅ FIX: استخدام الشخصية وقواعد الاستجابة مثل buildAdvancedPrompt
+      
+      // التحقق من وجود personality prompt مخصص
+      if (!companyPrompts || !companyPrompts.personalityPrompt || companyPrompts.personalityPrompt.trim() === '') {
+        console.warn('⚠️ [DATA-REQUEST] No personality prompt found, using default');
+        // استخدام شخصية افتراضية بسيطة
+        companyPrompts = companyPrompts || {};
+        companyPrompts.personalityPrompt = 'أنت مساعد مبيعات محترف وودود في متجر أحذية مصري.';
+      }
+
+      let prompt = '';
+      
+      // ✅ FIX: استخدام الشخصية أولاً (مثل buildAdvancedPrompt)
+      prompt += `${companyPrompts.personalityPrompt.trim()}\n\n`;
+
+      // ✅ FIX: إضافة قواعد الاستجابة مباشرة بعد الشخصية (مثل buildAdvancedPrompt)
+      console.log('🔍 [DATA-REQUEST-RULES] Checking for response rules...');
+      if (companyPrompts.responseRules) {
+        try {
+          const { buildPromptFromRules, getDefaultRules } = require('./responseRulesConfig');
+          const rules = typeof companyPrompts.responseRules === 'string' 
+            ? JSON.parse(companyPrompts.responseRules) 
+            : companyPrompts.responseRules;
+          console.log('✅ [DATA-REQUEST-RULES] Using custom response rules:', {
+            responseLength: rules.responseLength,
+            speakingStyle: rules.speakingStyle,
+            dialect: rules.dialect,
+            rulesCount: rules.rules?.length || 0
+          });
+          const rulesPrompt = buildPromptFromRules(rules);
+          prompt += rulesPrompt;
+          console.log('✅ [DATA-REQUEST-RULES] Response rules added to prompt, length:', rulesPrompt.length);
+        } catch (e) {
+          console.warn('⚠️ [DATA-REQUEST-RULES] Failed to parse responseRules:', e.message);
+          const { buildPromptFromRules, getDefaultRules } = require('./responseRulesConfig');
+          const defaultRulesPrompt = buildPromptFromRules(getDefaultRules());
+          prompt += defaultRulesPrompt;
+          console.log('⚠️ [DATA-REQUEST-RULES] Using default rules instead');
+        }
+      } else {
+        // استخدام القواعد الافتراضية إذا لم تكن موجودة
+        console.log('⚠️ [DATA-REQUEST-RULES] No response rules found, using defaults');
+        const { buildPromptFromRules, getDefaultRules } = require('./responseRulesConfig');
+        const defaultRulesPrompt = buildPromptFromRules(getDefaultRules());
+        prompt += defaultRulesPrompt;
+      }
+
       // بناء prompt للذكاء الاصطناعي
       const missingDataText = missingData.map(field => {
         switch(field) {
@@ -515,33 +562,40 @@ class OrderProcessor {
         }
       }).join(' و ');
 
-      const prompt = `أنت مساعد مبيعات محترف في متجر أحذية مصري. العميل أكد رغبته في الشراء وأنت متحمس لإتمام الطلب.
+      prompt += `\n🛍️ تفاصيل الطلب المؤكد:\n`;
+      prompt += `=====================================\n`;
+      if (orderDetails.productName) prompt += `• المنتج: ${orderDetails.productName}\n`;
+      if (orderDetails.productColor) prompt += `• اللون: ${orderDetails.productColor}\n`;
+      if (orderDetails.productSize) prompt += `• المقاس: ${orderDetails.productSize}\n`;
+      if (orderDetails.productPrice) prompt += `• السعر: ${orderDetails.productPrice} جنيه\n`;
+      prompt += `=====================================\n\n`;
 
-🛍️ تفاصيل الطلب المؤكد:
-${orderDetails.productName ? `• المنتج: ${orderDetails.productName}` : ''}
-${orderDetails.productColor ? `• اللون: ${orderDetails.productColor}` : ''}
-${orderDetails.productSize ? `• المقاس: ${orderDetails.productSize}` : ''}
-${orderDetails.productPrice ? `• السعر: ${orderDetails.productPrice} جنيه` : ''}
+      prompt += `📋 البيانات المطلوبة لإتمام الطلب: ${missingDataText}\n\n`;
 
-📋 البيانات المطلوبة لإتمام الطلب: ${missingDataText}
+      // ✅ FIX: فحص إذا كانت المحادثة مستمرة لتجنب الترحيب
+      const aiMessagesCount = conversationMemory ? conversationMemory.filter(msg => !msg.isFromCustomer).length : 0;
+      const isOngoingConversation = aiMessagesCount > 0;
+      
+      prompt += `🎯 مهمتك (يجب الالتزام بالشخصية وقواعد الاستجابة أعلاه):\n`;
+      prompt += `=====================================\n`;
+      if (isOngoingConversation) {
+        prompt += `🚫 ممنوع الترحيب - المحادثة مستمرة (${aiMessagesCount} رد سابق)\n`;
+        prompt += `   - ابدأي الرد مباشرة بدون "يا هلا بيك" أو "مرحباً" أو أي تحية\n`;
+      }
+      prompt += `1. ✅ اشكر العميل بشكل مختصر وودود (بدون مبالغة) على تأكيد الطلب\n`;
+      prompt += `2. ✅ اطلب البيانات المفقودة مباشرة وواضحة:\n`;
+      if (missingData.includes('customerName')) prompt += `   - الاسم الكامل\n`;
+      if (missingData.includes('customerPhone')) prompt += `   - رقم الهاتف\n`;
+      if (missingData.includes('customerAddress')) prompt += `   - العنوان الكامل\n`;
+      if (missingData.includes('city')) prompt += `   - المدينة أو المحافظة\n`;
+      prompt += `3. ❌ ممنوع: استخدام عبارات غامضة مثل "الخطوة التالية" أو "الخطوة اللي بعدها"\n`;
+      prompt += `4. ❌ ممنوع: تكرار المعلومات المذكورة سابقاً (المقاس واللون) إلا إذا كان ضرورياً\n`;
+      prompt += `5. ❌ ممنوع: عبارات مبالغ فيها مثل "مبسوطين جداً"، "فرحانين"، "يا هلا بيك"، "اختيار رائع"، "أحلى حاجة"، "ولا في الأحلام"، "في لمح البصر"، "على طول"، "مستنينك"، "حاجة تحفة"\n`;
+      prompt += `6. ✅ يجب: الرد قصير ومباشر وواضح (حسب قواعد الاستجابة المحددة أعلاه)\n`;
+      prompt += `7. ✅ يجب: طلب البيانات مباشرة مثل "محتاجين منك الاسم والعنوان ورقم الموبايل"\n`;
+      prompt += `=====================================\n\n`;
 
-🎯 مهمتك:
-1. اشكر العميل بحماس مناسب على تأكيد الطلب
-2. أظهر تفاصيل الطلب بطريقة جذابة ومحفزة (المنتج واللون والمقاس إذا كانوا متوفرين)
-3. اطلب البيانات المفقودة فقط (الاسم، العنوان، رقم الهاتف، المدينة) بطريقة ودودة وواضحة
-4. لا تطلب السعر أو صورة المنتج أو أي معلومات إضافية أخرى
-5. أكد سرعة التجهيز والشحن
-6. استخدم رموز تعبيرية مناسبة (لكن لا تكثر منها)
-7. اجعل العميل متحمس لإكمال الطلب
-
-📝 أسلوب الكتابة:
-- استخدم العربية العامية المصرية الودودة والمهنية
-- كن مهنياً لكن دافئاً في التعامل
-- اجعل الرد قصير ومركز (لا يزيد عن 80 كلمة)
-- ركز على البيانات المطلوبة فقط
-- لا تستخدم مبالغات زائدة أو عبارات مفرطة في الحماس
-
-اكتب الرد الآن:`;
+      prompt += `\nاكتب الرد الآن:`;
 
       // استدعاء الذكاء الاصطناعي
       const aiResponse = await this.aiAgentService.generateAIResponse(
@@ -1589,11 +1643,12 @@ ${recentMessages}
 ✅ أجب بـ "نعم" إذا:
 - الرسالة فيها الـ 3 عناصر دول مع بعض (اسم + موبايل + عنوان)
 - أو العميل قال صراحة: "أكد الطلب", "اكد الاوردر"
+- أو العميل قال رد إيجابي قصير بعد سؤال عن تأكيد الطلب: "يا ريت", "نعم", "تمام", "موافق", "عايز", "اريد"
 
 ❌ أجب بـ "لا" إذا:
-- كلمة واحدة بس: "اسكندريه", "موافق", "تمام"
+- كلمة واحدة بس بدون سياق: "اسكندريه" (بدون بيانات أخرى)
 - سؤال: "كام؟", "متوفر؟"
-- بيانات ناقصة: اسم بس، أو رقم بس، أو عنوان بس
+- بيانات ناقصة: اسم بس، أو رقم بس، أو عنوان بس (بدون باقي البيانات)
 
 مثال "نعم":
 "سلمي عبده \nاسكندريه سموحه شارع النصر برج الشروق \n01271459824"
@@ -1632,7 +1687,7 @@ ${recentMessages}
       
       const aiAnswer = aiResponse.toLowerCase().trim();
 
-      // تحسين تحليل الرد - البحث عن أي إشارة للموافقة
+      // ✅ FIX: تحسين تحليل الرد - البحث عن أي إشارة للموافقة (بما في ذلك "يا ريت")
       const isConfirming = aiAnswer === 'نعم' ||
                           aiAnswer.includes('نعم') ||
                           aiAnswer === 'yes' ||
@@ -1640,6 +1695,37 @@ ${recentMessages}
                           aiAnswer === 'موافق' ||
                           aiAnswer.includes('موافق') ||
                           (aiAnswer.includes('تأكيد') || aiAnswer.includes('تاكيد'));
+      
+      // ✅ FIX: فحص الردود الإيجابية القصيرة في سياق تأكيد الطلب
+      const messageLower = message.toLowerCase().trim();
+      const positiveShortResponses = [
+        'يا ريت', 'ياريت', 'يا ريت', 'ياريت',
+        'اه', 'ايوه', 'ايوة', 'نعم', 'تمام', 'ماشي', 'اوكي', 'ok',
+        'موافق', 'موافقة', 'اتفق', 'اتفق معاك', 'اتفق معاكي',
+        'عايز', 'عاوز', 'عايزه', 'عايزة', 'عاوزة', 'عاوزه',
+        'ابي', 'أبي', 'أريد', 'اريد', 'أعرف', 'اعرف'
+      ];
+      
+      // ✅ FIX: إذا كانت الرسالة قصيرة (أقل من 15 حرف) وتحتوي على رد إيجابي
+      // وكان آخر رد من AI يحتوي على سؤال عن تأكيد الطلب
+      if (message.length < 15 && positiveShortResponses.some(response => messageLower.includes(response))) {
+        const lastAIMessage = conversationMemory && conversationMemory.length > 0 
+          ? (conversationMemory[conversationMemory.length - 1]?.aiResponse || conversationMemory[conversationMemory.length - 1]?.response || '')
+          : '';
+        
+        const lastAIMessageLower = lastAIMessage.toLowerCase();
+        const hasOrderConfirmationQuestion = lastAIMessageLower.includes('تأكيد') || 
+                                           lastAIMessageLower.includes('تاكيد') ||
+                                           lastAIMessageLower.includes('أأكد') ||
+                                           lastAIMessageLower.includes('أكد') ||
+                                           lastAIMessageLower.includes('أوردر') ||
+                                           lastAIMessageLower.includes('الطلب');
+        
+        if (hasOrderConfirmationQuestion) {
+          console.log(`✅ [CONFIRMATION-DEBUG] Positive short response detected: "${message}" in context of order confirmation`);
+          return true;
+        }
+      }
 
       // إضافة تسجيل مفصل للتشخيص
       console.log(`🔍 [CONFIRMATION-DEBUG] Message: "${message.substring(0, 100)}"`);
@@ -1767,10 +1853,14 @@ ${recentMessages}
         );
         
         if (!dataCompleteness.isComplete) {
+          // ✅ FIX: جلب companyPrompts لاستخدام الشخصية وقواعد الاستجابة
+          const companyPrompts = await this.aiAgentService.getCompanyPrompts(companyId);
           const dataRequestResponse = await this.generateDataRequestResponse(
             dataCompleteness.missingData, 
             updatedOrderDetails,
-            companyId // Pass companyId for security
+            companyId,
+            companyPrompts,
+            conversationMemory
           );
           
           return {
@@ -1871,10 +1961,14 @@ ${recentMessages}
       );
       
       if (!dataCompleteness.isComplete) {
+        // ✅ FIX: جلب companyPrompts لاستخدام الشخصية وقواعد الاستجابة
+        const companyPrompts = await this.aiAgentService.getCompanyPrompts(companyId);
         const dataRequestResponse = await this.generateDataRequestResponse(
           dataCompleteness.missingData, 
           updatedOrderDetails,
-          companyId // Pass companyId for security
+          companyId,
+          companyPrompts,
+          conversationMemory
         );
         
         return {

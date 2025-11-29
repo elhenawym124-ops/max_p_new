@@ -7,6 +7,8 @@
 
 const aiResponseMonitor = require('../aiResponseMonitor');
 const productExtractor = require('./productExtractor');
+// ✅ استخدام الـ constants المركزي
+const { DEFAULT_AI_SETTINGS } = require('./aiAgent/aiConstants');
 
 class ResponseGenerator {
   constructor(aiAgentService) {
@@ -22,12 +24,12 @@ class ResponseGenerator {
       // الحصول على إعدادات AI من قاعدة البيانات
       const settings = await this.aiAgentService.getSettings(companyId);
       
-      // الإعدادات الأساسية
+      // ✅ الإعدادات الأساسية (استخدام constants)
       const baseConfig = {
-        temperature: settings.aiTemperature || 0.7,
-        topK: settings.aiTopK || 40,
-        topP: settings.aiTopP || 0.9,
-        maxOutputTokens: settings.aiMaxTokens || 8192, // ✅ Increased for thinking models
+        temperature: settings.aiTemperature ?? DEFAULT_AI_SETTINGS.TEMPERATURE,
+        topK: settings.aiTopK ?? DEFAULT_AI_SETTINGS.TOP_K,
+        topP: settings.aiTopP ?? DEFAULT_AI_SETTINGS.TOP_P,
+        maxOutputTokens: settings.aiMaxTokens ?? DEFAULT_AI_SETTINGS.MAX_OUTPUT_TOKENS, // ✅ استخدام constants
       };
 
       // تعديل الإعدادات حسب نوع الرسالة
@@ -79,12 +81,12 @@ class ResponseGenerator {
       
     } catch (error) {
       console.error('❌ [AI-CONFIG] Error building generation config:', error);
-      // إرجاع الإعدادات الافتراضية عند حدوث خطأ
+      // ✅ إرجاع الإعدادات الافتراضية من constants عند حدوث خطأ
       return {
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.9,
-        maxOutputTokens: 8192, // ✅ Increased for thinking models
+        temperature: DEFAULT_AI_SETTINGS.TEMPERATURE,
+        topK: DEFAULT_AI_SETTINGS.TOP_K,
+        topP: DEFAULT_AI_SETTINGS.TOP_P,
+        maxOutputTokens: DEFAULT_AI_SETTINGS.MAX_OUTPUT_TOKENS,
       };
     }
   }
@@ -1022,10 +1024,19 @@ class ResponseGenerator {
       // ✅ تجربة إصدارات API المختلفة
       for (const apiVersion of apiVersions) {
         try {
+          // ✅ إعداد thinkingConfig لتقليل استهلاك التوكنز في نماذج 2.5
+          const isThinkingModel = geminiConfig.model.includes('2.5') || geminiConfig.model.includes('thinking');
+          const thinkingConfig = isThinkingModel ? {
+            thinkingConfig: {
+              thinkingBudget: 0 // ✅ تعطيل التفكير لتوفير التوكنز (يمكن زيادته لـ 1024 أو 2048 إذا لزم الأمر)
+            }
+          } : {};
+          
           const model = genAI.getGenerativeModel({ 
             model: geminiConfig.model,
             ...(apiVersion !== 'v1' ? { apiVersion } : {}), // v1 هو الافتراضي
-            generationConfig
+            generationConfig,
+            ...thinkingConfig
           });
           
           // 🔄 Retry logic for 503 errors
@@ -1469,9 +1480,17 @@ class ResponseGenerator {
           try {
             const { GoogleGenerativeAI } = require('@google/generative-ai');
             const genAI = new GoogleGenerativeAI(backupModel.apiKey);
+            
+            // ✅ إعداد thinkingConfig لتقليل استهلاك التوكنز
+            const isThinkingModel = backupModel.model.includes('2.5') || backupModel.model.includes('thinking');
+            const thinkingConfig = isThinkingModel ? {
+              thinkingConfig: { thinkingBudget: 0 }
+            } : {};
+            
             const model = genAI.getGenerativeModel({ 
               model: backupModel.model,
-              generationConfig: await this.buildGenerationConfig(companyId, messageContext)
+              generationConfig: await this.buildGenerationConfig(companyId, messageContext),
+              ...thinkingConfig
             });
 
             // 🔄 Retry logic مع exponential backoff للنموذج البديل أيضاً
@@ -1524,6 +1543,92 @@ class ResponseGenerator {
           } catch (retryError) {
             console.error('❌ [503-FALLBACK] Backup model also failed:', retryError.message);
             
+            // ✅ FIX: التحقق من نوع الخطأ - إذا كان 429، حاول البحث عن نموذج بديل آخر
+            const is429Error = retryError.status === 429 || 
+                              retryError.message?.includes('429') || 
+                              retryError.message?.includes('Too Many Requests') ||
+                              retryError.message?.includes('quota');
+            
+            if (is429Error) {
+              console.log('🔄 [503-FALLBACK-429] Backup model failed with 429. Attempting to find another backup model...');
+              
+              // محاولة البحث عن نموذج بديل آخر (نموذج ثالث)
+              const secondBackupModel = await this.aiAgentService.findNextAvailableModel(companyId);
+              if (secondBackupModel && secondBackupModel.model !== backupModel.model) {
+                console.log(`🔄 [503-FALLBACK-429] Found second backup model: ${secondBackupModel.model}`);
+                
+                try {
+                  const { GoogleGenerativeAI } = require('@google/generative-ai');
+                  const genAI = new GoogleGenerativeAI(secondBackupModel.apiKey);
+                  
+                  // ✅ إعداد thinkingConfig لتقليل استهلاك التوكنز
+                  const isThinkingModel = secondBackupModel.model.includes('2.5') || secondBackupModel.model.includes('thinking');
+                  const thinkingConfig = isThinkingModel ? {
+                    thinkingConfig: { thinkingBudget: 0 }
+                  } : {};
+                  
+                  const model = genAI.getGenerativeModel({ 
+                    model: secondBackupModel.model,
+                    generationConfig: await this.buildGenerationConfig(companyId, messageContext),
+                    ...thinkingConfig
+                  });
+
+                  // 🔄 Retry logic مع exponential backoff للنموذج البديل الثاني
+                  let result;
+                  let response;
+                  const maxRetries = 2;
+                  const retryDelays = [1000, 2000];
+                  let lastRetryError;
+                  
+                  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                    try {
+                      result = await model.generateContent(prompt);
+                      response = result.response;
+                      break; // Success
+                    } catch (secondRetryError) {
+                      lastRetryError = secondRetryError;
+                      
+                      const isStill503 = secondRetryError.status === 503 || 
+                                       secondRetryError.message?.includes('503') || 
+                                       secondRetryError.message?.includes('Service Unavailable') ||
+                                       secondRetryError.message?.includes('overloaded');
+                      
+                      if (isStill503 && attempt < maxRetries) {
+                        const delay = retryDelays[attempt];
+                        console.log(`🔄 [RETRY-503-SECOND-BACKUP] Second backup model attempt ${attempt + 1}/${maxRetries + 1} failed with 503. Retrying after ${delay}ms...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        continue;
+                      } else {
+                        throw secondRetryError;
+                      }
+                    }
+                  }
+                  
+                  if (!response) {
+                    throw lastRetryError || new Error('Second backup model failed after retries');
+                  }
+                  
+                  const aiContent = response.text();
+
+                  // تحديث عداد الاستخدام للنموذج الجديد
+                  if (secondBackupModel.modelId) {
+                    await this.aiAgentService.updateModelUsage(secondBackupModel.modelId);
+                  }
+
+                  // تحديث النموذج النشط للجلسة
+                  this.aiAgentService.updateCurrentActiveModel(secondBackupModel);
+
+                  console.log(`✅ [503-FALLBACK-429] Successfully got response from second backup model: ${secondBackupModel.model}`);
+                  return aiContent;
+                } catch (secondBackupError) {
+                  console.error('❌ [503-FALLBACK-429] Second backup model also failed:', secondBackupError.message);
+                  // سقوط إلى الكود الأصلي لإرسال الإشعار
+                }
+              } else {
+                console.error('❌ [503-FALLBACK-429] No second backup model available');
+              }
+            }
+            
             // 🤐 النظام الصامت - إرسال إشعار فوري عند فشل النموذج البديل
             if (companyId && conversationId) {
               await aiResponseMonitor.recordAIFailure({
@@ -1534,7 +1639,8 @@ class ResponseGenerator {
                 errorMessage: `Backup model failed: ${retryError.message}`,
                 context: {
                   originalError: '503 Service Unavailable',
-                  backupModel: backupModel.model
+                  backupModel: backupModel.model,
+                  is429Error: is429Error
                 }
               });
 
@@ -1548,6 +1654,7 @@ class ResponseGenerator {
                   originalError: '503 Service Unavailable',
                   backupModel: backupModel.model,
                   errorMessage: retryError.message,
+                  is429Error: is429Error,
                   conversationId
                 }
               });
@@ -1670,7 +1777,17 @@ class ResponseGenerator {
           try {
             const { GoogleGenerativeAI } = require('@google/generative-ai');
             const genAI = new GoogleGenerativeAI(backupModel.apiKey);
-            const model = genAI.getGenerativeModel({ model: backupModel.model });
+            
+            // ✅ إعداد thinkingConfig لتقليل استهلاك التوكنز
+            const isThinkingModel = backupModel.model.includes('2.5') || backupModel.model.includes('thinking');
+            const thinkingConfig = isThinkingModel ? {
+              thinkingConfig: { thinkingBudget: 0 }
+            } : {};
+            
+            const model = genAI.getGenerativeModel({ 
+              model: backupModel.model,
+              ...thinkingConfig
+            });
 
             const result = await model.generateContent(prompt);
             const response = result.response;

@@ -44,6 +44,15 @@ router.put('/memory/settings', verifyToken.authenticateToken, aiController.updat
 router.put('/memory/cleanup', verifyToken.authenticateToken, aiController.cleanupOldMemory);
 
 // ================================
+// RESPONSE RULES (قواعد الاستجابة)
+// ================================
+
+router.get('/response-rules/config', verifyToken.authenticateToken, aiController.getResponseRulesConfig); // الحصول على تكوين القواعد
+router.get('/response-rules', verifyToken.authenticateToken, aiController.getResponseRules); // الحصول على قواعد الشركة
+router.put('/response-rules', verifyToken.authenticateToken, aiController.updateResponseRules); // تحديث القواعد
+router.post('/response-rules/reset', verifyToken.authenticateToken, aiController.resetResponseRules); // إعادة تعيين للافتراضي
+
+// ================================
 // CREATE ORDER FROM CONVERSATION
 // ================================
 

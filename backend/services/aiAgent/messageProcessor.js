@@ -716,7 +716,7 @@ class MessageProcessor {
         console.error('❌ [DEBUG] Error in getSmartResponse:', smartResponseError);
         smartResponse = { images: [], ragData: [], hasSpecificProduct: false, productInfo: null };
       }
-      const images = smartResponse.images || [];
+      let images = smartResponse.images || [];
       let ragData = smartResponse.ragData || [];
       
       // ✅ إذا كان هناك منتج من البوست أو كانت أول رسالة سؤال عن السعر، استبدال ragData
@@ -726,6 +726,49 @@ class MessageProcessor {
       } else if (isFirstMessage && isPriceQuestion && promotedProductsData.length > 0) {
         console.log(`🎯 [FIRST-PRICE] استبدال RAG data بالمنتجات الممولة (${promotedProductsData.length} منتج)`);
         ragData = promotedProductsData;
+      }
+      
+      // ✅ NEW: استخراج صور الألوان من RAG data إذا كان العميل يسأل عن الألوان
+      const colorQuestionPatterns = [
+        /(ايه|إيه|ما هي|ما هي)\s*(الألوان|الألوان المتاحة|الألوان اللي|الألوان الموجودة)/i,
+        /(عايز|أريد|أعرض|أشوف|أرى)\s*(الألوان|صور الألوان|ألوان)/i,
+        /(الألوان|الألوان المتاحة|الألوان اللي)/i
+      ];
+      
+      const isColorQuestion = colorQuestionPatterns.some(pattern => pattern.test(content));
+      
+      if (isColorQuestion && ragData && ragData.length > 0) {
+        console.log('🎨 [COLOR-IMAGES] تم اكتشاف سؤال عن الألوان - جاري استخراج صور الألوان...');
+        const colorImages = [];
+        
+        ragData.forEach(item => {
+          if (item.type === 'product' && item.metadata?.variants) {
+            const colorVariants = item.metadata.variants.filter(v => v.type === 'color');
+            
+            colorVariants.forEach(variant => {
+              if (variant.images && Array.isArray(variant.images) && variant.images.length > 0) {
+                variant.images.forEach(imageUrl => {
+                  colorImages.push({
+                    type: 'image',
+                    payload: {
+                      url: imageUrl,
+                      title: `${item.metadata.name} - اللون ${variant.name}`,
+                      variantName: variant.name
+                    }
+                  });
+                });
+              }
+            });
+          }
+        });
+        
+        if (colorImages.length > 0) {
+          // دمج صور الألوان مع الصور الموجودة (حد أقصى 10 صور)
+          images = [...images, ...colorImages].slice(0, 10);
+          console.log(`✅ [COLOR-IMAGES] تم استخراج ${colorImages.length} صورة ألوان (إجمالي: ${images.length} صورة)`);
+        } else {
+          console.log('⚠️ [COLOR-IMAGES] لم يتم العثور على صور ألوان في RAG data');
+        }
       }
       
       const hasImages = images && images.length > 0;
@@ -794,22 +837,37 @@ class MessageProcessor {
             conversationMemory: conversationMemory // ✅ إضافة conversationMemory للتحقق من المحادثات الجديدة
           }
         );
-        console.log(`✅ [DEBUG] AI response generated. Length: ${aiContent?.length || 0} characters`);
+        // ✅ التحقق من نوع الرد - قد يكون string أو كائن { content, silentReason }
+        if (aiContent && typeof aiContent === 'object' && aiContent.content === null) {
+          // الكائن يحتوي على سبب الصمت
+          console.log(`✅ [DEBUG] AI response is silent object with reason: ${aiContent.silentReason}`);
+        } else {
+          console.log(`✅ [DEBUG] AI response generated. Length: ${aiContent?.length || 0} characters`);
+        }
       } catch (aiError) {
         console.error('❌ [DEBUG] Error generating AI response:', aiError);
         throw aiError;
       }
       
-      // 🤐 النظام الصامت - إذا كان aiContent null، النظام صامت
+      // 🤐 النظام الصامت - التحقق من أن aiContent هو null أو كائن يحتوي على content: null
+      let silentReason = null;
       if (aiContent === null || aiContent === undefined) {
+        silentReason = 'AI returned null response';
         console.log('🤐 [SILENT-MODE] AI response is null - system will be silent with customer');
-        
+      } else if (aiContent && typeof aiContent === 'object' && aiContent.content === null) {
+        // الكائن يحتوي على سبب الصمت
+        silentReason = aiContent.silentReason || 'AI returned null response';
+        console.log(`🤐 [SILENT-MODE] AI response is silent - reason: ${silentReason}`);
+        aiContent = null; // تحويل إلى null للتعامل معه في باقي الكود
+      }
+      
+      if (silentReason) {
         await aiResponseMonitor.recordAIFailure({
           companyId: finalCompanyId,
           conversationId,
           customerId: senderId,
           errorType: 'null_response',
-          errorMessage: 'AI returned null response',
+          errorMessage: silentReason,
           context: {
             intent: intent,
             userMessage: content.substring(0, 100)
@@ -818,7 +876,7 @@ class MessageProcessor {
 
         return {
           success: false,
-          error: 'AI returned null response',
+          error: silentReason, // ✅ استخدام السبب الحقيقي
           content: null,
           shouldEscalate: false,
           processingTime: Date.now() - startTime,
@@ -849,7 +907,9 @@ class MessageProcessor {
       if (finalResponse && typeof finalResponse === 'string') {
         try {
           const shippingService = require('../shippingService');
-          const extractedGov = await shippingService.extractGovernorateFromMessage(content, finalCompanyId);
+          // ✅ FIX: البحث في المحادثة السابقة أيضاً
+          const conversationMemory = await memoryService.getConversationMemory(messageData.conversationId, messageData.senderId, 50, finalCompanyId);
+          const extractedGov = await shippingService.extractGovernorateFromMessage(content, finalCompanyId, conversationMemory);
           
           if (extractedGov && extractedGov.found) {
             const shippingInfo = await shippingService.findShippingInfo(extractedGov.governorate, finalCompanyId);
@@ -910,74 +970,68 @@ class MessageProcessor {
         const reason = !finalResponse ? 'empty' : isResponseTooShort ? 'too short' : 'invalid';
         console.log(`⚠️ [EMPTY-RESPONSE] AI response is ${reason} (length: ${responseLength}) - attempting retry with fallback`);
         
-        // ✅ FIX: محاولة إعادة توليد الرد مع prompt محسن وRAG data
+        // ✅ FIX: محاولة إعادة توليد الرد مع prompt محسن وRAG data وقواعد الاستجابة
         try {
+          // ✅ FIX: استخدام buildAdvancedPrompt في retry لضمان استخدام قواعد الاستجابة
+          console.log('🔄 [RETRY] Attempting retry with buildAdvancedPrompt to ensure response rules are applied...');
+          
           // ✅ FIX: استخدام RAG data إذا كان متوفراً
           const ragService = require('../ragService');
           const ragData = await ragService.retrieveRelevantData(content, intent, messageData.customerData?.id, finalCompanyId, conversationMemory);
           
-          let retryPrompt = `
-أنت مساعد ذكي لخدمة العملاء. العميل قال: "${content}"
-
-أجب على سؤاله بشكل مفيد ومهذب ومفصل. الرد يجب أن يكون واضحاً ومفيداً (على الأقل 20 حرف).
-
-تعليمات مهمة:
-- إذا كان السؤال غامضاً، اطلب توضيح بشكل واضح
-- إذا كان يسأل عن منتج غير موجود، اعتذر وأقترح منتجات بديلة
-- إذا كان يسأل عن سعر، اذكر السعر بوضوح مع اسم المنتج
-- استخدم المعلومات المتاحة في المحادثة السابقة
-- الرد يجب أن يكون مفيداً وواضحاً (لا تكتفي بكلمة واحدة مثل "لا" أو "نعم" إلا إذا كان السؤال نعم/لا مباشر)
-
-الرد:`;
-
-          // ✅ تحسين: إضافة معلومات RAG إذا كانت متوفرة (مع تقليل الطول)
-          if (ragData && ragData.length > 0) {
-            // ✅ تحسين: تقليل عدد المنتجات في retry prompt من 5 إلى 3 لتوفير tokens
-            const maxProductsInRetry = 3; // ✅ تحسين: تقليل من 5 إلى 3
-            const products = ragData.filter(item => item.type === 'product').slice(0, maxProductsInRetry);
-            const productsInfo = products.map(item => `- ${item.name}: ${item.price || 'غير متوفر'} جنيه`).join('\n');
+          // ✅ FIX: استخدام buildAdvancedPrompt بدلاً من prompt بسيط لضمان استخدام قواعد الاستجابة
+          try {
+            const retryPrompt = await this.aiAgentService.buildAdvancedPrompt(
+              content,
+              customerData,
+              companyPrompts,
+              ragData,
+              conversationMemory,
+              hasImages,
+              smartResponse,
+              {
+                ...messageData,
+                isRetry: true // ✅ Flag للدلالة على أن هذا retry
+              }
+            );
             
-            if (productsInfo) {
-              const moreProductsCount = ragData.filter(item => item.type === 'product').length - products.length;
-              const moreProductsNote = moreProductsCount > 0 ? `\n(و ${moreProductsCount} منتج آخر متاح)` : '';
-              
-              retryPrompt = `
-أنت مساعد ذكي لخدمة العملاء. العميل قال: "${content}"
-
-المنتجات المتاحة:
-${productsInfo}${moreProductsNote}
-
-أجب على سؤاله بشكل مفيد ومهذب ومفصل. الرد يجب أن يكون واضحاً ومفيداً (على الأقل 20 حرف).
-
-تعليمات مهمة:
-- استخدم المعلومات من المنتجات المتاحة أعلاه
-- إذا كان يسأل عن منتج، اذكر اسم المنتج والسعر بوضوح
-- إذا كان يسأل عن سعر، اذكر السعر بوضوح مع اسم المنتج
-- الرد يجب أن يكون مفيداً وواضحاً
-
-الرد:`;
+            console.log('✅ [RETRY] Using buildAdvancedPrompt with response rules, prompt length:', retryPrompt.length);
+            
+            // ✅ استخدام retryPrompt من buildAdvancedPrompt (يحتوي على قواعد الاستجابة)
+            const retryResponse = await this.aiAgentService.generateAIResponse(
+              retryPrompt,
+              conversationMemory,
+              true, // useRAG
+              null, // providedGeminiConfig
+              finalCompanyId,
+              conversationId,
+              { 
+                messageType: intent, 
+                isRetry: true // ✅ Flag للدلالة على أن هذا retry
+              }
+            );
+            
+            // ✅ التحقق من نوع الرد - قد يكون string أو كائن { content, silentReason }
+            let retryContent = null;
+            if (retryResponse && typeof retryResponse === 'object' && retryResponse.content !== null) {
+              retryContent = retryResponse.content;
+            } else if (typeof retryResponse === 'string') {
+              retryContent = retryResponse;
             }
-          }
-
-          const retryResponse = await this.aiAgentService.generateAIResponse(
-            retryPrompt,
-            conversationMemory,
-            false, // لا نستخدم RAG في retry (استخدمناه في prompt)
-            null,
-            finalCompanyId,
-            conversationId,
-            { messageType: intent, isRetry: true }
-          );
-
-          // ✅ FIX: التحقق من أن الرد الجديد أفضل من القديم
-          if (retryResponse && retryResponse.trim().length > 0) {
-            const retryLength = retryResponse.trim().length;
-            if (retryLength >= 10 || (!finalResponse && retryLength > 0)) {
-              finalResponse = retryResponse;
-              console.log(`✅ [RETRY-SUCCESS] Got response after retry (length: ${retryLength})`);
-            } else {
-              console.warn(`⚠️ [RETRY-SHORT] Retry response is also too short (length: ${retryLength})`);
+            
+            // ✅ FIX: التحقق من أن الرد الجديد أفضل من القديم
+            if (retryContent && retryContent.trim().length > 0) {
+              const retryLength = retryContent.trim().length;
+              if (retryLength >= 10 || (!finalResponse && retryLength > 0)) {
+                finalResponse = retryContent;
+                console.log(`✅ [RETRY-SUCCESS] Got response after retry with response rules (length: ${retryLength})`);
+              } else {
+                console.warn(`⚠️ [RETRY-SHORT] Retry response is also too short (length: ${retryLength})`);
+              }
             }
+          } catch (buildPromptError) {
+            console.error('❌ [RETRY] Error using buildAdvancedPrompt in retry:', buildPromptError);
+            console.log('⚠️ [RETRY] Falling back to simple prompt...');
           }
         } catch (retryError) {
           console.error('❌ [RETRY-FAILED] Retry also failed:', retryError.message);
@@ -1134,7 +1188,7 @@ ${productsInfo}${moreProductsNote}
 
           if (!dataCompleteness.isComplete) {
             // إنشاء رد لطلب البيانات المفقودة
-            const dataRequestResponse = await this.aiAgentService.generateDataRequestResponse(dataCompleteness.missingData, finalOrderDetails, finalCompanyId);
+            const dataRequestResponse = await this.aiAgentService.generateDataRequestResponse(dataCompleteness.missingData, finalOrderDetails, finalCompanyId, companyPrompts, conversationMemory);
 
             // إرجاع الرد لطلب البيانات بدلاً من إنشاء الطلب
             return {
@@ -1213,7 +1267,7 @@ ${productsInfo}${moreProductsNote}
               );
               
               // ✅ استخدام this.aiAgentService.generateAIResponse
-              const naturalConfirmation = await this.aiAgentService.generateAIResponse(
+              let naturalConfirmation = await this.aiAgentService.generateAIResponse(
                 orderConfirmationPrompt,
                 conversationMemory,
                 false, // no RAG needed
@@ -1223,7 +1277,15 @@ ${productsInfo}${moreProductsNote}
                 { messageType: 'order_confirmation' }
               );
               
-              // ✅ تحديث finalResponse برد الـ AI الطبيعي
+              // ✅ التحقق من نوع الرد - قد يكون string أو كائن { content, silentReason }
+              if (naturalConfirmation && typeof naturalConfirmation === 'object' && naturalConfirmation.content === null) {
+                // النظام صامت - استخدام الرد الافتراضي
+                naturalConfirmation = null;
+              } else if (typeof naturalConfirmation === 'string') {
+                // رد عادي
+              }
+              
+              // ✅ تحديث finalResponse برد الـ AI الطبيعي (أو null إذا كان النظام صامت)
               finalResponse = naturalConfirmation;
               
               console.log('✅ [ORDER-CONFIRMATION] تم إنشاء رد تأكيد طبيعي من الـ AI');
@@ -1493,7 +1555,7 @@ ${productsInfo}${moreProductsNote}
       };
 
       // إنشاء الرد مع الـ AI بدون ذاكرة
-      const aiContent = await this.aiAgentService.generateAIResponse(
+      let aiContent = await this.aiAgentService.generateAIResponse(
         imagePrompt,
         [], // ذاكرة فارغة لضمان الاستقلالية
         true,
@@ -1503,7 +1565,14 @@ ${productsInfo}${moreProductsNote}
         messageContext
       );
 
-      //console.log('✅ [IMAGE-AI] Image processed successfully with independent analysis');
+      // ✅ التحقق من نوع الرد - قد يكون string أو كائن { content, silentReason }
+      if (aiContent && typeof aiContent === 'object' && aiContent.content === null) {
+        // النظام صامت - إرجاع null
+        aiContent = null;
+      } else if (typeof aiContent === 'string') {
+        // رد عادي
+        //console.log('✅ [IMAGE-AI] Image processed successfully with independent analysis');
+      }
 
       return {
         content: aiContent,
@@ -1588,7 +1657,7 @@ ${productsInfo}${moreProductsNote}
       };
 
       // إنشاء الرد مع الـ AI مع تطبيق الأنماط
-      const aiContent = await this.aiAgentService.generateAIResponse(
+      let aiContent = await this.aiAgentService.generateAIResponse(
         prompt,
         conversationMemory,
         true,
@@ -1597,6 +1666,14 @@ ${productsInfo}${moreProductsNote}
         messageData.conversationId,
         messageContext
       );
+
+      // ✅ التحقق من نوع الرد - قد يكون string أو كائن { content, silentReason }
+      if (aiContent && typeof aiContent === 'object' && aiContent.content === null) {
+        // النظام صامت - إرجاع null
+        aiContent = null;
+      } else if (typeof aiContent === 'string') {
+        // رد عادي
+      }
 
       // الحصول على معلومات النموذج المستخدم للشركة
       const currentModel = await this.aiAgentService.getCurrentActiveModel(finalCompanyId);

@@ -518,6 +518,7 @@ async function getRoundRobinStatus(req, res) {
 
 /**
  * Get system errors and warnings
+ * ✅ تم إصلاح المشكلة: استخدام Batch Processing بدل 100+ query متوازي
  */
 async function getSystemErrors(req, res) {
   try {
@@ -527,25 +528,45 @@ async function getSystemErrors(req, res) {
     const errors = [];
     const warnings = [];
 
-    // Check for models with high quota usage - PARALLEL EXECUTION
+    // Check for models with high quota usage - BATCH PROCESSING
     const supportedModels = modelManager.getSupportedModels();
     const companies = await prisma.company.findMany({
       select: { id: true, name: true }
     });
 
-    // إنشاء جميع الـ promises بشكل متوازي
-    const checkPromises = [];
+    // ✅ FIX: معالجة بـ batches بدل كل الـ queries مرة واحدة
+    const MAX_CONCURRENT = 10; // حد أقصى 10 queries متوازية
+    const allTasks = [];
+    
     for (const modelName of supportedModels) {
       for (const company of companies) {
-        checkPromises.push(
-          modelManager.calculateTotalQuota(modelName, company.id)
-            .then(quota => ({ modelName, company, quota, error: null }))
-            .catch(error => ({ modelName, company, quota: null, error }))
-        );
+        allTasks.push({ modelName, company });
       }
     }
 
-    const checkResults = await Promise.all(checkPromises);
+    console.log(`📊 [SYSTEM-ERRORS] Processing ${allTasks.length} quota checks in batches of ${MAX_CONCURRENT}...`);
+
+    // معالجة بـ batches
+    const checkResults = [];
+    for (let i = 0; i < allTasks.length; i += MAX_CONCURRENT) {
+      const batch = allTasks.slice(i, i + MAX_CONCURRENT);
+      
+      const batchPromises = batch.map(task =>
+        modelManager.calculateTotalQuota(task.modelName, task.company.id)
+          .then(quota => ({ modelName: task.modelName, company: task.company, quota, error: null }))
+          .catch(error => ({ modelName: task.modelName, company: task.company, quota: null, error }))
+      );
+      
+      const batchResults = await Promise.all(batchPromises);
+      checkResults.push(...batchResults);
+      
+      // Log progress every 50 tasks
+      if (i > 0 && i % 50 === 0) {
+        console.log(`📊 [SYSTEM-ERRORS] Processed ${i}/${allTasks.length} quota checks...`);
+      }
+    }
+    
+    console.log(`✅ [SYSTEM-ERRORS] Completed ${checkResults.length} quota checks`);
 
     // معالجة النتائج
     for (const result of checkResults) {

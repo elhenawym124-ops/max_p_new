@@ -1397,12 +1397,20 @@ ${botResponse ? `رد البوت: "${botResponse}"` : ''}
       try {
         // محاولة أولى مع النموذج الحالي
         const genAI = new GoogleGenerativeAI(currentModel.apiKey);
+        
+        // ✅ إعداد thinkingConfig لتقليل استهلاك التوكنز
+        const isThinkingModel = currentModel.model.includes('2.5') || currentModel.model.includes('thinking');
+        const thinkingConfig = isThinkingModel ? {
+          thinkingConfig: { thinkingBudget: 0 }
+        } : {};
+        
         const model = genAI.getGenerativeModel({
           model: currentModel.model,
           generationConfig: {
             maxOutputTokens: 100,
             temperature: 0.1,
-          }
+          },
+          ...thinkingConfig
         });
 
         result = await model.generateContent(prompt);
@@ -1425,12 +1433,20 @@ ${botResponse ? `رد البوت: "${botResponse}"` : ''}
 
             try {
               const genAI = new GoogleGenerativeAI(backupModel.apiKey);
+              
+              // ✅ إعداد thinkingConfig لتقليل استهلاك التوكنز
+              const isThinkingModelBackup = backupModel.model.includes('2.5') || backupModel.model.includes('thinking');
+              const thinkingConfigBackup = isThinkingModelBackup ? {
+                thinkingConfig: { thinkingBudget: 0 }
+              } : {};
+              
               const model = genAI.getGenerativeModel({
                 model: backupModel.model,
                 generationConfig: {
                   maxOutputTokens: 100,
                   temperature: 0.1,
-                }
+                },
+                ...thinkingConfigBackup
               });
 
               result = await model.generateContent(prompt);
@@ -1820,6 +1836,13 @@ Your rating:`;
       try {
         // محاولة أولى مع النموذج الحالي
         const genAI = new GoogleGenerativeAI(currentModel.apiKey);
+        
+        // ✅ إعداد thinkingConfig لتقليل استهلاك التوكنز
+        const isThinkingModel = currentModel.model.includes('2.5') || currentModel.model.includes('thinking');
+        const thinkingConfig = isThinkingModel ? {
+          thinkingConfig: { thinkingBudget: 0 }
+        } : {};
+        
         const model = genAI.getGenerativeModel({
           model: currentModel.model,
           generationConfig: {
@@ -1827,7 +1850,8 @@ Your rating:`;
             temperature: 0.1,
             topP: 0.1,
             topK: 1
-          }
+          },
+          ...thinkingConfig
         });
 
         // timeout قصير جداً
@@ -1856,6 +1880,13 @@ Your rating:`;
 
             try {
               const genAI = new GoogleGenerativeAI(backupModel.apiKey);
+              
+              // ✅ إعداد thinkingConfig لتقليل استهلاك التوكنز
+              const isThinkingModelBackup = backupModel.model.includes('2.5') || backupModel.model.includes('thinking');
+              const thinkingConfigBackup = isThinkingModelBackup ? {
+                thinkingConfig: { thinkingBudget: 0 }
+              } : {};
+              
               const model = genAI.getGenerativeModel({
                 model: backupModel.model,
                 generationConfig: {
@@ -1863,7 +1894,8 @@ Your rating:`;
                   temperature: 0.1,
                   topP: 0.1,
                   topK: 1
-                }
+                },
+                ...thinkingConfigBackup
               });
 
               const timeoutPromise = new Promise((_, reject) => {

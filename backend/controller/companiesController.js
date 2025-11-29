@@ -775,6 +775,7 @@ const createNewCompany = async (req, res) => {
                 plan,
                 currency,
                 isActive,
+                useCentralKeys: true, // ✅ تفعيل المفاتيح المركزية افتراضياً
                 settings: JSON.stringify({
                     patternSystemEnabled: true,
                     lastSystemChange: new Date().toISOString(),

@@ -516,7 +516,7 @@ model AiSettings {
   // "all" = يرد على كل المحادثات
   replyMode       String  @default("all")
   aiTopK          Int?    @default(40)
-  aiMaxTokens     Int?    @default(1024)
+  aiMaxTokens     Int?    @default(2048) // ✅ توحيد: 2048 (متوافق مع constants)
   aiResponseStyle String? @default("balanced") // formal, casual, balanced
 
   // ✨ إعدادات السلوك الذكي
@@ -540,6 +540,9 @@ model AiSettings {
   maxConversationsPerUser Int?    @default(100)
   autoCleanup             Boolean @default(true)
   compressionEnabled      Boolean @default(false)
+
+  // ✅ قواعد الاستجابة (Response Rules Checkpoints)
+  responseRules           String? @db.Text // JSON: { responseLength, speakingStyle, dialect, rules[], customRules }
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 

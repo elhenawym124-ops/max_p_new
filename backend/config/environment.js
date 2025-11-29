@@ -14,10 +14,10 @@ const detectEnvironment = () => {
   }
   
   // فحص الـ hostname أو المنافذ
-  const port = process.env.PORT || '3007';
+  const port = process.env.PORT || '3001';
   
   // إذا كان المنفذ محلي أو في نطاق التطوير
-  if (port === '3007' || port === '3007' || process.env.NODE_ENV !== 'production') {
+  if (port === '3001' || port === '3001' || process.env.NODE_ENV !== 'production') {
     return 'development';
   }
   

@@ -50,7 +50,8 @@ const register = async (req, res) => {
         email: email,
         phone: phone || null,
         plan: 'BASIC',
-        isActive: true
+        isActive: true,
+        useCentralKeys: true // ✅ تفعيل المفاتيح المركزية افتراضياً
       }
     });
 

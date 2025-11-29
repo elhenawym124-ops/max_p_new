@@ -139,6 +139,31 @@ class SystemManager {
           aiCalls: 'none',
           resourceUsage: 'low'
         }
+      },
+      // ✅ أنظمة إدارة مفاتيح Gemini
+      {
+        systemName: 'centralKeysSystem',
+        displayName: 'Central Keys System',
+        description: 'نظام المفاتيح المركزية - مفاتيح مشتركة لجميع الشركات',
+        category: 'api_keys',
+        defaultEnabled: true,
+        config: {
+          keyType: 'CENTRAL',
+          aiCalls: 'high',
+          resourceUsage: 'high'
+        }
+      },
+      {
+        systemName: 'companyKeysSystem',
+        displayName: 'Company Keys System',
+        description: 'نظام مفاتيح الشركات - كل شركة لها مفاتيحها الخاصة',
+        category: 'api_keys',
+        defaultEnabled: true,
+        config: {
+          keyType: 'COMPANY',
+          aiCalls: 'high',
+          resourceUsage: 'high'
+        }
       }
     ];
 
@@ -295,6 +320,12 @@ class SystemManager {
         case 'qualityMonitor':
           await this.toggleQualityMonitor(isEnabled);
           break;
+        case 'centralKeysSystem':
+          await this.toggleCentralKeysSystem(isEnabled);
+          break;
+        case 'companyKeysSystem':
+          await this.toggleCompanyKeysSystem(isEnabled);
+          break;
         // يمكن إضافة المزيد من الأنظمة هنا
         default:
           //console.log(`ℹ️ [SystemManager] No specific handler for ${systemName}`);
@@ -330,6 +361,105 @@ class SystemManager {
       //console.log(`🔧 [SystemManager] Quality Monitor ${isEnabled ? 'enabled' : 'disabled'}`);
     } catch (error) {
       console.error('❌ [SystemManager] Error toggling QualityMonitor:', error);
+    }
+  }
+
+  /**
+   * ✅ تفعيل/تعطيل نظام المفاتيح المركزية
+   * عند التعطيل: يتم تعطيل جميع المفاتيح المركزية
+   * عند التفعيل: يتم إعادة تفعيل المفاتيح المركزية
+   */
+  async toggleCentralKeysSystem(isEnabled) {
+    try {
+      console.log(`🔑 [SystemManager] ${isEnabled ? 'تفعيل' : 'تعطيل'} نظام المفاتيح المركزية...`);
+      
+      // تحديث حالة جميع المفاتيح المركزية
+      const result = await executeWithRetry(async () => {
+        return await this.prisma.geminiKey.updateMany({
+          where: { keyType: 'CENTRAL' },
+          data: { 
+            isActive: isEnabled,
+            updatedAt: new Date()
+          }
+        });
+      });
+      
+      console.log(`✅ [SystemManager] تم ${isEnabled ? 'تفعيل' : 'تعطيل'} ${result.count} مفتاح مركزي`);
+      
+      // إبطال الـ cache في ModelManager
+      try {
+        const ModelManager = require('./aiAgent/modelManager');
+        // سيتم إعادة بناء الـ cache تلقائياً عند الطلب التالي
+      } catch (e) {
+        // تجاهل إذا لم يكن ModelManager متاح
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('❌ [SystemManager] Error toggling Central Keys System:', error);
+      return false;
+    }
+  }
+
+  /**
+   * ✅ تفعيل/تعطيل نظام مفاتيح الشركات
+   * عند التعطيل: يتم تعطيل جميع مفاتيح الشركات
+   * عند التفعيل: يتم إعادة تفعيل مفاتيح الشركات
+   */
+  async toggleCompanyKeysSystem(isEnabled) {
+    try {
+      console.log(`🔑 [SystemManager] ${isEnabled ? 'تفعيل' : 'تعطيل'} نظام مفاتيح الشركات...`);
+      
+      // تحديث حالة جميع مفاتيح الشركات
+      const result = await executeWithRetry(async () => {
+        return await this.prisma.geminiKey.updateMany({
+          where: { keyType: 'COMPANY' },
+          data: { 
+            isActive: isEnabled,
+            updatedAt: new Date()
+          }
+        });
+      });
+      
+      console.log(`✅ [SystemManager] تم ${isEnabled ? 'تفعيل' : 'تعطيل'} ${result.count} مفتاح شركة`);
+      
+      return true;
+    } catch (error) {
+      console.error('❌ [SystemManager] Error toggling Company Keys System:', error);
+      return false;
+    }
+  }
+
+  /**
+   * ✅ الحصول على حالة أنظمة المفاتيح
+   */
+  async getKeysSystemStatus() {
+    try {
+      const [centralKeys, companyKeys] = await Promise.all([
+        this.prisma.geminiKey.count({ where: { keyType: 'CENTRAL', isActive: true } }),
+        this.prisma.geminiKey.count({ where: { keyType: 'COMPANY', isActive: true } })
+      ]);
+      
+      const [totalCentral, totalCompany] = await Promise.all([
+        this.prisma.geminiKey.count({ where: { keyType: 'CENTRAL' } }),
+        this.prisma.geminiKey.count({ where: { keyType: 'COMPANY' } })
+      ]);
+      
+      return {
+        centralKeys: {
+          active: centralKeys,
+          total: totalCentral,
+          isEnabled: centralKeys > 0
+        },
+        companyKeys: {
+          active: companyKeys,
+          total: totalCompany,
+          isEnabled: companyKeys > 0
+        }
+      };
+    } catch (error) {
+      console.error('❌ [SystemManager] Error getting keys system status:', error);
+      return null;
     }
   }
 

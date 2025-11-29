@@ -145,7 +145,8 @@ const createNewCompany = async (req, res) => {
                 website,
                 plan,
                 currency,
-                isActive: true
+                isActive: true,
+                useCentralKeys: true // ✅ تفعيل المفاتيح المركزية افتراضياً
             }
         });
 

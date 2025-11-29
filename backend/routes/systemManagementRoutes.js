@@ -191,4 +191,27 @@ router.post('/systems/initialize', authenticateToken, requireSuperAdmin, async (
   }
 });
 
+/**
+ * GET /api/v1/admin/systems/keys-status
+ * الحصول على حالة أنظمة المفاتيح
+ */
+router.get('/systems/keys-status', authenticateToken, requireSuperAdmin, async (req, res) => {
+  try {
+    const status = await systemManager.getKeysSystemStatus();
+
+    res.json({
+      success: true,
+      data: status,
+      message: 'تم جلب حالة أنظمة المفاتيح بنجاح'
+    });
+  } catch (error) {
+    console.error('❌ [SystemManagement] Error getting keys status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في جلب حالة أنظمة المفاتيح',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;

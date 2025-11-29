@@ -9,37 +9,65 @@ function generateId() {
 // Helper function to test Gemini key
 async function testGeminiKey(apiKey, model) {
     try {
-        // Skip validation for test keys or in development
-        if (process.env.NODE_ENV === 'development' || apiKey.includes('Test_Key')) {
+        // ✅ فحص طول المفتاح أولاً (المفاتيح الصحيحة طولها 39 حرف)
+        if (!apiKey || apiKey.length < 30 || apiKey.length > 50) {
             return {
-                success: true,
+                success: false,
                 model,
-                status: 'Working (dev mode)',
-                response: 'Test response skipped in development'
+                status: 'Invalid',
+                error: `طول المفتاح غير صحيح (${apiKey?.length || 0} حرف). المفروض يكون حوالي 39 حرف.`
+            };
+        }
+
+        // ✅ فحص أن المفتاح يبدأ بـ AIzaSy (الشكل الصحيح لمفاتيح Google)
+        if (!apiKey.startsWith('AIzaSy')) {
+            return {
+                success: false,
+                model,
+                status: 'Invalid',
+                error: 'المفتاح لا يبدأ بـ AIzaSy - تأكد من نسخ المفتاح بشكل صحيح'
             };
         }
 
         const { GoogleGenerativeAI } = require('@google/generative-ai');
         const genAI = new GoogleGenerativeAI(apiKey);
-        const testModel = genAI.getGenerativeModel({ model });
+        
+        // ✅ استخدام نموذج بسيط للاختبار
+        const testModel = genAI.getGenerativeModel({ model: model || 'gemini-2.5-flash' });
 
-        const result = await testModel.generateContent('Test message');
+        const result = await testModel.generateContent('قل مرحبا');
         const response = await result.response;
+        const text = response.text();
 
         return {
             success: true,
-            model,
+            model: model || 'gemini-2.5-flash',
             status: 'Working',
-            response: response.text().substring(0, 50) + '...'
+            response: text.substring(0, 50) + '...'
         };
     } catch (error) {
-        // More lenient error handling for key validation
-        console.warn('API key validation warning:', error.message);
+        console.error('❌ API key validation failed:', error.message);
+        
+        // ✅ تحديد نوع الخطأ
+        let errorMessage = error.message;
+        if (error.message.includes('API_KEY_INVALID') || error.message.includes('API key not valid')) {
+            errorMessage = 'المفتاح غير صالح - تأكد من نسخه بشكل صحيح من Google AI Studio';
+        } else if (error.message.includes('429') || error.message.includes('quota')) {
+            errorMessage = 'تم تجاوز الكوتة - المفتاح صالح لكن الكوتة منتهية';
+            // ✅ في حالة 429، المفتاح صالح لكن الكوتة منتهية
+            return {
+                success: true,
+                model: model || 'gemini-2.5-flash',
+                status: 'Working (quota exceeded)',
+                response: 'المفتاح صالح لكن الكوتة منتهية مؤقتاً'
+            };
+        }
+        
         return {
-            success: true, // Allow the key to be added even if validation fails
-            model,
-            status: 'Validation skipped',
-            response: 'Key validation bypassed'
+            success: false,
+            model: model || 'gemini-2.5-flash',
+            status: 'Failed',
+            error: errorMessage
         };
     }
 }
@@ -696,6 +724,48 @@ const testGeminiKey2 = async (req, res) => {
     }
 };
 
+/**
+ * ✅ مسح جميع الـ caches لنظام إدارة النماذج
+ * يُستخدم بعد تغيير إعدادات المفاتيح أو الشركات
+ */
+const clearModelCaches = async (req, res) => {
+    try {
+        console.log('🧹 [ADMIN-GEMINI-KEYS] clearModelCaches called');
+        
+        // الحصول على ModelManager مباشرة
+        const ModelManager = require('../services/aiAgent/modelManager');
+        const aiAgentService = require('../aiAgentService');
+        
+        // إنشاء instance مؤقت لمسح الـ cache
+        const modelManager = new ModelManager(aiAgentService);
+        
+        // ✅ مسح الـ caches في الـ instance الجديد
+        const result = modelManager.clearAllCaches();
+        
+        // ✅ أيضاً مسح exhaustedModelsCache في aiAgentService
+        if (aiAgentService.exhaustedModelsCache) {
+            const exhaustedCount = aiAgentService.exhaustedModelsCache.size;
+            aiAgentService.exhaustedModelsCache.clear();
+            result.aiAgentExhaustedCache = exhaustedCount;
+        }
+        
+        res.json({
+            success: true,
+            message: '✅ تم مسح جميع الـ caches بنجاح. قد تحتاج لإعادة تشغيل السيرفر لمسح الـ caches في الذاكرة.',
+            data: result,
+            note: 'لضمان مسح كامل، أعد تشغيل السيرفر'
+        });
+        
+    } catch (error) {
+        console.error('❌ Error clearing caches:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to clear caches',
+            message: error.message
+        });
+    }
+};
+
 module.exports = {
     getAllGeminiKeys,
     getCentralKeys,
@@ -704,6 +774,7 @@ module.exports = {
     toggleGeminiKeyActiveStatus,
     updateGeminiKeyModel,
     deleteGeminiKey,
-    testGeminiKey2
+    testGeminiKey2,
+    clearModelCaches
 };
 

@@ -1477,7 +1477,7 @@ const updateMemorySettings = async (req, res) => {
                     aiTemperature: 0.7,
                     aiTopP: 0.9,
                     aiTopK: 40,
-                    aiMaxTokens: 1024,
+                    aiMaxTokens: 2048, // ✅ توحيد: 2048 (متوافق مع constants)
                     aiResponseStyle: 'balanced',
                     enableDiversityCheck: true,
                     enableToneAdaptation: true,
@@ -1552,6 +1552,174 @@ const cleanupOldMemory = async (req, res) => {
     }
 };
 
+// ✅ قواعد الاستجابة (Response Rules Checkpoints)
+const { getRulesConfig, getDefaultRules, validateRules } = require('../services/aiAgent/responseRulesConfig');
+
+/**
+ * الحصول على تكوين قواعد الاستجابة (للواجهة)
+ */
+const getResponseRulesConfig = async (req, res) => {
+    try {
+        res.json({
+            success: true,
+            data: {
+                config: getRulesConfig(),
+                defaults: getDefaultRules()
+            }
+        });
+    } catch (error) {
+        console.error('❌ Error getting response rules config:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to get response rules config'
+        });
+    }
+};
+
+/**
+ * الحصول على قواعد الاستجابة للشركة
+ */
+const getResponseRules = async (req, res) => {
+    try {
+        const companyId = req.user?.companyId || req.companyId;
+        if (!companyId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Company ID is required'
+            });
+        }
+
+        const aiSettings = await prisma.aiSettings.findFirst({
+            where: { companyId },
+            select: { responseRules: true }
+        });
+
+        let rules = getDefaultRules();
+        if (aiSettings?.responseRules) {
+            try {
+                rules = JSON.parse(aiSettings.responseRules);
+            } catch (e) {
+                console.warn('⚠️ Failed to parse responseRules, using defaults');
+            }
+        }
+
+        res.json({
+            success: true,
+            data: rules
+        });
+    } catch (error) {
+        console.error('❌ Error getting response rules:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to get response rules'
+        });
+    }
+};
+
+/**
+ * تحديث قواعد الاستجابة للشركة
+ */
+const updateResponseRules = async (req, res) => {
+    try {
+        const companyId = req.user?.companyId || req.companyId;
+        if (!companyId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Company ID is required'
+            });
+        }
+
+        const rules = req.body;
+
+        // التحقق من صحة القواعد
+        const validation = validateRules(rules);
+        if (!validation.valid) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid rules',
+                errors: validation.errors
+            });
+        }
+
+        // تحديث أو إنشاء الإعدادات
+        await prisma.aiSettings.upsert({
+            where: { companyId },
+            update: {
+                responseRules: JSON.stringify(rules),
+                updatedAt: new Date()
+            },
+            create: {
+                id: generateId(),
+                companyId,
+                responseRules: JSON.stringify(rules),
+                autoReplyEnabled: false
+            }
+        });
+
+        // تحديث الـ cache
+        if (aiAgentService.aiSettingsCache) {
+            const cached = aiAgentService.aiSettingsCache.get(companyId);
+            if (cached) {
+                cached.responseRules = JSON.stringify(rules);
+                aiAgentService.aiSettingsCache.set(companyId, cached);
+            }
+        }
+
+        res.json({
+            success: true,
+            message: 'Response rules updated successfully'
+        });
+    } catch (error) {
+        console.error('❌ Error updating response rules:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to update response rules'
+        });
+    }
+};
+
+/**
+ * إعادة تعيين قواعد الاستجابة للقيم الافتراضية
+ */
+const resetResponseRules = async (req, res) => {
+    try {
+        const companyId = req.user?.companyId || req.companyId;
+        if (!companyId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Company ID is required'
+            });
+        }
+
+        const defaultRules = getDefaultRules();
+
+        await prisma.aiSettings.upsert({
+            where: { companyId },
+            update: {
+                responseRules: JSON.stringify(defaultRules),
+                updatedAt: new Date()
+            },
+            create: {
+                id: generateId(),
+                companyId,
+                responseRules: JSON.stringify(defaultRules),
+                autoReplyEnabled: false
+            }
+        });
+
+        res.json({
+            success: true,
+            message: 'Response rules reset to defaults',
+            data: defaultRules
+        });
+    } catch (error) {
+        console.error('❌ Error resetting response rules:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to reset response rules'
+        });
+    }
+};
 
 module.exports = {
     updateSettings,
@@ -1576,5 +1744,10 @@ module.exports = {
     activateSystemPrompt ,
     getMemorySettings ,
     updateMemorySettings ,
-    cleanupOldMemory
+    cleanupOldMemory,
+    // ✅ قواعد الاستجابة
+    getResponseRulesConfig,
+    getResponseRules,
+    updateResponseRules,
+    resetResponseRules
 }

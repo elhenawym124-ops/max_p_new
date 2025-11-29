@@ -30,7 +30,10 @@ import {
   ExpandLess as ExpandLessIcon,
   PlayArrow as PlayArrowIcon,
   CheckCircle as CheckCircleIcon,
-  Cancel as CancelIcon
+  Cancel as CancelIcon,
+  BugReport as BugReportIcon,
+  DeleteSweep as DeleteSweepIcon,
+  Warning as WarningIcon
 } from '@mui/icons-material';
 import { buildApiUrl } from '../../utils/urlHelper';
 
@@ -79,6 +82,9 @@ const CentralKeysManagement: React.FC = () => {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [testingKey, setTestingKey] = useState<string | null>(null);
+  const [scanningKeys, setScanningKeys] = useState(false);
+  const [invalidKeys, setInvalidKeys] = useState<Set<string>>(new Set());
+  const [showInvalidOnly, setShowInvalidOnly] = useState(false);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [bulkAction, setBulkAction] = useState<'none' | 'activate' | 'deactivate' | 'delete'>('none');
   const [statistics, setStatistics] = useState({
@@ -319,19 +325,115 @@ const CentralKeysManagement: React.FC = () => {
 
       const data = await response.json();
       if (data.success) {
+        // إزالة من قائمة المفاتيح الفاسدة إذا نجح
+        setInvalidKeys(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(keyId);
+          return newSet;
+        });
         alert(`${data.message || '✅ المفتاح يعمل بشكل صحيح!'}\n\n` +
               `النموذج المستخدم: ${data.model || 'غير محدد'}\n` +
               `الحالة: ${data.status || 'غير محدد'}\n` +
               (data.response ? `عينة من الرد: ${data.response}` : ''));
       } else {
+        // إضافة للمفاتيح الفاسدة
+        setInvalidKeys(prev => new Set(prev).add(keyId));
         alert(`${data.message || '❌ المفتاح لا يعمل'}\n\nسبب الخطأ: ${data.error || 'خطأ غير معروف'}`);
       }
     } catch (error) {
       console.error('Error testing key:', error);
+      setInvalidKeys(prev => new Set(prev).add(keyId));
       alert('❌ حدث خطأ في اختبار المفتاح');
     } finally {
       setTestingKey(null);
     }
+  };
+
+  // فحص جميع المفاتيح للعثور على الفاسدة
+  const handleScanAllKeys = async () => {
+    if (!confirm(`سيتم فحص ${keys.length} مفتاح. قد يستغرق هذا بعض الوقت. هل تريد المتابعة؟`)) {
+      return;
+    }
+
+    setScanningKeys(true);
+    const newInvalidKeys = new Set<string>();
+    let scannedCount = 0;
+    let invalidCount = 0;
+
+    for (const key of keys) {
+      try {
+        const response = await fetch(buildApiUrl(`admin/gemini-keys/${key.id}/test`), {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        const data = await response.json();
+        if (!data.success) {
+          newInvalidKeys.add(key.id);
+          invalidCount++;
+        }
+      } catch (error) {
+        newInvalidKeys.add(key.id);
+        invalidCount++;
+      }
+      scannedCount++;
+      
+      // تأخير بسيط لتجنب rate limiting
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    setInvalidKeys(newInvalidKeys);
+    setScanningKeys(false);
+    
+    if (invalidCount > 0) {
+      alert(`✅ تم فحص ${scannedCount} مفتاح\n❌ تم العثور على ${invalidCount} مفتاح فاسد\n\nيمكنك الآن فلترة المفاتيح الفاسدة وحذفها`);
+      setShowInvalidOnly(true);
+    } else {
+      alert(`✅ تم فحص ${scannedCount} مفتاح\n✅ جميع المفاتيح تعمل بشكل صحيح!`);
+    }
+  };
+
+  // حذف جميع المفاتيح الفاسدة
+  const handleDeleteInvalidKeys = async () => {
+    if (invalidKeys.size === 0) {
+      alert('لا توجد مفاتيح فاسدة للحذف');
+      return;
+    }
+
+    if (!confirm(`هل أنت متأكد من حذف ${invalidKeys.size} مفتاح فاسد؟\n\n⚠️ هذا الإجراء لا يمكن التراجع عنه!`)) {
+      return;
+    }
+
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const keyId of invalidKeys) {
+      try {
+        const response = await fetch(buildApiUrl(`admin/gemini-keys/${keyId}`), {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        const data = await response.json();
+        if (data.success) {
+          successCount++;
+        } else {
+          errorCount++;
+        }
+      } catch (error) {
+        errorCount++;
+      }
+    }
+
+    alert(`✅ تم حذف ${successCount} مفتاح بنجاح${errorCount > 0 ? `\n❌ فشل حذف ${errorCount} مفتاح` : ''}`);
+    setInvalidKeys(new Set());
+    setShowInvalidOnly(false);
+    loadKeys();
   };
 
   const handleSelectKey = (keyId: string) => {
@@ -560,6 +662,44 @@ const CentralKeysManagement: React.FC = () => {
             <IconButton onClick={loadKeys} disabled={loading}>
               <RefreshIcon />
             </IconButton>
+
+            {/* زر فحص المفاتيح الفاسدة */}
+            <Tooltip title="فحص جميع المفاتيح للعثور على الفاسدة">
+              <Button
+                variant="outlined"
+                color="warning"
+                startIcon={scanningKeys ? <CircularProgress size={20} /> : <BugReportIcon />}
+                onClick={handleScanAllKeys}
+                disabled={scanningKeys || loading || keys.length === 0}
+                size="small"
+              >
+                {scanningKeys ? 'جاري الفحص...' : 'فحص المفاتيح'}
+              </Button>
+            </Tooltip>
+
+            {/* فلتر المفاتيح الفاسدة */}
+            {invalidKeys.size > 0 && (
+              <>
+                <Chip
+                  icon={<WarningIcon />}
+                  label={`${invalidKeys.size} مفتاح فاسد`}
+                  color="error"
+                  onClick={() => setShowInvalidOnly(!showInvalidOnly)}
+                  variant={showInvalidOnly ? 'filled' : 'outlined'}
+                />
+                <Tooltip title="حذف جميع المفاتيح الفاسدة">
+                  <Button
+                    variant="contained"
+                    color="error"
+                    startIcon={<DeleteSweepIcon />}
+                    onClick={handleDeleteInvalidKeys}
+                    size="small"
+                  >
+                    حذف الفاسدة
+                  </Button>
+                </Tooltip>
+              </>
+            )}
           </Box>
 
           {/* Bulk Actions */}
@@ -635,8 +775,13 @@ const CentralKeysManagement: React.FC = () => {
             </Box>
           )}
 
-          {keys.map((key) => (
-            <Card key={key.id} sx={{ borderLeft: `4px solid ${key.isActive ? '#4caf50' : '#9e9e9e'}` }}>
+          {keys
+          .filter(key => !showInvalidOnly || invalidKeys.has(key.id))
+          .map((key) => (
+            <Card key={key.id} sx={{ 
+            borderLeft: `4px solid ${invalidKeys.has(key.id) ? '#f44336' : key.isActive ? '#4caf50' : '#9e9e9e'}`,
+            bgcolor: invalidKeys.has(key.id) ? 'rgba(244, 67, 54, 0.05)' : 'inherit'
+          }}>
               <CardContent>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
                   <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, flex: 1 }}>
@@ -661,6 +806,14 @@ const CentralKeysManagement: React.FC = () => {
                         color={key.isActive ? 'success' : 'default'}
                         size="small"
                       />
+                      {invalidKeys.has(key.id) && (
+                        <Chip
+                          icon={<WarningIcon />}
+                          label="فاسد"
+                          color="error"
+                          size="small"
+                        />
+                      )}
                       <Chip
                         label={`أولوية: ${key.priority}`}
                         size="small"
