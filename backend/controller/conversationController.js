@@ -844,12 +844,12 @@ const uploadFile = async (req, res) => {
 const postReply = async (req, res) => {
   try {
     const { id } = req.params;
-    const { message, quickReplyId } = req.body;
+    const { message, quickReplyId, imageUrls } = req.body; // ✅ إضافة دعم الصور
 
-    if (!message) {
+    if (!message && (!imageUrls || imageUrls.length === 0)) {
       return res.status(400).json({
         success: false,
-        error: 'Message content is required'
+        error: 'Message content or images are required'
       });
     }
 
@@ -895,16 +895,26 @@ const postReply = async (req, res) => {
       senderName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'موظف';
     }
 
+    // ✅ FIX: دعم إرسال الصور مع النص
+    const hasImages = imageUrls && Array.isArray(imageUrls) && imageUrls.length > 0;
+    const messageType = hasImages ? 'IMAGE' : 'TEXT';
+    const attachmentsData = hasImages ? imageUrls.map(url => ({
+      type: 'image',
+      payload: { url: url },
+      url: url
+    })) : null;
+
     // 💾 حفظ الرسالة فوراً في قاعدة البيانات (INSTANT SAVE)
     let savedMessage = null;
     try {
       savedMessage = await prisma.message.create({
         data: {
-          content: message,
-          type: 'TEXT',
+          content: message || (hasImages ? `${imageUrls.length} صورة` : ''),
+          type: messageType,
           conversationId: id,
           isFromCustomer: false,
           senderId: senderId,
+          attachments: attachmentsData ? JSON.stringify(attachmentsData) : null,
           metadata: JSON.stringify({
             platform: 'facebook',
             source: 'quick_reply',
@@ -913,7 +923,9 @@ const postReply = async (req, res) => {
             isFacebookReply: true,
             timestamp: new Date(),
             instantSave: true,
-            quickReplyId: quickReplyId
+            quickReplyId: quickReplyId,
+            hasImages: hasImages,
+            imageCount: hasImages ? imageUrls.length : 0
           }),
           createdAt: new Date()
         }
@@ -1015,36 +1027,61 @@ const postReply = async (req, res) => {
 
         if (facebookPage && facebookPage.pageAccessToken) {
           try {
-            //console.log(`📤 [FACEBOOK-REPLY] Using production Facebook sending for TEXT message`);
+            // ✅ FIX: إرسال النص أولاً إذا كان موجوداً
+            if (message && message.trim().length > 0) {
+              //console.log(`📤 [FACEBOOK-REPLY] Using production Facebook sending for TEXT message`);
 
-            // 🔧 PRODUCTION: Use strict validation for sending
-            // GUARD: PSID/Page mismatch — if conversation metadata contains pageId and it's different from selected page
-            if (conversation.metadata) {
-              try {
-                const metadata = JSON.parse(conversation.metadata);
-                if (metadata.pageId && (metadata.pageId !== (actualPageId || facebookPage.pageId))) {
-                  console.warn(`⚠️ [GUARD] PSID/Page mismatch (reply): metadata.pageId=${metadata.pageId} actualPageId=${actualPageId || facebookPage.pageId}`);
-                  facebookSent = false;
-                  facebookErrorDetails = {
-                    success: false,
-                    error: 'PSID_PAGE_MISMATCH',
-                    message: 'PSID لا يخص هذه الصفحة. استخدم نفس الصفحة التي استقبلت رسالة العميل.'
-                  };
-                  throw new Error('PSID_PAGE_MISMATCH');
-                }
-              } catch (_) {}
+              // 🔧 PRODUCTION: Use strict validation for sending
+              // GUARD: PSID/Page mismatch — if conversation metadata contains pageId and it's different from selected page
+              if (conversation.metadata) {
+                try {
+                  const metadata = JSON.parse(conversation.metadata);
+                  if (metadata.pageId && (metadata.pageId !== (actualPageId || facebookPage.pageId))) {
+                    console.warn(`⚠️ [GUARD] PSID/Page mismatch (reply): metadata.pageId=${metadata.pageId} actualPageId=${actualPageId || facebookPage.pageId}`);
+                    facebookSent = false;
+                    facebookErrorDetails = {
+                      success: false,
+                      error: 'PSID_PAGE_MISMATCH',
+                      message: 'PSID لا يخص هذه الصفحة. استخدم نفس الصفحة التي استقبلت رسالة العميل.'
+                    };
+                    throw new Error('PSID_PAGE_MISMATCH');
+                  }
+                } catch (_) {}
+              }
+              const textResponse = await sendProductionFacebookMessage(
+                facebookUserId,
+                message,
+                'TEXT',
+                actualPageId || facebookPage.pageId,
+                facebookPage.pageAccessToken
+              );
+
+              facebookSent = textResponse.success;
+              facebookMessageId = textResponse.messageId;
+              facebookErrorDetails = textResponse;
             }
-            const response = await sendProductionFacebookMessage(
-              facebookUserId,
-              message,
-              'TEXT',
-              actualPageId || facebookPage.pageId,
-              facebookPage.pageAccessToken
-            );
 
-            facebookSent = response.success;
-            facebookMessageId = response.messageId; // Store Facebook message ID
-            facebookErrorDetails = response; // Store full error details
+            // ✅ FIX: إرسال الصور بعد النص
+            if (hasImages && facebookSent) {
+              for (let i = 0; i < imageUrls.length; i++) {
+                const imageUrl = imageUrls[i];
+                const imageResponse = await sendProductionFacebookMessage(
+                  facebookUserId,
+                  imageUrl,
+                  'IMAGE',
+                  actualPageId || facebookPage.pageId,
+                  facebookPage.pageAccessToken
+                );
+                
+                if (!imageResponse.success) {
+                  facebookSent = false;
+                  facebookErrorDetails = imageResponse;
+                  break;
+                }
+                // استخدام آخر messageId كـ Facebook message ID
+                facebookMessageId = imageResponse.messageId;
+              }
+            }
             //console.log(`📤 [FACEBOOK-REPLY] Facebook message sent: ${facebookSent}`);
             
             // 🔄 تحديث الرسالة المحفوظة بـ Facebook Message ID

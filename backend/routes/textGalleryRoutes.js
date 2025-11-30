@@ -11,6 +11,9 @@ router.get('/', verifyToken.authenticateToken, textGalleryController.getTextGall
 // ➕ حفظ نص جديد
 router.post('/', verifyToken.authenticateToken, textGalleryController.saveTextToGallery);
 
+// ✏️ تعديل نص
+router.put('/:id', verifyToken.authenticateToken, textGalleryController.updateTextInGallery);
+
 // 🗑️ حذف نص
 router.delete('/:id', verifyToken.authenticateToken, textGalleryController.deleteTextFromGallery);
 

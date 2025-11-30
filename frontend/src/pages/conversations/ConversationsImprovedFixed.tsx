@@ -15,7 +15,8 @@ import {
   CpuChipIcon,
   UserIcon,
   NoSymbolIcon,
-  CheckCircleIcon
+  CheckCircleIcon,
+  PencilIcon
 } from '@heroicons/react/24/outline';
 
 import useSocket from '../../hooks/useSocket';
@@ -200,13 +201,21 @@ const ConversationsImprovedFixedContent: React.FC = () => {
     id: string;
     title: string;
     content: string;
+    imageUrls?: string[];
     createdAt: Date;
   }>>([]);
   const [loadingTextGallery, setLoadingTextGallery] = useState(false);
   const [deletingTextId, setDeletingTextId] = useState<string | null>(null);
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [newTextTitle, setNewTextTitle] = useState('');
   const [newTextContent, setNewTextContent] = useState('');
+  const [newTextImages, setNewTextImages] = useState<File[]>([]);
+  const [newTextImagePreviews, setNewTextImagePreviews] = useState<string[]>([]);
+  const [editingTextImages, setEditingTextImages] = useState<File[]>([]);
+  const [editingTextImagePreviews, setEditingTextImagePreviews] = useState<string[]>([]);
+  const [editingTextExistingImages, setEditingTextExistingImages] = useState<string[]>([]);
   const [savingText, setSavingText] = useState(false);
+  const [updatingText, setUpdatingText] = useState(false);
 
   // المراجع
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1105,18 +1114,8 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       newUrl.searchParams.set('conversationId', conversationId);
       window.history.replaceState({}, '', newUrl.toString());
 
-      // تمييز كمقروءة
-      if (conversation.unreadCount > 0) {
-        // تحديث Frontend مباشرة
-        setConversations(prev => prev.map(conv =>
-          conv.id === conversationId
-            ? { ...conv, unreadCount: 0, lastCustomerMessageIsUnread: false }
-            : conv
-        ));
-        
-        // 🔧 FIX: تحديث Backend أيضاً
-        markConversationAsRead(conversationId);
-      }
+      // ✅ FIX: لا نضع علامة مقروءة عند فتح المحادثة - تبقى غير مقروءة حتى يرد المستخدم
+      // سيتم وضع علامة مقروءة فقط عند إرسال رد (في sendMessage)
     } else {
       console.warn('❌ Conversation not found in selectConversation:', conversationId);
       console.log('📝 Available conversation IDs:', conversations.map(c => c.id));
@@ -1237,10 +1236,44 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       setTimeout(() => scrollToBottom(), 100);
     }
 
+    // ✅ FIX: دعم إرسال الصور مع النص
+    const hasSelectedFiles = selectedFiles.length > 0;
+    let imageUrls: string[] = [];
+    
     try {
+
+      // إذا كانت هناك ملفات محددة، نرفعها أولاً
+      if (hasSelectedFiles) {
+        const uploadResult = await uploadService.uploadConversationFiles(selectedConversation.id, selectedFiles);
+        if (uploadResult.success && uploadResult.data) {
+          imageUrls = Array.isArray(uploadResult.data) 
+            ? uploadResult.data.map((file: any) => file.fullUrl || file.url)
+            : [uploadResult.data.fullUrl || uploadResult.data.url];
+          console.log(`📸 Uploaded ${imageUrls.length} image(s) for message`);
+          
+          // ✅ FIX: تنظيف الملفات المحددة فوراً بعد رفعها بنجاح
+          // لأنها ستُرسل مع الرسالة ولا نحتاجها بعد ذلك
+          console.log('🧹 Cleaning selected files after successful upload');
+          // تنظيف فوري لضمان إزالة المعاينة
+          setSelectedFiles([]);
+          setFilePreviews([]);
+          // إجبار React على إعادة الرسم
+          setTimeout(() => {
+            setSelectedFiles([]);
+            setFilePreviews([]);
+          }, 0);
+        } else {
+          alert('فشل رفع الصور. يرجى المحاولة مرة أخرى.');
+          return;
+        }
+      }
+
       // إرسال عبر API فقط (لتجنب التضارب)
       const url = buildApiUrl(`conversations/${selectedConversation.id}/messages`);
-      const payload = { message: messageContent };
+      const payload: any = { message: messageContent };
+      if (imageUrls.length > 0) {
+        payload.imageUrls = imageUrls;
+      }
 
       console.log('🚀 Sending message to:', url);
       console.log('📦 Payload:', payload);
@@ -1276,6 +1309,11 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       console.log('📤 API Response:', data);
 
       if (data.success) {
+        // ✅ FIX: وضع علامة مقروءة عند إرسال رد
+        if (selectedConversation && selectedConversation.unreadCount > 0) {
+          markConversationAsRead(selectedConversation.id);
+        }
+
         // ⚡ OPTIMIZATION: نشيل الرسالة المؤقتة ونستنى الـ echo من Facebook
         // الرسالة هتظهر تلقائياً لما الـ echo يجي
         console.log('⏳ Waiting for Facebook echo to save message...');
@@ -1324,15 +1362,36 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
         console.log('✅ Message sent successfully!', data);
 
+        // ✅ FIX: تنظيف الملفات المحددة بعد الإرسال الناجح (تأكيد إضافي)
+        // (تم التنظيف بالفعل بعد الرفع، لكن نؤكد مرة أخرى)
+        if (hasSelectedFiles || selectedFiles.length > 0) {
+          console.log('🧹 Final cleanup of selected files after successful send');
+          setSelectedFiles([]);
+          setFilePreviews([]);
+        }
+
         // إعادة تحميل الرسائل لضمان التزامن
         setTimeout(() => {
           loadMessages(selectedConversation.id);
         }, 500);
       } else {
+        // ✅ FIX: تنظيف الملفات حتى في حالة الفشل إذا كانت قد رُفعت
+        if (hasSelectedFiles && imageUrls.length > 0) {
+          console.log('🧹 Cleaning selected files after failed send (but files were uploaded)');
+          setSelectedFiles([]);
+          setFilePreviews([]);
+        }
         throw new Error(data.message || 'Failed to send message');
       }
     } catch (error: any) {
       console.error('❌ Error sending message:', error);
+      
+      // ✅ FIX: تنظيف الملفات في حالة الخطأ أيضاً إذا كانت قد رُفعت
+      if (hasSelectedFiles && imageUrls.length > 0) {
+        console.log('🧹 Cleaning selected files after error (but files were uploaded)');
+        setSelectedFiles([]);
+        setFilePreviews([]);
+      }
 
       // تحديث حالة الرسالة إلى خطأ
       setSelectedConversation(prev => prev ? {
@@ -2186,8 +2245,8 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   };
 
   const saveTextToGallery = async () => {
-    if (!newTextContent.trim()) {
-      alert('يرجى إدخال محتوى النص');
+    if (!newTextContent.trim() && newTextImages.length === 0) {
+      alert('يرجى إدخال محتوى النص أو إرفاق صورة على الأقل');
       return;
     }
 
@@ -2199,6 +2258,46 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         return;
       }
 
+      let imageUrls: string[] = [];
+
+      // رفع الصور إلى حافظة الصور أولاً (بنفس طريقة حافظة الصور)
+      if (newTextImages.length > 0) {
+        console.log(`📤 Uploading ${newTextImages.length} image(s) to image gallery...`);
+        
+        for (const file of newTextImages) {
+          // التحقق من أنها صورة
+          if (!file.type.startsWith('image/')) {
+            console.warn(`⚠️ Skipping non-image file: ${file.name}`);
+            continue;
+          }
+
+          // رفع وحفظ في حافظة الصور (نفس endpoint المستخدم في handleUploadToGallery)
+          const formData = new FormData();
+          formData.append('image', file);
+
+          const uploadResponse = await fetch(buildApiUrl('user/image-gallery/upload'), {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`
+            },
+            body: formData
+          });
+
+          if (uploadResponse.ok) {
+            const result = await uploadResponse.json();
+            const imageUrl = result.image?.url || result.image?.fileUrl;
+            if (imageUrl) {
+              imageUrls.push(imageUrl);
+              console.log(`✅ Image uploaded and saved to gallery: ${imageUrl}`);
+            }
+          } else {
+            const errorData = await uploadResponse.text();
+            console.error(`❌ Failed to upload ${file.name}:`, uploadResponse.status, errorData);
+          }
+        }
+      }
+
+      // حفظ النص مع روابط الصور
       const response = await fetch(buildApiUrl('user/text-gallery'), {
         method: 'POST',
         headers: {
@@ -2207,7 +2306,8 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         },
         body: JSON.stringify({
           title: newTextTitle.trim() || null,
-          content: newTextContent.trim()
+          content: newTextContent.trim() || null,
+          imageUrls: imageUrls.length > 0 ? imageUrls : undefined
         })
       });
 
@@ -2219,6 +2319,8 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         // مسح الحقول
         setNewTextTitle('');
         setNewTextContent('');
+        setNewTextImages([]);
+        setNewTextImagePreviews([]);
         alert('✅ تم حفظ النص بنجاح!');
       } else {
         const errorData = await response.json();
@@ -2230,6 +2332,97 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       alert('حدث خطأ أثناء حفظ النص');
     } finally {
       setSavingText(false);
+    }
+  };
+
+  const updateTextInGallery = async (textId: string, title: string, content: string) => {
+    if (!content.trim() && editingTextExistingImages.length === 0 && editingTextImages.length === 0) {
+      alert('يرجى إدخال محتوى النص أو إرفاق صورة على الأقل');
+      return;
+    }
+
+    try {
+      setUpdatingText(true);
+      const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+      if (!token) {
+        alert('يرجى تسجيل الدخول أولاً');
+        return;
+      }
+
+      let imageUrls: string[] = [...editingTextExistingImages];
+
+      // رفع الصور الجديدة إلى حافظة الصور
+      if (editingTextImages.length > 0) {
+        console.log(`📤 Uploading ${editingTextImages.length} new image(s) for text update...`);
+        
+        for (const file of editingTextImages) {
+          // التحقق من أنها صورة
+          if (!file.type.startsWith('image/')) {
+            console.warn(`⚠️ Skipping non-image file: ${file.name}`);
+            continue;
+          }
+
+          // رفع وحفظ في حافظة الصور
+          const formData = new FormData();
+          formData.append('image', file);
+
+          const uploadResponse = await fetch(buildApiUrl('user/image-gallery/upload'), {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`
+            },
+            body: formData
+          });
+
+          if (uploadResponse.ok) {
+            const result = await uploadResponse.json();
+            const imageUrl = result.image?.url || result.image?.fileUrl;
+            if (imageUrl) {
+              imageUrls.push(imageUrl);
+              console.log(`✅ New image uploaded and saved to gallery: ${imageUrl}`);
+            }
+          } else {
+            const errorData = await uploadResponse.text();
+            console.error(`❌ Failed to upload ${file.name}:`, uploadResponse.status, errorData);
+          }
+        }
+      }
+
+      // تحديث النص مع الصور
+      const response = await fetch(buildApiUrl(`user/text-gallery/${textId}`), {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          title: title.trim() || null,
+          content: content.trim() || null,
+          imageUrls: imageUrls.length > 0 ? imageUrls : undefined
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Text updated in gallery:', data);
+        // تحديث القائمة
+        await loadTextGallery();
+        // إغلاق وضع التعديل ومسح الحقول
+        setEditingTextId(null);
+        setEditingTextImages([]);
+        setEditingTextImagePreviews([]);
+        setEditingTextExistingImages([]);
+        alert('✅ تم تحديث النص بنجاح!');
+      } else {
+        const errorData = await response.json();
+        console.error('❌ Failed to update text:', errorData);
+        alert('فشل تحديث النص. حاول مرة أخرى.');
+      }
+    } catch (error) {
+      console.error('❌ Error updating text in gallery:', error);
+      alert('حدث خطأ أثناء تحديث النص');
+    } finally {
+      setUpdatingText(false);
     }
   };
 
@@ -2272,15 +2465,208 @@ const ConversationsImprovedFixedContent: React.FC = () => {
     }
   };
 
-  const selectTextFromGallery = (content: string) => {
+  // دالة لاختيار صور لحافظة النصوص
+  const handleTextGalleryImageSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    const validFiles: File[] = [];
+    const previews: string[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (file.size > maxSize) {
+        alert(`حجم الملف ${file.name} كبير جداً. الحد الأقصى 10 ميجابايت.`);
+        continue;
+      }
+
+      if (!file.type.startsWith('image/')) {
+        alert(`الملف ${file.name} ليس صورة. يرجى اختيار صور فقط.`);
+        continue;
+      }
+
+      validFiles.push(file);
+
+      // إنشاء معاينة للصور
+      try {
+        const preview = await uploadService.getFilePreview(file);
+        previews.push(preview);
+      } catch (error) {
+        console.error('Error creating preview:', error);
+        previews.push('');
+      }
+    }
+
+    setNewTextImages(prev => [...prev, ...validFiles]);
+    setNewTextImagePreviews(prev => [...prev, ...previews]);
+    
+    event.target.value = '';
+  };
+
+  // دالة لحذف صورة من المعاينة (للحفظ الجديد)
+  const removeTextGalleryImage = (index: number) => {
+    setNewTextImages(prev => prev.filter((_, i) => i !== index));
+    setNewTextImagePreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // دالة لاختيار صور للتعديل
+  const handleEditTextGalleryImageSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    const validFiles: File[] = [];
+    const previews: string[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (file.size > maxSize) {
+        alert(`حجم الملف ${file.name} كبير جداً. الحد الأقصى 10 ميجابايت.`);
+        continue;
+      }
+
+      if (!file.type.startsWith('image/')) {
+        alert(`الملف ${file.name} ليس صورة. يرجى اختيار صور فقط.`);
+        continue;
+      }
+
+      validFiles.push(file);
+
+      // إنشاء معاينة للصور
+      try {
+        const preview = await uploadService.getFilePreview(file);
+        previews.push(preview);
+      } catch (error) {
+        console.error('Error creating preview:', error);
+        previews.push('');
+      }
+    }
+
+    setEditingTextImages(prev => [...prev, ...validFiles]);
+    setEditingTextImagePreviews(prev => [...prev, ...previews]);
+    
+    event.target.value = '';
+  };
+
+  // دالة لحذف صورة جديدة من المعاينة (في وضع التعديل)
+  const removeEditTextGalleryNewImage = (index: number) => {
+    setEditingTextImages(prev => prev.filter((_, i) => i !== index));
+    setEditingTextImagePreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // دالة لحذف صورة موجودة (في وضع التعديل)
+  const removeEditTextGalleryExistingImage = (index: number) => {
+    setEditingTextExistingImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const selectTextFromGallery = async (text: { content: string; imageUrls?: string[] }) => {
     if (!selectedConversation) return;
     
-    setNewMessage(content);
     setShowTextGallery(false);
-    // التركيز على textarea
-    setTimeout(() => {
-      textareaRef.current?.focus();
-    }, 100);
+    
+    // إرسال النص والصور مباشرة للعميل (بنفس طريقة حافظة الصور)
+    try {
+      const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+      if (!token) {
+        alert('يرجى تسجيل الدخول أولاً');
+        return;
+      }
+
+      const messageContent = text.content?.trim() || '';
+      const imageUrls = text.imageUrls || [];
+
+      // إذا كان هناك نص فقط بدون صور، استخدم sendMessage العادي
+      if (messageContent && imageUrls.length === 0) {
+        await sendMessage(messageContent);
+        return;
+      }
+
+      setSending(true);
+
+      // 1. إرسال النص أولاً (إذا كان موجود)
+      if (messageContent) {
+        await sendMessage(messageContent);
+        // انتظار قليل قبل إرسال الصور
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+
+      // 2. إرسال كل صورة على حدة (بنفس طريقة حافظة الصور)
+      if (imageUrls.length > 0) {
+        let successCount = 0;
+        let failCount = 0;
+
+        for (let i = 0; i < imageUrls.length; i++) {
+          const imageUrl = imageUrls[i];
+          
+          // استخراج اسم الملف من الـ URL
+          const urlParts = imageUrl.split('/');
+          const filename = urlParts[urlParts.length - 1] || `image_${i + 1}.jpg`;
+
+          try {
+            console.log(`📤 Sending image ${i + 1}/${imageUrls.length} from text gallery: ${filename}`);
+            
+            // استخدام نفس endpoint المستخدم في حافظة الصور
+            const response = await fetch(buildApiUrl(`conversations/${selectedConversation.id}/send-existing-image`), {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                imageUrl: imageUrl,
+                filename: filename
+              })
+            });
+
+            if (response.ok) {
+              successCount++;
+              console.log(`✅ Image ${successCount}/${imageUrls.length} sent successfully: ${filename}`);
+              
+              // إضافة تأخير صغير بين الصور لتجنب rate limiting
+              if (i < imageUrls.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+              }
+            } else {
+              failCount++;
+              const errorData = await response.text();
+              console.error(`❌ Failed to send image ${i + 1}:`, response.status, errorData);
+            }
+          } catch (error) {
+            failCount++;
+            console.error(`❌ Error sending image ${i + 1}:`, error);
+          }
+        }
+
+        // إظهار رسالة النتيجة
+        if (successCount > 0 && failCount === 0) {
+          console.log(`✅ تم إرسال ${successCount} صورة بنجاح!`);
+        } else if (successCount > 0 && failCount > 0) {
+          alert(`⚠️ تم إرسال ${successCount} صورة بنجاح، وفشل إرسال ${failCount} صورة`);
+        } else if (failCount > 0) {
+          alert(`❌ فشل إرسال جميع الصور (${failCount} صورة)`);
+        }
+      }
+
+      // تحديث قائمة المحادثات
+      if (selectedConversation && selectedConversation.unreadCount > 0) {
+        markConversationAsRead(selectedConversation.id);
+      }
+
+      // إعادة تحميل الرسائل
+      setTimeout(() => {
+        loadMessages(selectedConversation.id);
+      }, 500);
+
+    } catch (error: any) {
+      console.error('❌ Error sending text from gallery:', error);
+      alert(`❌ فشل في إرسال الرسالة:\n\n${error.message || error.toString()}`);
+    } finally {
+      setSending(false);
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 100);
+    }
   };
 
   // وظائف الطلبات
@@ -4831,9 +5217,58 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                     rows={4}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
                   />
+                  
+                  {/* رفع الصور */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      إرفاق صور (اختياري)
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleTextGalleryImageSelect}
+                      className="hidden"
+                      id="text-gallery-image-input"
+                    />
+                    <label
+                      htmlFor="text-gallery-image-input"
+                      className="flex items-center justify-center px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg hover:border-green-500 hover:bg-green-50 cursor-pointer transition-colors"
+                    >
+                      <svg className="w-5 h-5 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      <span className="text-sm text-gray-600">اختر صور لإرفاقها مع النص</span>
+                    </label>
+                    
+                    {/* معاينة الصور المرفوعة */}
+                    {newTextImagePreviews.length > 0 && (
+                      <div className="grid grid-cols-4 gap-2 mt-2">
+                        {newTextImagePreviews.map((preview, index) => (
+                          <div key={index} className="relative group">
+                            <img
+                              src={preview}
+                              alt={`Preview ${index + 1}`}
+                              className="w-full h-24 object-cover rounded-lg border border-gray-200"
+                            />
+                            <button
+                              onClick={() => removeTextGalleryImage(index)}
+                              className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="حذف الصورة"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <button
                     onClick={saveTextToGallery}
-                    disabled={savingText || !newTextContent.trim()}
+                    disabled={savingText || (!newTextContent.trim() && newTextImages.length === 0)}
                     className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {savingText ? (
@@ -4870,36 +5305,222 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                   {savedTexts.map((text) => (
                     <div
                       key={text.id}
-                      className="p-4 bg-white border border-gray-200 rounded-lg hover:border-green-500 hover:shadow-md transition-all cursor-pointer group"
-                      onClick={() => selectTextFromGallery(text.content)}
+                      className={`p-4 bg-white border rounded-lg transition-all group ${
+                        editingTextId === text.id
+                          ? 'border-blue-500 shadow-lg'
+                          : 'border-gray-200 hover:border-green-500 hover:shadow-md cursor-pointer'
+                      }`}
+                      onClick={() => {
+                        // إذا كان في وضع التعديل، لا نختار النص للإرسال
+                        if (editingTextId !== text.id) {
+                          selectTextFromGallery({ content: text.content, imageUrls: text.imageUrls });
+                        }
+                      }}
                     >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <h5 className="font-semibold text-gray-900 mb-2">{text.title || 'بدون عنوان'}</h5>
-                          <p className="text-sm text-gray-600 whitespace-pre-wrap break-words line-clamp-3">
-                            {text.content}
-                          </p>
-                          <p className="text-xs text-gray-400 mt-2">
-                            {new Date(text.createdAt).toLocaleDateString('ar-EG', {
-                              year: 'numeric',
-                              month: 'short',
-                              day: 'numeric'
-                            })}
-                          </p>
-                        </div>
-                        <button
-                          onClick={(e) => deleteTextFromGallery(text.id, e)}
-                          disabled={deletingTextId === text.id}
-                          className="ml-3 p-2 text-red-600 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-                          title="حذف النص"
-                        >
-                          {deletingTextId === text.id ? (
-                            <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin"></div>
-                          ) : (
-                            <TrashIcon className="w-4 h-4" />
+                      {editingTextId === text.id ? (
+                        // وضع التعديل
+                        <div className="space-y-3">
+                          <input
+                            type="text"
+                            placeholder="عنوان النص (اختياري)"
+                            defaultValue={text.title || ''}
+                            id={`edit-title-${text.id}`}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <textarea
+                            placeholder="محتوى النص..."
+                            defaultValue={text.content}
+                            id={`edit-content-${text.id}`}
+                            rows={4}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          
+                          {/* الصور الموجودة */}
+                          {editingTextExistingImages.length > 0 && (
+                            <div className="space-y-2">
+                              <label className="block text-sm font-medium text-gray-700">
+                                الصور الحالية
+                              </label>
+                              <div className="grid grid-cols-4 gap-2">
+                                {editingTextExistingImages.map((imageUrl, index) => (
+                                  <div key={index} className="relative group">
+                                    <img
+                                      src={imageUrl}
+                                      alt={`Existing ${index + 1}`}
+                                      className="w-full h-24 object-cover rounded-lg border border-gray-200"
+                                    />
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        removeEditTextGalleryExistingImage(index);
+                                      }}
+                                      className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                      title="حذف الصورة"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                      </svg>
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
                           )}
-                        </button>
-                      </div>
+
+                          {/* رفع صور جديدة */}
+                          <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                              إضافة صور جديدة (اختياري)
+                            </label>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              onChange={handleEditTextGalleryImageSelect}
+                              className="hidden"
+                              id={`edit-text-gallery-image-input-${text.id}`}
+                            />
+                            <label
+                              htmlFor={`edit-text-gallery-image-input-${text.id}`}
+                              className="flex items-center justify-center px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition-colors"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <svg className="w-5 h-5 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                              </svg>
+                              <span className="text-sm text-gray-600">اختر صور لإضافتها</span>
+                            </label>
+                            
+                            {/* معاينة الصور الجديدة */}
+                            {editingTextImagePreviews.length > 0 && (
+                              <div className="grid grid-cols-4 gap-2 mt-2">
+                                {editingTextImagePreviews.map((preview, index) => (
+                                  <div key={index} className="relative group">
+                                    <img
+                                      src={preview}
+                                      alt={`New ${index + 1}`}
+                                      className="w-full h-24 object-cover rounded-lg border border-gray-200"
+                                    />
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        removeEditTextGalleryNewImage(index);
+                                      }}
+                                      className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                      title="حذف الصورة"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                      </svg>
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-end space-x-2">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingTextId(null);
+                                setEditingTextImages([]);
+                                setEditingTextImagePreviews([]);
+                                setEditingTextExistingImages([]);
+                              }}
+                              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                            >
+                              إلغاء
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const titleInput = document.getElementById(`edit-title-${text.id}`) as HTMLInputElement;
+                                const contentInput = document.getElementById(`edit-content-${text.id}`) as HTMLTextAreaElement;
+                                if (titleInput && contentInput) {
+                                  updateTextInGallery(text.id, titleInput.value, contentInput.value);
+                                }
+                              }}
+                              disabled={updatingText}
+                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                              {updatingText ? (
+                                <div className="flex items-center">
+                                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                  <span>جاري التحديث...</span>
+                                </div>
+                              ) : (
+                                'حفظ التعديلات'
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        // وضع العرض العادي
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1 min-w-0">
+                            <h5 className="font-semibold text-gray-900 mb-2">{text.title || 'بدون عنوان'}</h5>
+                            {text.content && (
+                              <p className="text-sm text-gray-600 whitespace-pre-wrap break-words line-clamp-3 mb-2">
+                                {text.content}
+                              </p>
+                            )}
+                            {/* عرض الصور المرفقة */}
+                            {text.imageUrls && text.imageUrls.length > 0 && (
+                              <div className="grid grid-cols-3 gap-2 mb-2">
+                                {text.imageUrls.map((imageUrl, index) => (
+                                  <div key={index} className="relative group">
+                                    <img
+                                      src={imageUrl}
+                                      alt={`Image ${index + 1}`}
+                                      className="w-full h-24 object-cover rounded-lg border border-gray-200"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <p className="text-xs text-gray-400 mt-2">
+                              {new Date(text.createdAt).toLocaleDateString('ar-EG', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric'
+                              })}
+                            </p>
+                          </div>
+                          <div className="flex items-center space-x-1 ml-3">
+                            {/* زر التعديل */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingTextId(text.id);
+                                // تهيئة الصور الحالية للتعديل
+                                setEditingTextExistingImages(text.imageUrls || []);
+                                setEditingTextImages([]);
+                                setEditingTextImagePreviews([]);
+                              }}
+                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="تعديل النص"
+                            >
+                              <PencilIcon className="w-4 h-4" />
+                            </button>
+                            {/* زر الحذف */}
+                            <button
+                              onClick={(e) => deleteTextFromGallery(text.id, e)}
+                              disabled={deletingTextId === text.id}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="حذف النص"
+                            >
+                              {deletingTextId === text.id ? (
+                                <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin"></div>
+                              ) : (
+                                <TrashIcon className="w-4 h-4" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -4910,10 +5531,14 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             <div className="border-t p-4 bg-gray-50">
               <div className="flex items-center justify-between">
                 <p className="text-sm text-gray-600">
-                  💡 اضغط على أي نص لإرساله مباشرة
+                  💡 اضغط على أي نص لإرساله مباشرة للعميل (مع الصور المرفقة إن وجدت)
                 </p>
                 <button
-                  onClick={() => setShowTextGallery(false)}
+                  onClick={() => {
+                    setShowTextGallery(false);
+                    setNewTextImages([]);
+                    setNewTextImagePreviews([]);
+                  }}
                   className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
                 >
                   إغلاق
