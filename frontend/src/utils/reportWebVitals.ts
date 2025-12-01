@@ -9,11 +9,13 @@ import { ReportHandler } from 'web-vitals';
 const reportWebVitals = (onPerfEntry?: ReportHandler): void => {
   if (onPerfEntry && onPerfEntry instanceof Function) {
     import('web-vitals').then(({ getCLS, getFID, getFCP, getLCP, getTTFB }) => {
-      getCLS(onPerfEntry);
-      getFID(onPerfEntry);
-      getFCP(onPerfEntry);
-      getLCP(onPerfEntry);
-      getTTFB(onPerfEntry);
+      if (typeof getCLS === 'function') getCLS(onPerfEntry);
+      if (typeof getFID === 'function') getFID(onPerfEntry);
+      if (typeof getFCP === 'function') getFCP(onPerfEntry);
+      if (typeof getLCP === 'function') getLCP(onPerfEntry);
+      if (typeof getTTFB === 'function') getTTFB(onPerfEntry);
+    }).catch((error) => {
+      console.warn('Failed to load web-vitals:', error);
     });
   }
 };
@@ -37,6 +39,3 @@ const defaultReporter: ReportHandler = (metric) => {
 
 // Export with default reporter
 export { reportWebVitals };
-
-// Auto-report with default reporter
-reportWebVitals(defaultReporter);

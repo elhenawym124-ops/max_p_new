@@ -117,6 +117,14 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   const [loadingOldMessages, setLoadingOldMessages] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [messagesPage, setMessagesPage] = useState(1);
+  
+  // حالات pagination للمحادثات
+  const [loadingMoreConversations, setLoadingMoreConversations] = useState(false);
+  const [conversationsPage, setConversationsPage] = useState(1);
+  const [hasMoreConversations, setHasMoreConversations] = useState(true);
+  const [totalConversations, setTotalConversations] = useState(0);
+  const conversationsLimit = 50; // عدد المحادثات في كل صفحة
+  
   const [uploadingFile, setUploadingFile] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [filePreviews, setFilePreviews] = useState<string[]>([]);
