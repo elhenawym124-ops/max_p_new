@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeftIcon, ArrowRightIcon } from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
-import { getCompanyId, storefrontFetch } from '../../utils/storefrontApi';
+import { getCompanyId } from '../../utils/storefrontApi';
 
 interface ProductNavigationProps {
   enabled: boolean;
@@ -71,6 +71,7 @@ const ProductNavigation: React.FC<ProductNavigationProps> = ({
       const queryString = new URLSearchParams(params).toString();
       
       // Use storefrontFetch for public routes
+      const { storefrontFetch } = await import('../../utils/storefrontApi');
       const response = await storefrontFetch(`/products/navigation?${queryString}`);
       
       if (response && response.success && response.data) {

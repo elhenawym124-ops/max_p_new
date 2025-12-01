@@ -1,5 +1,4 @@
 import { apiClient } from './apiClient';
-import { storefrontFetch } from '../utils/storefrontApi';
 
 export interface FooterSettings {
   id?: string;
@@ -48,6 +47,7 @@ class FooterSettingsService {
     try {
       // Use storefrontFetch for public routes (no authentication required)
       // Note: storefrontFetch adds /api/v1/public automatically, so we only need the endpoint
+      const { storefrontFetch } = await import('../utils/storefrontApi');
       return await storefrontFetch(`/footer-settings/${companyId}`);
     } catch (error: any) {
       // Silently handle errors - footer settings are optional

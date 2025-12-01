@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { ShoppingBagIcon } from '@heroicons/react/24/outline';
-import { storefrontFetch } from '../../utils/storefrontApi';
 
 interface SoldNumberDisplayProps {
   enabled: boolean;
@@ -39,6 +38,7 @@ const SoldNumberDisplay: React.FC<SoldNumberDisplayProps> = ({
     try {
       setLoading(true);
       // Use storefrontFetch for public routes
+      const { storefrontFetch } = await import('../../utils/storefrontApi');
       const response = await storefrontFetch(`/products/${productId}/sold-count`);
       
       if (response && response.success && response.data?.count) {
