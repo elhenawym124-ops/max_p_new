@@ -6,7 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const whatsappController = require('../controller/whatsappController');
-const { requireAuth: authenticateToken } = require('../middleware/auth');
+const verifyToken = require('../utils/verifyToken');
 const multer = require('multer');
 const path = require('path');
 
@@ -52,44 +52,44 @@ const upload = multer({
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // إنشاء جلسة جديدة
-router.post('/sessions', authenticateToken, whatsappController.createSession);
+router.post('/sessions', verifyToken.authenticateToken, whatsappController.createSession);
 
 // جلب كل الجلسات
-router.get('/sessions', authenticateToken, whatsappController.getSessions);
+router.get('/sessions', verifyToken.authenticateToken, whatsappController.getSessions);
 
 // جلب جلسة محددة
-router.get('/sessions/:id', authenticateToken, whatsappController.getSession);
+router.get('/sessions/:id', verifyToken.authenticateToken, whatsappController.getSession);
 
 // تحديث جلسة
-router.put('/sessions/:id', authenticateToken, whatsappController.updateSession);
+router.put('/sessions/:id', verifyToken.authenticateToken, whatsappController.updateSession);
 
 // حذف جلسة
-router.delete('/sessions/:id', authenticateToken, whatsappController.deleteSession);
+router.delete('/sessions/:id', verifyToken.authenticateToken, whatsappController.deleteSession);
 
 // بدء الاتصال بجلسة
-router.post('/sessions/:id/connect', authenticateToken, whatsappController.connectSession);
+router.post('/sessions/:id/connect', verifyToken.authenticateToken, whatsappController.connectSession);
 
 // قطع الاتصال بجلسة
-router.post('/sessions/:id/disconnect', authenticateToken, whatsappController.disconnectSession);
+router.post('/sessions/:id/disconnect', verifyToken.authenticateToken, whatsappController.disconnectSession);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 💬 المحادثات والرسائل
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // جلب المحادثات
-router.get('/conversations', authenticateToken, whatsappController.getConversations);
+router.get('/conversations', verifyToken.authenticateToken, whatsappController.getConversations);
 
 // جلب رسائل محادثة
-router.get('/conversations/:jid/messages', authenticateToken, whatsappController.getMessages);
+router.get('/conversations/:jid/messages', verifyToken.authenticateToken, whatsappController.getMessages);
 
 // إرسال رسالة نصية
-router.post('/messages/send', authenticateToken, whatsappController.sendMessage);
+router.post('/messages/send', verifyToken.authenticateToken, whatsappController.sendMessage);
 
 // إرسال وسائط
-router.post('/messages/send-media', authenticateToken, whatsappController.sendMedia);
+router.post('/messages/send-media', verifyToken.authenticateToken, whatsappController.sendMedia);
 
 // رفع وإرسال ملف
-router.post('/messages/upload-send', authenticateToken, upload.single('file'), async (req, res) => {
+router.post('/messages/upload-send', verifyToken.authenticateToken, upload.single('file'), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'لم يتم رفع ملف' });
@@ -132,102 +132,102 @@ router.post('/messages/upload-send', authenticateToken, upload.single('file'), a
 });
 
 // تحديد الرسائل كمقروءة
-router.post('/messages/read', authenticateToken, whatsappController.markAsRead);
+router.post('/messages/read', verifyToken.authenticateToken, whatsappController.markAsRead);
 
 // إرسال رسالة بأزرار تفاعلية
-router.post('/messages/send-buttons', authenticateToken, whatsappController.sendButtons);
+router.post('/messages/send-buttons', verifyToken.authenticateToken, whatsappController.sendButtons);
 
 // إرسال رسالة بقائمة
-router.post('/messages/send-list', authenticateToken, whatsappController.sendList);
+router.post('/messages/send-list', verifyToken.authenticateToken, whatsappController.sendList);
 
 // إرسال منتج
-router.post('/messages/send-product', authenticateToken, whatsappController.sendProduct);
+router.post('/messages/send-product', verifyToken.authenticateToken, whatsappController.sendProduct);
 
 // إرسال تفاعل (Reaction)
-router.post('/messages/send-reaction', authenticateToken, whatsappController.sendReaction);
+router.post('/messages/send-reaction', verifyToken.authenticateToken, whatsappController.sendReaction);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 👤 جهات الاتصال
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // تحديث جهة اتصال
-router.put('/contacts/:id', authenticateToken, whatsappController.updateContact);
+router.put('/contacts/:id', verifyToken.authenticateToken, whatsappController.updateContact);
 
 // ربط جهة اتصال بعميل
-router.post('/contacts/:id/link-customer', authenticateToken, whatsappController.linkCustomer);
+router.post('/contacts/:id/link-customer', verifyToken.authenticateToken, whatsappController.linkCustomer);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 📝 الردود السريعة
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // جلب الردود السريعة
-router.get('/quick-replies', authenticateToken, whatsappController.getQuickReplies);
+router.get('/quick-replies', verifyToken.authenticateToken, whatsappController.getQuickReplies);
 
 // إنشاء رد سريع
-router.post('/quick-replies', authenticateToken, whatsappController.createQuickReply);
+router.post('/quick-replies', verifyToken.authenticateToken, whatsappController.createQuickReply);
 
 // تحديث رد سريع
-router.put('/quick-replies/:id', authenticateToken, whatsappController.updateQuickReply);
+router.put('/quick-replies/:id', verifyToken.authenticateToken, whatsappController.updateQuickReply);
 
 // حذف رد سريع
-router.delete('/quick-replies/:id', authenticateToken, whatsappController.deleteQuickReply);
+router.delete('/quick-replies/:id', verifyToken.authenticateToken, whatsappController.deleteQuickReply);
 
 // إرسال رد سريع
-router.post('/quick-replies/:id/send', authenticateToken, whatsappController.sendQuickReply);
+router.post('/quick-replies/:id/send', verifyToken.authenticateToken, whatsappController.sendQuickReply);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ⚙️ الإعدادات
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // جلب الإعدادات
-router.get('/settings', authenticateToken, whatsappController.getSettings);
+router.get('/settings', verifyToken.authenticateToken, whatsappController.getSettings);
 
 // تحديث الإعدادات
-router.put('/settings', authenticateToken, whatsappController.updateSettings);
+router.put('/settings', verifyToken.authenticateToken, whatsappController.updateSettings);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 📊 الإحصائيات
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // جلب الإحصائيات
-router.get('/stats', authenticateToken, whatsappController.getStats);
+router.get('/stats', verifyToken.authenticateToken, whatsappController.getStats);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 📝 إدارة الرسائل
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // تعديل رسالة
-router.post('/messages/edit', authenticateToken, whatsappController.editMessage);
+router.post('/messages/edit', verifyToken.authenticateToken, whatsappController.editMessage);
 
 // حذف رسالة
-router.post('/messages/delete', authenticateToken, whatsappController.deleteMessage);
+router.post('/messages/delete', verifyToken.authenticateToken, whatsappController.deleteMessage);
 
 // إعادة توجيه رسالة
-router.post('/messages/forward', authenticateToken, whatsappController.forwardMessage);
+router.post('/messages/forward', verifyToken.authenticateToken, whatsappController.forwardMessage);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 💬 إدارة المحادثات
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // أرشفة محادثة
-router.post('/chats/archive', authenticateToken, whatsappController.archiveChat);
+router.post('/chats/archive', verifyToken.authenticateToken, whatsappController.archiveChat);
 
 // تثبيت محادثة
-router.post('/chats/pin', authenticateToken, whatsappController.pinChat);
+router.post('/chats/pin', verifyToken.authenticateToken, whatsappController.pinChat);
 
 // كتم محادثة
-router.post('/chats/mute', authenticateToken, whatsappController.muteChat);
+router.post('/chats/mute', verifyToken.authenticateToken, whatsappController.muteChat);
 
 // تحديد كغير مقروء
-router.post('/chats/unread', authenticateToken, whatsappController.markChatUnread);
+router.post('/chats/unread', verifyToken.authenticateToken, whatsappController.markChatUnread);
 
 // حذف محادثة
-router.post('/chats/delete', authenticateToken, whatsappController.deleteChat);
+router.post('/chats/delete', verifyToken.authenticateToken, whatsappController.deleteChat);
 
 // مسح محتوى المحادثة
-router.post('/chats/clear', authenticateToken, whatsappController.clearChat);
+router.post('/chats/clear', verifyToken.authenticateToken, whatsappController.clearChat);
 
 // Migration endpoint
-router.post('/migrate-auth', authenticateToken, whatsappController.migrateAuthToDatabase);
+router.post('/migrate-auth', verifyToken.authenticateToken, whatsappController.migrateAuthToDatabase);
 
 module.exports = router;

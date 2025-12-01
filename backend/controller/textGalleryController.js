@@ -30,14 +30,16 @@ const getTextGallery = async (req, res) => {
         userId: userId,
         companyId: companyId
       },
-      orderBy: {
-        createdAt: 'desc'
-      },
+      orderBy: [
+        { isPinned: 'desc' }, // المثبتة أولاً
+        { createdAt: 'desc' }  // ثم الأحدث
+      ],
       select: {
         id: true,
         title: true,
         content: true,
         imageUrls: true,
+        isPinned: true,
         createdAt: true,
         updatedAt: true
       }
@@ -49,6 +51,7 @@ const getTextGallery = async (req, res) => {
       title: text.title || 'بدون عنوان',
       content: text.content,
       imageUrls: text.imageUrls || [],
+      isPinned: text.isPinned || false,
       createdAt: text.createdAt,
       updatedAt: text.updatedAt
     }));
@@ -269,10 +272,81 @@ const deleteTextFromGallery = async (req, res) => {
   }
 };
 
+/**
+ * 📌 تثبيت/إلغاء تثبيت نص في الحافظة
+ * PATCH /user/text-gallery/:id/pin
+ */
+const togglePinText = async (req, res) => {
+  try {
+    // ✅ التحقق من وجود user authentication
+    const userId = req.user?.userId || req.user?.id;
+    const companyId = req.user?.companyId;
+    const textId = req.params.id;
+    const { isPinned } = req.body;
+
+    if (!userId || !companyId) {
+      return res.status(401).json({
+        success: false,
+        message: 'المصادقة مطلوبة'
+      });
+    }
+
+    // التحقق من أن النص يخص المستخدم (نستخدم select لتجنب مشاكل الحقول المفقودة)
+    const text = await prisma.textGallery.findFirst({
+      where: {
+        id: textId,
+        userId: userId,
+        companyId: companyId
+      },
+      select: {
+        id: true,
+        isPinned: true
+      }
+    });
+
+    if (!text) {
+      return res.status(404).json({
+        success: false,
+        message: 'النص غير موجود'
+      });
+    }
+
+    // تحديث حالة التثبيت
+    const updatedText = await prisma.textGallery.update({
+      where: {
+        id: textId
+      },
+      data: {
+        isPinned: isPinned === true || isPinned === 'true'
+      },
+      select: {
+        id: true,
+        isPinned: true
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: updatedText.isPinned ? 'تم تثبيت النص بنجاح' : 'تم إلغاء تثبيت النص بنجاح',
+      text: {
+        id: updatedText.id,
+        isPinned: updatedText.isPinned
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error toggling pin:', error);
+    res.status(500).json({
+      success: false,
+      message: 'حدث خطأ أثناء تحديث حالة التثبيت'
+    });
+  }
+};
+
 module.exports = {
   getTextGallery,
   saveTextToGallery,
   updateTextInGallery,
-  deleteTextFromGallery
+  deleteTextFromGallery,
+  togglePinText
 };
 

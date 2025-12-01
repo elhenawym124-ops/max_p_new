@@ -1991,7 +1991,9 @@ module.exports = {
     muteChat,
     markChatUnread,
     clearChat,
-    deleteChat
+    deleteChat , 
+
+    migrateAuthToDatabase
 };
 
 

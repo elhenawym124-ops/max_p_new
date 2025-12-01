@@ -17,5 +17,8 @@ router.put('/:id', verifyToken.authenticateToken, textGalleryController.updateTe
 // 🗑️ حذف نص
 router.delete('/:id', verifyToken.authenticateToken, textGalleryController.deleteTextFromGallery);
 
+// 📌 تثبيت/إلغاء تثبيت نص
+router.patch('/:id/pin', verifyToken.authenticateToken, textGalleryController.togglePinText);
+
 module.exports = router;
 

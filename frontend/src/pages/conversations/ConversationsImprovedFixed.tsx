@@ -202,8 +202,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
     title: string;
     content: string;
     imageUrls?: string[];
+    isPinned?: boolean;
     createdAt: Date;
   }>>([]);
+  const [pinningTextId, setPinningTextId] = useState<string | null>(null);
   const [loadingTextGallery, setLoadingTextGallery] = useState(false);
   const [deletingTextId, setDeletingTextId] = useState<string | null>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
@@ -2558,6 +2560,47 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   // دالة لحذف صورة موجودة (في وضع التعديل)
   const removeEditTextGalleryExistingImage = (index: number) => {
     setEditingTextExistingImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // دالة لتثبيت/إلغاء تثبيت نص
+  const togglePinText = async (textId: string, currentPinStatus: boolean, event: React.MouseEvent) => {
+    event.stopPropagation();
+    
+    try {
+      setPinningTextId(textId);
+      const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+      if (!token) {
+        alert('يرجى تسجيل الدخول أولاً');
+        return;
+      }
+
+      const response = await fetch(buildApiUrl(`user/text-gallery/${textId}/pin`), {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          isPinned: !currentPinStatus
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Pin status updated:', data);
+        // تحديث القائمة
+        await loadTextGallery();
+      } else {
+        const errorData = await response.json();
+        console.error('❌ Failed to toggle pin:', errorData);
+        alert('فشل تحديث حالة التثبيت. حاول مرة أخرى.');
+      }
+    } catch (error) {
+      console.error('❌ Error toggling pin:', error);
+      alert('حدث خطأ أثناء تحديث حالة التثبيت');
+    } finally {
+      setPinningTextId(null);
+    }
   };
 
   const selectTextFromGallery = async (text: { content: string; imageUrls?: string[] }) => {
@@ -5461,7 +5504,14 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                         // وضع العرض العادي
                         <div className="flex items-start justify-between">
                           <div className="flex-1 min-w-0">
-                            <h5 className="font-semibold text-gray-900 mb-2">{text.title || 'بدون عنوان'}</h5>
+                            <div className="flex items-center gap-2 mb-2">
+                              {text.isPinned && (
+                                <svg className="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
+                                  <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
+                                </svg>
+                              )}
+                              <h5 className="font-semibold text-gray-900">{text.title || 'بدون عنوان'}</h5>
+                            </div>
                             {text.content && (
                               <p className="text-sm text-gray-600 whitespace-pre-wrap break-words line-clamp-3 mb-2">
                                 {text.content}
@@ -5490,6 +5540,25 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                             </p>
                           </div>
                           <div className="flex items-center space-x-1 ml-3">
+                            {/* زر التثبيت */}
+                            <button
+                              onClick={(e) => togglePinText(text.id, text.isPinned || false, e)}
+                              disabled={pinningTextId === text.id}
+                              className={`p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed ${
+                                text.isPinned 
+                                  ? 'text-yellow-600 hover:bg-yellow-50' 
+                                  : 'text-gray-400 hover:bg-gray-50 hover:text-yellow-600'
+                              }`}
+                              title={text.isPinned ? 'إلغاء تثبيت النص' : 'تثبيت النص'}
+                            >
+                              {pinningTextId === text.id ? (
+                                <div className="w-4 h-4 border-2 border-yellow-600 border-t-transparent rounded-full animate-spin"></div>
+                              ) : (
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                  <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
+                                </svg>
+                              )}
+                            </button>
                             {/* زر التعديل */}
                             <button
                               onClick={(e) => {

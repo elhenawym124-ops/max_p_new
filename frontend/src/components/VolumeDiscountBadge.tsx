@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { TagIcon } from '@heroicons/react/24/outline';
+import { storefrontFetch } from '../utils/storefrontApi';
 
 interface VolumeDiscount {
   id: string;
@@ -29,7 +30,6 @@ const VolumeDiscountBadge: React.FC<Props> = ({ productId, quantity }) => {
   const fetchDiscounts = async () => {
     try {
       // Use storefrontFetch for public routes
-      const { storefrontFetch } = await import('../utils/storefrontApi');
       const response = await storefrontFetch(`/products/${productId}/volume-discounts`);
       
       if (response && response.success && response.data) {

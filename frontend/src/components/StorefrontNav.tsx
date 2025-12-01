@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ShoppingCartIcon, TruckIcon } from '@heroicons/react/24/outline';
-import { storefrontApi, getCompanyId } from '../utils/storefrontApi';
+import { storefrontApi, getCompanyId, storefrontFetch } from '../utils/storefrontApi';
 import { storefrontSettingsService } from '../services/storefrontSettingsService';
 import LanguageSwitcher from './storefront/LanguageSwitcher';
 
@@ -96,7 +96,6 @@ const StorefrontNav: React.FC = () => {
       if (!companyId) return;
       
       // Use storefrontFetch for public routes
-      const { storefrontFetch } = await import('../utils/storefrontApi');
       const data = await storefrontFetch(`/promotion-settings/${companyId}`);
       
       if (data.success) {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { TruckIcon, ClockIcon } from '@heroicons/react/24/outline';
-import { getCompanyId } from '../../utils/storefrontApi';
+import { getCompanyId, storefrontFetch } from '../../utils/storefrontApi';
 
 interface EstimatedDeliveryTimeProps {
   enabled: boolean;
@@ -34,7 +34,6 @@ const EstimatedDeliveryTime: React.FC<EstimatedDeliveryTimeProps> = ({
 
         // محاولة جلب وقت التوصيل من Shipping Zones
         // Use storefrontFetch to avoid authentication issues
-        const { storefrontFetch } = await import('../../utils/storefrontApi');
         const response = await storefrontFetch(`/shipping/estimate?companyId=${companyId}&city=${encodeURIComponent(city || 'القاهرة')}`);
         
         // Handle response

@@ -51,22 +51,46 @@ export default defineConfig({
   // Build configuration
   build: {
     outDir: 'dist',
-    sourcemap: true,
-    minify: 'terser',
+    sourcemap: false, // Disable sourcemaps in production to save memory
+    minify: 'esbuild', // Use esbuild instead of terser (faster, less memory)
     target: 'es2020',
+    // Increase chunk size limit
+    chunkSizeWarningLimit: 2000,
     rollupOptions: {
       output: {
-        manualChunks: {
-          // Vendor chunks
-          vendor: ['react', 'react-dom'],
-          router: ['react-router-dom'],
-          ui: ['@headlessui/react', '@heroicons/react'],
-          charts: ['chart.js', 'react-chartjs-2'],
-          utils: ['lodash', 'date-fns', 'axios'],
+        manualChunks: (id) => {
+          // More aggressive chunking to reduce memory usage
+          if (id.includes('node_modules')) {
+            // React core
+            if (id.includes('react') || id.includes('react-dom')) {
+              return 'vendor-react';
+            }
+            // Router
+            if (id.includes('react-router')) {
+              return 'vendor-router';
+            }
+            // UI libraries
+            if (id.includes('@headlessui') || id.includes('@heroicons') || id.includes('@mui')) {
+              return 'vendor-ui';
+            }
+            // Charts
+            if (id.includes('chart.js') || id.includes('recharts')) {
+              return 'vendor-charts';
+            }
+            // Utilities
+            if (id.includes('lodash') || id.includes('date-fns') || id.includes('axios')) {
+              return 'vendor-utils';
+            }
+            // Large libraries
+            if (id.includes('framer-motion') || id.includes('@craftjs')) {
+              return 'vendor-animation';
+            }
+            // Everything else from node_modules
+            return 'vendor-other';
+          }
         },
       },
     },
-    chunkSizeWarningLimit: 1000,
   },
 
   // Preview configuration
