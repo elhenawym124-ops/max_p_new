@@ -1804,6 +1804,143 @@ async function deleteChat(req, res) {
     }
 }
 
+/**
+ * نقل بيانات المصادقة من الملفات إلى قاعدة البيانات
+ * POST /api/whatsapp/migrate-auth
+ */
+async function migrateAuthToDatabase(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId } = req.body;
+
+        const path = require('path');
+        const fs = require('fs').promises;
+        const fsSync = require('fs');
+
+        const SESSIONS_DIR = path.join(__dirname, '../data/whatsapp-sessions');
+
+        async function readJsonFile(filePath) {
+            try {
+                const content = await fs.readFile(filePath, 'utf-8');
+                return JSON.parse(content);
+            } catch (error) {
+                return null;
+            }
+        }
+
+        async function migrateSession(sessionId) {
+            const sessionPath = path.join(SESSIONS_DIR, sessionId);
+            
+            if (!fsSync.existsSync(sessionPath)) {
+                return { success: false, error: 'Session directory not found' };
+            }
+
+            const files = await fs.readdir(sessionPath);
+            let authState = { creds: null, keys: {} };
+
+            // creds.json
+            const credsPath = path.join(sessionPath, 'creds.json');
+            if (fsSync.existsSync(credsPath)) {
+                const creds = await readJsonFile(credsPath);
+                if (creds) authState.creds = creds;
+            }
+
+            // sessions
+            const sessionFiles = files.filter(f => f.startsWith('session-') && f.endsWith('.json'));
+            if (sessionFiles.length > 0) {
+                authState.keys['session'] = {};
+                for (const file of sessionFiles) {
+                    const data = await readJsonFile(path.join(sessionPath, file));
+                    if (data) {
+                        const id = file.replace('session-', '').replace('.json', '');
+                        authState.keys['session'][id] = data;
+                    }
+                }
+            }
+
+            // pre-keys
+            const preKeyFiles = files.filter(f => f.startsWith('pre-key-') && f.endsWith('.json'));
+            if (preKeyFiles.length > 0) {
+                authState.keys['pre-key'] = {};
+                for (const file of preKeyFiles) {
+                    const data = await readJsonFile(path.join(sessionPath, file));
+                    if (data) {
+                        const id = file.replace('pre-key-', '').replace('.json', '');
+                        authState.keys['pre-key'][id] = data;
+                    }
+                }
+            }
+
+            // sender-keys
+            const senderKeyFiles = files.filter(f => f.startsWith('sender-key-') && f.endsWith('.json'));
+            if (senderKeyFiles.length > 0) {
+                authState.keys['sender-key'] = {};
+                for (const file of senderKeyFiles) {
+                    const data = await readJsonFile(path.join(sessionPath, file));
+                    if (data) {
+                        const id = file.replace('sender-key-', '').replace('.json', '');
+                        authState.keys['sender-key'][id] = data;
+                    }
+                }
+            }
+
+            // Save to database
+            await prisma.whatsAppSession.update({
+                where: { id: sessionId },
+                data: {
+                    authState: JSON.stringify(authState),
+                    updatedAt: new Date()
+                }
+            });
+
+            return { success: true };
+        }
+
+        if (sessionId) {
+            // Migrate single session
+            const session = await prisma.whatsAppSession.findFirst({
+                where: { id: sessionId, companyId }
+            });
+
+            if (!session) {
+                return res.status(404).json({ error: 'الجلسة غير موجودة' });
+            }
+
+            const result = await migrateSession(sessionId);
+            res.json(result);
+        } else {
+            // Migrate all sessions
+            const sessions = await prisma.whatsAppSession.findMany({
+                where: { companyId },
+                select: { id: true, name: true }
+            });
+
+            let success = 0;
+            let failed = 0;
+            const results = [];
+
+            for (const session of sessions) {
+                const result = await migrateSession(session.id);
+                if (result.success) {
+                    success++;
+                } else {
+                    failed++;
+                }
+                results.push({ sessionId: session.id, name: session.name, ...result });
+            }
+
+            res.json({
+                success: true,
+                summary: { total: sessions.length, success, failed },
+                results
+            });
+        }
+    } catch (error) {
+        console.error('❌ Migration error:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء نقل البيانات' });
+    }
+}
+
 module.exports = {
     // Sessions
     createSession,

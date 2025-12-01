@@ -227,4 +227,7 @@ router.post('/chats/delete', authenticateToken, whatsappController.deleteChat);
 // مسح محتوى المحادثة
 router.post('/chats/clear', authenticateToken, whatsappController.clearChat);
 
+// Migration endpoint
+router.post('/migrate-auth', authenticateToken, whatsappController.migrateAuthToDatabase);
+
 module.exports = router;

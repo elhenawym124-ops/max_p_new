@@ -9,7 +9,8 @@
  * - إرسال الأحداث عبر Socket.IO
  */
 
-const { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { makeWASocket, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { useDatabaseAuthState } = require('./DatabaseAuthState');
 const { Boom } = require('@hapi/boom');
 const pino = require('pino');
 const path = require('path');
@@ -60,12 +61,8 @@ async function createSession(sessionId, companyId, options = {}) {
             return activeSessions.get(sessionId);
         }
 
-        // إنشاء مجلد الجلسة
-        const sessionPath = getSessionPath(sessionId);
-        await fs.mkdir(sessionPath, { recursive: true });
-
-        // تحميل حالة المصادقة
-        const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
+        // تحميل حالة المصادقة من قاعدة البيانات
+        const { state, saveCreds } = await useDatabaseAuthState(sessionId);
 
         // الحصول على أحدث إصدار من Baileys
         const { version } = await fetchLatestBaileysVersion();
