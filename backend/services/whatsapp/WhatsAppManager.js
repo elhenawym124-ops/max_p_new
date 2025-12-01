@@ -489,8 +489,13 @@ function extractMessageContent(msg) {
 /**
  * تحديث أو إنشاء جهة اتصال
  */
-async function updateOrCreateContact(sessionId, remoteJid, msg, sock) {
+/**
+ * تحديث أو إنشاء جهة اتصال
+ */
+async function updateOrCreateContact(sessionId, remoteJid, msg, sock, options = {}) {
     try {
+        const { isOutgoing = false } = options;
+
         // Ensure JID is normalized using the same logic as MessageHandler
         const formatJid = (to) => {
             if (!to) return to;
@@ -527,6 +532,30 @@ async function updateOrCreateContact(sessionId, remoteJid, msg, sock) {
             // تجاهل الخطأ إذا لم تكن الصورة متاحة
         }
 
+        const updateData = {
+            pushName,
+            profilePicUrl,
+            lastMessageAt: new Date(),
+            totalMessages: { increment: 1 }
+        };
+
+        // Only increment unreadCount if it's an incoming message
+        if (!isOutgoing) {
+            updateData.unreadCount = { increment: 1 };
+        }
+
+        const createData = {
+            sessionId,
+            jid: remoteJid,
+            phoneNumber,
+            pushName,
+            profilePicUrl,
+            isGroup,
+            lastMessageAt: new Date(),
+            unreadCount: isOutgoing ? 0 : 1,
+            totalMessages: 1
+        };
+
         const contact = await prisma.whatsAppContact.upsert({
             where: {
                 sessionId_jid: {
@@ -534,24 +563,8 @@ async function updateOrCreateContact(sessionId, remoteJid, msg, sock) {
                     jid: remoteJid
                 }
             },
-            update: {
-                pushName,
-                profilePicUrl,
-                lastMessageAt: new Date(),
-                unreadCount: { increment: 1 },
-                totalMessages: { increment: 1 }
-            },
-            create: {
-                sessionId,
-                jid: remoteJid,
-                phoneNumber,
-                pushName,
-                profilePicUrl,
-                isGroup,
-                lastMessageAt: new Date(),
-                unreadCount: 1,
-                totalMessages: 1
-            }
+            update: updateData,
+            create: createData
         });
 
         return contact;
@@ -1116,8 +1129,8 @@ async function sendReaction(sessionId, to, key, emoji) {
 /**
  * تحديث أو إنشاء جهة اتصال (Public)
  */
-async function updateContact(sessionId, remoteJid, msg, sock) {
-    return await updateOrCreateContact(sessionId, remoteJid, msg, sock);
+async function updateContact(sessionId, remoteJid, msg, sock, options = {}) {
+    return await updateOrCreateContact(sessionId, remoteJid, msg, sock, options);
 }
 
 /**

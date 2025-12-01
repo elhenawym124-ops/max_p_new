@@ -81,7 +81,7 @@ async function sendText(sessionId, to, text, options = {}) {
         });
 
         // تحديث جهة الاتصال
-        await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock);
+        await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock, { isOutgoing: true });
 
         return savedMessage;
     } catch (error) {
@@ -127,7 +127,7 @@ async function sendImage(sessionId, to, imageSource, caption = '', options = {})
         });
 
         // تحديث جهة الاتصال
-        await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock);
+        await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock, { isOutgoing: true });
 
         return savedMessage;
     } catch (error) {
@@ -166,7 +166,7 @@ async function sendVideo(sessionId, to, videoSource, caption = '', options = {})
         });
 
         // تحديث جهة الاتصال
-        await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock);
+        await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock, { isOutgoing: true });
 
         return savedMessage;
     } catch (error) {
@@ -204,7 +204,7 @@ async function sendAudio(sessionId, to, audioSource, options = {}) {
         });
 
         // تحديث جهة الاتصال
-        await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock);
+        await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock, { isOutgoing: true });
 
         return savedMessage;
     } catch (error) {
@@ -245,7 +245,7 @@ async function sendDocument(sessionId, to, documentSource, options = {}) {
         });
 
         // تحديث جهة الاتصال
-        await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock);
+        await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock, { isOutgoing: true });
 
         return savedMessage;
     } catch (error) {
@@ -284,7 +284,7 @@ async function sendLocation(sessionId, to, latitude, longitude, options = {}) {
         });
 
         // تحديث جهة الاتصال
-        await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock);
+        await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock, { isOutgoing: true });
 
         return savedMessage;
     } catch (error) {
@@ -327,7 +327,7 @@ END:VCARD`;
         });
 
         // تحديث جهة الاتصال
-        await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock);
+        await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock, { isOutgoing: true });
 
         return savedMessage;
     } catch (error) {
@@ -429,7 +429,7 @@ async function sendButtons(sessionId, to, text, buttons, options = {}) {
         });
 
         // تحديث جهة الاتصال
-        await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock);
+        await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock, { isOutgoing: true });
 
         return savedMessage;
     } catch (error) {
@@ -501,7 +501,7 @@ async function sendList(sessionId, to, text, buttonText, sections, options = {})
         });
 
         // تحديث جهة الاتصال
-        await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock);
+        await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock, { isOutgoing: true });
 
         return savedMessage;
     } catch (error) {
@@ -571,7 +571,7 @@ async function sendProduct(sessionId, to, product, options = {}) {
         });
 
         // تحديث جهة الاتصال
-        await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock);
+        await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock, { isOutgoing: true });
 
         return savedMessage;
     } catch (error) {

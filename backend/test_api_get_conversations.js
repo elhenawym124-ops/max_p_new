@@ -5,6 +5,12 @@ const jwt = require('jsonwebtoken');
 
 const API_URL = 'http://localhost:3007/api/v1';
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+console.log('🔑 JWT_SECRET loaded:', !!process.env.JWT_SECRET);
+if (process.env.JWT_SECRET) {
+    console.log('🔑 JWT_SECRET length:', process.env.JWT_SECRET.length);
+} else {
+    console.log('⚠️ Using default secret key');
+}
 
 // User data from logs
 const user = {
