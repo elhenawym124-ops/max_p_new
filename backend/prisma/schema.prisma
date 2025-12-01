@@ -2323,6 +2323,7 @@ model TextGallery {
   companyId String
   title     String?  // عنوان النص (اختياري)
   content   String   @db.Text // محتوى النص
+  imageUrls Json?    // روابط الصور المحفوظة في حافظة الصور
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
