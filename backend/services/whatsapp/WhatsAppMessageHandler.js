@@ -720,10 +720,31 @@ async function markAsRead(sessionId, remoteJid) {
         });
 
         if (lastMessage) {
-            await session.sock.readMessages([{
-                remoteJid: jid,
-                id: lastMessage.messageId
-            }]);
+            try {
+                // محاولة استخدام readMessages أولاً
+                if (typeof session.sock.readMessages === 'function') {
+                    await session.sock.readMessages([{
+                        remoteJid: jid,
+                        id: lastMessage.messageId,
+                        fromMe: false
+                    }]);
+                }
+                // استخدام chatModify كبديل
+                else if (typeof session.sock.chatModify === 'function') {
+                    await session.sock.chatModify({
+                        markRead: true,
+                        lastMessages: [{
+                            key: {
+                                remoteJid: jid,
+                                id: lastMessage.messageId,
+                                fromMe: false
+                            }
+                        }]
+                    }, jid);
+                }
+            } catch (sockError) {
+                console.warn('⚠️ Error in socket read/modify, continuing to DB update:', sockError.message);
+            }
         }
 
         // تحديث قاعدة البيانات

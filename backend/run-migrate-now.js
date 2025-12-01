@@ -1,7 +1,4 @@
-/**
- * 🔄 Migration Script - نقل بيانات المصادقة من الملفات إلى قاعدة البيانات
- */
-
+// Direct migration execution
 const { getSharedPrismaClient } = require('./services/sharedDatabase');
 const prisma = getSharedPrismaClient();
 const path = require('path');
@@ -113,6 +110,7 @@ async function main() {
 
         if (sessions.length === 0) {
             console.log('⚠️ No sessions found in database');
+            await prisma.$disconnect();
             return;
         }
 
@@ -138,16 +136,11 @@ async function main() {
 
     } catch (error) {
         console.error('\n❌ Migration error:', error);
-        throw error; // Re-throw to allow caller to handle
     } finally {
         await prisma.$disconnect();
     }
 }
 
-// Run migration
-if (require.main === module) {
-    main();
-}
+main();
 
-module.exports = { migrateSession, main };
 

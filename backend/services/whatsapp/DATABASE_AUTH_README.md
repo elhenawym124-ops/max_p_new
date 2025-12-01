@@ -119,3 +119,4 @@ console.log(JSON.parse(session.authState).creds?.me);
 - [ ] إضافة monitoring للأداء
 - [ ] إضافة automatic backup
 
+

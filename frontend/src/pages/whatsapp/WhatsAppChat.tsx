@@ -19,7 +19,8 @@ import {
   LocationOn as LocationIcon, SmartToy as AIIcon, Person as PersonIcon,
   Archive as ArchiveIcon, Delete as DeleteIcon, PushPin as PinIcon,
   VolumeOff as MuteIcon, Reply as ReplyIcon, ContentCopy as CopyIcon,
-  Forward as ForwardIcon, Refresh as RefreshIcon, Close as CloseIcon
+  Forward as ForwardIcon, Refresh as RefreshIcon, Close as CloseIcon,
+  GetApp as DownloadIcon, Block as BlockIcon, Report as ReportIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { format, isToday, isYesterday } from 'date-fns';
@@ -128,6 +129,16 @@ const WhatsAppChat: React.FC = () => {
   const [messageInfoDialogOpen, setMessageInfoDialogOpen] = useState(false);
   const [selectedMessageForInfo, setSelectedMessageForInfo] = useState<Message | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
+  const loadContactsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [notificationSettings, setNotificationSettings] = useState<{
+    notificationSound: boolean;
+    browserNotifications: boolean;
+  }>({
+    notificationSound: true,
+    browserNotifications: true
+  });
+  const [chatFilter, setChatFilter] = useState('all'); // 'all', 'unread', 'groups'
 
   // Helper for Date Separators
   const shouldShowDateSeparator = (currentMessage: Message, previousMessage: Message | undefined) => {
@@ -148,7 +159,29 @@ const WhatsAppChat: React.FC = () => {
   useEffect(() => {
     loadSessions();
     loadQuickReplies();
+    loadNotificationSettings();
+    requestNotificationPermission();
   }, []);
+
+  const loadContacts = useCallback(async () => {
+    if (!selectedSession) return;
+    try {
+      const res = await api.get('/whatsapp/conversations', { params: { sessionId: selectedSession } });
+      setContacts(res.data.conversations || []);
+    } catch (error) {
+      console.error(error);
+    }
+  }, [selectedSession]);
+
+  // Debounced version to avoid excessive API calls
+  const debouncedLoadContacts = useCallback(() => {
+    if (loadContactsTimeoutRef.current) {
+      clearTimeout(loadContactsTimeoutRef.current);
+    }
+    loadContactsTimeoutRef.current = setTimeout(() => {
+      loadContacts();
+    }, 500);
+  }, [loadContacts]);
 
   // Socket Listeners
   useEffect(() => {
@@ -168,29 +201,141 @@ const WhatsAppChat: React.FC = () => {
       const msgJid = normalizeJid(message.remoteJid);
       const currentJid = selectedContact ? normalizeJid(selectedContact.jid) : '';
 
-      if (selectedContact && msgJid === currentJid && sessionId === selectedSession) {
-        setMessages(prev => [...prev, message]);
+      // Only process incoming messages (not sent by us)
+      if (message.fromMe) {
+        return;
+      }
+
+      const isCurrentChat = selectedContact && msgJid === currentJid && sessionId === selectedSession;
+
+      if (isCurrentChat) {
+        setMessages(prev => {
+          // Prevent duplicates
+          if (prev.some(m => m.messageId === message.messageId)) return prev;
+          return [...prev, message];
+        });
         markAsRead();
-        // Play sound if chat is open
-        try {
-          const audio = new Audio('/assets/sounds/notification.mp3'); // Ensure this path exists or use a default
-          audio.play().catch(e => console.log('Audio play failed', e));
-        } catch (e) {
-          // Ignore audio errors
+        // Play sound if enabled and chat is open (quieter notification)
+        if (notificationSettings.notificationSound) {
+          playNotificationSound();
         }
       } else {
         // Show notification if chat is not open or different contact
-        if (sessionId === selectedSession) { // Only for current session
-          // You might want to use a toast library here if available, e.g. notistack
-          // enqueueSnackbar(`New message from ${message.pushName || message.remoteJid}`, { variant: 'info' });
-          try {
-            const audio = new Audio('/assets/sounds/notification.mp3');
-            audio.play().catch(e => console.log('Audio play failed', e));
-          } catch (e) { }
+        if (sessionId === selectedSession) {
+          const contactName = contacts.find(c => normalizeJid(c.jid) === msgJid)?.name ||
+            contacts.find(c => normalizeJid(c.jid) === msgJid)?.pushName ||
+            message.remoteJid.split('@')[0];
+          const messageText = message.content
+            ? (message.content.length > 50 ? message.content.substring(0, 50) + '...' : message.content)
+            : (message.messageType === 'IMAGE' ? '📷 صورة' :
+              message.messageType === 'VIDEO' ? '🎥 فيديو' :
+                message.messageType === 'AUDIO' ? '🎵 صوت' :
+                  message.messageType === 'DOCUMENT' ? '📎 ملف' : 'رسالة جديدة');
+
+          // Show in-app notification (snackbar) - always show this
+          enqueueSnackbar(
+            messageText,
+            {
+              variant: 'info',
+              anchorOrigin: {
+                vertical: 'top',
+                horizontal: 'left',
+              },
+              autoHideDuration: 5000,
+              action: (key) => (
+                <Button
+                  size="small"
+                  onClick={() => {
+                    // Find and select the contact
+                    const contact = contacts.find(c => normalizeJid(c.jid) === msgJid);
+                    if (contact) {
+                      setSelectedContact(contact);
+                    }
+                  }}
+                >
+                  فتح المحادثة
+                </Button>
+              ),
+            }
+          );
+
+          // Play sound if enabled
+          if (notificationSettings.notificationSound) {
+            playNotificationSound();
+          }
+
+          // Show browser notification if enabled
+          if (notificationSettings.browserNotifications) {
+            showBrowserNotification(
+              `رسالة جديدة من ${contactName}`,
+              messageText
+            );
+          }
         }
       }
-      // Update contact list logic (simplified)
-      loadContacts();
+      // Update contact list with debouncing
+      debouncedLoadContacts();
+    };
+
+    const handleNotification = (data: any) => {
+      const { contactName, message, messageType, soundEnabled, notificationsEnabled, sessionId } = data;
+
+      console.log('🔔 [NOTIFICATION] Received notification:', { contactName, messageType, soundEnabled, notificationsEnabled });
+
+      // Prepare message text
+      const messageText = message ||
+        (messageType === 'IMAGE' ? '📷 صورة' :
+          messageType === 'VIDEO' ? '🎥 فيديو' :
+            messageType === 'AUDIO' ? '🎵 صوت' :
+              messageType === 'DOCUMENT' ? '📎 ملف' : 'رسالة جديدة');
+
+      // Show in-app notification (snackbar) - always show this
+      enqueueSnackbar(
+        messageText,
+        {
+          variant: 'info',
+          anchorOrigin: {
+            vertical: 'top',
+            horizontal: 'left',
+          },
+          autoHideDuration: 5000,
+          action: (key) => (
+            <Button
+              size="small"
+              onClick={() => {
+                // Navigate to the chat if not already there
+                if (sessionId && sessionId !== selectedSession) {
+                  setSelectedSession(sessionId);
+                }
+                // Find and select the contact
+                const contact = contacts.find(c =>
+                  c.name === contactName || c.pushName === contactName
+                );
+                if (contact) {
+                  setSelectedContact(contact);
+                }
+              }}
+            >
+              فتح المحادثة
+            </Button>
+          ),
+        }
+      );
+
+      // Show browser notification if enabled (use data from server or local settings)
+      const shouldShowNotification = notificationsEnabled !== undefined ? notificationsEnabled : notificationSettings.browserNotifications;
+      if (shouldShowNotification) {
+        showBrowserNotification(
+          `رسالة جديدة من ${contactName}`,
+          messageText
+        );
+      }
+
+      // Play sound if enabled (use data from server or local settings)
+      const shouldPlaySound = soundEnabled !== undefined ? soundEnabled : notificationSettings.notificationSound;
+      if (shouldPlaySound) {
+        playNotificationSound();
+      }
     };
 
     const handleMessageStatus = (data: any) => {
@@ -205,33 +350,58 @@ const WhatsAppChat: React.FC = () => {
       const currentJid = selectedContact ? normalizeJid(selectedContact.jid) : '';
 
       if (selectedContact && msgJid === currentJid && sessionId === selectedSession) {
-        // Only add if not already present (to avoid duplicates if API response adds it too)
+        // Only add if not already present (to avoid duplicates)
         setMessages(prev => {
           if (prev.some(m => m.messageId === message.messageId)) return prev;
           return [...prev, message];
         });
       }
-      // Update contact list to show new last message/timestamp
-      loadContacts();
+      // Update contact list with debouncing
+      debouncedLoadContacts();
     };
 
     socket.on('whatsapp:message:new', handleNewMessage);
     socket.on('whatsapp:message:status', handleMessageStatus);
     socket.on('whatsapp:message:sent', handleMessageSent);
+    socket.on('whatsapp:notification:new', (data) => {
+      console.log('🔔 [FRONTEND] Received whatsapp:notification:new event:', data);
+      handleNotification(data);
+    });
+    socket.on('user_typing', handleUserTyping);
+    socket.on('user_stopped_typing', handleUserStoppedTyping);
 
     return () => {
       socket.off('whatsapp:message:new', handleNewMessage);
       socket.off('whatsapp:message:status', handleMessageStatus);
       socket.off('whatsapp:message:sent', handleMessageSent);
+      socket.off('whatsapp:notification:new', handleNotification);
+      socket.off('user_typing', handleUserTyping);
+      socket.off('user_stopped_typing', handleUserStoppedTyping);
     };
-  }, [socket, selectedContact, selectedSession]);
+
+    function handleUserTyping(data: any) {
+      if (selectedContact && data.jid === selectedContact.jid) {
+        setTypingUsers(prev => new Set(prev).add(data.jid));
+      }
+    }
+
+    function handleUserStoppedTyping(data: any) {
+      if (data.jid) {
+        setTypingUsers(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(data.jid);
+          return newSet;
+        });
+      }
+    }
+  }, [socket, selectedContact, selectedSession, notificationSettings, contacts, debouncedLoadContacts]);
 
   // Load contacts when session changes
   useEffect(() => {
     if (selectedSession) {
       loadContacts();
     }
-  }, [selectedSession]);
+  }, [selectedSession, loadContacts]);
 
   // Load messages when contact changes
   useEffect(() => {
@@ -261,15 +431,6 @@ const WhatsAppChat: React.FC = () => {
     }
   };
 
-  const loadContacts = async () => {
-    try {
-      const res = await api.get('/whatsapp/conversations', { params: { sessionId: selectedSession } });
-      setContacts(res.data.conversations || []);
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
   const loadMessages = async () => {
     if (!selectedContact || !selectedSession) return;
     setLoadingMessages(true);
@@ -296,13 +457,13 @@ const WhatsAppChat: React.FC = () => {
     if (!newMessage.trim() || !selectedContact || !selectedSession || sending) return;
     setSending(true);
     try {
-      const res = await api.post('/whatsapp/messages/send', {
+      await api.post('/whatsapp/messages/send', {
         sessionId: selectedSession,
         to: selectedContact.jid,
         text: newMessage,
         quotedMessageId: replyingTo?.messageId,
       });
-      setMessages(prev => [...prev, res.data.message]);
+      // Don't add message manually - socket event will handle it
       setNewMessage('');
       setReplyingTo(null);
     } catch (error: any) {
@@ -348,23 +509,23 @@ const WhatsAppChat: React.FC = () => {
       return;
     }
     if (!window.confirm('هل أنت متأكد من حذف هذه المحادثة؟')) return;
-    
+
     try {
-      const response = await api.post('/whatsapp/chats/delete', { 
-        sessionId: selectedSession, 
-        jid: contact.jid 
+      const response = await api.post('/whatsapp/chats/delete', {
+        sessionId: selectedSession,
+        jid: contact.jid
       });
-      
+
       if (response.data.success) {
         // Remove from contacts list immediately
         setContacts(prev => prev.filter(c => c.id !== contact.id));
-        
+
         // Clear selected contact if it's the deleted one
         if (selectedContact?.id === contact.id) {
           setSelectedContact(null);
           setMessages([]);
         }
-        
+
         enqueueSnackbar('تم حذف المحادثة بنجاح', { variant: 'success' });
       }
     } catch (error: any) {
@@ -372,6 +533,184 @@ const WhatsAppChat: React.FC = () => {
       const errorMessage = error.response?.data?.error || error.message || 'حدث خطأ أثناء حذف المحادثة';
       enqueueSnackbar(errorMessage, { variant: 'error' });
     }
+  };
+
+  const handleArchiveChat = async (contact: Contact) => {
+    if (!selectedSession) return;
+    try {
+      await api.post('/whatsapp/chats/archive', { sessionId: selectedSession, jid: contact.jid, archive: !contact.isArchived });
+      loadContacts();
+      enqueueSnackbar(contact.isArchived ? 'تم إلغاء الأرشفة' : 'تمت الأرشفة', { variant: 'success' });
+    } catch (e) { enqueueSnackbar('حدث خطأ', { variant: 'error' }); }
+  };
+
+  const handlePinChat = async (contact: Contact) => {
+    if (!selectedSession) return;
+    try {
+      await api.post('/whatsapp/chats/pin', { sessionId: selectedSession, jid: contact.jid, pin: !contact.isPinned });
+      loadContacts();
+      enqueueSnackbar(contact.isPinned ? 'تم إلغاء التثبيت' : 'تم التثبيت', { variant: 'success' });
+    } catch (e) { enqueueSnackbar('حدث خطأ', { variant: 'error' }); }
+  };
+
+  const handleMuteChat = async (contact: Contact) => {
+    if (!selectedSession) return;
+    try {
+      await api.post('/whatsapp/chats/mute', { sessionId: selectedSession, jid: contact.jid, mute: !contact.isMuted });
+      loadContacts();
+      enqueueSnackbar(contact.isMuted ? 'تم إلغاء الكتم' : 'تم الكتم', { variant: 'success' });
+    } catch (e) { enqueueSnackbar('حدث خطأ', { variant: 'error' }); }
+  };
+
+  const handleMarkUnread = async (contact: Contact) => {
+    if (!selectedSession) return;
+    try {
+      await api.post('/whatsapp/chats/unread', { sessionId: selectedSession, jid: contact.jid });
+      loadContacts();
+      enqueueSnackbar('تم التحديد كغير مقروء', { variant: 'success' });
+    } catch (e) { enqueueSnackbar('حدث خطأ', { variant: 'error' }); }
+  };
+
+  const renderMessageContent = (message: Message) => {
+    if (message.mediaUrl) {
+      switch (message.messageType) {
+        case 'IMAGE':
+          return (
+            <Box>
+              <img
+                src={message.mediaUrl}
+                alt="Image"
+                style={{ maxWidth: '100%', borderRadius: 8, cursor: 'pointer', maxHeight: 300, objectFit: 'cover' }}
+                onClick={() => window.open(message.mediaUrl!, '_blank')}
+              />
+              {message.content && <Typography variant="body2" sx={{ mt: 1 }}>{message.content}</Typography>}
+            </Box>
+          );
+        case 'VIDEO':
+          return (
+            <Box>
+              <video src={message.mediaUrl} controls style={{ maxWidth: '100%', borderRadius: 8, maxHeight: 300 }} />
+              {message.content && <Typography variant="body2" sx={{ mt: 1 }}>{message.content}</Typography>}
+            </Box>
+          );
+        case 'AUDIO':
+          return <audio src={message.mediaUrl} controls style={{ width: '100%', minWidth: 200 }} />;
+        case 'DOCUMENT':
+          return (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1, bgcolor: 'rgba(0,0,0,0.05)', borderRadius: 1, minWidth: 200 }}>
+              <DocumentIcon color="error" fontSize="large" />
+              <Box sx={{ flex: 1, overflow: 'hidden' }}>
+                <Typography variant="body2" noWrap>{message.mediaFileName || 'ملف'}</Typography>
+                <Typography variant="caption" color="text.secondary">مستند</Typography>
+              </Box>
+              <IconButton href={message.mediaUrl} target="_blank" size="small">
+                <DownloadIcon />
+              </IconButton>
+            </Box>
+          );
+        default:
+          return (
+            <Box>
+              <Typography variant="body2" color="error">نوع وسائط غير مدعوم: {message.messageType}</Typography>
+              <Button href={message.mediaUrl} target="_blank" size="small" startIcon={<DownloadIcon />}>تحميل</Button>
+            </Box>
+          );
+      }
+    }
+
+    if (message.messageType === 'LOCATION') {
+      try {
+        const loc = message.content ? JSON.parse(message.content) : {};
+        const mapUrl = `https://www.google.com/maps/search/?api=1&query=${loc.latitude},${loc.longitude}`;
+        return (
+          <Box>
+            <a href={mapUrl} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: 'inherit' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1, bgcolor: 'rgba(0,0,0,0.05)', borderRadius: 1 }}>
+                <LocationIcon color="primary" fontSize="large" />
+                <Box>
+                  <Typography variant="body2" fontWeight="bold">موقع</Typography>
+                  <Typography variant="caption" display="block">{loc.address || loc.name || `${loc.latitude}, ${loc.longitude}`}</Typography>
+                </Box>
+              </Box>
+            </a>
+          </Box>
+        );
+      } catch (e) {
+        return <Typography>{message.content}</Typography>;
+      }
+    }
+
+    return <Typography sx={{ whiteSpace: 'pre-wrap' }}>{message.content}</Typography>;
+  };
+
+  // Message Actions Handlers
+  const handleMessageContextMenu = (event: React.MouseEvent, message: Message) => {
+    event.preventDefault();
+    setMessageMenuAnchor(event.currentTarget as HTMLElement);
+    setSelectedMessageForMenu(message);
+  };
+
+  const handleReply = () => {
+    setReplyingTo(selectedMessageForMenu);
+    setMessageMenuAnchor(null);
+    fileInputRef.current?.focus();
+  };
+
+  const handleCopy = () => {
+    if (selectedMessageForMenu?.content) {
+      navigator.clipboard.writeText(selectedMessageForMenu.content);
+      enqueueSnackbar('تم نسخ النص', { variant: 'success' });
+    }
+    setMessageMenuAnchor(null);
+  };
+
+  const handleDeleteMessage = async () => {
+    if (!selectedSession || !selectedContact || !selectedMessageForMenu) return;
+
+    if (!window.confirm('هل أنت متأكد من حذف هذه الرسالة للجميع؟')) {
+      setMessageMenuAnchor(null);
+      return;
+    }
+
+    try {
+      await api.post('/whatsapp/messages/delete', {
+        sessionId: selectedSession,
+        to: selectedContact.jid,
+        key: {
+          remoteJid: selectedContact.jid,
+          fromMe: selectedMessageForMenu.fromMe,
+          id: selectedMessageForMenu.messageId
+        }
+      });
+      // Optimistic update or wait for socket? Socket usually handles it.
+      enqueueSnackbar('تم طلب حذف الرسالة', { variant: 'info' });
+    } catch (error: any) {
+      enqueueSnackbar('فشل حذف الرسالة', { variant: 'error' });
+    }
+    setMessageMenuAnchor(null);
+  };
+
+  const handleForwardMessage = async () => {
+    if (!selectedSession || !selectedMessageForMenu || selectedContactsForForward.length === 0) return;
+
+    try {
+      for (const contactId of selectedContactsForForward) {
+        const contact = contacts.find(c => c.id === contactId);
+        if (contact) {
+          await api.post('/whatsapp/messages/forward', {
+            sessionId: selectedSession,
+            to: contact.jid,
+            message: selectedMessageForMenu
+          });
+        }
+      }
+      enqueueSnackbar('تم إعادة توجيه الرسالة', { variant: 'success' });
+      setForwardDialogOpen(false);
+      setSelectedContactsForForward([]);
+    } catch (error) {
+      enqueueSnackbar('فشل إعادة التوجيه', { variant: 'error' });
+    }
+    setMessageMenuAnchor(null);
   };
 
   const scrollToBottom = () => {
@@ -394,12 +733,92 @@ const WhatsAppChat: React.FC = () => {
     } catch (e) { }
   };
 
+  const loadNotificationSettings = async () => {
+    try {
+      const res = await api.get('/whatsapp/settings');
+      if (res.data.settings) {
+        setNotificationSettings({
+          notificationSound: res.data.settings.notificationSound !== false,
+          browserNotifications: res.data.settings.browserNotifications !== false
+        });
+      }
+    } catch (e) {
+      console.error('Error loading notification settings:', e);
+    }
+  };
+
+  const requestNotificationPermission = async () => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      try {
+        await Notification.requestPermission();
+      } catch (e) {
+        console.error('Error requesting notification permission:', e);
+      }
+    }
+  };
+
+  const playNotificationSound = () => {
+    try {
+      const audio = new Audio('/notification.mp3');
+      audio.volume = 0.5;
+      audio.play().catch(e => console.log('Audio play failed', e));
+    } catch (e) {
+      console.error('Error playing notification sound:', e);
+    }
+  };
+
+  const showBrowserNotification = (title: string, body: string, icon?: string) => {
+    if (!('Notification' in window)) {
+      return;
+    }
+
+    if (Notification.permission === 'granted') {
+      try {
+        const notification = new Notification(title, {
+          body,
+          icon: icon || '/favicon.ico',
+          tag: 'whatsapp-message',
+          requireInteraction: false,
+          silent: false
+        });
+
+        // Close notification after 5 seconds
+        setTimeout(() => {
+          notification.close();
+        }, 5000);
+      } catch (e) {
+        console.error('Error showing browser notification:', e);
+      }
+    } else if (Notification.permission !== 'denied') {
+      // Request permission if not already denied
+      Notification.requestPermission().then(permission => {
+        if (permission === 'granted') {
+          try {
+            const notification = new Notification(title, {
+              body,
+              icon: icon || '/favicon.ico',
+              tag: 'whatsapp-message'
+            });
+            setTimeout(() => {
+              notification.close();
+            }, 5000);
+          } catch (e) {
+            console.error('Error showing browser notification:', e);
+          }
+        }
+      });
+    }
+  };
+
   const sendQuickReply = async (qr: QuickReply) => {
     // Implementation...
     setShowQuickReplies(false);
   };
 
   const filteredContacts = contacts.filter(c => {
+    if (chatFilter === 'unread' && c.unreadCount === 0) return false;
+    if (chatFilter === 'groups' && !c.isGroup) return false;
+
     if (searchQuery === 'individual:') return !c.jid.endsWith('@g.us');
     if (searchQuery === 'group:') return c.jid.endsWith('@g.us');
     if (!searchQuery) return true;
@@ -422,6 +841,11 @@ const WhatsAppChat: React.FC = () => {
         </Box>
         <Box sx={{ p: 2 }}>
           <TextField fullWidth size="small" placeholder="بحث..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> }} />
+          <Box sx={{ mt: 1, display: 'flex', gap: 0.5 }}>
+            <Chip label="الكل" size="small" onClick={() => setChatFilter('all')} color={chatFilter === 'all' ? 'primary' : 'default'} clickable />
+            <Chip label="غير مقروء" size="small" onClick={() => setChatFilter('unread')} color={chatFilter === 'unread' ? 'primary' : 'default'} clickable />
+            <Chip label="مجموعات" size="small" onClick={() => setChatFilter('groups')} color={chatFilter === 'groups' ? 'primary' : 'default'} clickable />
+          </Box>
         </Box>
         <List sx={{ flex: 1, overflow: 'auto' }}>
           {filteredContacts.map(contact => (
@@ -453,25 +877,65 @@ const WhatsAppChat: React.FC = () => {
 
             <Box sx={{ flex: 1, overflow: 'auto', p: 2, bgcolor: '#e5ddd5', backgroundImage: 'url(/whatsapp-bg.png)' }}>
               {messages.map((message, index) => (
-                <Box key={message.id} sx={{ display: 'flex', justifyContent: message.fromMe ? 'flex-end' : 'flex-start', mb: 1 }}>
-                  <Paper sx={{ p: 1, maxWidth: '70%', bgcolor: message.fromMe ? '#d9fdd3' : '#fff' }}>
-                    {message.mediaUrl && (
-                      message.messageType === 'AUDIO' ? <audio src={message.mediaUrl} controls /> :
-                        message.messageType === 'IMAGE' ? <img src={message.mediaUrl} style={{ maxWidth: '100%' }} /> :
-                          <Typography>Media: {message.messageType}</Typography>
-                    )}
-                    <Typography>{message.content}</Typography>
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 0.5 }}>
-                      <Typography variant="caption" color="text.secondary">{format(new Date(message.timestamp), 'HH:mm')}</Typography>
-                      {message.fromMe && getStatusIcon(message.status)}
+                <React.Fragment key={message.id}>
+                  {/* Date Separator */}
+                  {shouldShowDateSeparator(message, messages[index - 1]) && (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', my: 2 }}>
+                      <Chip
+                        label={getDateSeparatorText(message.timestamp)}
+                        size="small"
+                        sx={{ bgcolor: 'rgba(0,0,0,0.1)', color: 'text.secondary' }}
+                      />
                     </Box>
+                  )}
+                  {/* Message */}
+                  <Box sx={{ display: 'flex', justifyContent: message.fromMe ? 'flex-end' : 'flex-start', mb: 1 }}>
+                    <Paper
+                      sx={{ p: 1, maxWidth: '70%', bgcolor: message.fromMe ? '#d9fdd3' : '#fff', cursor: 'context-menu' }}
+                      onContextMenu={(e) => handleMessageContextMenu(e, message)}
+                    >
+                      {message.quotedContent && (
+                        <Box sx={{ bgcolor: 'rgba(0,0,0,0.05)', borderLeft: '4px solid #00a884', p: 0.5, mb: 0.5, borderRadius: 0.5 }}>
+                          <Typography variant="caption" sx={{ display: 'block', color: 'primary.main' }}>رد على رسالة</Typography>
+                          <Typography variant="caption" noWrap>{message.quotedContent}</Typography>
+                        </Box>
+                      )}
+                      {renderMessageContent(message)}
+                      <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                        <Typography variant="caption" color="text.secondary">{format(new Date(message.timestamp), 'HH:mm')}</Typography>
+                        {message.fromMe && getStatusIcon(message.status)}
+                      </Box>
+                    </Paper>
+                  </Box>
+                </React.Fragment>
+              ))}
+              {/* Typing Indicator */}
+              {typingUsers.size > 0 && (
+                <Box sx={{ display: 'flex', justifyContent: 'flex-start', mb: 1 }}>
+                  <Paper sx={{ p: 1, bgcolor: '#fff' }}>
+                    <Typography variant="caption" color="text.secondary">يكتب...</Typography>
                   </Paper>
                 </Box>
-              ))}
+              )}
               <div ref={messagesEndRef} />
             </Box>
 
             <Paper sx={{ p: 2, borderRadius: 0 }}>
+              {replyingTo && (
+                <Box sx={{ p: 1, mb: 1, bgcolor: 'rgba(0,0,0,0.05)', borderLeft: '4px solid #00a884', borderRadius: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Box>
+                    <Typography variant="caption" color="primary" fontWeight="bold">
+                      {replyingTo.fromMe ? 'أنت' : selectedContact?.name || selectedContact?.phoneNumber}
+                    </Typography>
+                    <Typography variant="body2" noWrap sx={{ maxWidth: 300 }}>
+                      {replyingTo.content || (replyingTo.mediaType ? `[${replyingTo.mediaType}]` : 'رسالة')}
+                    </Typography>
+                  </Box>
+                  <IconButton size="small" onClick={() => setReplyingTo(null)}>
+                    <CloseIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+              )}
               {isRecording ? (
                 <AudioRecorder
                   onCancel={() => setIsRecording(false)}
@@ -523,10 +987,121 @@ const WhatsAppChat: React.FC = () => {
         <MenuItem onClick={() => { if (selectedChatForMenu) handleClearChat(selectedChatForMenu); setChatMenuAnchor(null); }}>
           <DeleteIcon fontSize="small" sx={{ mr: 1 }} /> مسح المحتوى
         </MenuItem>
+        <MenuItem onClick={() => { if (selectedChatForMenu) handleArchiveChat(selectedChatForMenu); setChatMenuAnchor(null); }}>
+          <ArchiveIcon fontSize="small" sx={{ mr: 1 }} /> {selectedChatForMenu?.isArchived ? 'إلغاء الأرشفة' : 'أرشفة'}
+        </MenuItem>
+        <MenuItem onClick={() => { if (selectedChatForMenu) handlePinChat(selectedChatForMenu); setChatMenuAnchor(null); }}>
+          <PinIcon fontSize="small" sx={{ mr: 1 }} /> {selectedChatForMenu?.isPinned ? 'إلغاء التثبيت' : 'تثبيت'}
+        </MenuItem>
+        <MenuItem onClick={() => { if (selectedChatForMenu) handleMuteChat(selectedChatForMenu); setChatMenuAnchor(null); }}>
+          <MuteIcon fontSize="small" sx={{ mr: 1 }} /> {selectedChatForMenu?.isMuted ? 'إلغاء الكتم' : 'كتم'}
+        </MenuItem>
+        <MenuItem onClick={() => { if (selectedChatForMenu) handleMarkUnread(selectedChatForMenu); setChatMenuAnchor(null); }}>
+          <PendingIcon fontSize="small" sx={{ mr: 1 }} /> تمييز كغير مقروء
+        </MenuItem>
         <MenuItem onClick={() => { if (selectedChatForMenu) handleDeleteChat(selectedChatForMenu); setChatMenuAnchor(null); }} sx={{ color: 'error.main' }}>
           <DeleteIcon fontSize="small" sx={{ mr: 1 }} /> حذف المحادثة
         </MenuItem>
       </Menu>
+
+      {/* Message Context Menu */}
+      <Menu
+        anchorEl={messageMenuAnchor}
+        open={Boolean(messageMenuAnchor)}
+        onClose={() => setMessageMenuAnchor(null)}
+      >
+        <MenuItem onClick={handleReply}>
+          <ReplyIcon fontSize="small" sx={{ mr: 1 }} /> رد
+        </MenuItem>
+        <MenuItem onClick={handleCopy}>
+          <CopyIcon fontSize="small" sx={{ mr: 1 }} /> نسخ
+        </MenuItem>
+        <MenuItem onClick={() => { setForwardDialogOpen(true); setMessageMenuAnchor(null); }}>
+          <ForwardIcon fontSize="small" sx={{ mr: 1 }} /> إعادة توجيه
+        </MenuItem>
+        {selectedMessageForMenu?.fromMe && (
+          <MenuItem onClick={handleDeleteMessage} sx={{ color: 'error.main' }}>
+            <DeleteIcon fontSize="small" sx={{ mr: 1 }} /> حذف للجميع
+          </MenuItem>
+        )}
+      </Menu>
+
+      {/* Forward Dialog */}
+      <Dialog open={forwardDialogOpen} onClose={() => setForwardDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>إعادة توجيه الرسالة إلى...</DialogTitle>
+        <DialogContent dividers>
+          <List>
+            {contacts.map(contact => (
+              <ListItem
+                key={contact.id}
+                button
+                onClick={() => {
+                  if (selectedContactsForForward.includes(contact.id)) {
+                    setSelectedContactsForForward(prev => prev.filter(id => id !== contact.id));
+                  } else {
+                    setSelectedContactsForForward(prev => [...prev, contact.id]);
+                  }
+                }}
+              >
+                <ListItemAvatar>
+                  <Avatar src={contact.profilePicUrl || ''} />
+                </ListItemAvatar>
+                <ListItemText primary={contact.name || contact.phoneNumber} />
+                {selectedContactsForForward.includes(contact.id) && <CheckIcon color="primary" />}
+              </ListItem>
+            ))}
+          </List>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setForwardDialogOpen(false)}>إلغاء</Button>
+          <Button onClick={handleForwardMessage} variant="contained" disabled={selectedContactsForForward.length === 0}>
+            إرسال ({selectedContactsForForward.length})
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Contact Info Drawer */}
+      <Drawer
+        anchor="right"
+        open={showContactInfo}
+        onClose={() => setShowContactInfo(false)}
+        PaperProps={{ sx: { width: 350 } }}
+      >
+        {selectedContact && (
+          <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <Avatar src={selectedContact.profilePicUrl || ''} sx={{ width: 120, height: 120, mb: 2 }} />
+            <Typography variant="h6">{selectedContact.name || selectedContact.phoneNumber}</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>{selectedContact.phoneNumber}</Typography>
+
+            <Divider sx={{ width: '100%', mb: 2 }} />
+
+            <List sx={{ width: '100%' }}>
+              <ListItem button>
+                <ListItemText primary="الوسائط والروابط والمستندات" secondary="0" />
+              </ListItem>
+              <ListItem button>
+                <ListItemText primary="الرسائل المميزة بنجمة" secondary="لا يوجد" />
+              </ListItem>
+              <ListItem button onClick={() => handleMuteChat(selectedContact)}>
+                <ListItemText primary="كتم الإشعارات" />
+                <Typography variant="caption">{selectedContact.isMuted ? 'مفعل' : 'غير مفعل'}</Typography>
+              </ListItem>
+            </List>
+
+            <Divider sx={{ width: '100%', my: 2 }} />
+
+            <Button fullWidth color="error" startIcon={<DeleteIcon />} onClick={() => { handleDeleteChat(selectedContact); setShowContactInfo(false); }}>
+              حذف المحادثة
+            </Button>
+            <Button fullWidth color="error" startIcon={<BlockIcon />} sx={{ mt: 1 }} onClick={() => enqueueSnackbar('قريباً', { variant: 'info' })}>
+              حظر {selectedContact.name || 'جهة الاتصال'}
+            </Button>
+            <Button fullWidth color="error" startIcon={<ReportIcon />} sx={{ mt: 1 }} onClick={() => enqueueSnackbar('قريباً', { variant: 'info' })}>
+              الإبلاغ عن {selectedContact.name || 'جهة الاتصال'}
+            </Button>
+          </Box>
+        )}
+      </Drawer>
     </Box>
   );
 };

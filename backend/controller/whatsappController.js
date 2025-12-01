@@ -305,7 +305,7 @@ async function getConversations(req, res) {
         const { companyId } = req.user;
         const { sessionId, page = 1, limit = 50, search, category, archived } = req.query;
 
-        // جلب جلسات الشركة
+        // تحسين: استخدام Promise.all لجلب الجلسات والعدد الكلي إذا أمكن، لكن هنا نحتاج الجلسات أولاً لبناء الاستعلام
         const sessionIds = sessionId
             ? [sessionId]
             : (await prisma.whatsAppSession.findMany({
@@ -330,71 +330,80 @@ async function getConversations(req, res) {
             where.category = category;
         }
 
-        const contacts = await prisma.whatsAppContact.findMany({
-            where,
-            orderBy: [
-                { isPinned: 'desc' },
-                { lastMessageAt: 'desc' }
-            ],
-            skip: (parseInt(page) - 1) * parseInt(limit),
-            take: parseInt(limit),
-            select: {
-                id: true,
-                sessionId: true,
-                jid: true,
-                phoneNumber: true,
-                name: true,
-                pushName: true,
-                profilePicUrl: true,
-                isGroup: true,
-                category: true,
-                unreadCount: true,
-                lastMessageAt: true,
-                isArchived: true,
-                isPinned: true,
-                isMuted: true,
-                session: {
-                    select: { name: true, phoneNumber: true }
-                },
-                customer: {
-                    select: { firstName: true, lastName: true, status: true }
+        // تحسين: تشغيل استعلام المحادثات والعدد الكلي بشكل متزامن
+        const [contacts, total] = await Promise.all([
+            prisma.whatsAppContact.findMany({
+                where,
+                orderBy: [
+                    { isPinned: 'desc' },
+                    { lastMessageAt: 'desc' }
+                ],
+                skip: (parseInt(page) - 1) * parseInt(limit),
+                take: parseInt(limit),
+                select: {
+                    id: true,
+                    sessionId: true,
+                    jid: true,
+                    phoneNumber: true,
+                    name: true,
+                    pushName: true,
+                    profilePicUrl: true,
+                    isGroup: true,
+                    category: true,
+                    unreadCount: true,
+                    lastMessageAt: true,
+                    isArchived: true,
+                    isPinned: true,
+                    isMuted: true,
+                    session: {
+                        select: { name: true, phoneNumber: true }
+                    },
+                    customer: {
+                        select: { firstName: true, lastName: true, status: true }
+                    }
                 }
-            }
-        });
-
-        const total = await prisma.whatsAppContact.count({ where });
+            }),
+            prisma.whatsAppContact.count({ where })
+        ]);
 
         // جلب آخر رسالة لكل محادثة
-        const conversationsWithLastMessage = await Promise.all(
-            contacts.map(async (contact) => {
+        // استخدام raw query لأن distinct مع orderBy غير مدعوم في MySQL
+        let lastMessages = [];
+        if (contacts.length > 0) {
+            const jids = contacts.map(c => c.jid);
+            // جلب آخر رسالة لكل jid بشكل منفصل
+            const lastMessagesPromises = jids.map(async (jid) => {
                 try {
-                    const lastMessage = await prisma.whatsAppMessage.findFirst({
+                    const msg = await prisma.whatsAppMessage.findFirst({
                         where: {
-                            sessionId: contact.sessionId,
-                            remoteJid: contact.jid
+                            sessionId: { in: sessionIds },
+                            remoteJid: jid
                         },
                         orderBy: { timestamp: 'desc' },
                         select: {
+                            remoteJid: true,
                             content: true,
                             messageType: true,
                             fromMe: true,
-                            timestamp: true
+                            timestamp: true,
+                            status: true
                         }
                     });
-
-                    return {
-                        ...contact,
-                        lastMessage: lastMessage || null
-                    };
-                } catch (error) {
-                    console.error(`❌ Error getting last message for contact ${contact.id}:`, error);
-                    return {
-                        ...contact,
-                        lastMessage: null
-                    };
+                    return msg;
+                } catch (err) {
+                    console.error(`❌ Error fetching last message for JID ${jid}:`, err);
+                    return null;
                 }
-            })
-        );
+            });
+            lastMessages = (await Promise.all(lastMessagesPromises)).filter(Boolean);
+        }
+
+        const lastMessagesMap = new Map(lastMessages.map(m => [m.remoteJid, m]));
+
+        const conversationsWithLastMessage = contacts.map(contact => ({
+            ...contact,
+            lastMessage: lastMessagesMap.get(contact.jid) || null
+        }));
 
         res.json({
             conversations: conversationsWithLastMessage,
@@ -407,7 +416,9 @@ async function getConversations(req, res) {
         });
     } catch (error) {
         console.error('❌ Error getting conversations:', error);
-        res.status(500).json({ error: 'حدث خطأ أثناء جلب المحادثات' });
+        // Log full error stack
+        console.error(error.stack);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب المحادثات', details: error.message });
     }
 }
 
@@ -1830,7 +1841,7 @@ async function migrateAuthToDatabase(req, res) {
 
         async function migrateSession(sessionId) {
             const sessionPath = path.join(SESSIONS_DIR, sessionId);
-            
+
             if (!fsSync.existsSync(sessionPath)) {
                 return { success: false, error: 'Session directory not found' };
             }
@@ -1991,8 +2002,9 @@ module.exports = {
     muteChat,
     markChatUnread,
     clearChat,
-    deleteChat , 
+    deleteChat,
 
+    // Migration
     migrateAuthToDatabase
 };
 

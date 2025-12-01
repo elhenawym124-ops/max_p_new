@@ -82,11 +82,21 @@ router.get('/recent', authenticateToken, async (req, res) => {
       })
     ]);
 
-    // تحويل data من JSON string إلى object
-    const formattedNotifications = notifications.map(notif => ({
-      ...notif,
-      data: notif.data ? JSON.parse(notif.data) : null
-    }));
+    // تحويل data من JSON string إلى object (إذا كان string)
+    const formattedNotifications = notifications.map(notif => {
+      let parsedData = null;
+      if (notif.data) {
+        try {
+          parsedData = typeof notif.data === 'string' ? JSON.parse(notif.data) : notif.data;
+        } catch (e) {
+          parsedData = notif.data;
+        }
+      }
+      return {
+        ...notif,
+        data: parsedData
+      };
+    });
 
     res.json({
       success: true,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   PaperAirplaneIcon,
@@ -94,7 +94,7 @@ interface Conversation {
 
 const ConversationsImprovedFixedContent: React.FC = () => {
   const { t } = useTranslation();
-  
+
   // Authentication & Company
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const { company, companyId, getCompanyFilter } = useCompany();
@@ -104,18 +104,6 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [newMessage, setNewMessage] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sending, setSending] = useState(false);
-  const [conversationFilter, setConversationFilter] = useState<'all' | 'unread'>('all');
-
-  // حالات الـ pagination
-  const [conversationsPage, setConversationsPage] = useState(1);
-  const [conversationsLimit] = useState(200);
-  const [hasMoreConversations, setHasMoreConversations] = useState(true);
-  const [loadingMoreConversations, setLoadingMoreConversations] = useState(false);
-  const [totalConversations, setTotalConversations] = useState(0);
-
   // Socket.IO للرسائل الفورية
   const { socket, isConnected, isReconnecting, emit, on, off } = useSocket();
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
@@ -133,7 +121,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [filePreviews, setFilePreviews] = useState<string[]>([]);
   const [isAiTyping, setIsAiTyping] = useState(false);
-  
+
   // حالة تحميل الرسائل للبحث
   const [loadingMessagesForSearch, setLoadingMessagesForSearch] = useState<Set<string>>(new Set());
 
@@ -163,10 +151,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
   // حالات الـ Emoji Picker
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  
+
   // حالة السحب والإفلات (Drag & Drop)
   const [isDraggingOver, setIsDraggingOver] = useState(false);
-  
+
   // حالات حافظة الصور
   const [showImageGallery, setShowImageGallery] = useState(false);
   const [savedImages, setSavedImages] = useState<Array<{
@@ -176,7 +164,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
     uploadedAt: Date;
   }>>([]);
   const [loadingGallery, setLoadingGallery] = useState(false);
-  
+
   // تخزين معلومات الصور المرفوعة (للحفظ في الحافظة لاحقاً)
   const [uploadedFilesInfo, setUploadedFilesInfo] = useState<Array<{
     file: File;
@@ -184,17 +172,17 @@ const ConversationsImprovedFixedContent: React.FC = () => {
     uploadedUrl?: string;
     filename?: string;
   }>>([]);
-  
+
   // حالة رفع صور للحافظة مباشرة
   const [uploadingToGallery, setUploadingToGallery] = useState(false);
-  
+
   // حالة حذف صورة من الحافظة
   const [deletingImageId, setDeletingImageId] = useState<string | null>(null);
-  
+
   // حالة الصور المختارة للإرسال المتعدد
   const [selectedImagesForSend, setSelectedImagesForSend] = useState<Set<string>>(new Set());
   const [sendingMultipleImages, setSendingMultipleImages] = useState(false);
-  
+
   // حالات حافظة النصوص
   const [showTextGallery, setShowTextGallery] = useState(false);
   const [savedTexts, setSavedTexts] = useState<Array<{
@@ -275,7 +263,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       // استخراج البيانات من الاستجابة
       const data = result.data || result || [];
       const pagination = result.pagination || {};
-      
+
       if (!silent) {
         console.log('📊 Conversations data:', data.length);
         console.log('📋 Pagination info:', pagination);
@@ -304,8 +292,8 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           unreadCount: conv.unreadCount || 0,
           lastMessageIsFromCustomer: conv.lastMessageIsFromCustomer || false, // 🆕 هل آخر رسالة من العميل
           hasUnreadMessages: (conv.unreadCount || 0) > 0,
-          lastCustomerMessageIsUnread: (conv.lastCustomerMessageIsUnread === true) 
-            ? true 
+          lastCustomerMessageIsUnread: (conv.lastCustomerMessageIsUnread === true)
+            ? true
             : ((conv.lastMessageIsFromCustomer === true) && ((conv.unreadCount || 0) > 0)),
           platform: (conv.platform || conv.channel || 'unknown') as Conversation['platform'],
           isOnline: false, // سنحدثها لاحقاً مع Socket.IO
@@ -358,14 +346,14 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         setConversations(prev => {
           // إنشاء map للمحادثات الجديدة من السيرفر (هذه محادثات الشركة الحالية فقط)
           const newConversationsMap = new Set(formattedConversations.map(c => c.id));
-          
+
           // ✅ FIX: إزالة أي محادثات من القائمة القديمة التي لا توجد في القائمة الجديدة
           // (هذا يزيل المحادثات من شركات أخرى التي قد تكون أضيفت من Socket.IO)
           const validPrevConversations = prev.filter(oldConv => {
             // نحتفظ فقط بالمحادثات الموجودة في القائمة الجديدة أو المحادثة المختارة حالياً
             return newConversationsMap.has(oldConv.id) || oldConv.id === selectedConversation?.id;
           });
-          
+
           // دمج المحادثات: نستخدم الجديدة من السيرفر، ونحتفظ بالقديمة التي لم تأت في الاستجابة
           // لكن فقط إذا كانت المحادثة المختارة حالياً (للمحافظة على الرسائل المحملة)
           const merged = formattedConversations.map(newConv => {
@@ -379,7 +367,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             }
             return newConv;
           });
-          
+
           // إضافة محادثة قديمة لم تأت في الاستجابة الجديدة (فقط إذا كانت مفتوحة)
           const selectedId = selectedConversation?.id;
           validPrevConversations.forEach(oldConv => {
@@ -388,7 +376,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
               merged.push(oldConv);
             }
           });
-          
+
           // ترتيب المحادثات حسب lastMessageTime
           return merged.sort((a, b) => {
             const timeA = new Date(a.lastMessageTime).getTime();
@@ -398,7 +386,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         });
         setConversationsPage(1);
       }
-      
+
       if (!silent) {
         console.log('✅ Conversations loaded:', formattedConversations.length);
         console.log('📊 Total conversations:', pagination.total || formattedConversations.length);
@@ -451,7 +439,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
       if (result.success && result.data) {
         const conv = result.data;
-        
+
         // ✅ FIX: التحقق من أن المحادثة تخص نفس الشركة
         const convCompanyId = conv.companyId;
         if (convCompanyId && companyId && String(convCompanyId) !== String(companyId)) {
@@ -516,13 +504,13 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       }
 
       console.log('🔄 Loading messages for conversation:', conversationId, 'page:', page);
-      
+
       // ✅ FIX: تحقق من أن المحادثة الحالية لم تتغير قبل البدء
       if (currentConversationIdRef.current !== conversationId) {
         console.log('⚠️ [LOAD-MESSAGES] Conversation changed before loading, aborting');
         return;
       }
-      
+
       const response = await fetch(buildApiUrl(`conversations/${conversationId}/messages?page=${page}&limit=50`), {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -630,11 +618,11 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       console.log(`   👤 ${customerMessages} من العملاء`);
       console.log(`   🤖 ${aiMessages} من الذكاء الصناعي`);
       console.log(`   👨‍💼 ${manualMessages} يدوية`);
-      
+
       // تسجيل الرسائل التي تحتوي على reply
       const messagesWithReply = messages.filter(m => m.replyToContentSnippet || m.replyToFacebookMessageId);
       if (messagesWithReply.length > 0) {
-        console.log(`💬 [REPLY-DEBUG] Found ${messagesWithReply.length} messages with reply:`, 
+        console.log(`💬 [REPLY-DEBUG] Found ${messagesWithReply.length} messages with reply:`,
           messagesWithReply.map(m => ({
             id: m.id,
             content: m.content?.substring(0, 30),
@@ -731,9 +719,9 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           if (msg.metadata) {
             try {
               md = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
-            } catch {}
+            } catch { }
           }
-          
+
           // تحديد اسم المرسل بشكل صحيح
           let senderName = 'العميل';
           if (!msg.isFromCustomer) {
@@ -1001,8 +989,8 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         } : null);
 
         // Also update in conversations list
-        setConversations(prev => prev.map(conv => 
-          conv.id === conversationId 
+        setConversations(prev => prev.map(conv =>
+          conv.id === conversationId
             ? { ...conv, postDetails: result.data }
             : conv
         ));
@@ -1055,7 +1043,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         ...conversation,
         messages: [] // مسح الرسائل القديمة فوراً
       });
-      
+
       // 🆕 Fetch post details if postId exists (lazy loading)
       console.log('🔍 [POST-REF] Checking for postId in conversation:', {
         conversationId: conversationId,
@@ -1068,7 +1056,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       } else {
         console.log('ℹ️ [POST-REF] No postId in conversation, skipping post details fetch');
       }
-      
+
       // Reset pagination state for the newly selected conversation
       setMessagesPage(1);
       setHasMoreMessages(true);
@@ -1085,7 +1073,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       if (!hasMessages) {
         console.log('📥 Loading messages for new conversation');
         await loadMessages(conversationId);
-        
+
         // ✅ التمرير للأسفل فقط عند فتح المحادثة لأول مرة
         if (currentConversationIdRef.current === conversationId) {
           console.log('📜 Auto-scrolling to bottom on initial load');
@@ -1241,18 +1229,18 @@ const ConversationsImprovedFixedContent: React.FC = () => {
     // ✅ FIX: دعم إرسال الصور مع النص
     const hasSelectedFiles = selectedFiles.length > 0;
     let imageUrls: string[] = [];
-    
+
     try {
 
       // إذا كانت هناك ملفات محددة، نرفعها أولاً
       if (hasSelectedFiles) {
         const uploadResult = await uploadService.uploadConversationFiles(selectedConversation.id, selectedFiles);
         if (uploadResult.success && uploadResult.data) {
-          imageUrls = Array.isArray(uploadResult.data) 
+          imageUrls = Array.isArray(uploadResult.data)
             ? uploadResult.data.map((file: any) => file.fullUrl || file.url)
             : [uploadResult.data.fullUrl || uploadResult.data.url];
           console.log(`📸 Uploaded ${imageUrls.length} image(s) for message`);
-          
+
           // ✅ FIX: تنظيف الملفات المحددة فوراً بعد رفعها بنجاح
           // لأنها ستُرسل مع الرسالة ولا نحتاجها بعد ذلك
           console.log('🧹 Cleaning selected files after successful upload');
@@ -1319,7 +1307,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         // ⚡ OPTIMIZATION: نشيل الرسالة المؤقتة ونستنى الـ echo من Facebook
         // الرسالة هتظهر تلقائياً لما الـ echo يجي
         console.log('⏳ Waiting for Facebook echo to save message...');
-        
+
         // شيل الرسالة المؤقتة
         setSelectedConversation(prev => prev ? {
           ...prev,
@@ -1356,7 +1344,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
           // إظهار تنبيه للمستخدم
           if (data.debug && !data.debug.hasFacebookId) {
-           alert(`⚠️ قيد من Facebook:\n\nلا يمكن إرسال رسائل للعملاء إلا إذا قاموا بمراسلتك خلال آخر 24 ساعة.\n\nهذا قيد من سياسات Facebook Messenger وليس من النظام.\n\nالحلول المتاحة:\n• انتظر حتى يراسلك العميل مرة أخرى\n• استخدم قوالب الرسائل المعتمدة من Facebook\n• تواصل مع العميل عبر قناة أخرى`);
+            alert(`⚠️ قيد من Facebook:\n\nلا يمكن إرسال رسائل للعملاء إلا إذا قاموا بمراسلتك خلال آخر 24 ساعة.\n\nهذا قيد من سياسات Facebook Messenger وليس من النظام.\n\nالحلول المتاحة:\n• انتظر حتى يراسلك العميل مرة أخرى\n• استخدم قوالب الرسائل المعتمدة من Facebook\n• تواصل مع العميل عبر قناة أخرى`);
           } else if (data.debug && !data.debug.facebookSent) {
             alert(`⚠️ قيد من Facebook:\n\nلا يمكن إرسال رسائل للعملاء إلا إذا قاموا بمراسلتك خلال آخر 24 ساعة.\n\nهذا قيد من سياسات Facebook Messenger وليس من النظام.\n\nالحلول المتاحة:\n• انتظر حتى يراسلك العميل مرة أخرى\n• استخدم قوالب الرسائل المعتمدة من Facebook\n• تواصل مع العميل عبر قناة أخرى`);
           }
@@ -1387,7 +1375,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       }
     } catch (error: any) {
       console.error('❌ Error sending message:', error);
-      
+
       // ✅ FIX: تنظيف الملفات في حالة الخطأ أيضاً إذا كانت قد رُفعت
       if (hasSelectedFiles && imageUrls.length > 0) {
         console.log('🧹 Cleaning selected files after error (but files were uploaded)');
@@ -1407,13 +1395,13 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
       // معالجة أخطاء Facebook بشكل خاص
       const errorMessage = error.message || error.toString();
-      
+
       // التحقق من أخطاء 24 ساعة من Facebook
-      if (errorMessage.includes('24') || 
-          errorMessage.includes('hour') || 
-          errorMessage.includes('ساعة') ||
-          errorMessage.includes('window') ||
-          errorMessage.includes('messaging window')) {
+      if (errorMessage.includes('24') ||
+        errorMessage.includes('hour') ||
+        errorMessage.includes('ساعة') ||
+        errorMessage.includes('window') ||
+        errorMessage.includes('messaging window')) {
         alert(`⚠️ قيد من Facebook:\n\nلا يمكن إرسال رسائل للعملاء إلا إذا قاموا بمراسلتك خلال آخر 24 ساعة.\n\nهذا قيد من سياسات Facebook Messenger وليس من النظام.\n\nالحلول المتاحة:\n• انتظر حتى يراسلك العميل مرة أخرى\n• استخدم قوالب الرسائل المعتمدة من Facebook\n• تواصل مع العميل عبر قناة أخرى`);
       } else {
         // أخطاء أخرى
@@ -1461,7 +1449,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   // وظائف الإشعارات
   const playNotificationSound = () => {
     if (!soundEnabled) return;
-    
+
     // 🔔 استخدام صوت التنبيه من ملف notification.mp3
     socketService.playNotificationSound();
   };
@@ -1578,7 +1566,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
     setSelectedFiles(validFiles);
     setFilePreviews(previews);
-    
+
     // إعادة تعيين قيمة الـ input للسماح بتحديد نفس الملفات مرة أخرى
     event.target.value = '';
   };
@@ -1587,7 +1575,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   // 🚫 دوال الحظر
   const checkBlockStatus = async () => {
     if (!selectedConversation?.pageId || !selectedConversation?.customerId) return;
-    
+
     try {
       setCheckingBlockStatus(true);
       const status = await apiService.checkCustomerBlockStatus(
@@ -1783,7 +1771,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
       // ⚡ OPTIMIZATION: مش هنضيف الملفات هنا - هنستنى الـ echo من Facebook
       console.log(`⏳ Waiting for Facebook echo to save ${data.data?.length || 0} file(s)...`);
-      
+
       // 💾 تخزين معلومات الملفات المرفوعة (عشان المستخدم يقدر يحفظها في الحافظة لاحقاً)
       if (Array.isArray(data.data)) {
         const filesInfo = selectedFiles.map((file, index) => {
@@ -1798,18 +1786,18 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         });
         setUploadedFilesInfo(filesInfo);
         console.log('📦 Uploaded files info stored:', filesInfo.length);
-        
+
         // 🔔 إظهار notification للمستخدم يسأله لو عايز يحفظ الصور في الحافظة
-        const imageFiles = filesInfo.filter(f => 
-          f.type?.toUpperCase() === 'IMAGE' || 
+        const imageFiles = filesInfo.filter(f =>
+          f.type?.toUpperCase() === 'IMAGE' ||
           f.file.type.startsWith('image/')
         );
-        
+
         if (imageFiles.length > 0) {
           const shouldSave = window.confirm(
             `تم رفع ${imageFiles.length} صورة. هل تريد حفظها في الحافظة للاستخدام السريع لاحقاً؟`
           );
-          
+
           if (shouldSave) {
             // حفظ الصور في الحافظة
             let savedCount = 0;
@@ -1819,7 +1807,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                 if (success) savedCount++;
               }
             }
-            
+
             if (savedCount > 0) {
               alert(`✅ تم حفظ ${savedCount} صورة في الحافظة!`);
               // تحديث الحافظة
@@ -1828,12 +1816,12 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           }
         }
       }
-      
+
       // التمرير للأسفل فقط إذا كان المستخدم في الأسفل بالفعل
       if (autoScrollEnabled) {
         setTimeout(() => scrollToBottom(), 100);
       }
-      
+
       // تنظيف الحالة
       setSelectedFiles([]);
       setFilePreviews([]);
@@ -1882,13 +1870,13 @@ const ConversationsImprovedFixedContent: React.FC = () => {
     // فحص نوع الملفات والحجم
     for (const file of files) {
       const maxSize = 10 * 1024 * 1024; // 10MB
-      
+
       // قبول الصور فقط أو جميع الملفات حسب التفضيل
       if (!file.type.startsWith('image/') && !file.type.startsWith('application/pdf')) {
         alert(`نوع الملف ${file.name} غير مدعوم. يُسمح بالصور و PDF فقط.`);
         continue;
       }
-      
+
       if (file.size > maxSize) {
         alert(`حجم الملف ${file.name} كبير جداً. الحد الأقصى 10 ميجابايت.`);
         continue;
@@ -1995,7 +1983,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       // رفع كل صورة وحفظها في الحافظة
       let successCount = 0;
       const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
-      
+
       if (!token) {
         alert('يرجى تسجيل الدخول أولاً');
         setUploadingToGallery(false);
@@ -2052,11 +2040,11 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   // إرسال صورة واحدة من الحافظة
   const selectImageFromGallery = async (imageUrl: string, filename: string) => {
     if (!selectedConversation) return;
-    
+
     try {
       console.log(`📤 Sending image from gallery: ${filename}`);
       setShowImageGallery(false);
-      
+
       // 🚀 إرسال الصورة مباشرة كرسالة (بدون رفع جديد)
       const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
       if (!token) {
@@ -2093,7 +2081,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   // إرسال عدة صور من الحافظة في مرة واحدة
   const sendMultipleImagesFromGallery = async () => {
     if (!selectedConversation || selectedImagesForSend.size === 0) return;
-    
+
     try {
       setSendingMultipleImages(true);
       const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
@@ -2180,7 +2168,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   // 🗑️ حذف صورة من الحافظة
   const deleteImageFromGallery = async (imageId: string, event: React.MouseEvent) => {
     event.stopPropagation(); // منع فتح الصورة عند الضغط على زر الحذف
-    
+
     if (!confirm('هل أنت متأكد من حذف هذه الصورة من الحافظة؟')) {
       return;
     }
@@ -2265,7 +2253,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       // رفع الصور إلى حافظة الصور أولاً (بنفس طريقة حافظة الصور)
       if (newTextImages.length > 0) {
         console.log(`📤 Uploading ${newTextImages.length} image(s) to image gallery...`);
-        
+
         for (const file of newTextImages) {
           // التحقق من أنها صورة
           if (!file.type.startsWith('image/')) {
@@ -2356,7 +2344,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       // رفع الصور الجديدة إلى حافظة الصور
       if (editingTextImages.length > 0) {
         console.log(`📤 Uploading ${editingTextImages.length} new image(s) for text update...`);
-        
+
         for (const file of editingTextImages) {
           // التحقق من أنها صورة
           if (!file.type.startsWith('image/')) {
@@ -2430,7 +2418,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
   const deleteTextFromGallery = async (textId: string, event: React.MouseEvent) => {
     event.stopPropagation();
-    
+
     if (!confirm('هل أنت متأكد من حذف هذا النص من الحافظة؟')) {
       return;
     }
@@ -2502,7 +2490,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
     setNewTextImages(prev => [...prev, ...validFiles]);
     setNewTextImagePreviews(prev => [...prev, ...previews]);
-    
+
     event.target.value = '';
   };
 
@@ -2547,7 +2535,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
     setEditingTextImages(prev => [...prev, ...validFiles]);
     setEditingTextImagePreviews(prev => [...prev, ...previews]);
-    
+
     event.target.value = '';
   };
 
@@ -2605,9 +2593,9 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
   const selectTextFromGallery = async (text: { content: string; imageUrls?: string[] }) => {
     if (!selectedConversation) return;
-    
+
     setShowTextGallery(false);
-    
+
     // إرسال النص والصور مباشرة للعميل (بنفس طريقة حافظة الصور)
     try {
       const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
@@ -2641,14 +2629,14 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
         for (let i = 0; i < imageUrls.length; i++) {
           const imageUrl = imageUrls[i];
-          
+
           // استخراج اسم الملف من الـ URL
           const urlParts = imageUrl.split('/');
           const filename = urlParts[urlParts.length - 1] || `image_${i + 1}.jpg`;
 
           try {
             console.log(`📤 Sending image ${i + 1}/${imageUrls.length} from text gallery: ${filename}`);
-            
+
             // استخدام نفس endpoint المستخدم في حافظة الصور
             const response = await fetch(buildApiUrl(`conversations/${selectedConversation.id}/send-existing-image`), {
               method: 'POST',
@@ -2665,7 +2653,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             if (response.ok) {
               successCount++;
               console.log(`✅ Image ${successCount}/${imageUrls.length} sent successfully: ${filename}`);
-              
+
               // إضافة تأخير صغير بين الصور لتجنب rate limiting
               if (i < imageUrls.length - 1) {
                 await new Promise(resolve => setTimeout(resolve, 500));
@@ -2792,10 +2780,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       // ✅ FIX: التحقق من أن الرسالة تخص نفس الشركة قبل معالجتها
       const messageCompanyId = data.companyId || data.metadata?.companyId || data.conversation?.companyId;
       if (messageCompanyId && companyId && String(messageCompanyId) !== String(companyId)) {
-        console.log('🔕 [SOCKET] Ignoring message from different company:', { 
-          messageCompanyId, 
+        console.log('🔕 [SOCKET] Ignoring message from different company:', {
+          messageCompanyId,
           currentCompanyId: companyId,
-          conversationId: data.conversationId 
+          conversationId: data.conversationId
         });
         return; // تجاهل الرسالة تماماً إذا كانت من شركة أخرى
       }
@@ -2893,7 +2881,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       setConversations((prev: Conversation[]) => {
         // ✅ FIX: التحقق من وجود المحادثة قبل التحديث
         const conversationExists = prev.some(conv => conv.id === data.conversationId);
-        
+
         if (!conversationExists) {
           // ✅ FIX: التحقق مرة أخرى من companyId قبل إنشاء المحادثة المؤقتة
           // (تم التحقق في بداية handleNewMessage، لكن نتحقق مرة أخرى للتأكد)
@@ -2928,7 +2916,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             senderName: data.senderName || data.customerName,
             companyId: data.companyId || data.metadata?.companyId
           });
-          
+
           // ✅ FIX: إنشاء محادثة مؤقتة فقط لرسائل العملاء
           const tempConversation: Conversation = {
             id: data.conversationId,
@@ -2945,15 +2933,15 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             pageName: data.pageName,
             pageId: data.pageId
           };
-          
+
           // ✅ إضافة المحادثة المؤقتة للقائمة فوراً
           const updatedWithTemp = [tempConversation, ...prev];
-          
+
           // ✅ تحميل المحادثة الكاملة من API في الخلفية ودمجها
           // (loadSpecificConversation سيتحقق من companyId مرة أخرى)
           const shouldAutoSelect = !selectedConversation || selectedConversation.id === data.conversationId;
           console.log(`🔄 [SOCKET] Loading full conversation ${data.conversationId}, autoSelect: ${shouldAutoSelect}`);
-          
+
           loadSpecificConversation(data.conversationId, shouldAutoSelect).then(() => {
             // ✅ بعد تحميل المحادثة الكاملة، ندمج الرسالة الجديدة مع الرسائل المحملة
             setConversations((currentPrev: Conversation[]) => {
@@ -2962,13 +2950,13 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                   // التحقق من عدم وجود الرسالة مسبقاً
                   const existingMessages = conv.messages || [];
                   const messageExists = existingMessages.some(msg => msg.id === newMessage.id);
-                  
+
                   if (!messageExists) {
                     // إضافة الرسالة الجديدة للرسائل المحملة
-                    const updatedMessages = [...existingMessages, newMessage].sort((a, b) => 
+                    const updatedMessages = [...existingMessages, newMessage].sort((a, b) =>
                       new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
                     );
-                    
+
                     const updatedConv = {
                       ...conv,
                       messages: updatedMessages,
@@ -2977,7 +2965,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                       lastMessageIsFromCustomer: !!data.isFromCustomer,
                       lastCustomerMessageIsUnread: !!data.isFromCustomer
                     };
-                    
+
                     // ✅ تحديث المحادثة المحددة أيضاً إذا كانت نفس المحادثة
                     setSelectedConversation((currentSelected) => {
                       if (currentSelected?.id === data.conversationId) {
@@ -2985,7 +2973,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                       }
                       return currentSelected;
                     });
-                    
+
                     return updatedConv;
                   }
                 }
@@ -2995,13 +2983,13 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           }).catch(error => {
             console.error(`❌ [SOCKET] Failed to load conversation ${data.conversationId}:`, error);
           });
-          
+
           // ✅ إرجاع القائمة مع المحادثة المؤقتة
           return updatedWithTemp;
         } else {
           console.log(`✅ [SOCKET] Conversation ${data.conversationId} exists in list`);
         }
-        
+
         const updatedConversations = prev.map((conv: Conversation) => {
           if (conv.id === data.conversationId) {
             // التحقق من عدم وجود الرسالة مسبقاً لتجنب التكرار
@@ -3046,7 +3034,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             return timeB - timeA; // الأحدث أولاً
           });
         }
-        
+
         // إذا كانت رسالة من موظف، أبقِ الترتيب كما هو
         console.log('💼 [SOCKET-REORDER] Staff/AI message received, KEEPING conversation position');
         console.log('💼 [SOCKET-REORDER] NOT reordering - returning as is');
@@ -3189,10 +3177,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       // ✅ FIX: التحقق من أن المحادثة تخص نفس الشركة قبل إضافتها
       const conversationCompanyId = data.companyId;
       if (conversationCompanyId && companyId && String(conversationCompanyId) !== String(companyId)) {
-        console.log('🔕 [SOCKET] Ignoring conversation from different company:', { 
-          conversationCompanyId, 
+        console.log('🔕 [SOCKET] Ignoring conversation from different company:', {
+          conversationCompanyId,
           currentCompanyId: companyId,
-          conversationId: data.id 
+          conversationId: data.id
         });
         return; // تجاهل المحادثة تماماً إذا كانت من شركة أخرى
       }
@@ -3206,9 +3194,9 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         unreadCount: data.unreadCount || 0,
         platform: 'facebook',
         isOnline: false,
-        messages: [] ,
-        pageName : data.pageName || 'unknown',
-        pageId : data.pageId,
+        messages: [],
+        pageName: data.pageName || 'unknown',
+        pageId: data.pageId,
         lastMessageIsFromCustomer: true,
         lastCustomerMessageIsUnread: true
       };
@@ -3231,7 +3219,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           };
           return updated;
         }
-        
+
         // 🔔 تشغيل صوت التنبيه للمحادثة الجديدة (مع عزل الشركات)
         if (conversationCompanyId && companyId && String(conversationCompanyId) === String(companyId)) {
           console.log('🔔 Playing notification sound for new conversation');
@@ -3243,7 +3231,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         } else {
           console.log('🔕 Skipping notification - different company:', { conversationCompanyId, currentCompanyId: companyId });
         }
-        
+
         console.log('✅ [SOCKET] Adding new conversation to frontend list');
         return [formattedConversation, ...prev];
       });
@@ -3363,7 +3351,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
     if (selectedConversation && hasAutoSelectedRef.current) {
       const urlParams = new URLSearchParams(window.location.search);
       const conversationIdFromUrl = urlParams.get('conversationId');
-      
+
       // فقط نتحقق من URL param إذا كان مختلفاً عن المحادثة المحددة
       if (conversationIdFromUrl && conversationIdFromUrl !== selectedConversation.id) {
         console.log('🔄 URL param changed, switching to:', conversationIdFromUrl);
@@ -3475,7 +3463,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
     }
 
     const searchLower = searchQuery.toLowerCase().trim();
-    
+
     // البحث في المحادثات التي تطابق البحث (في آخر رسالة أو اسم العميل)
     const matchingConversations = conversations.filter(conv => {
       const matchesLastMessage = (conv.lastMessage || '').toLowerCase().includes(searchLower);
@@ -3507,10 +3495,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   // ✅ FIX: منع scroll تلقائي عند focus على input في الموبايل
   useEffect(() => {
     if (typeof window === 'undefined' || window.innerWidth > 768) return;
-    
+
     let savedScrollY = 0;
     let isInputFocused = false;
-    
+
     const handleFocus = (e: FocusEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {
@@ -3518,21 +3506,21 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         savedScrollY = window.scrollY;
       }
     };
-    
+
     const handleBlur = () => {
       isInputFocused = false;
     };
-    
+
     const preventScroll = () => {
       if (isInputFocused) {
         window.scrollTo(0, savedScrollY);
       }
     };
-    
+
     // منع scroll التلقائي عند focus
     document.addEventListener('focusin', handleFocus, true);
     document.addEventListener('focusout', handleBlur, true);
-    
+
     // منع scroll التلقائي
     let scrollTimeout: NodeJS.Timeout;
     const handleScroll = () => {
@@ -3543,9 +3531,9 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         }, 10);
       }
     };
-    
+
     window.addEventListener('scroll', handleScroll, { passive: false });
-    
+
     return () => {
       document.removeEventListener('focusin', handleFocus, true);
       document.removeEventListener('focusout', handleBlur, true);
@@ -3608,7 +3596,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       // السماح بالسلوك الافتراضي (النزول لسطر جديد)
       return;
     }
-    
+
     // Enter فقط للإرسال
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -3625,7 +3613,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       const text = newMessage;
       const newText = text.substring(0, start) + emoji + text.substring(end);
       setNewMessage(newText);
-      
+
       // إعادة التركيز على textarea وضبط المؤشر بعد الـ emoji
       setTimeout(() => {
         textarea.focus();
@@ -3639,7 +3627,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
-        emojiPickerRef.current && 
+        emojiPickerRef.current &&
         !emojiPickerRef.current.contains(event.target as Node)
       ) {
         setShowEmojiPicker(false);
@@ -3652,7 +3640,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         document.removeEventListener('mousedown', handleClickOutside);
       };
     }
-    
+
     return undefined;
   }, [showEmojiPicker]);
 
@@ -3674,13 +3662,13 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   const formatMessageTime = (date: Date): string => {
     const now = new Date();
     const messageDate = new Date(date);
-    
+
     // إزالة الوقت للمقارنة بالتاريخ فقط
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
     const messageDay = new Date(messageDate.getFullYear(), messageDate.getMonth(), messageDate.getDate());
-    
+
     // إذا كانت الرسالة اليوم: عرض الوقت
     if (messageDay.getTime() === today.getTime()) {
       return messageDate.toLocaleTimeString('ar-EG', {
@@ -3703,40 +3691,42 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   };
 
   // فلترة المحادثات حسب البحث والنوع وترتيبها حسب آخر رسالة
-  const filteredConversations = conversations
-    .filter(conv => {
-      // فلترة حسب نوع المحادثة (الكل أو غير مقروءة)
-      const matchesFilter = conversationFilter === 'all' || 
-        (conversationFilter === 'unread' && conv.lastMessageIsFromCustomer === true && conv.lastCustomerMessageIsUnread === true);
-      
-      // إذا لم يكن هناك بحث، نرجع النتيجة حسب الفلتر فقط
-      if (!searchQuery || searchQuery.trim() === '') {
-        return matchesFilter;
-      }
-      
-      const searchLower = searchQuery.toLowerCase().trim();
-      
-      // البحث في آخر رسالة (متوفرة دائماً)
-      const matchesLastMessage = (conv.lastMessage || '').toLowerCase().includes(searchLower);
-      
-      // البحث في محتوى الرسائل المحملة في المحادثة
-      const matchesMessages = (conv.messages || []).some((message: Message) => {
-        // البحث في محتوى الرسالة
-        const contentMatch = (message.content || '').toLowerCase().includes(searchLower);
-        
-        return contentMatch;
+  const filteredConversations = useMemo(() => {
+    return conversations
+      .filter(conv => {
+        // فلترة حسب نوع المحادثة (الكل أو غير مقروءة)
+        const matchesFilter = conversationFilter === 'all' ||
+          (conversationFilter === 'unread' && conv.lastMessageIsFromCustomer === true && conv.lastCustomerMessageIsUnread === true);
+
+        // إذا لم يكن هناك بحث، نرجع النتيجة حسب الفلتر فقط
+        if (!searchQuery || searchQuery.trim() === '') {
+          return matchesFilter;
+        }
+
+        const searchLower = searchQuery.toLowerCase().trim();
+
+        // البحث في آخر رسالة (متوفرة دائماً)
+        const matchesLastMessage = (conv.lastMessage || '').toLowerCase().includes(searchLower);
+
+        // البحث في محتوى الرسائل المحملة في المحادثة
+        const matchesMessages = (conv.messages || []).some((message: Message) => {
+          // البحث في محتوى الرسالة
+          const contentMatch = (message.content || '').toLowerCase().includes(searchLower);
+
+          return contentMatch;
+        });
+
+        const matchesSearch = matchesLastMessage || matchesMessages;
+
+        return matchesFilter && matchesSearch;
+      })
+      .sort((a, b) => {
+        // ترتيب حسب آخر رسالة (الأحدث أولاً)
+        const timeA = new Date(a.lastMessageTime).getTime();
+        const timeB = new Date(b.lastMessageTime).getTime();
+        return timeB - timeA;
       });
-      
-      const matchesSearch = matchesLastMessage || matchesMessages;
-      
-      return matchesFilter && matchesSearch;
-    })
-    .sort((a, b) => {
-      // ترتيب حسب آخر رسالة (الأحدث أولاً)
-      const timeA = new Date(a.lastMessageTime).getTime();
-      const timeB = new Date(b.lastMessageTime).getTime();
-      return timeB - timeA;
-    });
+  }, [conversations, conversationFilter, searchQuery]);
 
   // عرض حالة تحميل المصادقة
   if (authLoading) {
@@ -3776,11 +3766,48 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex h-screen bg-gray-50">
-        <div className="flex items-center justify-center w-full">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">{t('conversations.loadingConversations', 'Loading conversations...')}</p>
+      <div className="flex h-screen bg-gray-50 overflow-hidden">
+        {/* Sidebar Skeleton */}
+        <div className="w-1/3 bg-white border-r border-gray-200 flex flex-col">
+          <div className="p-4 border-b border-gray-200">
+            <div className="h-8 bg-gray-200 rounded w-1/2 mb-4 animate-pulse"></div>
+            <div className="flex space-x-2 mb-4">
+              <div className="h-8 bg-gray-200 rounded w-1/2 animate-pulse"></div>
+              <div className="h-8 bg-gray-200 rounded w-1/2 animate-pulse"></div>
+            </div>
+            <div className="h-10 bg-gray-200 rounded w-full animate-pulse"></div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2 space-y-2">
+            {[...Array(8)].map((_, i) => (
+              <div key={i} className="flex items-center p-3 space-x-3">
+                <div className="w-12 h-12 bg-gray-200 rounded-full animate-pulse flex-shrink-0"></div>
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 bg-gray-200 rounded w-3/4 animate-pulse"></div>
+                  <div className="h-3 bg-gray-200 rounded w-1/2 animate-pulse"></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Main Area Skeleton */}
+        <div className="flex-1 flex flex-col bg-gray-50">
+          <div className="bg-white border-b border-gray-200 p-4 flex items-center space-x-4">
+            <div className="w-10 h-10 bg-gray-200 rounded-full animate-pulse"></div>
+            <div className="space-y-2 flex-1">
+              <div className="h-4 bg-gray-200 rounded w-1/4 animate-pulse"></div>
+              <div className="h-3 bg-gray-200 rounded w-1/6 animate-pulse"></div>
+            </div>
+          </div>
+          <div className="flex-1 p-4 space-y-4 overflow-y-auto">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className={`flex ${i % 2 === 0 ? 'justify-start' : 'justify-end'}`}>
+                <div className={`w-1/3 h-16 rounded-lg animate-pulse ${i % 2 === 0 ? 'bg-gray-200' : 'bg-blue-100'}`}></div>
+              </div>
+            ))}
+          </div>
+          <div className="p-4 bg-white border-t border-gray-200">
+            <div className="h-12 bg-gray-200 rounded-full animate-pulse"></div>
           </div>
         </div>
       </div>
@@ -3870,11 +3897,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           <div className="flex items-center space-x-2 mb-4 border-b border-gray-200">
             <button
               onClick={() => setConversationFilter('all')}
-              className={`flex-1 py-2 text-sm font-medium transition-colors relative ${
-                conversationFilter === 'all'
-                  ? 'text-blue-600 border-b-2 border-blue-600'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
+              className={`flex-1 py-2 text-sm font-medium transition-colors relative ${conversationFilter === 'all'
+                ? 'text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-500 hover:text-gray-700'
+                }`}
             >
               {t('conversations.all', 'All')}
               <span className="ml-1 text-xs bg-gray-100 px-2 py-0.5 rounded-full">
@@ -3883,11 +3909,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             </button>
             <button
               onClick={() => setConversationFilter('unread')}
-              className={`flex-1 py-2 text-sm font-medium transition-colors relative ${
-                conversationFilter === 'unread'
-                  ? 'text-blue-600 border-b-2 border-blue-600'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
+              className={`flex-1 py-2 text-sm font-medium transition-colors relative ${conversationFilter === 'unread'
+                ? 'text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-500 hover:text-gray-700'
+                }`}
             >
               {t('conversations.unread', 'Unread')}
               <span className="ml-1 text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">
@@ -3910,7 +3935,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         </div>
 
         {/* قائمة المحادثات */}
-        <div 
+        <div
           ref={conversationsListRef}
           className="flex-1 overflow-y-auto min-h-0"
           onScroll={handleConversationsScroll}
@@ -3921,131 +3946,128 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             </div>
           ) : (
             <>
-            {filteredConversations.map((conversation) => (
-              <div
-                key={conversation.id}
-                className={`p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                  selectedConversation?.id === conversation.id 
-                    ? 'bg-blue-50 border-r-4 border-r-blue-500' 
-                    : conversation.lastMessageIsFromCustomer 
-                      ? 'bg-green-50 border-r-4 border-r-green-400' 
+              {filteredConversations.map((conversation) => (
+                <div
+                  key={conversation.id}
+                  className={`p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors ${selectedConversation?.id === conversation.id
+                    ? 'bg-blue-50 border-r-4 border-r-blue-500'
+                    : conversation.lastMessageIsFromCustomer
+                      ? 'bg-green-50 border-r-4 border-r-green-400'
                       : ''
-                  }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div
-                    className="flex items-center space-x-3 flex-1 cursor-pointer"
-                    onClick={() => selectConversation(conversation.id)}
-                  >
-                    <div className="relative">
-                      <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-semibold">
-                        {conversation.customerName.charAt(0)}
-                      </div>
-                      {/* مؤشر حالة الاتصال */}
-                      {onlineUsers.includes(conversation.id) && (
-                        <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2">
-                      <h3 className="font-medium text-gray-900 flex items-center space-x-2">
-                        <span>{conversation.customerName}</span>
-                        {conversation.pageName && (
-                          <span className="text-blue-600 font-medium bg-blue-50 px-1.5 py-0.5 rounded text-sm">
-                            {conversation.pageName}
-                          </span>
-                        )}
-                      </h3>
-
-                      {onlineUsers.includes(conversation.id) && (
-                        <span className="text-xs text-green-600 font-medium">متصل</span>
-                      )}
-                    </div>
-
-                      <div className="flex items-center space-x-1">
-                        {/* مؤشر مرسل آخر رسالة */}
-                        {conversation.lastMessageIsFromCustomer ? (
-                          <span className="text-xs font-bold text-green-700 bg-green-100 px-1.5 py-0.5 rounded mr-1" title="رسالة من العميل">عميل</span>
-                        ) : (
-                          <span className="text-xs font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded mr-1" title="رسالة من الموظف">موظف</span>
-                        )}
-                        <p className={`text-sm flex-1 ${
-                          conversation.lastMessageIsFromCustomer 
-                            ? 'text-gray-900 font-semibold' 
-                            : 'text-gray-500'
-                        }`}>
-                          {conversation.lastMessage.length > 40 
-                            ? conversation.lastMessage.substring(0, 40) + '...' 
-                            : conversation.lastMessage}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="text-right">
-                      <p className="text-xs text-gray-400">
-                        {formatMessageTime(conversation.lastMessageTime)}
-                      </p>
-                      {conversation.unreadCount > 0 && (
-                        <div className="bg-blue-600 text-white text-xs rounded-full px-2 py-1 mt-1 inline-block">
-                          {conversation.unreadCount}
+                    }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div
+                      className="flex items-center space-x-3 flex-1 cursor-pointer"
+                      onClick={() => selectConversation(conversation.id)}
+                    >
+                      <div className="relative">
+                        <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-semibold">
+                          {conversation.customerName.charAt(0)}
                         </div>
-                      )}
+                        {/* مؤشر حالة الاتصال */}
+                        {onlineUsers.includes(conversation.id) && (
+                          <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2">
+                          <h3 className="font-medium text-gray-900 flex items-center space-x-2">
+                            <span>{conversation.customerName}</span>
+                            {conversation.pageName && (
+                              <span className="text-blue-600 font-medium bg-blue-50 px-1.5 py-0.5 rounded text-sm">
+                                {conversation.pageName}
+                              </span>
+                            )}
+                          </h3>
+
+                          {onlineUsers.includes(conversation.id) && (
+                            <span className="text-xs text-green-600 font-medium">متصل</span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center space-x-1">
+                          {/* مؤشر مرسل آخر رسالة */}
+                          {conversation.lastMessageIsFromCustomer ? (
+                            <span className="text-xs font-bold text-green-700 bg-green-100 px-1.5 py-0.5 rounded mr-1" title="رسالة من العميل">عميل</span>
+                          ) : (
+                            <span className="text-xs font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded mr-1" title="رسالة من الموظف">موظف</span>
+                          )}
+                          <p className={`text-sm flex-1 ${conversation.lastMessageIsFromCustomer
+                            ? 'text-gray-900 font-semibold'
+                            : 'text-gray-500'
+                            }`}>
+                            {conversation.lastMessage.length > 40
+                              ? conversation.lastMessage.substring(0, 40) + '...'
+                              : conversation.lastMessage}
+                          </p>
+                        </div>
+                      </div>
                     </div>
-                    {/* زر وضع علامة غير مقروءة (بالجانب لكل محادثة) */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleMarkAsUnread(conversation.id, conversation.unreadCount > 0);
-                      }}
-                      disabled={markingAsUnread === conversation.id}
-                      className={`p-2 rounded-full transition-all duration-200 ${
-                        conversation.unreadCount > 0
+                    <div className="flex items-center space-x-2">
+                      <div className="text-right">
+                        <p className="text-xs text-gray-400">
+                          {formatMessageTime(conversation.lastMessageTime)}
+                        </p>
+                        {conversation.unreadCount > 0 && (
+                          <div className="bg-blue-600 text-white text-xs rounded-full px-2 py-1 mt-1 inline-block">
+                            {conversation.unreadCount}
+                          </div>
+                        )}
+                      </div>
+                      {/* زر وضع علامة غير مقروءة (بالجانب لكل محادثة) */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMarkAsUnread(conversation.id, conversation.unreadCount > 0);
+                        }}
+                        disabled={markingAsUnread === conversation.id}
+                        className={`p-2 rounded-full transition-all duration-200 ${conversation.unreadCount > 0
                           ? 'text-orange-600 bg-orange-50 hover:bg-orange-100'
                           : 'text-gray-400 hover:text-orange-600 hover:bg-orange-50'
-                      } disabled:opacity-50 disabled:cursor-not-allowed`}
-                      title={conversation.unreadCount > 0 ? t('conversations.markAsRead', 'Mark as read') : t('conversations.markAsUnread', 'Mark as unread')}
-                    >
-                      {markingAsUnread === conversation.id ? (
-                        <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-                      ) : (
-                        <svg className="w-5 h-5" fill={conversation.unreadCount > 0 ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
-                      )}
-                    </button>
+                          } disabled:opacity-50 disabled:cursor-not-allowed`}
+                        title={conversation.unreadCount > 0 ? t('conversations.markAsRead', 'Mark as read') : t('conversations.markAsUnread', 'Mark as unread')}
+                      >
+                        {markingAsUnread === conversation.id ? (
+                          <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                          <svg className="w-5 h-5" fill={conversation.unreadCount > 0 ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                          </svg>
+                        )}
+                      </button>
 
-                    {/* زر الحذف */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openDeleteModal(conversation);
-                      }}
-                      className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                      title={t('conversations.deleteConversation', 'Delete conversation')}
-                    >
-                      <TrashIcon className="w-4 h-4" />
-                    </button>
+                      {/* زر الحذف */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openDeleteModal(conversation);
+                        }}
+                        className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                        title={t('conversations.deleteConversation', 'Delete conversation')}
+                      >
+                        <TrashIcon className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
-            }
-            
-            {/* مؤشر تحميل المزيد */}
-            {loadingMoreConversations && (
-              <div className="p-4 text-center">
-                <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-                <p className="mt-2 text-sm text-gray-500">{t('conversations.loading', 'Loading...')}</p>
-              </div>
-            )}
-            
-            {/* رسالة عدم وجود المزيد */}
-            {!hasMoreConversations && conversations.length > 0 && (
-              <div className="p-4 text-center text-sm text-gray-500">
-                {t('conversations.allConversationsDisplayed', 'All conversations displayed')} ({totalConversations})
-              </div>
-            )}
+              ))
+              }
+
+              {/* مؤشر تحميل المزيد */}
+              {loadingMoreConversations && (
+                <div className="p-4 text-center">
+                  <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                  <p className="mt-2 text-sm text-gray-500">{t('conversations.loading', 'Loading...')}</p>
+                </div>
+              )}
+
+              {/* رسالة عدم وجود المزيد */}
+              {!hasMoreConversations && conversations.length > 0 && (
+                <div className="p-4 text-center text-sm text-gray-500">
+                  {t('conversations.allConversationsDisplayed', 'All conversations displayed')} ({totalConversations})
+                </div>
+              )}
             </>
           )}
         </div>
@@ -4219,11 +4241,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                       }
                     }}
                     disabled={!selectedConversation || markingAsUnread === selectedConversation?.id}
-                    className={`p-2 rounded-full transition-all duration-200 ${
-                      selectedConversation?.unreadCount > 0
-                        ? 'text-orange-600 bg-orange-50 hover:bg-orange-100'
-                        : 'text-gray-400 hover:text-orange-600 hover:bg-orange-50'
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                    className={`p-2 rounded-full transition-all duration-200 ${selectedConversation?.unreadCount > 0
+                      ? 'text-orange-600 bg-orange-50 hover:bg-orange-100'
+                      : 'text-gray-400 hover:text-orange-600 hover:bg-orange-50'
+                      } disabled:opacity-50 disabled:cursor-not-allowed`}
                     title={selectedConversation?.unreadCount > 0 ? t('conversations.markAsRead', 'Mark as read') : t('conversations.markAsUnread', 'Mark as unread')}
                   >
                     {markingAsUnread === selectedConversation?.id ? (
@@ -4281,7 +4302,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                   <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100">
                     <VideoCameraIcon className="w-5 h-5" />
                   </button>
-                  <button 
+                  <button
                     onClick={() => setShowCustomerProfile(true)}
                     className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"
                     title={t('conversations.customerProfile', 'Customer Profile')}
@@ -4321,9 +4342,8 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             {/* منطقة الرسائل */}
             <div
               ref={messagesContainerRef}
-              className={`flex-1 overflow-y-auto p-4 space-y-4 relative transition-all min-h-0 messages-container ${
-                isDraggingOver ? 'bg-blue-50 border-4 border-dashed border-blue-400' : ''
-              }`}
+              className={`flex-1 overflow-y-auto p-4 space-y-4 relative transition-all min-h-0 messages-container ${isDraggingOver ? 'bg-blue-50 border-4 border-dashed border-blue-400' : ''
+                }`}
               onScroll={handleScroll}
               onDragEnter={handleDragEnter}
               onDragOver={handleDragOver}
@@ -4390,24 +4410,23 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                           {/* عرض Reply Preview إذا كانت هذه الرسالة رد على رسالة أخرى */}
                           {(message.replyToContentSnippet || message.replyToFacebookMessageId) && (() => {
                             // البحث عن الرسالة الأصلية لعرض الصورة إذا كانت موجودة
-                            const originalMessage = message.replyToResolvedMessageId 
+                            const originalMessage = message.replyToResolvedMessageId
                               ? selectedConversation?.messages?.find(m => m.id === message.replyToResolvedMessageId)
                               : null;
                             const isImageReply = message.replyToType === 'IMAGE' || originalMessage?.type === 'IMAGE' || originalMessage?.type === 'image';
                             const imageUrl = originalMessage?.fileUrl || originalMessage?.content;
-                            
+
                             return (
-                              <div className={`mb-2 px-2 py-1.5 rounded border-l-2 text-xs ${
-                                message.isFromCustomer 
-                                  ? 'bg-white/80 border-l-gray-500 text-gray-700' 
-                                  : 'bg-white/20 border-l-white/50 text-white/90'
-                              }`}>
+                              <div className={`mb-2 px-2 py-1.5 rounded border-l-2 text-xs ${message.isFromCustomer
+                                ? 'bg-white/80 border-l-gray-500 text-gray-700'
+                                : 'bg-white/20 border-l-white/50 text-white/90'
+                                }`}>
                                 <div className="font-semibold mb-0.5">↩️ ردًا على:</div>
                                 {isImageReply && imageUrl ? (
                                   <div className="mt-1">
-                                    <img 
-                                      src={imageUrl} 
-                                      alt="الرسالة الأصلية" 
+                                    <img
+                                      src={imageUrl}
+                                      alt="الرسالة الأصلية"
                                       className="max-w-full h-16 rounded object-cover cursor-pointer hover:opacity-80"
                                       onClick={() => window.open(imageUrl, '_blank')}
                                     />
@@ -4418,7 +4437,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                               </div>
                             );
                           })()}
-                          
+
                           {/* عرض الرسائل حسب النوع */}
                           {/* تسجيل تشخيصي لكل رسالة - معطل لتقليل console logs */}
                           {false && process.env.NODE_ENV === 'development' && console.log('🔍 [MESSAGE-DEBUG] Message data:', {
@@ -4457,11 +4476,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                                       href={button.url}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className={`block text-center py-2 px-4 rounded text-sm font-medium transition-colors ${
-                                        message.isFromCustomer 
-                                          ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                                          : 'bg-white text-blue-600 hover:bg-gray-100 border border-blue-600'
-                                      }`}
+                                      className={`block text-center py-2 px-4 rounded text-sm font-medium transition-colors ${message.isFromCustomer
+                                        ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                        : 'bg-white text-blue-600 hover:bg-gray-100 border border-blue-600'
+                                        }`}
                                     >
                                       {button.title}
                                     </a>
@@ -4678,7 +4696,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             )}
 
             {/* منطقة إدخال الرسالة */}
-            <div 
+            <div
               className="bg-white border-t border-gray-200 p-4 flex-shrink-0"
               id="message-input-area"
               style={{
@@ -4713,7 +4731,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                 >
                   <PaperClipIcon className="w-5 h-5" />
                 </label>
-                
+
                 {/* زر حافظة الصور */}
                 <button
                   onClick={() => {
@@ -4727,7 +4745,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                 </button>
-                
+
                 {/* زر حافظة النصوص */}
                 <button
                   onClick={() => {
@@ -4753,18 +4771,18 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                         // حفظ موضع scroll الحالي قبل أي تغيير
                         const currentScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop;
                         const currentScrollX = window.scrollX || window.pageXOffset || document.documentElement.scrollLeft;
-                        
+
                         // تحديث viewport لمنع zoom
                         const viewport = document.querySelector('meta[name="viewport"]');
                         if (viewport) {
                           viewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
                         }
-                        
+
                         // ✅ FIX: منع scroll التلقائي فوراً
                         const preventScroll = () => {
                           const newScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop;
                           const newScrollX = window.scrollX || window.pageXOffset || document.documentElement.scrollLeft;
-                          
+
                           if (Math.abs(newScrollY - currentScrollY) > 1 || Math.abs(newScrollX - currentScrollX) > 1) {
                             window.scrollTo({
                               top: currentScrollY,
@@ -4777,7 +4795,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                             document.body.scrollLeft = currentScrollX;
                           }
                         };
-                        
+
                         // منع scroll فوراً وبعد فترات متعددة
                         preventScroll();
                         requestAnimationFrame(preventScroll);
@@ -4792,18 +4810,18 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                         setTimeout(preventScroll, 500);
                         setTimeout(preventScroll, 800);
                         setTimeout(preventScroll, 1000);
-                        
+
                         // إضافة event listeners لمنع scroll
                         const scrollHandler = (e: Event) => {
                           e.preventDefault();
                           e.stopPropagation();
                           preventScroll();
                         };
-                        
+
                         window.addEventListener('scroll', scrollHandler, { passive: false, capture: true });
                         document.addEventListener('scroll', scrollHandler, { passive: false, capture: true });
                         window.addEventListener('touchmove', preventScroll, { passive: false });
-                        
+
                         // إزالة event listeners بعد 3 ثواني
                         setTimeout(() => {
                           window.removeEventListener('scroll', scrollHandler, { capture: true });
@@ -4824,9 +4842,9 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                     placeholder={t('conversations.typeMessage', 'Type a message...')}
                     rows={1}
                     className="w-full px-5 py-3 text-base border border-gray-300 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none overflow-y-auto"
-                    style={{ 
-                      minHeight: '56px', 
-                      maxHeight: '150px', 
+                    style={{
+                      minHeight: '56px',
+                      maxHeight: '150px',
                       fontSize: '18px',
                       WebkitTextSizeAdjust: '100%',
                       textSizeAdjust: '100%',
@@ -4835,10 +4853,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                       zoom: 1
                     }}
                   />
-                  
+
                   {/* Emoji Picker */}
                   {showEmojiPicker && (
-                    <div 
+                    <div
                       ref={emojiPickerRef}
                       className="absolute bottom-full left-0 mb-2 bg-white border border-gray-300 rounded-lg shadow-lg p-3 z-50"
                       style={{ width: '320px', maxHeight: '300px', overflowY: 'auto' }}
@@ -4856,7 +4874,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                           </button>
                         ))}
                       </div>
-                      
+
                       <div className="mt-3 pt-3 border-t border-gray-200">
                         <p className="text-xs text-gray-500 mb-2">❤️ القلوب</p>
                         <div className="grid grid-cols-8 gap-2">
@@ -4872,7 +4890,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                           ))}
                         </div>
                       </div>
-                      
+
                       <div className="mt-3 pt-3 border-t border-gray-200">
                         <p className="text-xs text-gray-500 mb-2">👍 الإيماءات</p>
                         <div className="grid grid-cols-8 gap-2">
@@ -4888,7 +4906,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                           ))}
                         </div>
                       </div>
-                      
+
                       <div className="mt-3 pt-3 border-t border-gray-200">
                         <p className="text-xs text-gray-500 mb-2">🎉 أخرى</p>
                         <div className="grid grid-cols-8 gap-2">
@@ -4907,7 +4925,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                     </div>
                   )}
                 </div>
-                <button 
+                <button
                   onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                   className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"
                   type="button"
@@ -5011,7 +5029,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                 <h3 className="text-xl font-bold text-gray-900">حافظة الصور المحفوظة</h3>
                 <span className="text-sm text-gray-500">({savedImages.length} صورة)</span>
               </div>
-              
+
               <div className="flex items-center space-x-2">
                 {/* زر إضافة صور للحافظة */}
                 <input
@@ -5040,7 +5058,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                     </>
                   )}
                 </label>
-                
+
                 {/* زر الإغلاق */}
                 <button
                   onClick={() => setShowImageGallery(false)}
@@ -5079,11 +5097,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                     return (
                       <div
                         key={image.id}
-                        className={`relative group cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
-                          isSelected 
-                            ? 'border-blue-500 ring-2 ring-blue-300' 
-                            : 'border-gray-200 hover:border-blue-500'
-                        }`}
+                        className={`relative group cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${isSelected
+                          ? 'border-blue-500 ring-2 ring-blue-300'
+                          : 'border-gray-200 hover:border-blue-500'
+                          }`}
                         onClick={(e) => {
                           // إذا كان هناك صور مختارة، استخدم وضع الاختيار المتعدد
                           if (selectedImagesForSend.size > 0) {
@@ -5099,11 +5116,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                           alt={image.filename}
                           className="w-full h-40 object-cover"
                         />
-                        <div className={`absolute inset-0 bg-black transition-all ${
-                          isSelected 
-                            ? 'bg-opacity-30' 
-                            : 'bg-opacity-0 group-hover:bg-opacity-50'
-                        } flex items-center justify-center`}>
+                        <div className={`absolute inset-0 bg-black transition-all ${isSelected
+                          ? 'bg-opacity-30'
+                          : 'bg-opacity-0 group-hover:bg-opacity-50'
+                          } flex items-center justify-center`}>
                           {!isSelected && (
                             <div className="transform scale-0 group-hover:scale-100 transition-transform">
                               <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -5115,11 +5131,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                         {/* Checkbox للاختيار المتعدد - يظهر فوق الـ overlay */}
                         <button
                           onClick={(e) => toggleImageSelection(image.id, e)}
-                          className={`absolute top-2 left-2 w-8 h-8 rounded border-2 flex items-center justify-center transition-all z-20 ${
-                            isSelected 
-                              ? 'bg-blue-600 border-blue-600 opacity-100' 
-                              : 'bg-white border-gray-300 opacity-0 group-hover:opacity-100'
-                          } hover:bg-blue-500 hover:border-blue-500`}
+                          className={`absolute top-2 left-2 w-8 h-8 rounded border-2 flex items-center justify-center transition-all z-20 ${isSelected
+                            ? 'bg-blue-600 border-blue-600 opacity-100'
+                            : 'bg-white border-gray-300 opacity-0 group-hover:opacity-100'
+                            } hover:bg-blue-500 hover:border-blue-500`}
                           title={isSelected ? "إلغاء التحديد" : "تحديد الصورة"}
                         >
                           {isSelected && (
@@ -5229,7 +5244,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                 <h3 className="text-xl font-bold text-gray-900">حافظة النصوص المحفوظة</h3>
                 <span className="text-sm text-gray-500">({savedTexts.length} نص)</span>
               </div>
-              
+
               <button
                 onClick={() => setShowTextGallery(false)}
                 className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100"
@@ -5260,7 +5275,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                     rows={4}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
                   />
-                  
+
                   {/* رفع الصور */}
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-gray-700">
@@ -5283,7 +5298,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                       </svg>
                       <span className="text-sm text-gray-600">اختر صور لإرفاقها مع النص</span>
                     </label>
-                    
+
                     {/* معاينة الصور المرفوعة */}
                     {newTextImagePreviews.length > 0 && (
                       <div className="grid grid-cols-4 gap-2 mt-2">
@@ -5348,11 +5363,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                   {savedTexts.map((text) => (
                     <div
                       key={text.id}
-                      className={`p-4 bg-white border rounded-lg transition-all group ${
-                        editingTextId === text.id
-                          ? 'border-blue-500 shadow-lg'
-                          : 'border-gray-200 hover:border-green-500 hover:shadow-md cursor-pointer'
-                      }`}
+                      className={`p-4 bg-white border rounded-lg transition-all group ${editingTextId === text.id
+                        ? 'border-blue-500 shadow-lg'
+                        : 'border-gray-200 hover:border-green-500 hover:shadow-md cursor-pointer'
+                        }`}
                       onClick={() => {
                         // إذا كان في وضع التعديل، لا نختار النص للإرسال
                         if (editingTextId !== text.id) {
@@ -5379,7 +5393,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                             onClick={(e) => e.stopPropagation()}
                           />
-                          
+
                           {/* الصور الموجودة */}
                           {editingTextExistingImages.length > 0 && (
                             <div className="space-y-2">
@@ -5435,7 +5449,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                               </svg>
                               <span className="text-sm text-gray-600">اختر صور لإضافتها</span>
                             </label>
-                            
+
                             {/* معاينة الصور الجديدة */}
                             {editingTextImagePreviews.length > 0 && (
                               <div className="grid grid-cols-4 gap-2 mt-2">
@@ -5620,7 +5634,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
       {/* مكون ملف العميل */}
       {showCustomerProfile && selectedConversation && (
-        <CustomerProfile 
+        <CustomerProfile
           customerId={selectedConversation.customerId}
           isOpen={showCustomerProfile}
           onClose={() => setShowCustomerProfile(false)}
@@ -5636,7 +5650,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             <p className="text-sm text-gray-600 mb-4">
               سيتم حظر هذا العميل على صفحة الفيس بوك المحددة ولن يتم استقبال رسائله.
             </p>
-            
+
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 سبب الحظر (اختياري)

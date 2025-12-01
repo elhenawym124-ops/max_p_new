@@ -7,6 +7,7 @@
 
 const { getSharedPrismaClient } = require('../sharedDatabase');
 const prisma = getSharedPrismaClient();
+const { initAuthCreds } = require('@whiskeysockets/baileys');
 
 // Cache للحالة لتقليل استعلامات قاعدة البيانات
 const authStateCache = new Map();
@@ -26,7 +27,7 @@ async function useDatabaseAuthState(sessionId) {
 
     // تهيئة الحالة
     let state = {
-        creds: authData.creds || null,
+        creds: authData.creds || initAuthCreds(),
         keys: {}
     };
 
@@ -109,7 +110,7 @@ async function useDatabaseAuthState(sessionId) {
         get: async (type, ids) => {
             // إعادة تحميل من قاعدة البيانات للتأكد من أحدث البيانات
             authData = await loadAuthState(sessionId);
-            
+
             if (!authData.keys || !authData.keys[type]) {
                 return {};
             }
@@ -134,7 +135,7 @@ async function useDatabaseAuthState(sessionId) {
                 if (!state.keys[category]) {
                     state.keys[category] = {};
                 }
-                
+
                 // دمج البيانات الجديدة
                 for (const keyId in data[category]) {
                     state.keys[category][String(keyId)] = data[category][keyId];

@@ -2,3 +2,4 @@
 Set-Location $PSScriptRoot
 node migrate-auth.js
 
+

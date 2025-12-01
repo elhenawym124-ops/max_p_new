@@ -21,15 +21,74 @@ const requireAuth = async (req, res, next) => {
     const token = authHeader.substring(7); // Remove 'Bearer ' prefix
 
     // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    
-    // Get user from database
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      include: {
-        company: true
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    } catch (jwtError) {
+      if (jwtError.name === 'JsonWebTokenError') {
+        return res.status(401).json({ 
+          error: 'Invalid token',
+          code: 'INVALID_TOKEN'
+        });
       }
-    });
+      
+      if (jwtError.name === 'TokenExpiredError') {
+        return res.status(401).json({ 
+          error: 'Token expired',
+          code: 'TOKEN_EXPIRED'
+        });
+      }
+      
+      throw jwtError;
+    }
+    
+    // Get user from database with retry logic for connection issues
+    let user;
+    let retries = 2;
+    let lastError;
+    
+    while (retries > 0) {
+      try {
+        user = await prisma.user.findUnique({
+          where: { id: decoded.userId },
+          include: {
+            company: true
+          }
+        });
+        break; // Success, exit retry loop
+      } catch (dbError) {
+        lastError = dbError;
+        retries--;
+        
+        // Check if it's a connection error worth retrying
+        const isConnectionError = 
+          dbError.message?.includes('Engine is not yet connected') ||
+          dbError.message?.includes('Connection') ||
+          dbError.message?.includes('timeout') ||
+          dbError.code === 'P1001' ||
+          dbError.code === 'P1008' ||
+          dbError.code === 'P1017';
+        
+        if (isConnectionError && retries > 0) {
+          console.warn(`[AUTH] Database connection issue, retrying... (${retries} retries left)`);
+          await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms before retry
+          continue;
+        }
+        
+        // Log the actual error for debugging
+        console.error('[AUTH ERROR] Database query failed:', {
+          error: dbError.message,
+          code: dbError.code,
+          userId: decoded.userId,
+          path: req.path
+        });
+        
+        return res.status(503).json({ 
+          error: 'Database temporarily unavailable',
+          code: 'DB_CONNECTION_ERROR'
+        });
+      }
+    }
 
     if (!user) {
       return res.status(401).json({ 
@@ -59,21 +118,11 @@ const requireAuth = async (req, res, next) => {
 
     next();
   } catch (error) {
-    console.error('[AUTH ERROR]', error);
-    
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ 
-        error: 'Invalid token',
-        code: 'INVALID_TOKEN'
-      });
-    }
-    
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ 
-        error: 'Token expired',
-        code: 'TOKEN_EXPIRED'
-      });
-    }
+    console.error('[AUTH ERROR] Unexpected error:', {
+      error: error.message,
+      stack: error.stack?.substring(0, 500),
+      path: req.path
+    });
 
     return res.status(500).json({ 
       error: 'Authentication error',

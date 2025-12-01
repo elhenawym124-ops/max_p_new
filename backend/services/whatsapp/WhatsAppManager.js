@@ -307,7 +307,7 @@ async function handleIncomingMessages(sessionId, companyId, m, sock) {
             });
 
             // تحديث أو إنشاء جهة الاتصال
-            await updateOrCreateContact(sessionId, remoteJid, msg, sock);
+            const contact = await updateOrCreateContact(sessionId, remoteJid, msg, sock);
 
             // إرسال الرسالة عبر Socket.IO
             io?.to(`company_${companyId}`).emit('whatsapp:message:new', {
@@ -315,6 +315,68 @@ async function handleIncomingMessages(sessionId, companyId, m, sock) {
                 message: savedMessage,
                 raw: msg
             });
+
+            // 🔔 إنشاء إشعار للرسالة الجديدة (فقط للرسائل الواردة)
+            if (!fromMe) {
+                try {
+                    // جلب إعدادات الإشعارات
+                    const settings = await prisma.whatsAppSettings.findUnique({
+                        where: { companyId }
+                    });
+
+                    // الإشعارات مفعلة افتراضياً إذا لم تكن موجودة
+                    const notificationsEnabled = settings?.browserNotifications !== false;
+                    const soundEnabled = settings?.notificationSound !== false;
+
+                    const contactName = contact?.name || contact?.pushName || remoteJid.split('@')[0];
+                    const notificationContent = messageContent.text
+                        ? (messageContent.text.length > 50 ? messageContent.text.substring(0, 50) + '...' : messageContent.text)
+                        : (messageContent.type === 'IMAGE' ? '📷 صورة' :
+                            messageContent.type === 'VIDEO' ? '🎥 فيديو' :
+                                messageContent.type === 'AUDIO' ? '🎵 صوت' :
+                                    messageContent.type === 'DOCUMENT' ? '📎 ملف' : 'رسالة جديدة');
+
+                    // إنشاء إشعار في قاعدة البيانات إذا كانت الإشعارات مفعلة
+                    if (notificationsEnabled) {
+                        await prisma.notification.create({
+                            data: {
+                                companyId,
+                                userId: null, // إشعار عام للشركة
+                                type: 'new_message',
+                                title: `رسالة جديدة من ${contactName}`,
+                                message: notificationContent,
+                                data: JSON.stringify({
+                                    sessionId,
+                                    messageId: savedMessage.id,
+                                    remoteJid,
+                                    contactId: contact?.id,
+                                    messageType: messageContent.type
+                                })
+                            }
+                        });
+                    }
+
+                    // إرسال إشعار عبر Socket دائماً (Frontend يتحقق من الإعدادات)
+                    io?.to(`company_${companyId}`).emit('whatsapp:notification:new', {
+                        sessionId,
+                        contactName,
+                        message: notificationContent,
+                        messageType: messageContent.type,
+                        timestamp: savedMessage.timestamp,
+                        soundEnabled,
+                        notificationsEnabled
+                    });
+
+                    console.log(`🔔 [NOTIFICATION] Sent WhatsApp message notification for company ${companyId}`, {
+                        contactName,
+                        messageType: messageContent.type,
+                        notificationsEnabled,
+                        soundEnabled
+                    });
+                } catch (notifError) {
+                    console.error('❌ [NOTIFICATION] Error creating WhatsApp message notification:', notifError);
+                }
+            }
 
             // معالجة AI إذا كان مفعلاً
             if (!fromMe) {
@@ -465,7 +527,7 @@ async function updateOrCreateContact(sessionId, remoteJid, msg, sock) {
             // تجاهل الخطأ إذا لم تكن الصورة متاحة
         }
 
-        await prisma.whatsAppContact.upsert({
+        const contact = await prisma.whatsAppContact.upsert({
             where: {
                 sessionId_jid: {
                     sessionId,
@@ -491,8 +553,11 @@ async function updateOrCreateContact(sessionId, remoteJid, msg, sock) {
                 totalMessages: 1
             }
         });
+
+        return contact;
     } catch (error) {
         console.error('❌ Error updating contact:', error);
+        return null;
     }
 }
 
@@ -660,7 +725,23 @@ async function markAsRead(sessionId, remoteJid, messageKeys) {
         throw new Error('Session not connected');
     }
 
-    await session.sock.readMessages(messageKeys);
+    try {
+        if (typeof session.sock.readMessages === 'function') {
+            await session.sock.readMessages(messageKeys);
+        } else if (typeof session.sock.chatModify === 'function') {
+            // For chatModify we need the last message key usually
+            // If messageKeys is passed, we can use the last one
+            const lastKey = messageKeys[messageKeys.length - 1];
+            if (lastKey) {
+                await session.sock.chatModify({
+                    markRead: true,
+                    lastMessages: [{ key: lastKey }]
+                }, remoteJid);
+            }
+        }
+    } catch (e) {
+        console.warn('Failed to mark read on socket:', e);
+    }
 
     // تحديث قاعدة البيانات
     await prisma.whatsAppContact.updateMany({

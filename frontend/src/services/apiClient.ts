@@ -99,7 +99,7 @@ class ApiClient {
         return response;
       },
       async (error: AxiosError<ApiError>) => {
-        const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
+        const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean; _retryCount?: number };
 
         // Enhanced error logging in development
         if (import.meta.env.DEV) {
@@ -115,12 +115,30 @@ class ApiClient {
             console.error('🔒 Authentication failed - token may be invalid or expired');
           } else if (error.response?.status === 403) {
             console.error('🚫 Access denied - insufficient permissions');
+          } else if (error.response?.status === 503) {
+            console.error('⏳ Database temporarily unavailable - will retry');
           } else if (error.response?.status === 500) {
             console.error('🔥 Server error occurred');
             console.error('🔥 Error details:', error.response?.data);
             if (error.response?.data?.details) {
               console.error('🔥 Error details (dev):', error.response.data.details);
             }
+          }
+        }
+
+        // Handle 503 Service Unavailable (database connection issues) with retry
+        if (error.response?.status === 503) {
+          const retryCount = originalRequest._retryCount || 0;
+          const maxRetries = 3;
+          
+          if (retryCount < maxRetries) {
+            originalRequest._retryCount = retryCount + 1;
+            const delay = Math.min(1000 * Math.pow(2, retryCount), 5000); // Exponential backoff: 1s, 2s, 4s (max 5s)
+            
+            console.log(`🔄 Retrying request (${retryCount + 1}/${maxRetries}) after ${delay}ms...`);
+            
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return this.client(originalRequest);
           }
         }
 
@@ -221,8 +239,8 @@ class ApiClient {
     const status = error.response?.status;
     const errorData = error.response?.data;
 
-    // Don't show toast for certain errors
-    const silentErrors = [401, 404];
+    // Don't show toast for certain errors (503 is retried automatically)
+    const silentErrors = [401, 404, 503];
     if (silentErrors.includes(status || 0)) {
       return;
     }
