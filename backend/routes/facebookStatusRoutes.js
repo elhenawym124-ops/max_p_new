@@ -7,7 +7,7 @@ const prisma = getSharedPrismaClient();
 router.get('/facebook-status', async (req, res) => {
   try {
     console.log('🔍 Checking Facebook pages status...');
-    
+
     // البحث عن جميع صفحات Facebook
     const facebookPages = await prisma.facebookPage.findMany({
       select: {
@@ -40,7 +40,7 @@ router.get('/facebook-status', async (req, res) => {
       companyName: page.company?.name || 'Unknown',
       companyId: page.companyId,
       isActive: page.status === 'connected',
-      daysSinceConnection: page.connectedAt ? 
+      daysSinceConnection: page.connectedAt ?
         Math.floor((new Date() - new Date(page.connectedAt)) / (1000 * 60 * 60 * 24)) : null
     }));
 
@@ -68,7 +68,7 @@ router.get('/facebook-status', async (req, res) => {
 router.post('/test-message', async (req, res) => {
   try {
     const { recipientId, message, pageId } = req.body;
-    
+
     if (!recipientId || !message) {
       return res.status(400).json({
         success: false,
@@ -77,11 +77,11 @@ router.post('/test-message', async (req, res) => {
     }
 
     console.log(`🧪 Testing message send to ${recipientId}: "${message}"`);
-    
+
     // استخدام دالة الإرسال المحسنة
     // 🔧 FIX: استخدم نفس الطريقة التي تستخدمها الصور للإرسال
-    const { sendProductionFacebookMessage } = require('../production-facebook-fix');
-    
+    const { sendProductionFacebookMessage } = require('../utils/production-facebook-fix');
+
     // البحث عن الصفحة إذا تم تحديد pageId
     let pageAccessToken = null;
     if (pageId) {
@@ -91,7 +91,7 @@ router.post('/test-message', async (req, res) => {
         pageAccessToken = pageData.pageAccessToken;
       }
     }
-    
+
     // إذا لم نجد رمز الوصول للصفحة، نحاول العثور على صفحة متصلة
     if (!pageAccessToken) {
       const { getSharedPrismaClient } = require('../services/sharedDatabase');
@@ -100,13 +100,13 @@ router.post('/test-message', async (req, res) => {
         where: { status: 'connected' },
         orderBy: { connectedAt: 'desc' }
       });
-      
+
       if (defaultPage && defaultPage.pageAccessToken) {
         pageAccessToken = defaultPage.pageAccessToken;
         pageId = defaultPage.pageId; // تحديث pageId للاستخدام
       }
     }
-    
+
     // التحقق من توفر رمز الوصول
     if (!pageAccessToken) {
       return res.status(400).json({
@@ -114,15 +114,15 @@ router.post('/test-message', async (req, res) => {
         error: 'No valid Facebook page found'
       });
     }
-    
+
     const result = await sendProductionFacebookMessage(
-      recipientId, 
-      message, 
-      'TEXT', 
-      pageId, 
+      recipientId,
+      message,
+      'TEXT',
+      pageId,
       pageAccessToken
     );
-    
+
     res.json({
       success: result.success,
       data: result,

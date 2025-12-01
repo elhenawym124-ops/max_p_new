@@ -33,7 +33,7 @@ async function trackPostVisit(postId, companyId) {
 
   try {
     const prisma = getPrisma();
-    
+
     // البحث عن PostTracking موجود
     const existingTracking = await prisma.postTracking.findUnique({
       where: {
@@ -145,13 +145,13 @@ async function getPageToken(pageId) {
 async function fetchFacebookUserProfile(userId, pageAccessToken) {
   try {
     //console.log(`🔍 [PROFILE] Fetching Facebook profile for user: ${userId}`);
-    
+
     // Validate inputs
     if (!userId || !pageAccessToken) {
       //console.log(`❌ [PROFILE] Missing required parameters - userId: ${!!userId}, token: ${!!pageAccessToken}`);
       return null;
     }
-    
+
     // Check cache first
     if (customerProfileCache.has(userId)) {
       const cached = customerProfileCache.get(userId);
@@ -167,7 +167,7 @@ async function fetchFacebookUserProfile(userId, pageAccessToken) {
     // Build the Facebook Graph API URL
     const url = `https://graph.facebook.com/${userId}?fields=first_name,last_name,profile_pic&access_token=${pageAccessToken}`;
     //console.log(`🌐 [PROFILE] Making request to Facebook API: ${url.replace(pageAccessToken, '[TOKEN]')}`);
-    
+
     const response = await fetch(url, {
       method: 'GET',
       headers: {
@@ -176,27 +176,27 @@ async function fetchFacebookUserProfile(userId, pageAccessToken) {
       },
       timeout: 10000 // 10 second timeout
     });
-    
+
     //console.log(`📡 [PROFILE] Facebook API response status: ${response.status}`);
-    
+
     if (!response.ok) {
       //console.log(`❌ [PROFILE] HTTP error: ${response.status} ${response.statusText}`);
       const errorText = await response.text();
       //console.log(`❌ [PROFILE] Error response body:`, errorText);
       return null;
     }
-    
+
     const data = await response.json();
     //console.log(`📊 [PROFILE] Facebook API response data:`, JSON.stringify(data, null, 2));
-    
+
     if (data.error) {
       //console.log(`❌ [PROFILE] Facebook API error:`, data.error);
       return null;
     }
-    
+
     if (data.first_name) {
       //console.log(`✅ [PROFILE] Successfully fetched profile: ${data.first_name} ${data.last_name || '[no last name]'}`);
-      
+
       // Cache the profile
       const profileData = {
         ...data,
@@ -204,7 +204,7 @@ async function fetchFacebookUserProfile(userId, pageAccessToken) {
       };
       customerProfileCache.set(userId, profileData);
       //console.log(`💾 [PROFILE] Profile cached for user: ${userId}`);
-      
+
       return data;
     } else {
       //console.log(`⚠️ [PROFILE] Response missing first_name field:`, data);
@@ -212,7 +212,7 @@ async function fetchFacebookUserProfile(userId, pageAccessToken) {
     }
   } catch (error) {
     console.error(`❌ [PROFILE] Error fetching Facebook profile for ${userId}:`, error);
-    
+
     // Log different types of errors
     if (error.code === 'ENOTFOUND') {
       console.error(`🌐 [PROFILE] Network error - DNS lookup failed`);
@@ -221,7 +221,7 @@ async function fetchFacebookUserProfile(userId, pageAccessToken) {
     } else if (error.name === 'TimeoutError') {
       console.error(`⏰ [PROFILE] Request timed out`);
     }
-    
+
     return null;
   }
 }
@@ -232,13 +232,13 @@ const {
   sendProductionFacebookMessage,
   handleProductionFacebookError,
   sendFacebookSenderAction
-} = require('../production-facebook-fix');
+} = require('./production-facebook-fix');
 
 // Send message to Facebook Messenger
 async function sendFacebookMessage(recipientId, messageContent, messageType = 'TEXT', pageId = null) {
   try {
     //console.log(`📤 [FACEBOOK-SEND] Sending message to ${recipientId}`);
-    
+
 
     // منع التكرار - فحص إذا كانت الرسالة أُرسلت من قبل
     // استخدام رابط كامل للصور لتجنب اعتبار صور مختلفة كمكررة
@@ -335,18 +335,18 @@ async function sendFacebookMessage(recipientId, messageContent, messageType = 'T
 
     if (result.success) {
       console.log(`✅ [FACEBOOK-SEND] Message sent successfully: ${result.messageId} (Type: ${messageType})`);
-      
+
       // إضافة للكاش لمنع التكرار
       facebookSentCache.add(messageHash);
       if (messageType === 'IMAGE') {
         console.log(`📸 [CACHE] Image URL added to cache: ${contentForHash.substring(0, 80)}...`);
       }
-      
+
       // تنظيف الكاش بعد 5 دقائق
       setTimeout(() => {
         facebookSentCache.delete(messageHash);
       }, 5 * 60 * 1000);
-      
+
       return result;
     } else {
       console.error(`❌ [FACEBOOK-SEND] Failed to send message: ${result.message}`);
@@ -429,13 +429,13 @@ async function handleFacebookComment(commentData, pageId = null) {
 
     // DEBUG: Log the existing comment check
     //console.log(`🔍 [COMMENT] Checking existing comment ${commentId}:`, existingComment ? 'FOUND' : 'NOT FOUND');
-    
+
     // NEW: Check if we've already responded to this comment
     if (existingComment && existingComment.response && existingComment.respondedAt) {
       //console.log(`⚠️ [COMMENT] Already responded to comment ${commentId} at ${existingComment.respondedAt}`);
       return;
     }
-    
+
     // DEBUG: Log why we're processing (or not processing) this comment
     if (existingComment) {
       if (existingComment.response) {
@@ -482,7 +482,7 @@ async function handleFacebookComment(commentData, pageId = null) {
     // BUT: If post settings is 'manual', skip to page settings
     let postSettings = null;
     let settingsSource = null;
-    
+
     // 1. FIRST: Check for post-specific settings (PRIORITY)
     try {
       const postSpecificSettings = await prisma.postResponseSettings.findUnique({
@@ -493,7 +493,7 @@ async function handleFacebookComment(commentData, pageId = null) {
           }
         }
       });
-      
+
       // Only use post settings if it's NOT manual
       if (postSpecificSettings && postSpecificSettings.responseMethod !== 'manual') {
         console.log(`📝 [COMMENT] Using POST-SPECIFIC settings for post ${postId} (PRIORITY) - Method: ${postSpecificSettings.responseMethod}`);
@@ -517,7 +517,7 @@ async function handleFacebookComment(commentData, pageId = null) {
             }
           }
         });
-        
+
         if (pageSettings) {
           console.log(`📄 [COMMENT] Using PAGE-LEVEL settings for page ${pageId} (FALLBACK) - Method: ${pageSettings.responseMethod}`);
           postSettings = pageSettings;
@@ -527,7 +527,7 @@ async function handleFacebookComment(commentData, pageId = null) {
         //console.log('⚠️ [COMMENT] Could not fetch page response settings from database');
       }
     }
-    
+
     if (settingsSource) {
       console.log(`✅ [COMMENT] Settings loaded from: ${settingsSource}`);
     } else {
@@ -550,14 +550,14 @@ async function handleFacebookComment(commentData, pageId = null) {
           console.warn('⚠️ [FIXED-COMMENT] Failed to parse comment messages:', e);
           commentResponseText = postSettings.commentMessages; // Fallback to raw string
         }
-        
+
         if (!commentResponseText || !commentResponseText.trim()) {
           console.log('⚠️ [FIXED-COMMENT] No valid comment message found, skipping');
           return;
         }
-        
+
         const messengerResponseText = postSettings.fixedMessengerMessage || commentResponseText;
-        
+
         // Mark as responded BEFORE sending the reply
         try {
           await prisma.facebookComment.update({
@@ -571,16 +571,16 @@ async function handleFacebookComment(commentData, pageId = null) {
           console.error(`❌ [COMMENT] Failed to mark comment ${commentId} as responded in database:`, dbError);
           return;
         }
-        
+
         // Send the response as a comment reply
         console.log(`📤 [FIXED-COMMENT] Sending fixed comment reply: "${commentResponseText}"`);
         await sendFacebookCommentReply(commentId, commentResponseText, pageData.pageAccessToken);
-        
+
         // NEW: Also send the response to Facebook Messenger
         if (senderId) {
           // Import the sendProductionFacebookMessage function
-          const { sendProductionFacebookMessage } = require('../production-facebook-fix');
-          
+          const { sendProductionFacebookMessage } = require('./production-facebook-fix');
+
           // Find customer by Facebook ID
           let customer = await prisma.customer.findFirst({
             where: {
@@ -588,7 +588,7 @@ async function handleFacebookComment(commentData, pageId = null) {
               companyId: pageData.companyId
             }
           });
-          
+
           // If customer doesn't exist, create one
           if (!customer) {
             customer = await prisma.customer.create({
@@ -607,7 +607,7 @@ async function handleFacebookComment(commentData, pageId = null) {
               }
             });
           }
-          
+
           // Find or create conversation
           let conversation = await prisma.conversation.findFirst({
             where: {
@@ -616,7 +616,7 @@ async function handleFacebookComment(commentData, pageId = null) {
             },
             orderBy: { updatedAt: 'desc' }
           });
-          
+
           // If no conversation exists, create one
           if (!conversation) {
             // Get page data for metadata
@@ -632,14 +632,14 @@ async function handleFacebookComment(commentData, pageId = null) {
                 pageName = page.pageName;
               }
             }
-            
+
             const conversationMetadata = {
               platform: 'facebook',
               source: 'comment_reply',
               pageId: pageId,
               pageName: pageName
             };
-            
+
             conversation = await prisma.conversation.create({
               data: {
                 customerId: customer.id,
@@ -661,7 +661,7 @@ async function handleFacebookComment(commentData, pageId = null) {
               }
             });
           }
-          
+
           // Save the response as a message from the admin (not from customer)
           const message = await prisma.message.create({
             data: {
@@ -679,7 +679,7 @@ async function handleFacebookComment(commentData, pageId = null) {
               })
             }
           });
-          
+
           // Send the message to Facebook Messenger
           console.log(`📤 [FIXED-COMMENT-MESSENGER] Sending messenger message: "${messengerResponseText}"`);
           let messengerSuccess = true;
@@ -691,10 +691,10 @@ async function handleFacebookComment(commentData, pageId = null) {
               pageId,
               pageData.pageAccessToken
             );
-            
+
             if (messengerResponse.success) {
               console.log(`✅ [FIXED-COMMENT-MESSENGER] Successfully sent fixed response to Messenger for user ${customer.facebookId}`);
-              
+
               // Update message with Facebook message ID
               await prisma.message.update({
                 where: { id: message.id },
@@ -728,21 +728,21 @@ async function handleFacebookComment(commentData, pageId = null) {
     const aiAgentService = require('../services/aiAgentService');
     // Get AI settings for the company
     const aiSettings = await aiAgentService.getSettings(pageData.companyId);
-    
+
     // Respond with AI only if:
     // 1. No specific post settings OR post settings method is 'ai'
     // 2. AI is enabled
     const shouldUseAI = (!postSettings || postSettings.responseMethod === 'ai') && aiSettings && aiSettings.isEnabled;
-    
+
     if (shouldUseAI) {
       console.log(`🤖 [AI-COMMENT] Processing comment with AI for post ${postId}`);
-      
+
       // Check if there's a custom AI prompt for this post
       const customPrompt = postSettings?.aiPrompt;
       if (customPrompt) {
         console.log(`📝 [AI-COMMENT] Using custom AI prompt for post ${postId}`);
       }
-      
+
       // Prepare message data for AI Agent
       const aiMessageData = {
         conversationId: null,
@@ -757,14 +757,14 @@ async function handleFacebookComment(commentData, pageId = null) {
         },
         customPrompt: customPrompt // Pass custom prompt to AI
       };
-      
+
       // Process comment with AI Agent
       const aiResponse = await aiAgentService.processCustomerMessage(aiMessageData);
-      
+
       // Check if we got a valid AI response
       if (aiResponse && aiResponse.content && !aiResponse.silent) {
         const responseText = aiResponse.content;
-        
+
         // Mark as responded BEFORE sending the reply
         try {
           await prisma.facebookComment.update({
@@ -778,15 +778,15 @@ async function handleFacebookComment(commentData, pageId = null) {
           console.error(`❌ [COMMENT] Failed to mark comment ${commentId} as responded in database:`, dbError);
           return;
         }
-        
+
         // Send the response as a comment reply
         await sendFacebookCommentReply(commentId, responseText, pageData.pageAccessToken);
-        
+
         // NEW: Also send the response to Facebook Messenger
         if (senderId) {
           // Import the sendProductionFacebookMessage function
-          const { sendProductionFacebookMessage } = require('../production-facebook-fix');
-          
+          const { sendProductionFacebookMessage } = require('./production-facebook-fix');
+
           // Find customer by Facebook ID
           let customer = await prisma.customer.findFirst({
             where: {
@@ -794,7 +794,7 @@ async function handleFacebookComment(commentData, pageId = null) {
               companyId: pageData.companyId
             }
           });
-          
+
           // If customer doesn't exist, create one
           if (!customer) {
             customer = await prisma.customer.create({
@@ -813,7 +813,7 @@ async function handleFacebookComment(commentData, pageId = null) {
               }
             });
           }
-          
+
           // Find or create conversation
           let conversation = await prisma.conversation.findFirst({
             where: {
@@ -822,7 +822,7 @@ async function handleFacebookComment(commentData, pageId = null) {
             },
             orderBy: { updatedAt: 'desc' }
           });
-          
+
           // If no conversation exists, create one
           if (!conversation) {
             // Get page data for metadata
@@ -838,14 +838,14 @@ async function handleFacebookComment(commentData, pageId = null) {
                 pageName = page.pageName;
               }
             }
-            
+
             const conversationMetadata = {
               platform: 'facebook',
               source: 'comment_reply',
               pageId: pageId,
               pageName: pageName
             };
-            
+
             conversation = await prisma.conversation.create({
               data: {
                 customerId: customer.id,
@@ -867,7 +867,7 @@ async function handleFacebookComment(commentData, pageId = null) {
               }
             });
           }
-          
+
           // Save the response as a message from the admin (not from customer)
           const message = await prisma.message.create({
             data: {
@@ -885,7 +885,7 @@ async function handleFacebookComment(commentData, pageId = null) {
               })
             }
           });
-          
+
           // Send the message to Facebook Messenger
           let messengerSuccess = true;
           if (customer.facebookId && pageData && pageData.pageAccessToken) {
@@ -896,10 +896,10 @@ async function handleFacebookComment(commentData, pageId = null) {
               pageId,
               pageData.pageAccessToken
             );
-            
+
             if (messengerResponse.success) {
               console.log(`✅ [AI-COMMENT-MESSENGER] Successfully sent AI response to Messenger for user ${customer.facebookId}`);
-              
+
               // Update message with Facebook message ID
               await prisma.message.update({
                 where: { id: message.id },
@@ -936,7 +936,7 @@ async function handleFacebookComment(commentData, pageId = null) {
 async function generateAICommentResponse(commentText, senderName) {
   try {
     //console.log(`🤖 [COMMENT-AI] Generating response for comment from ${senderName}: "${commentText}"`);
-    
+
     // Simple AI response logic - this can be enhanced with more sophisticated AI
     const responses = [
       `Thanks for your comment, ${senderName}! We appreciate your feedback.`,
@@ -945,10 +945,10 @@ async function generateAICommentResponse(commentText, senderName) {
       `We appreciate your comment, ${senderName}! Our team will get back to you soon if needed.`,
       `Thanks for reaching out, ${senderName}! We're here to help with any questions you might have.`
     ];
-    
+
     // Select a random response
     const response = responses[Math.floor(Math.random() * responses.length)];
-    
+
     //console.log(`🤖 [COMMENT-AI] Generated response: "${response}"`);
     return response;
   } catch (error) {
@@ -961,14 +961,14 @@ async function generateAICommentResponse(commentText, senderName) {
 async function sendFacebookCommentReply(commentId, messageText, pageAccessToken) {
   try {
     //console.log(`📤 [COMMENT-REPLY] Sending reply to comment ${commentId}: "${messageText}"`);
-    
+
     // For Facebook comment replies, we need to send the message as form data
     const formData = new URLSearchParams();
     formData.append('message', messageText);
     formData.append('access_token', pageAccessToken);
-    
+
     const url = `https://graph.facebook.com/v18.0/${commentId}/comments`;
-    
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -976,15 +976,15 @@ async function sendFacebookCommentReply(commentId, messageText, pageAccessToken)
       },
       body: formData.toString()
     });
-    
+
     const responseData = await response.json();
-    
+
     // Log the full response for debugging
     //console.log(`📊 [COMMENT-REPLY] Full response:`, JSON.stringify(responseData, null, 2));
-    
+
     if (responseData.error) {
       console.error('❌ [COMMENT-REPLY] Error sending comment reply:', responseData.error);
-      
+
       // Log additional debugging information
       if (responseData.error.code === 200) {
         console.error('💡 [COMMENT-REPLY] Code 200 usually means permission issues. Check if:');
@@ -992,10 +992,10 @@ async function sendFacebookCommentReply(commentId, messageText, pageAccessToken)
         console.error('   2. The app is properly installed on the page');
         console.error('   3. The page admin has granted the necessary permissions');
       }
-      
+
       return false;
     }
-    
+
     //console.log(`✅ [COMMENT-REPLY] Successfully sent comment reply. Response ID: ${responseData.id}`);
     return true;
   } catch (error) {
@@ -1011,7 +1011,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
   const prisma = getPrisma(); // ✅ Get connected instance
   try {
     console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [0ms] 🔍 [HANDLE] Starting handleFacebookMessage`);
-  
+
     const senderId = webhookEvent.sender.id;
     // 🆕 Handle referral events without message object (OPEN_THREAD events)
     const messageText = webhookEvent.message?.text || null;
@@ -1020,7 +1020,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
     // 🆕 Extract postId from webhookEvent (fast - already extracted in webhookController)
     // ✅ FIX: Also extract directly from referral if not already extracted
     let postId = webhookEvent._extractedPostId || null;
-    
+
     // ✅ FIX: If postId not found, try to extract from referral directly
     if (!postId && webhookEvent.referral) {
       if (webhookEvent.referral.ads_context_data?.post_id) {
@@ -1039,7 +1039,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
         postId = webhookEvent.referral.ad_id;
         console.log('✅ [POST-REF] Extracted postId directly from referral.ad_id (fallback):', postId);
       }
-      
+
       // Attach to webhookEvent for later use
       if (postId) {
         webhookEvent._extractedPostId = postId;
@@ -1066,14 +1066,14 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
     // Enhanced page data diagnostics
     //console.log(`🔍 [PAGE-DIAGNOSTIC] Page ID: ${messagePageId}`);
     //console.log(`🔍 [PAGE-DIAGNOSTIC] Page data found:`, pageData ? 'YES' : 'NO');
-    
+
     // 📊 تسجيل زيارة البوست تلقائياً
     if (postId && pageData && pageData.companyId) {
       trackPostVisit(postId, pageData.companyId).catch(err => {
         console.error('❌ [POST-TRACKING] Failed to track post visit:', err.message);
       });
     }
-    
+
     if (pageData) {
       //console.log(`🔍 [PAGE-DIAGNOSTIC] Page name: ${pageData.pageName}`);
       //console.log(`🔍 [PAGE-DIAGNOSTIC] Company ID: ${pageData.companyId}`);
@@ -1119,20 +1119,20 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
     // NEW: Check global AI settings before processing
     const aiAgentService = require('../services/aiAgentService');
     const aiSettings = await aiAgentService.getSettings(targetCompanyId);
-    
+
     // If AI is disabled globally, don't process with AI
     if (!aiSettings.isEnabled) {
       //console.log(`🚫 [AI-DISABLED] Global AI is disabled for company ${targetCompanyId}, skipping AI processing`);
-      
+
       // Still create the conversation and save the message, but don't send to AI
       // Use try-catch to handle race condition
-      
+
       // NEW: Fetch real Facebook profile before creating/updating customer
       const facebookProfile = await fetchFacebookUserProfile(senderId, pageData.pageAccessToken);
-      
+
       let firstName = 'عميل فيسبوك';
       let lastName = senderId.slice(-4);
-      
+
       if (facebookProfile && facebookProfile.first_name) {
         firstName = facebookProfile.first_name;
         lastName = facebookProfile.last_name || '';
@@ -1141,7 +1141,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
       // Try to find existing customer first (using compound unique key)
       const customerStartTime = Date.now();
       let customer = await prisma.customer.findFirst({
-        where: { 
+        where: {
           facebookId: senderId,
           companyId: targetCompanyId
         }
@@ -1172,12 +1172,12 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
           if (createError.code === 'P2002') {
             //console.log(`🔄 [RACE-CONDITION] Customer created by another request, fetching...`);
             customer = await prisma.customer.findFirst({
-              where: { 
+              where: {
                 facebookId: senderId,
                 companyId: targetCompanyId
               }
             });
-            
+
             if (!customer) {
               // This should never happen, but just in case
               throw new Error(`Failed to find customer after race condition: ${senderId}`);
@@ -1190,35 +1190,35 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
       } else {
         // OPTIONAL: Update existing customer's name if we have better data
         //console.log(`👤 [CUSTOMER-UPDATE] Checking if we should update existing customer: ${customer.firstName} ${customer.lastName}`);
-        
+
         // Only update if current name is generic or from previous failed attempts
-        const isGenericName = customer.firstName === 'عميل فيسبوك' || 
-                             customer.firstName.includes('عميل فيسبوك') || 
-                             customer.firstName === 'Facebook' || 
-                             customer.lastName === 'User' ||
-                             customer.firstName === 'مستخدم';
-        
+        const isGenericName = customer.firstName === 'عميل فيسبوك' ||
+          customer.firstName.includes('عميل فيسبوك') ||
+          customer.firstName === 'Facebook' ||
+          customer.lastName === 'User' ||
+          customer.firstName === 'مستخدم';
+
         if (isGenericName) {
           //console.log(`🔄 [CUSTOMER-UPDATE] Current name is generic, attempting to fetch real name...`);
-          
+
           const facebookProfile = await fetchFacebookUserProfile(senderId, pageData.pageAccessToken);
-          
+
           if (facebookProfile && (facebookProfile.first_name || facebookProfile.name)) {
             // Use first_name and last_name if available
             let firstName = customer.firstName;
             let lastName = customer.lastName;
-            
+
             if (facebookProfile.first_name) {
               firstName = facebookProfile.first_name;
               lastName = facebookProfile.last_name || '';
-            } 
+            }
             // Fallback to parsing the 'name' field
             else if (facebookProfile.name) {
               const nameParts = facebookProfile.name.split(' ');
               firstName = nameParts[0] || facebookProfile.name;
               lastName = nameParts.slice(1).join(' ') || '';
             }
-            
+
             // Only update if we got a better name than what we already have
             if (firstName !== customer.firstName || lastName !== customer.lastName) {
               const updatedCustomer = await prisma.customer.update({
@@ -1235,7 +1235,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
                   })
                 }
               });
-              
+
               customer = updatedCustomer;
               //console.log(`✅ [CUSTOMER-UPDATE] Updated customer name to: ${customer.firstName} ${customer.lastName}`);
             } else {
@@ -1255,7 +1255,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
         where: { pageId: messagePageId },
         select: { id: true }
       });
-      
+
       if (facebookPage) {
         const isBlocked = await prisma.blockedCustomerOnPage.findFirst({
           where: {
@@ -1266,7 +1266,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
             ]
           }
         });
-        
+
         if (isBlocked) {
           console.log(`🚫 [BLOCKED] Customer ${customer.id} (${senderId}) is blocked on page ${messagePageId} - ignoring message`);
           console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - blockedCheckStartTime}ms] 🚫 [BLOCKED] Block check completed`);
@@ -1299,7 +1299,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
             updatedMetadata = {};
           }
         }
-        
+
         // Add/Update page information and post reference
         updatedMetadata.platform = 'facebook';
         updatedMetadata.source = 'messenger';
@@ -1310,7 +1310,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
           updatedMetadata.postId = postId;
           console.log('✅ [POST-REF] Adding postId to reactivated conversation:', postId);
         }
-        
+
         conversation = await prisma.conversation.update({
           where: { id: conversation.id },
           data: {
@@ -1332,7 +1332,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
             updatedMetadata = {};
           }
         }
-        
+
         // Add/Update page information and post reference
         updatedMetadata.platform = 'facebook';
         updatedMetadata.source = 'messenger';
@@ -1343,7 +1343,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
           updatedMetadata.postId = postId;
           console.log('✅ [POST-REF] Adding postId to active conversation:', postId);
         }
-        
+
         conversation = await prisma.conversation.update({
           where: { id: conversation.id },
           data: {
@@ -1352,7 +1352,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
             metadata: JSON.stringify(updatedMetadata)
           }
         });
-        
+
         //console.log(`🔄 Updated existing active conversation: ${conversation.id}`);
       }
 
@@ -1366,11 +1366,11 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
           pageName: pageData?.pageName || null,
           postId: postId || null // 🆕 Save postId if available (fast - no API calls)
         };
-        
+
         if (postId) {
           console.log('✅ [POST-REF] Saving postId to new conversation:', postId);
         }
-        
+
         conversation = await prisma.conversation.create({
           data: {
             customerId: customer.id,
@@ -1381,7 +1381,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
             metadata: JSON.stringify(conversationMetadata)
           }
         });
-        
+
         //console.log(`💬 New conversation created: ${conversation.id}`);
         isNewConversation = true;
       }
@@ -1407,7 +1407,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
       // For OPEN_THREAD events, just create/update conversation without creating a message
       const hasReferral = !!webhookEvent.referral;
       const hasNoMessage = !webhookEvent.message;
-      
+
       if (hasReferral && hasNoMessage) {
         console.log('✅ [POST-REF] OPEN_THREAD event - conversation created/updated with postId:', postId);
         return; // Conversation already created/updated above, no need to create message
@@ -1416,12 +1416,12 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
       // ✅ FIX: التحقق من صحة محتوى الرسالة لجميع الأنواع (بما في ذلك الرسائل الفارغة من الإعلانات)
       const isEmptyMessage = messageType === 'TEXT' && !isValidMessageContent(content);
       const hasNoAttachments = !attachments || attachments.length === 0;
-      
+
       if (isEmptyMessage && hasNoAttachments) {
         // ✅ FIX: إذا كانت الرسالة فارغة لكن يوجد referral، نحدث المحادثة بـ postId فقط بدون إنشاء رسالة
         if (hasReferral && postId) {
           console.log(`⚠️ [CUSTOMER-MESSAGE] رسالة فارغة من إعلان تم تجاهلها - تحديث المحادثة بـ postId: ${postId}`);
-          
+
           // ✅ FIX: تحديث metadata المحادثة بـ postId إذا لم يكن موجوداً (حتى لو كانت المحادثة موجودة مسبقاً)
           if (conversation) {
             try {
@@ -1433,7 +1433,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
                   metadata = {};
                 }
               }
-              
+
               // تحديث postId إذا لم يكن موجوداً أو إذا كان postId الجديد مختلفاً
               if (!metadata.postId && postId) {
                 metadata.postId = postId;
@@ -1447,7 +1447,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
                 if (webhookEvent.referral?.ads_context_data) {
                   metadata.adsContextData = webhookEvent.referral.ads_context_data;
                 }
-                
+
                 await prisma.conversation.update({
                   where: { id: conversation.id },
                   data: {
@@ -1479,7 +1479,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
       // NEW: Capture Facebook message ID and reply reference
       const fbMessageId = webhookEvent.message?.mid;
       const replyToMid = webhookEvent.message?.reply_to?.mid;
-      
+
       // 🔍 DEBUG: Log reply_to information
       // console.log('🔍 [REPLY-DEBUG] Message data:', {
       //   mid: fbMessageId,
@@ -1487,7 +1487,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
       //   replyToMid: replyToMid,
       //   fullMessage: JSON.stringify(webhookEvent.message).substring(0, 200)
       // });
-      
+
       let replyMeta = {};
       if (replyToMid) {
         try {
@@ -1566,7 +1566,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
         io.to(`company_${customer.companyId}`).emit('new_message', socketData);
         console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - socketStartTime}ms] 🔌 [SOCKET] Message emitted to company ${customer.companyId} - MESSAGE SHOULD BE VISIBLE NOW!`);
         console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - handleStartTime}ms] ✅ [HANDLE] Message saved and sent to frontend - Total time so far`);
-        
+
         // Emit new conversation event if this is a new conversation
         if (isNewConversation) {
           const convEventStartTime = Date.now();
@@ -1587,7 +1587,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
             lastMessageIsFromCustomer: true,
             lastCustomerMessageIsUnread: true
           };
-          
+
           // Emit to company room
           socketService.emitNewConversation(customer.companyId, conversationData);
           console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - convEventStartTime}ms] 📤 [SOCKET] New conversation event emitted`);
@@ -1595,12 +1595,12 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
       }
 
       // 🔧 FIX: Update conversation lastMessagePreview AFTER sending socket (non-blocking)
-      const lastMessagePreview = messageType === 'IMAGE' ? '📷 صورة' : 
-                                 messageType === 'FILE' ? '📎 ملف' : 
-                                 (content && content.trim() !== '' ? 
-                                   (content.length > 100 ? content.substring(0, 100) + '...' : content) : 
-                                   null);
-      
+      const lastMessagePreview = messageType === 'IMAGE' ? '📷 صورة' :
+        messageType === 'FILE' ? '📎 ملف' :
+          (content && content.trim() !== '' ?
+            (content.length > 100 ? content.substring(0, 100) + '...' : content) :
+            null);
+
       if (lastMessagePreview) {
         const updateConvStartTime = Date.now();
         // ⚡ OPTIMIZATION: Don't await - update in background
@@ -1660,7 +1660,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
           console.error('❌ [NOTIFICATION] Error creating message notification:', notifError);
         }
       }
-      
+
       console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - handleStartTime}ms] ✅ [HANDLE] Total handleFacebookMessage time - Message should be visible now!`);
 
       //console.log(`🎉 [WEBHOOK] Message processing completed for customer: ${customer.firstName} ${customer.lastName} (AI disabled)`);
@@ -1673,7 +1673,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
     if (!postId) {
       postId = webhookEvent._extractedPostId || null;
     }
-    
+
     // ✅ DEBUG: Log postId extraction
     if (postId) {
       console.log(`✅ [POST-REF-AI] PostId extracted for AI path: ${postId}`);
@@ -1684,7 +1684,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
         console.log(`🔍 [POST-REF-AI] Referral exists:`, JSON.stringify(webhookEvent.referral, null, 2));
       }
     }
-    
+
     let customer = await prisma.customer.findFirst({
       where: {
         facebookId: senderId,
@@ -1696,20 +1696,20 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
       // NEW: Fetch real Facebook profile before creating customer
       //console.log(`👤 [PROFILE] Fetching Facebook profile for new customer: ${senderId}`);
       //console.log(`🔑 [PROFILE] Using page access token: ${pageData.pageAccessToken ? 'Available' : 'Missing'}`);
-      
+
       const facebookProfile = await fetchFacebookUserProfile(senderId, pageData.pageAccessToken);
       //console.log(`📊 [PROFILE] Facebook profile result:`, facebookProfile);
-      
+
       let firstName = 'عميل فيسبوك';
       let lastName = senderId.slice(-4);
-      
+
       if (facebookProfile && facebookProfile.first_name) {
         firstName = facebookProfile.first_name;
         lastName = facebookProfile.last_name || '';
         //console.log(`✅ [PROFILE] Got real name: ${firstName} ${lastName}`);
       } else {
         //console.log(`⚠️ [PROFILE] Could not fetch real name, using fallback: ${firstName} ${lastName}`);
-        
+
         // Debug: Log why profile fetch failed
         if (!facebookProfile) {
           //console.log(`🔍 [PROFILE-DEBUG] Profile fetch returned null/undefined`);
@@ -1742,35 +1742,35 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
     } else {
       // OPTIONAL: Update existing customer's name if we have better data
       //console.log(`👤 [CUSTOMER-UPDATE] Checking if we should update existing customer: ${customer.firstName} ${customer.lastName}`);
-      
+
       // Only update if current name is generic or from previous failed attempts
-      const isGenericName = customer.firstName === 'عميل فيسبوك' || 
-                           customer.firstName.includes('عميل فيسبوك') || 
-                           customer.firstName === 'Facebook' || 
-                           customer.lastName === 'User' ||
-                           customer.firstName === 'مستخدم';
-      
+      const isGenericName = customer.firstName === 'عميل فيسبوك' ||
+        customer.firstName.includes('عميل فيسبوك') ||
+        customer.firstName === 'Facebook' ||
+        customer.lastName === 'User' ||
+        customer.firstName === 'مستخدم';
+
       if (isGenericName) {
         //console.log(`🔄 [CUSTOMER-UPDATE] Current name is generic, attempting to fetch real name...`);
-        
+
         const facebookProfile = await fetchFacebookUserProfile(senderId, pageData.pageAccessToken);
-        
+
         if (facebookProfile && (facebookProfile.first_name || facebookProfile.name)) {
           // Use first_name and last_name if available
           let firstName = customer.firstName;
           let lastName = customer.lastName;
-          
+
           if (facebookProfile.first_name) {
             firstName = facebookProfile.first_name;
             lastName = facebookProfile.last_name || '';
-          } 
+          }
           // Fallback to parsing the 'name' field
           else if (facebookProfile.name) {
             const nameParts = facebookProfile.name.split(' ');
             firstName = nameParts[0] || facebookProfile.name;
             lastName = nameParts.slice(1).join(' ') || '';
           }
-          
+
           // Only update if we got a better name than what we already have
           if (firstName !== customer.firstName || lastName !== customer.lastName) {
             const updatedCustomer = await prisma.customer.update({
@@ -1787,7 +1787,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
                 })
               }
             });
-            
+
             customer = updatedCustomer;
             //console.log(`✅ [CUSTOMER-UPDATE] Updated customer name to: ${customer.firstName} ${customer.lastName}`);
           } else {
@@ -1823,7 +1823,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
           updatedMetadata = {};
         }
       }
-      
+
       // Add/Update page information and post reference
       updatedMetadata.platform = 'facebook';
       updatedMetadata.source = 'messenger';
@@ -1844,7 +1844,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
       } else {
         console.log('⚠️ [POST-REF-AI] No postId available to add to reactivated conversation');
       }
-      
+
       conversation = await prisma.conversation.update({
         where: { id: conversation.id },
         data: {
@@ -1866,7 +1866,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
           updatedMetadata = {};
         }
       }
-      
+
       // Add/Update page information and post reference
       updatedMetadata.platform = 'facebook';
       updatedMetadata.source = 'messenger';
@@ -1887,7 +1887,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
       } else {
         console.log('⚠️ [POST-REF-AI] No postId available to add to active conversation');
       }
-      
+
       conversation = await prisma.conversation.update({
         where: { id: conversation.id },
         data: {
@@ -1909,13 +1909,13 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
         pageName: pageData?.pageName || null,
         postId: postId || null // 🆕 Save postId if available (fast - no API calls)
       };
-      
+
       if (postId) {
         console.log('✅ [POST-REF-AI] Saving postId to new conversation:', postId);
       } else {
         console.log('⚠️ [POST-REF-AI] No postId available for new conversation');
       }
-      
+
       conversation = await prisma.conversation.create({
         data: {
           customerId: customer.id,
@@ -1950,7 +1950,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
     // ✅ FIX: التحقق من صحة محتوى الرسالة قبل الحفظ (خاصة عندما يكون AI مفعّل)
     const isEmptyMessage = messageType === 'TEXT' && !isValidMessageContent(content);
     const hasNoAttachments = !attachments || attachments.length === 0;
-    
+
     if (isEmptyMessage && hasNoAttachments) {
       console.log(`⚠️ [CUSTOMER-MESSAGE-AI] رسالة فارغة تم تجاهلها من العميل: "${content}"`);
       // ✅ لا نحفظ الرسالة الفارغة، لكن نستمر في معالجة AI إذا كان هناك محتوى في messageText الأصلي
@@ -1965,14 +1965,14 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
     // NEW: Extract reply_to information from webhook event (if available)
     const fbMessageId = webhookEvent?.message?.mid;
     const replyToMid = webhookEvent?.message?.reply_to?.mid;
-    
+
     console.log('🔍 [REPLY-DEBUG-AI] Checking for reply_to:', {
       mid: fbMessageId,
       hasReplyTo: !!webhookEvent?.message?.reply_to,
       replyToMid: replyToMid,
       hasWebhookEvent: !!webhookEvent
     });
-    
+
     let replyMeta = {};
     if (replyToMid) {
       try {
@@ -2032,12 +2032,12 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
     //console.log(`✅ Message saved: ${newMessage.id} from ${customer.firstName} ${customer.lastName}`);
 
     // 🔧 FIX: Update conversation lastMessagePreview (only if content is not empty)
-    const lastMessagePreview = messageType === 'IMAGE' ? '📷 صورة' : 
-                               messageType === 'FILE' ? '📎 ملف' : 
-                               (content && content.trim() !== '' ? 
-                                 (content.length > 100 ? content.substring(0, 100) + '...' : content) : 
-                                 null);
-    
+    const lastMessagePreview = messageType === 'IMAGE' ? '📷 صورة' :
+      messageType === 'FILE' ? '📎 ملف' :
+        (content && content.trim() !== '' ?
+          (content.length > 100 ? content.substring(0, 100) + '...' : content) :
+          null);
+
     if (lastMessagePreview) {
       await prisma.conversation.update({
         where: { id: conversation.id },
@@ -2124,7 +2124,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
       //console.log(`🔌 [SOCKET] Emitting new_message event to company ${customer.companyId}:`, socketData);
       // ✅ إرسال للشركة فقط - Company Isolation
       io.to(`company_${customer.companyId}`).emit('new_message', socketData);
-      
+
       // Emit new conversation event if this is a new conversation
       if (isNewConversation) {
         // Transform conversation data to match frontend format
@@ -2144,7 +2144,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
           lastMessageIsFromCustomer: true,
           lastCustomerMessageIsUnread: true
         };
-        
+
         // Emit to company room
         socketService.emitNewConversation(customer.companyId, conversationData);
         //console.log(`🔌 [SOCKET] Emitting new_conversation event for company ${customer.companyId} with customer: ${conversationData.customerName}`);
@@ -2171,7 +2171,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
     // Send message to AI Agent with enhanced diagnostics
     //console.log('🚀 [AI-DIAGNOSTIC] Sending message to AI Agent...');
     //console.log('🚀 [AI-DIAGNOSTIC] Customer name:', `${customer.firstName} ${customer.lastName}`.trim());
-    
+
     // ✍️ Start typing indicators (Frontend + Facebook)
     try {
       // Frontend typing event
@@ -2181,7 +2181,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
         isTyping: true,
         source: 'ai_agent'
       });
-      
+
       // Facebook typing_on
       if (pageData && pageData.pageAccessToken && messagePageId) {
         await sendFacebookSenderAction(senderId, 'typing_on', messagePageId, pageData.pageAccessToken);
@@ -2189,7 +2189,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
     } catch (typingErr) {
       //console.log('⚠️ [TYPING] Failed to start typing indicators:', typingErr.message);
     }
-    
+
     // ♻️ Keep typing alive until reply is sent
     let typingKeepAlive = null;
     try {
@@ -2217,18 +2217,18 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
     } catch (keepErr) {
       // ignore
     }
-    
+
     // 📊 Track response time for monitoring
     const startTime = Date.now();
     const aiResponse = await aiAgentService.processCustomerMessage(aiMessageData);
     const processingTime = Date.now() - startTime;
-    
+
     // 📊 Log to Simple Monitor for tracking
     const { simpleMonitor } = require('../services/simpleMonitor');
     const isEmpty = !aiResponse || !aiResponse.content || aiResponse.silent;
     const isSuccessful = aiResponse && aiResponse.success !== false;
     simpleMonitor.logResponse(processingTime, isEmpty, isSuccessful);
-    
+
     if (aiResponse && aiResponse.content && !aiResponse.silent) {
       //console.log('🤖 AI Response:', aiResponse.content);
 
@@ -2254,12 +2254,12 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
           const now = new Date();
           const employeeMessageTime = new Date(lastEmployeeMessage.createdAt);
           const thirtySecondsAgo = new Date(now.getTime() - 30 * 1000);
-          
+
           // If employee replied in last 30 seconds, cancel sending
           if (employeeMessageTime > thirtySecondsAgo) {
             console.log(`🚫 [PRE-SEND-CHECK] Employee replied recently (${employeeMessageTime.toISOString()}) - Cancelling AI response`);
             console.log(`🚫 [PRE-SEND-CHECK] Employee message: "${(lastEmployeeMessage.content || '').substring(0, 50)}..."`);
-            
+
             // Stop typing indicators
             try {
               if (typingKeepAlive) { clearInterval(typingKeepAlive); typingKeepAlive = null; }
@@ -2275,7 +2275,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
             } catch (typingErr) {
               // ignore
             }
-            
+
             // Skip sending - employee is handling the conversation
             return;
           }
@@ -2309,9 +2309,9 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
             createdAt: new Date()
           }
         });
-        
+
         console.log(`💾 [INSTANT-SAVE-AI] AI message saved immediately: ${savedAIMessage.id}`);
-        
+
         // إرسال الرسالة فوراً للـ socket
         const socketService = require('../services/socketService');
         const io = socketService.getIO();
@@ -2331,7 +2331,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
             // 🏢 Company Isolation
             companyId: conversation.companyId
           };
-          
+
           // ✅ إرسال للشركة فقط - Company Isolation
           io.to(`company_${conversation.companyId}`).emit('new_message', socketData);
           console.log(`⚡ [SOCKET-AI] AI message emitted to company ${conversation.companyId}`);
@@ -2342,10 +2342,10 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
 
       // Send AI response back to Facebook
       const facebookResult = await sendFacebookMessage(senderId, aiResponse.content, 'TEXT', messagePageId);
-      
+
       if (facebookResult.success) {
         //console.log('✅ AI response sent successfully to Facebook');
-        
+
         // 🔄 تحديث الرسالة المحفوظة بـ Facebook Message ID
         if (facebookResult.messageId && savedAIMessage) {
           try {
@@ -2364,7 +2364,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
             console.error('⚠️ [UPDATE-AI] Failed to update AI message with Facebook ID:', updateError.message);
           }
         }
-        
+
         // ⚡ Mark this message as AI-generated in the webhook cache
         if (facebookResult.messageId) {
           const { markMessageAsAI } = require('../controller/webhookController');
@@ -2385,7 +2385,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
       console.log('🔍 [IMAGE-DEBUG] aiResponse.images:', aiResponse.images);
       console.log('🔍 [IMAGE-DEBUG] aiResponse.images type:', typeof aiResponse.images);
       console.log('🔍 [IMAGE-DEBUG] aiResponse.images length:', aiResponse.images ? aiResponse.images.length : 'undefined');
-      
+
       if (aiResponse.images && aiResponse.images.length > 0) {
         console.log('🔍 [IMAGE-DEBUG] First image structure:', JSON.stringify(aiResponse.images[0], null, 2));
         console.log('🔍 [IMAGE-DEBUG] All images URLs:');
@@ -2442,7 +2442,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
         });
 
         console.log(`📸 [IMAGE-FILTER] Filtered ${validImages.length}/${aiResponse.images.length} valid images`);
-        
+
         if (validImages.length < aiResponse.images.length) {
           console.log(`⚠️ [IMAGE-FILTER] ${aiResponse.images.length - validImages.length} images were rejected during filtering`);
           console.log('🔍 [IMAGE-FILTER] Valid images that passed:');
@@ -2450,7 +2450,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
             console.log(`  ✅ ${i + 1}. ${img?.payload?.url} - ${img?.payload?.title || 'No title'}`);
           });
         }
-        
+
         if (validImages.length === 0) {
           console.log('❌ [IMAGE-FILTER] No valid images after filtering! Check image URLs.');
           // ✅ CRITICAL: If no valid images, we need to inform the AI response system
@@ -2462,7 +2462,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
         if (validImages.length > 0) {
           // Send confirmation message first
           const confirmResult = await sendFacebookMessage(senderId, `📸 جاري إرسال ${validImages.length} صور للمنتجات...`, 'TEXT', messagePageId);
-          
+
           // ⚡ Mark confirmation message as AI-generated
           if (confirmResult.success && confirmResult.messageId) {
             const { markMessageAsAI } = require('../controller/webhookController');
@@ -2472,7 +2472,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
               messageType: 'TEXT'
             });
           }
-          
+
           await new Promise(resolve => setTimeout(resolve, 1000));
 
           let sentCount = 0;
@@ -2483,7 +2483,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
 
             try {
               const result = await sendFacebookMessage(senderId, image.payload.url, 'IMAGE', messagePageId);
-              
+
               if (result.success) {
                 sentCount++;
                 console.log(`✅ [IMAGE-LOOP] Image ${sentCount}/${validImages.length} sent successfully - ID: ${result.messageId}`);
@@ -2504,7 +2504,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
               } else {
                 console.log(`❌ [IMAGE-LOOP] Failed to send image ${sentCount + 1}/${validImages.length}:`, result.error);
                 console.log(`❌ [IMAGE-LOOP] Failed image URL: ${image.payload.url}`);
-                
+
                 // Handle Facebook error 2018001 specifically for images
                 // في حالة الفشل، مفيش echo فمحتاجين نحفظ يدوياً
                 if (result.error === 'NO_MATCHING_USER') {
@@ -2533,7 +2533,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
         where: { id: conversation.id },
         data: {
           lastMessageAt: new Date(),
-          lastMessagePreview: aiResponse.content.length > 100 ? 
+          lastMessagePreview: aiResponse.content.length > 100 ?
             aiResponse.content.substring(0, 100) + '...' : aiResponse.content
         }
       });
@@ -2609,23 +2609,23 @@ async function handleMessageDirectly(senderId, messageText, webhookEvent) {
 async function deleteFacebookComment(commentId, pageAccessToken) {
   try {
     //console.log(`🗑️ [COMMENT-DELETE] Deleting comment ${commentId} from Facebook`);
-    
+
     const url = `https://graph.facebook.com/v18.0/${commentId}?access_token=${pageAccessToken}`;
-    
+
     const response = await fetch(url, {
       method: 'DELETE'
     });
-    
+
     const responseData = await response.json();
-    
+
     // Log the full response for debugging
     //console.log(`📊 [COMMENT-DELETE] Full response:`, JSON.stringify(responseData, null, 2));
-    
+
     if (responseData.error) {
       console.error('❌ [COMMENT-DELETE] Error deleting comment:', responseData.error);
       return false;
     }
-    
+
     if (responseData.success === true) {
       //console.log(`✅ [COMMENT-DELETE] Successfully deleted comment ${commentId} from Facebook`);
       return true;
@@ -2643,7 +2643,7 @@ async function deleteFacebookComment(commentId, pageAccessToken) {
 async function diagnoseFacebookSending(recipientId, messageContent, pageId = null) {
   const prisma = getPrisma(); // ✅ Get connected instance
   //console.log('🔍 [DIAGNOSTIC] Starting Facebook sending diagnosis...');
-  
+
   try {
     // Step 1: Check recipient ID
     //console.log(`🔍 [DIAGNOSTIC] Step 1 - Recipient ID: ${recipientId}`);
@@ -2714,12 +2714,12 @@ async function diagnoseFacebookSending(recipientId, messageContent, pageId = nul
   }
 }
 
-module.exports = { 
-  sendFacebookMessage, 
-  handleMessageDirectly, 
-  handleFacebookMessage, 
+module.exports = {
+  sendFacebookMessage,
+  handleMessageDirectly,
+  handleFacebookMessage,
   getPageToken,
-  updatePageTokenCache, 
+  updatePageTokenCache,
   diagnoseFacebookSending,
   fetchFacebookUserProfile,
   handleFacebookComment,  // Export the new comment function

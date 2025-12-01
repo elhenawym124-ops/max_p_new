@@ -106,6 +106,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       items: [
         { to: '/conversations-improved', icon: <ChatBubbleLeftRightIcon className="h-5 w-5" />, label: t('sidebar.conversationsImproved') },
         { to: '/unified-comments', icon: <ChatBubbleLeftRightIcon className="h-5 w-5" />, label: t('sidebar.unifiedComments') },
+        { to: '/whatsapp', icon: <ChatBubbleLeftRightIcon className="h-5 w-5" />, label: 'واتساب', badge: 'جديد' },
+        { to: '/whatsapp/settings', icon: <Cog6ToothIcon className="h-5 w-5" />, label: 'إعدادات واتساب' },
         { to: '/customers', icon: <UsersIcon className="h-5 w-5" />, label: t('sidebar.customers') },
       ]
     },
@@ -150,6 +152,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       icon: '🎯',
       items: [
         { to: '/advertising/facebook-pixel', icon: <ChartBarIcon className="h-5 w-5" />, label: 'Facebook Pixel & CAPI', badge: 'جديد' },
+        { to: '/advertising/facebook-ads', icon: <MegaphoneIcon className="h-5 w-5" />, label: 'حملات Facebook Ads', badge: 'جديد' },
+        { to: '/advertising/facebook-ads/tests', icon: <BeakerIcon className="h-5 w-5" />, label: 'اختبارات A/B', badge: 'جديد' },
+        { to: '/advertising/facebook-ads/audiences', icon: <UserGroupIcon className="h-5 w-5" />, label: 'إدارة الجماهير', badge: 'جديد' },
+        { to: '/advertising/facebook-ads/catalogs', icon: <ShoppingBagIcon className="h-5 w-5" />, label: 'Product Catalogs', badge: 'جديد' },
         { to: '/advertising/campaigns', icon: <MegaphoneIcon className="h-5 w-5" />, label: 'الحملات الإعلانية' },
         { to: '/advertising/analytics', icon: <PresentationChartLineIcon className="h-5 w-5" />, label: 'تحليلات الإعلانات' },
       ]

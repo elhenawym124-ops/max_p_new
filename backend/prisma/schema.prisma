@@ -19,6 +19,7 @@ model Company {
   currency               String                  @default("EGP")
   facebookUserAccessToken String?                @db.Text // 🔑 Facebook User Access Token for Pages API
   facebookPixelAccessToken String?               @db.Text // 🔑 Facebook User Access Token for Pixel API (منفصل)
+  facebookAdsAccessToken String?                 @db.Text // 🔑 Facebook Access Token for Ads Management API
   plan                   SubscriptionPlan        @default(BASIC)
   planConfigurationId    String?
   isActive               Boolean                 @default(true)
@@ -82,6 +83,20 @@ model Company {
   storePages             StorePage[] // 📄 صفحات المتجر
   coupons                Coupon[] // 🎟️ كوبونات الخصم
   homepageTemplates      HomepageTemplate[] // 🏠 قوالب الصفحة الرئيسية
+  
+  // 📱 WhatsApp Integration
+  whatsappSessions       WhatsAppSession[] // 📱 جلسات واتساب
+  whatsappQuickReplies   WhatsAppQuickReply[] // 📝 الردود السريعة
+  whatsappSettings       WhatsAppSettings? // ⚙️ إعدادات واتساب
+  
+  // 📱 Facebook Ads Integration
+  facebookAdAccounts     FacebookAdAccount[] // 📊 حسابات Facebook Ads
+  facebookCampaigns      FacebookCampaign[] // 🎯 الحملات الإعلانية
+  facebookCustomAudiences FacebookCustomAudience[] // 🎯 الجماهير المخصصة
+  facebookLookalikeAudiences FacebookLookalikeAudience[] // 🎯 الجماهير المشابهة
+  facebookAdTests        FacebookAdTest[] // 🧪 اختبارات A/B للإعلانات
+  facebookProductCatalogs FacebookProductCatalog[] // 📦 كتالوجات المنتجات
+  facebookDynamicAds     FacebookDynamicAd[] // 🎯 الإعلانات الديناميكية
 
   @@map("companies")
 }
@@ -177,6 +192,7 @@ model Customer {
   company              Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
   orders               Order[]
   blockedOnPages       BlockedCustomerOnPage[] // 🚫 الصفحات التي تم حظر العميل عليها
+  whatsappContacts     WhatsAppContact[] // 📱 جهات اتصال واتساب المرتبطة
 
   @@unique([facebookId, companyId], name: "customer_facebook_company")
   @@unique([whatsappId, companyId], name: "customer_whatsapp_company")
@@ -322,6 +338,7 @@ model Product {
   recentlyViewed     RecentlyViewed[] // 👁️ المنتجات المشاهدة مؤخراً
   reviews            ProductReview[] // ⭐ التقييمات والمراجعات
   backInStockNotifications BackInStockNotification[] // 🔔 إشعارات العودة للمخزون
+  facebookCatalogProducts FacebookCatalogProduct[] // 📦 منتجات في Facebook Catalog
 
   @@index([categoryId], map: "products_categoryId_idx")
   @@index([companyId], map: "products_companyId_idx")
@@ -2617,3 +2634,895 @@ model HomepageTemplate {
   @@index([isActive])
   @@map("homepage_templates")
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 📱 WhatsApp Integration - نظام تكامل واتساب
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// 📱 جلسات WhatsApp - كل شركة يمكنها ربط أكثر من رقم
+model WhatsAppSession {
+  id              String   @id @default(cuid())
+  companyId       String
+  
+  // معلومات الجلسة
+  name            String   // اسم الجلسة (مثل: رقم المبيعات، رقم الدعم)
+  phoneNumber     String?  // رقم الهاتف المتصل
+  
+  // حالة الاتصال
+  status          WhatsAppSessionStatus @default(DISCONNECTED)
+  lastConnectedAt DateTime?
+  lastDisconnectedAt DateTime?
+  
+  // بيانات المصادقة من Baileys
+  authState       String?  @db.LongText // JSON: creds + keys
+  
+  // الإعدادات
+  isDefault       Boolean  @default(false) // الجلسة الافتراضية
+  aiEnabled       Boolean  @default(true)  // تفعيل AI
+  autoReply       Boolean  @default(false) // الرد التلقائي
+  
+  // إعدادات AI متقدمة
+  aiMode          String   @default("suggest") // suggest | auto | off
+  welcomeMessage  String?  @db.Text // رسالة الترحيب
+  awayMessage     String?  @db.Text // رسالة عدم التواجد
+  
+  // إعدادات ساعات العمل
+  workingHoursEnabled Boolean @default(false)
+  workingHours    String?  @db.Text // JSON: { days: [], start: "09:00", end: "17:00" }
+  
+  // البيانات الوصفية
+  metadata        String?  @db.Text
+  
+  // التواريخ
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // العلاقات
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  messages        WhatsAppMessage[]
+  contacts        WhatsAppContact[]
+  
+  @@index([companyId])
+  @@index([status])
+  @@index([phoneNumber])
+  @@map("whatsapp_sessions")
+}
+
+// حالات جلسة WhatsApp
+enum WhatsAppSessionStatus {
+  CONNECTED       // متصل
+  DISCONNECTED    // غير متصل
+  QR_PENDING      // في انتظار مسح QR
+  CONNECTING      // جاري الاتصال
+  LOGGED_OUT      // تم تسجيل الخروج
+}
+
+// 💬 رسائل WhatsApp
+model WhatsAppMessage {
+  id              String   @id @default(cuid())
+  sessionId       String
+  
+  // معرفات WhatsApp
+  remoteJid       String   // رقم المرسل/المستقبل (JID)
+  messageId       String   @unique // ID الرسالة من WhatsApp
+  
+  // معلومات الرسالة
+  fromMe          Boolean  // هل الرسالة مني
+  messageType     WhatsAppMessageType @default(TEXT)
+  content         String?  @db.Text // النص أو الـ caption
+  
+  // الوسائط
+  mediaUrl        String?  @db.Text // رابط الوسائط المحفوظة
+  mediaType       String?  // image/jpeg, video/mp4, etc.
+  mediaMimeType   String?
+  mediaSize       Int?     // حجم الملف بالبايت
+  mediaFileName   String?  // اسم الملف
+  
+  // الاقتباس والرد
+  quotedMessageId String?  // ID الرسالة المقتبسة
+  quotedContent   String?  @db.Text // محتوى الرسالة المقتبسة
+  
+  // حالة الرسالة
+  status          WhatsAppMessageStatus @default(SENT)
+  
+  // معلومات إضافية
+  timestamp       DateTime // وقت الرسالة من WhatsApp
+  isAIResponse    Boolean  @default(false) // هل الرد من AI
+  aiConfidence    Float?   // مستوى ثقة AI
+  
+  // الرسائل التفاعلية
+  interactiveData String?  @db.Text // JSON: بيانات الأزرار/القوائم/المنتجات
+  
+  // البيانات الوصفية
+  metadata        String?  @db.Text // بيانات إضافية من WhatsApp
+  
+  // التواريخ
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // العلاقات
+  session         WhatsAppSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  @@index([sessionId])
+  @@index([remoteJid])
+  @@index([timestamp])
+  @@index([sessionId, remoteJid])
+  @@index([sessionId, timestamp])
+  @@map("whatsapp_messages")
+}
+
+// أنواع رسائل WhatsApp
+enum WhatsAppMessageType {
+  TEXT            // نص
+  IMAGE           // صورة
+  VIDEO           // فيديو
+  AUDIO           // صوت
+  DOCUMENT        // ملف
+  STICKER         // ستيكر
+  LOCATION        // موقع
+  CONTACT         // جهة اتصال
+  REACTION        // تفاعل
+  POLL            // استطلاع
+  TEMPLATE        // قالب
+  BUTTONS         // أزرار تفاعلية
+  LIST            // قائمة
+  PRODUCT         // منتج
+  INTERACTIVE     // رسالة تفاعلية
+}
+
+// حالات رسائل WhatsApp
+enum WhatsAppMessageStatus {
+  PENDING         // في الانتظار
+  SENT            // تم الإرسال
+  DELIVERED       // تم التوصيل
+  READ            // تم القراءة
+  FAILED          // فشل الإرسال
+}
+
+// 👤 جهات اتصال WhatsApp
+model WhatsAppContact {
+  id              String   @id @default(cuid())
+  sessionId       String
+  
+  // معرفات
+  jid             String   // WhatsApp JID
+  phoneNumber     String   // رقم الهاتف
+  
+  // معلومات الاتصال
+  name            String?  // الاسم المحفوظ
+  pushName        String?  // الاسم من WhatsApp
+  profilePicUrl   String?  @db.Text // صورة البروفايل
+  
+  // نوع الاتصال
+  isGroup         Boolean  @default(false)
+  isBlocked       Boolean  @default(false)
+  
+  // ربط مع العميل في النظام
+  customerId      String?
+  
+  // التصنيف
+  category        String?  @default("LEAD") // LEAD, CUSTOMER, VIP, BLOCKED
+  tags            String?  @db.Text // JSON array of tags
+  
+  // الملاحظات
+  notes           String?  @db.Text
+  
+  // إحصائيات
+  lastMessageAt   DateTime?
+  unreadCount     Int      @default(0)
+  totalMessages   Int      @default(0)
+  
+  // الحالة
+  isArchived      Boolean  @default(false)
+  isPinned        Boolean  @default(false)
+  isMuted         Boolean  @default(false)
+  
+  // التواريخ
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // العلاقات
+  session         WhatsAppSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  customer        Customer? @relation(fields: [customerId], references: [id])
+  
+  @@unique([sessionId, jid])
+  @@index([sessionId])
+  @@index([phoneNumber])
+  @@index([customerId])
+  @@index([lastMessageAt])
+  @@index([category])
+  @@map("whatsapp_contacts")
+}
+
+// 📝 قوالب الردود السريعة لـ WhatsApp
+model WhatsAppQuickReply {
+  id              String   @id @default(cuid())
+  companyId       String
+  
+  // معلومات القالب
+  title           String   // عنوان القالب
+  shortcut        String?  // اختصار (مثل: /welcome)
+  content         String   @db.Text // محتوى الرد
+  
+  // التصنيف
+  category        String   @default("general") // welcome, thanks, apology, info, order, general
+  
+  // المتغيرات المدعومة
+  variables       String?  @db.Text // JSON: ["customer_name", "order_number", "product_name"]
+  
+  // الوسائط المرفقة
+  mediaUrl        String?  @db.Text
+  mediaType       String?  // image, video, document
+  
+  // الإحصائيات
+  usageCount      Int      @default(0)
+  lastUsedAt      DateTime?
+  
+  // الحالة
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  
+  // التواريخ
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // العلاقات
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  @@unique([companyId, shortcut])
+  @@index([companyId])
+  @@index([category])
+  @@index([isActive])
+  @@map("whatsapp_quick_replies")
+}
+
+// ⚙️ إعدادات WhatsApp للشركة
+model WhatsAppSettings {
+  id              String   @id @default(cuid())
+  companyId       String   @unique
+  
+  // إعدادات عامة
+  isEnabled       Boolean  @default(true)
+  maxSessions     Int      @default(3) // الحد الأقصى للجلسات
+  
+  // إعدادات الإشعارات
+  notificationSound Boolean @default(true)
+  browserNotifications Boolean @default(true)
+  
+  // إعدادات AI
+  defaultAIMode   String   @default("suggest") // suggest | auto | off
+  aiWelcomeEnabled Boolean @default(false)
+  aiAwayEnabled   Boolean  @default(false)
+  
+  // إعدادات الوسائط
+  maxImageSize    Int      @default(16) // MB
+  maxVideoSize    Int      @default(64) // MB
+  maxDocumentSize Int      @default(100) // MB
+  autoCompressImages Boolean @default(true)
+  
+  // إعدادات الأرشفة
+  autoArchiveDays Int?     // أرشفة المحادثات بعد X يوم
+  
+  // البيانات الوصفية
+  metadata        String?  @db.Text
+  
+  // التواريخ
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // العلاقات
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  @@map("whatsapp_settings")
+}
+
+// 📊 سجل أحداث WhatsApp (للتتبع والتحليل)
+model WhatsAppEventLog {
+  id              String   @id @default(cuid())
+  sessionId       String
+  companyId       String
+  
+  // نوع الحدث
+  eventType       String   // connection, message, error, qr_scan, etc.
+  eventData       String?  @db.Text // JSON data
+  
+  // مستوى الحدث
+  level           String   @default("info") // info, warning, error
+  
+  // التاريخ
+  createdAt       DateTime @default(now())
+  
+  @@index([sessionId])
+  @@index([companyId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("whatsapp_event_logs")
+}
+
+// ============================================
+// 📱 Facebook Ads Models
+// ============================================
+
+// حساب Facebook Ads
+model FacebookAdAccount {
+  id              String   @id @default(cuid())
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  // Account Info
+  accountId       String   // Facebook Ad Account ID
+  name            String
+  currency        String   @default("USD")
+  timezone        String?
+  
+  // Access
+  accessToken     String   @db.Text
+  isActive        Boolean  @default(true)
+  
+  // Metadata
+  settings        String?  @db.Text // JSON settings
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  campaigns       FacebookCampaign[]
+  customAudiences FacebookCustomAudience[]
+  lookalikeAudiences FacebookLookalikeAudience[]
+  productCatalogs FacebookProductCatalog[]
+  
+  @@unique([companyId, accountId])
+  @@index([companyId])
+  @@index([accountId])
+  @@map("facebook_ad_accounts")
+}
+
+// الحملة الإعلانية
+model FacebookCampaign {
+  id              String   @id @default(cuid())
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  adAccountId     String?
+  adAccount       FacebookAdAccount? @relation(fields: [adAccountId], references: [id], onDelete: SetNull)
+  
+  // Campaign Info
+  name            String
+  objective       String   // AWARENESS, TRAFFIC, ENGAGEMENT, LEADS, APP_PROMOTION, SALES, CONVERSIONS
+  status          String   @default("PAUSED") // ACTIVE, PAUSED, ARCHIVED, DELETED
+  facebookCampaignId String? // ID من Facebook
+  
+  // Budget & Schedule
+  budgetType      String   // DAILY, LIFETIME
+  budgetAmount    Float
+  startDate       DateTime?
+  endDate         DateTime?
+  
+  // Tracking
+  pixelId         String?
+  
+  // Metadata
+  settings        String?  @db.Text // JSON settings
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastSyncAt      DateTime?
+  
+  // Relations
+  adSets          FacebookAdSet[]
+  adTests         FacebookAdTest[]
+  
+  @@index([companyId])
+  @@index([status])
+  @@index([facebookCampaignId])
+  @@map("facebook_campaigns")
+}
+
+// AdSet (مجموعة الإعلانات)
+model FacebookAdSet {
+  id              String   @id @default(cuid())
+  campaignId      String
+  campaign        FacebookCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  // AdSet Info
+  name            String
+  status          String   @default("PAUSED") // ACTIVE, PAUSED, ARCHIVED, DELETED
+  facebookAdSetId String? // ID من Facebook
+  
+  // Targeting
+  targeting       String?  @db.Text // JSON targeting data
+  ageMin          Int?
+  ageMax          Int?
+  genders         String?  @db.Text // JSON array
+  locations       String?  @db.Text // JSON array
+  interests       String?  @db.Text // JSON array
+  behaviors       String?  @db.Text // JSON array
+  customAudiencesJson String?  @db.Text // JSON array of custom audience IDs
+  lookalikeAudiencesJson String? @db.Text // JSON array of lookalike audience IDs
+  
+  // Budget
+  budgetType      String   // DAILY, LIFETIME
+  budgetAmount    Float
+  
+  // Optimization
+  optimizationGoal String? // LINK_CLICKS, OFFSITE_CONVERSIONS, etc.
+  billingEvent    String? // IMPRESSIONS, LINK_CLICKS
+  
+  // Metadata
+  settings        String?  @db.Text // JSON settings
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastSyncAt      DateTime?
+  
+  // Relations
+  ads             FacebookAd[]
+  dynamicAds      FacebookDynamicAd[]
+  customAudiences FacebookCustomAudience[] @relation("AdSetCustomAudiences")
+  lookalikeAudiences FacebookLookalikeAudience[] @relation("AdSetLookalikeAudiences")
+  testVariants    FacebookAdTestVariant[]
+  
+  @@index([campaignId])
+  @@index([status])
+  @@index([facebookAdSetId])
+  @@map("facebook_adsets")
+}
+
+// الإعلان (Ad)
+model FacebookAd {
+  id              String   @id @default(cuid())
+  adSetId         String
+  adSet           FacebookAdSet @relation(fields: [adSetId], references: [id], onDelete: Cascade)
+  companyId       String
+  
+  // Ad Info
+  name            String
+  status          String   @default("PAUSED") // ACTIVE, PAUSED, ARCHIVED, DELETED
+  facebookAdId    String? // ID من Facebook
+  
+  // Creative
+  creativeType    String   // SINGLE_IMAGE, SINGLE_VIDEO, CAROUSEL, COLLECTION
+  primaryText     String   @db.Text
+  headline        String?
+  description     String?  @db.Text
+  callToAction    String?  // LEARN_MORE, SHOP_NOW, BOOK_TRAVEL, SIGN_UP, etc.
+  
+  // Media
+  imageUrl        String?
+  videoUrl        String?
+  imageHash       String?  // Facebook Image Hash
+  videoId         String?  // Facebook Video ID
+  
+  // Carousel (إعلانات متعددة الصور)
+  carouselImages  String?  @db.Text // JSON array of {imageHash, link, headline, description}
+  carouselCount   Int?     @default(1) // عدد الصور في Carousel
+  
+  // Link
+  linkUrl         String?
+  productId       String?  // ربط بمنتج من المتجر
+  
+  // Metadata
+  creative        String?  @db.Text // JSON creative data
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastSyncAt      DateTime?
+  
+  // Relations
+  insights        FacebookAdInsight[]
+  testVariants    FacebookAdTestVariant[]
+  
+  @@index([adSetId])
+  @@index([companyId])
+  @@index([status])
+  @@index([facebookAdId])
+  @@map("facebook_ads")
+}
+
+// الإحصائيات (Insights)
+model FacebookAdInsight {
+  id              String   @id @default(cuid())
+  adId            String
+  ad              FacebookAd @relation(fields: [adId], references: [id], onDelete: Cascade)
+  
+  // Date Range
+  date            DateTime
+  
+  // Metrics
+  impressions     Int      @default(0)
+  clicks          Int      @default(0)
+  ctr             Float    @default(0) // Click Through Rate
+  cpc             Float    @default(0) // Cost Per Click
+  spend           Float    @default(0)
+  conversions     Int      @default(0)
+  cpa             Float    @default(0) // Cost Per Acquisition
+  reach           Int      @default(0)
+  frequency       Float    @default(0)
+  
+  // Additional Metrics
+  linkClicks      Int      @default(0)
+  costPerLinkClick Float   @default(0)
+  landingPageViews Int     @default(0)
+  purchases       Int      @default(0)
+  purchaseValue   Float    @default(0)
+  roas            Float    @default(0) // Return on Ad Spend
+  
+  // Breakdown
+  breakdown       String?  @db.Text // JSON breakdown data (age, gender, location, etc.)
+  
+  createdAt       DateTime @default(now())
+  
+  @@unique([adId, date])
+  @@index([adId])
+  @@index([date])
+  @@map("facebook_ad_insights")
+}
+
+// ============================================
+// 🎯 Facebook Audiences Models
+// ============================================
+
+// Custom Audience (جمهور مخصص)
+model FacebookCustomAudience {
+  id              String   @id @default(cuid())
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  adAccountId     String?
+  adAccount       FacebookAdAccount? @relation(fields: [adAccountId], references: [id], onDelete: SetNull)
+
+  // Audience Info
+  name            String
+  description     String?  @db.Text
+  audienceType    String   // CUSTOMER_LIST, WEBSITE, ENGAGEMENT, APP_ACTIVITY, VIDEO_VIEW
+  facebookAudienceId String? // ID من Facebook
+
+  // Customer List Audience
+  customerListId  String?  // ربط بقائمة عملاء من النظام
+  matchRate       Float?   // نسبة المطابقة
+  
+  // Website Audience (Pixel-based)
+  pixelId         String?  // Facebook Pixel ID
+  eventType       String?  // VISIT, ADD_TO_CART, PURCHASE, etc.
+  retentionDays   Int?     @default(30) // مدة الاحتفاظ بالأحداث
+
+  // Engagement Audience
+  engagementType  String?  // PAGE_LIKES, POST_ENGAGEMENT, etc.
+
+  // Video View Audience
+  videoId         String?
+  videoViewDuration Int?   // المدة بالمئات (0-100)
+
+  // Status
+  status          String   @default("ACTIVE") // ACTIVE, DELETED
+  audienceSize    Int?     // حجم الجمهور
+  
+  // Metadata
+  settings        String?  @db.Text // JSON settings
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastSyncAt      DateTime?
+
+  // Relations
+  lookalikeAudiences FacebookLookalikeAudience[] // Lookalike Audiences المستندة لهذا
+  adSets           FacebookAdSet[] @relation("AdSetCustomAudiences") // AdSets التي تستخدمه
+
+  @@index([companyId])
+  @@index([adAccountId])
+  @@index([status])
+  @@index([facebookAudienceId])
+  @@map("facebook_custom_audiences")
+}
+
+// Lookalike Audience (جمهور مشابه)
+model FacebookLookalikeAudience {
+  id              String   @id @default(cuid())
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  adAccountId     String?
+  adAccount       FacebookAdAccount? @relation(fields: [adAccountId], references: [id], onDelete: SetNull)
+  sourceAudienceId String
+  sourceAudience  FacebookCustomAudience @relation(fields: [sourceAudienceId], references: [id], onDelete: Cascade)
+
+  // Audience Info
+  name            String
+  description     String?  @db.Text
+  facebookAudienceId String? // ID من Facebook
+  
+  // Lookalike Settings
+  lookalikeSpec   String   // JSON: {country, ratio}
+  country         String   // رمز الدولة (US, EG, etc.)
+  ratio           Int      @default(1) // نسبة الشبه 1-10%
+
+  // Status
+  status          String   @default("ACTIVE") // ACTIVE, DELETED
+  audienceSize    Int?     // حجم الجمهور
+  
+  // Metadata
+  settings        String?  @db.Text // JSON settings
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastSyncAt      DateTime?
+
+  // Relations
+  adSets          FacebookAdSet[] @relation("AdSetLookalikeAudiences") // AdSets التي تستخدمه
+
+  @@index([companyId])
+  @@index([adAccountId])
+  @@index([sourceAudienceId])
+  @@index([status])
+  @@index([facebookAudienceId])
+  @@map("facebook_lookalike_audiences")
+}
+
+// Product Catalog (كталوج المنتجات)
+model FacebookProductCatalog {
+  id              String   @id @default(cuid())
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  adAccountId     String?
+  adAccount       FacebookAdAccount? @relation(fields: [adAccountId], references: [id], onDelete: SetNull)
+  
+  // Catalog Info
+  name            String
+  description     String?  @db.Text
+  facebookCatalogId String? // ID من Facebook
+  catalogType     String   @default("PRODUCTS") // PRODUCTS, HOTELS, FLIGHTS, etc.
+  
+  // Status
+  isActive        Boolean  @default(true)
+  status          String   @default("ACTIVE") // ACTIVE, PAUSED, DELETED
+  
+  // Sync Info
+  lastSyncAt      DateTime?
+  lastSyncStatus  String?  // SUCCESS, FAILED, IN_PROGRESS
+  totalProducts   Int      @default(0)
+  syncedProducts  Int      @default(0)
+  
+  // Settings
+  settings        String?  @db.Text // JSON settings
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  products        FacebookCatalogProduct[]
+  feeds           FacebookProductFeed[]
+  dynamicAds      FacebookDynamicAd[]
+  
+  @@unique([companyId, facebookCatalogId])
+  @@index([companyId])
+  @@index([adAccountId])
+  @@index([status])
+  @@index([facebookCatalogId])
+  @@map("facebook_product_catalogs")
+}
+
+// Catalog Product (منتج في الكاتالوج)
+model FacebookCatalogProduct {
+  id              String   @id @default(cuid())
+  catalogId       String
+  catalog         FacebookProductCatalog @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  productId       String?  // ربط بمنتج من النظام (Product model)
+  product         Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  
+  // Product Info
+  name            String
+  description     String?  @db.Text
+  brand           String?
+  category        String?
+  sku             String?
+  
+  // Price & Availability
+  price           Decimal? @db.Decimal(10, 2)
+  currency        String?  @default("USD")
+  availability    String   @default("in stock") // in stock, out of stock, preorder
+  inventory       Int?
+  
+  // Images & Links
+  imageUrl        String?
+  imageHash       String?  // Facebook Image Hash
+  additionalImages String? @db.Text // JSON array
+  linkUrl         String?  // Link to product page
+  mobileLinkUrl   String?
+  
+  // Facebook Info
+  facebookProductId String? // Facebook Product ID
+  facebookRetailerId String? // Retailer ID
+  
+  // Sync Status
+  syncStatus      String   @default("PENDING") // PENDING, SYNCED, FAILED, UPDATED
+  lastSyncedAt    DateTime?
+  syncError       String?  @db.Text
+  
+  // Metadata
+  metadata        String?  @db.Text // JSON additional data
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@unique([catalogId, productId])
+  @@unique([catalogId, sku])
+  @@index([catalogId])
+  @@index([productId])
+  @@index([facebookProductId])
+  @@index([syncStatus])
+  @@map("facebook_catalog_products")
+}
+
+// Product Feed (Feed للمنتجات)
+model FacebookProductFeed {
+  id              String   @id @default(cuid())
+  catalogId       String
+  catalog         FacebookProductCatalog @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  
+  // Feed Info
+  name            String
+  feedType        String   @default("PRODUCT") // PRODUCT, HOTEL, FLIGHT
+  format          String   @default("CSV") // CSV, XML, TSV
+  
+  // File Info
+  fileUrl         String?  // URL للـ Feed File
+  fileName        String?
+  fileSize        Int?
+  
+  // Facebook Info
+  facebookFeedId  String?  // Facebook Feed ID
+  feedUrl         String?  // URL المقدم لـ Facebook
+  
+  // Schedule
+  schedule        String?  // HOURLY, DAILY, WEEKLY, etc.
+  lastUploadedAt  DateTime?
+  nextUploadAt    DateTime?
+  
+  // Status
+  status          String   @default("ACTIVE") // ACTIVE, PAUSED, DELETED
+  uploadStatus    String?  // SUCCESS, FAILED, IN_PROGRESS
+  
+  // Settings
+  settings        String?  @db.Text // JSON settings
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([catalogId])
+  @@index([status])
+  @@index([facebookFeedId])
+  @@map("facebook_product_feeds")
+}
+
+// Dynamic Ad (إعلان ديناميكي)
+model FacebookDynamicAd {
+  id              String   @id @default(cuid())
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  catalogId       String
+  catalog         FacebookProductCatalog @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  adSetId         String?
+  adSet           FacebookAdSet? @relation(fields: [adSetId], references: [id], onDelete: SetNull)
+  
+  // Ad Info
+  name            String
+  status          String   @default("PAUSED") // ACTIVE, PAUSED, ARCHIVED, DELETED
+  facebookAdId    String?  // Facebook Ad ID
+  
+  // Dynamic Settings
+  productSetId    String?  // Facebook Product Set ID
+  templateUrl     String?  // Template URL
+  templateId      String?  // Facebook Template ID
+  
+  // Targeting
+  collectionId    String?  // Collection ID (specific products)
+  categoryId      String?  // Category ID
+  
+  // Creative
+  headline        String?
+  description     String?  @db.Text
+  callToAction    String?  // LEARN_MORE, SHOP_NOW, etc.
+  
+  // Status
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastSyncAt      DateTime?
+  
+  @@unique([companyId, facebookAdId])
+  @@index([companyId])
+  @@index([catalogId])
+  @@index([adSetId])
+  @@index([status])
+  @@index([facebookAdId])
+  @@map("facebook_dynamic_ads")
+}
+
+// ============================================
+// 🧪 A/B Testing Models
+// ============================================
+
+// A/B Test (اختبار إعلان)
+model FacebookAdTest {
+  id              String   @id @default(cuid())
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  // Test Info
+  name            String
+  description     String?  @db.Text
+  testType        String   // CREATIVE, TARGETING, BUDGET, PLACEMENT
+  status          String   @default("DRAFT") // DRAFT, RUNNING, PAUSED, COMPLETED, ARCHIVED
+  
+  // Test Settings
+  campaignId      String?
+  campaign        FacebookCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  
+  // Variants Config
+  variants        String   @db.Text // JSON array of variant configs
+  
+  // Results
+  winnerVariantId String?
+  confidenceLevel Float?   // Statistical confidence (0-100)
+  testDuration    Int?     // Days
+  startDate       DateTime?
+  endDate         DateTime?
+  
+  // Settings
+  trafficSplit    Int      @default(50) // 50-50 split
+  minimumResults  Int      @default(100) // Minimum conversions to determine winner
+  autoPromote     Boolean  @default(false)
+  
+  // Stats
+  totalSpend      Float    @default(0)
+  totalImpressions Int     @default(0)
+  totalClicks     Int      @default(0)
+  totalConversions Int     @default(0)
+  
+  // Metadata
+  settings        String?  @db.Text // JSON settings
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  variantsList    FacebookAdTestVariant[]
+  
+  @@index([companyId])
+  @@index([campaignId])
+  @@index([status])
+  @@index([testType])
+  @@map("facebook_ad_tests")
+}
+
+// Test Variant (متغير الاختبار)
+model FacebookAdTestVariant {
+  id              String   @id @default(cuid())
+  testId          String
+  test            FacebookAdTest @relation(fields: [testId], references: [id], onDelete: Cascade)
+  
+  // Variant Info
+  name            String
+  variantType     String   // VARIANT_A, VARIANT_B, CONTROL
+  
+  // Variant Data (JSON based on testType)
+  variantData     String   @db.Text // JSON: creative data, targeting, budget, etc.
+  
+  // Linked Resources
+  adSetId         String?
+  adSet           FacebookAdSet? @relation(fields: [adSetId], references: [id], onDelete: SetNull)
+  adId            String?
+  ad              FacebookAd? @relation(fields: [adId], references: [id], onDelete: SetNull)
+  
+  // Performance
+  impressions     Int      @default(0)
+  clicks          Int      @default(0)
+  conversions     Int      @default(0)
+  spend           Float    @default(0)
+  ctr             Float    @default(0)
+  cpc             Float    @default(0)
+  cpa             Float    @default(0)
+  roas            Float    @default(0)
+  
+  // Statistical Analysis
+  isWinner        Boolean  @default(false)
+  pValue          Float?   // Statistical significance
+  confidenceLevel Float?   // Confidence interval
+  
+  // Metadata
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([testId])
+  @@index([adSetId])
+  @@index([adId])
+  @@index([variantType])
+  @@map("facebook_ad_test_variants")
+}
+

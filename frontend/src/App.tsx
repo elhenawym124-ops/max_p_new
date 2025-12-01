@@ -66,6 +66,32 @@ import ProductImageSettings from './pages/settings/ProductImageSettings';
 
 // Advertising
 import FacebookPixelSettings from './pages/advertising/FacebookPixelSettings';
+import FacebookAdsDashboard from './pages/advertising/FacebookAdsDashboard';
+import CreateCampaign from './pages/advertising/CreateCampaign';
+import CreateAd from './pages/advertising/CreateAd';
+import CampaignDetails from './pages/advertising/CampaignDetails';
+import AudiencesManagement from './pages/advertising/AudiencesManagement';
+import CreateCustomAudience from './pages/advertising/CreateCustomAudience';
+import CreateLookalikeAudience from './pages/advertising/CreateLookalikeAudience';
+import CustomAudienceDetails from './pages/advertising/CustomAudienceDetails';
+import CreateAdSet from './pages/advertising/CreateAdSet';
+import CatalogsManagement from './pages/advertising/CatalogsManagement';
+import CatalogDetails from './pages/advertising/CatalogDetails';
+import CreateDynamicAd from './pages/advertising/CreateDynamicAd';
+import ABTestsManagement from './pages/advertising/ABTestsManagement';
+import CreateABTest from './pages/advertising/CreateABTest';
+import ABTestDetails from './pages/advertising/ABTestDetails';
+import CreateAdWizard from './pages/advertising/CreateAdWizard';
+import AutomationRules from './pages/advertising/AutomationRules';
+import AsyncReports from './pages/advertising/AsyncReports';
+import LeadFormsManagement from './pages/advertising/LeadFormsManagement';
+import DynamicCreativeOptimization from './pages/advertising/DynamicCreativeOptimization';
+import AdvantagePlusShopping from './pages/advertising/AdvantagePlusShopping';
+import ConversionApiDashboard from './pages/advertising/ConversionApiDashboard';
+import CreativeFormats from './pages/advertising/CreativeFormats';
+import AdPreview from './pages/advertising/AdPreview';
+import SavedAudiences from './pages/advertising/SavedAudiences';
+import AttributionSettings from './pages/advertising/AttributionSettings';
 import Profile from './pages/profile/Profile';
 import TermsAndConditions from './pages/legal/TermsAndConditions';
 import PrivacyPolicyPage from './pages/legal/PrivacyPolicy';
@@ -149,6 +175,9 @@ import UnifiedCommentsManagement from "./pages/comments/UnifiedCommentsManagemen
 // Page Builder
 import PageBuilder from './pages/PageBuilder';
 import LandingPageList from './pages/LandingPageList';
+
+// WhatsApp
+import { WhatsAppSettings, WhatsAppChat } from './pages/whatsapp';
 
 import { useAuth } from './hooks/useAuthSimple';
 
@@ -339,6 +368,33 @@ const AppContent = () => {
             
             {/* Advertising Routes */}
             <Route path="/advertising/facebook-pixel" element={<Layout><FacebookPixelSettings /></Layout>} />
+            <Route path="/advertising/facebook-ads" element={<Layout><FacebookAdsDashboard /></Layout>} />
+            <Route path="/advertising/facebook-ads/campaigns" element={<Layout><FacebookAdsDashboard /></Layout>} />
+            <Route path="/advertising/facebook-ads/campaigns/create" element={<Layout><CreateCampaign /></Layout>} />
+            <Route path="/advertising/facebook-ads/create-ad" element={<Layout><CreateAdWizard /></Layout>} />
+            <Route path="/advertising/facebook-ads/campaigns/:id" element={<Layout><CampaignDetails /></Layout>} />
+            <Route path="/advertising/facebook-ads/campaigns/:campaignId/adsets/create" element={<Layout><CreateAdSet /></Layout>} />
+            <Route path="/advertising/facebook-ads/adsets/:adSetId/ads/create" element={<Layout><CreateAd /></Layout>} />
+            <Route path="/advertising/facebook-ads/catalogs" element={<Layout><CatalogsManagement /></Layout>} />
+            <Route path="/advertising/facebook-ads/catalogs/:id" element={<Layout><CatalogDetails /></Layout>} />
+            <Route path="/advertising/facebook-ads/adsets/:adSetId/dynamic-ads/create" element={<Layout><CreateDynamicAd /></Layout>} />
+            <Route path="/advertising/facebook-ads/tests" element={<Layout><ABTestsManagement /></Layout>} />
+            <Route path="/advertising/facebook-ads/tests/create" element={<Layout><CreateABTest /></Layout>} />
+            <Route path="/advertising/facebook-ads/tests/:id" element={<Layout><ABTestDetails /></Layout>} />
+            <Route path="/advertising/facebook-ads/audiences" element={<Layout><AudiencesManagement /></Layout>} />
+            <Route path="/advertising/facebook-ads/audiences/custom/create" element={<Layout><CreateCustomAudience /></Layout>} />
+            <Route path="/advertising/facebook-ads/audiences/custom/:id" element={<Layout><CustomAudienceDetails /></Layout>} />
+            <Route path="/advertising/facebook-ads/audiences/lookalike/create" element={<Layout><CreateLookalikeAudience /></Layout>} />
+            <Route path="/advertising/facebook-ads/automation-rules" element={<Layout><AutomationRules /></Layout>} />
+            <Route path="/advertising/facebook-ads/reports" element={<Layout><AsyncReports /></Layout>} />
+            <Route path="/advertising/facebook-ads/lead-forms" element={<Layout><LeadFormsManagement /></Layout>} />
+            <Route path="/advertising/facebook-ads/dco" element={<Layout><DynamicCreativeOptimization /></Layout>} />
+            <Route path="/advertising/facebook-ads/advantage-plus" element={<Layout><AdvantagePlusShopping /></Layout>} />
+            <Route path="/advertising/facebook-ads/conversions" element={<Layout><ConversionApiDashboard /></Layout>} />
+            <Route path="/advertising/facebook-ads/creative-formats" element={<Layout><CreativeFormats /></Layout>} />
+            <Route path="/advertising/facebook-ads/ad-preview" element={<Layout><AdPreview /></Layout>} />
+            <Route path="/advertising/facebook-ads/saved-audiences" element={<Layout><SavedAudiences /></Layout>} />
+            <Route path="/advertising/facebook-ads/attribution" element={<Layout><AttributionSettings /></Layout>} />
             
             <Route path="/reminders" element={<Layout><Reminders /></Layout>} />
             <Route path="/notifications" element={<Layout><Notifications /></Layout>} />
@@ -375,6 +431,11 @@ const AppContent = () => {
             <Route path="/settings/facebook-oauth" element={<Layout><FacebookOAuth /></Layout>} />
             <Route path="/terms" element={<Layout><TermsOfService /></Layout>} />
             <Route path="/privacy" element={<Layout><PrivacyPolicy /></Layout>} />
+            
+            {/* WhatsApp Routes */}
+            <Route path="/whatsapp" element={<Layout><WhatsAppChat /></Layout>} />
+            <Route path="/whatsapp/chat" element={<Layout><WhatsAppChat /></Layout>} />
+            <Route path="/whatsapp/settings" element={<Layout><WhatsAppSettings /></Layout>} />
           </>
         ) : (
           // Redirect unauthenticated users trying to access protected routes
@@ -420,6 +481,7 @@ const AppContent = () => {
             <Route path="/categories" element={<Navigate to="/auth/login" replace />} />
             <Route path="/appointments" element={<Navigate to="/auth/login" replace />} />
             <Route path="/tasks" element={<Navigate to="/auth/login" replace />} />
+            <Route path="/whatsapp/*" element={<Navigate to="/auth/login" replace />} />
           </>
         )}
         </Routes>

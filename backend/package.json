@@ -25,13 +25,16 @@
     "test:quick-analyze": "node scripts/quickAnalyze.js",
     "test:run-and-analyze": "node scripts/runTestAndAnalyze.js",
     "test:run": "node scripts/runTestDirect.js",
-    "test:reviews": "node test-reviews-page.js"
+    "test:reviews": "node test-reviews-page.js",
+    "whatsapp:update": "node run-prisma-update.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@hapi/boom": "^10.0.1",
     "@prisma/client": "^6.12.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.0.0",
+    "@whiskeysockets/baileys": "^6.7.21",
     "array-flatten": "^3.0.0",
     "axios": "^1.10.0",
     "bcryptjs": "^3.0.2",
@@ -51,7 +54,10 @@
     "node-fetch": "^2.7.0",
     "nodemailer": "^7.0.5",
     "path": "^0.12.7",
+    "pino": "^9.14.0",
     "prisma": "^6.12.0",
+    "qrcode-terminal": "^0.12.0",
+    "sharp": "^0.33.5",
     "socket.io": "^4.8.1",
     "uuid": "^11.1.0",
     "winston": "^3.17.0",

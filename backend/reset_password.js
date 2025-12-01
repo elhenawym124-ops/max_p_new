@@ -1,55 +1,20 @@
-const { getSharedPrismaClient } = require('./services/sharedDatabase');
+const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 
-const prisma = getSharedPrismaClient();
+const prisma = new PrismaClient();
 
-async function resetUserPassword() {
+async function resetPassword() {
     try {
-        console.log('🔧 [PASSWORD-RESET] Resetting password for ali@ali.com...');
+        const email = 'ali@ali.com';
+        const newPassword = 'password123';
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-        // Check if user exists
-        const user = await prisma.user.findUnique({
-            where: { email: 'ali@ali.com' },
-            include: { company: true }
+        const user = await prisma.user.update({
+            where: { email },
+            data: { password: hashedPassword }
         });
 
-        if (!user) {
-            console.log('❌ User ali@ali.com not found');
-            return;
-        }
-
-        console.log('✅ User found:', {
-            email: user.email,
-            isActive: user.isActive,
-            isEmailVerified: user.isEmailVerified,
-            company: user.company?.name
-        });
-
-        // Hash the new password
-        const hashedPassword = await bcrypt.hash('admin123', 10);
-        console.log('🔑 New password hashed');
-
-        // Update the user with the new password
-        const updatedUser = await prisma.user.update({
-            where: { email: 'ali@ali.com' },
-            data: {
-                password: hashedPassword,
-                isActive: true,
-                isEmailVerified: true,
-                emailVerifiedAt: new Date()
-            }
-        });
-
-        console.log('✅ Password updated successfully');
-
-        // Test the password
-        const passwordMatch = await bcrypt.compare('admin123', updatedUser.password);
-        console.log('✅ Password verification test:', passwordMatch ? 'PASS' : 'FAIL');
-
-        console.log('\n🎉 Password reset completed! You can now login with:');
-        console.log('   Email: ali@ali.com');
-        console.log('   Password: admin123');
-
+        console.log(`✅ Password reset for ${user.email} (ID: ${user.id}, Role: ${user.role}, Active: ${user.isActive}, Company: ${user.companyId})`);
     } catch (error) {
         console.error('❌ Error resetting password:', error);
     } finally {
@@ -57,5 +22,4 @@ async function resetUserPassword() {
     }
 }
 
-// Run the reset
-resetUserPassword();
+resetPassword();

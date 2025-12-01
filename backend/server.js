@@ -12,6 +12,7 @@ const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
+const { WhatsAppManager } = require('./services/whatsapp');
 
 // 🚀 PERFORMANCE OPTIMIZATION PATCH
 const PERFORMANCE_CONFIG = require('./config/performance');
@@ -87,6 +88,7 @@ const smartDelayRoutes = require('./routes/smartDelayRoutes');
 const orderRoutes2 = require('./routes/orders');
 const enhancedOrderRoutes = require('./routes/enhancedOrders');
 const facebookOAuthRoutes = require('./routes/facebookOAuthRoutes');
+const facebookAdsRoutes = require('./routes/facebookAdsRoutes'); // 📱 Facebook Ads Management
 const broadcastRoutes = require('./routes/broadcastRoutes');
 const inventoryRoutes = require('./routes/inventoryRoutes');
 const commentRoutes = require('./routes/commentRoutes');
@@ -113,6 +115,7 @@ const storePagesRoutes = require('./routes/storePagesRoutes'); // 📄 صفحا�
 const couponsRoutes = require('./routes/couponsRoutes'); // 🎟️ الكوبونات والخصومات
 const publicCouponsRoutes = require('./routes/publicCouponsRoutes'); // 🌐 الكوبونات العامة
 const homepageRoutes = require('./routes/homepageRoutes'); // 🏠 قوالب الصفحة الرئيسية
+const whatsappRoutes = require('./routes/whatsappRoutes'); // 📱 WhatsApp Integration
 
 
 
@@ -191,40 +194,40 @@ function generateId() {
 // 🚀 دالة تحميل الخدمات الثقيلة بعد بدء السرفر
 async function loadHeavyServices() {
   //console.log('📎 [PERFORMANCE] Starting to load heavy services...');
-  
+
   try {
     // تحميل خدمات الذكاء الصناعي
     if (!aiAgentService) {
       //console.log('🤖 [PERFORMANCE] Loading AI Agent Service...');
       aiAgentService = require('./services/aiAgentService');
     }
-    
+
     if (!ragService) {
       //console.log('🧠 [PERFORMANCE] Loading RAG Service...');
       ragService = require('./services/ragService');
     }
-    
+
     if (!memoryService) {
       //console.log('💾 [PERFORMANCE] Loading Memory Service...');
       memoryService = require('./services/memoryService');
     }
-    
+
     if (!multimodalService) {
       //console.log('📷 [PERFORMANCE] Loading Multimodal Service...');
       multimodalService = require('./services/multimodalService');
     }
-    
+
     // تحميل خدمة كشف الأنماط
     if (!autoPatternService) {
       //console.log('🔍 [PERFORMANCE] Loading Auto Pattern Service...');
       autoPatternService = require('./services/autoPatternDetectionService');
-      
+
       // بدء خدمة كشف الأنماط
       autoPatternService.start();
       //console.log(`✅ Auto Pattern Detection Service started successfully`);
       //console.log(`⏰ Detection interval: ${autoPatternService.getStatus().intervalMinutes} minutes`);
     }
-    
+
     // بدء خدمة الصيانة المجدولة
     //console.log(`🕐 Starting Scheduled Pattern Maintenance Service...`);
     scheduledMaintenance.start();
@@ -232,22 +235,22 @@ async function loadHeavyServices() {
     //console.log(`📅 Weekly cleanup: Sundays at 2:00 AM`);
     //console.log(`📅 Daily maintenance: Every day at 3:00 AM`);
     //console.log(`📅 Monthly archiving: 1st of month at 1:00 AM`);
-    
+
     // بدء خدمة جدولة البرودكاست
     console.log(`📡 Starting Broadcast Scheduler Service...`);
     const broadcastScheduler = require('./services/broadcastSchedulerService');
     broadcastScheduler.start();
     console.log(`✅ Broadcast Scheduler Service started successfully`);
     console.log(`📅 Checking for scheduled broadcasts every minute`);
-    
+
     // بدء خدمة التحقق من النماذج المستثناة (كل ساعة)
     console.log(`🔄 Starting Excluded Models Retry Service...`);
     const cron = require('node-cron');
-    
+
     // التأكد من أن aiAgentService محمّل قبل الوصول إلى getModelManager
     if (aiAgentService && typeof aiAgentService.getModelManager === 'function') {
       const modelManager = aiAgentService.getModelManager();
-      
+
       // تشغيل كل ساعة
       cron.schedule('0 * * * *', async () => {
         try {
@@ -258,15 +261,15 @@ async function loadHeavyServices() {
           console.error('❌ [EXCLUDED-MODELS] Error checking excluded models:', error);
         }
       });
-      
+
       console.log(`✅ Excluded Models Retry Service started successfully`);
       console.log(`📅 Checking excluded models every hour`);
     } else {
       console.warn(`⚠️ [EXCLUDED-MODELS] aiAgentService not loaded yet - will retry on next service load`);
     }
-    
+
     //console.log('✅ [PERFORMANCE] All heavy services loaded successfully!');
-    
+
   } catch (error) {
     console.error('❌ [PERFORMANCE] Error loading heavy services:', error.message);
     //console.log('🔄 [PERFORMANCE] Server will continue running with basic functionality');
@@ -281,10 +284,10 @@ const server = http.createServer(app);
 app.use((req, res, next) => {
   // Get origin from multiple possible headers (nginx may pass it differently)
   const origin = req.get('origin') || req.get('Origin') || req.headers.origin || req.get('referer');
-  
+
   // Determine allowed origin
   let allowedOrigin = null;
-  
+
   if (origin) {
     const allowedPatterns = [
       'https://mokhtarelhenawy.online',
@@ -292,19 +295,19 @@ app.use((req, res, next) => {
       /^https:\/\/[a-zA-Z0-9-]+\.mokhtarelhenawy\.online$/, // All subdomains
       /^https?:\/\/localhost:[0-9]+$/ // localhost for development
     ];
-    
+
     const isAllowed = allowedPatterns.some(pattern => {
       if (pattern instanceof RegExp) {
         return pattern.test(origin);
       }
       return pattern === origin;
     });
-    
+
     if (isAllowed) {
       allowedOrigin = origin;
     }
   }
-  
+
   // Fallback: use referer or host if origin is missing
   if (!allowedOrigin) {
     const referer = req.get('referer') || req.get('Referer');
@@ -319,11 +322,11 @@ app.use((req, res, next) => {
       }
     }
   }
-  
+
   // ✅ ALWAYS set CORS headers for ALL requests - this ensures CORS works even if origin is missing
   // Use allowedOrigin if found, otherwise use wildcard or construct from request
   let corsOrigin = allowedOrigin;
-  
+
   if (!corsOrigin) {
     // Try to construct origin from request headers
     const host = req.get('host');
@@ -335,14 +338,14 @@ app.use((req, res, next) => {
       corsOrigin = '*';
     }
   }
-  
+
   // Remove any existing CORS headers first to prevent duplicates
   try {
     res.removeHeader('Access-Control-Allow-Origin');
   } catch (e) {
     // Ignore if header doesn't exist
   }
-  
+
   // Set CORS headers - ALWAYS set them for every request
   res.setHeader('Access-Control-Allow-Origin', corsOrigin);
   if (corsOrigin !== '*') {
@@ -351,12 +354,12 @@ app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, x-request-id, x-cart-id, x-session-id, X-Company-Subdomain, X-Company-Id');
   res.setHeader('Access-Control-Max-Age', '86400');
-  
+
   // Handle preflight OPTIONS requests
   if (req.method === 'OPTIONS') {
     return res.status(204).end();
   }
-  
+
   next();
 });
 
@@ -416,6 +419,7 @@ app.use("/api/proxy-image", proxyRoutes);
 // Facebook webhook route - must match the URL configured in Facebook Developer Console
 app.use("/api/v1/webhook", webhookRoutes);
 app.use('/api/v1/facebook-oauth', facebookOAuthRoutes);
+app.use('/api/v1/facebook-ads', facebookAdsRoutes); // 📱 Facebook Ads Management
 
 // Add monitoring routes (after security middleware)
 //console.log('🔧 [SERVER] Registering monitoring routes at /api/v1/monitor');
@@ -538,6 +542,7 @@ app.use("/api/v1/messages/", messageFixRoutes)
 app.use("/api/v1/comments/", commentRoutes)
 app.use("/api/v1/user/image-gallery", imageGalleryRoutes) // 🖼️ حافظة الصور
 app.use("/api/v1/user/text-gallery", textGalleryRoutes) // 📝 حافظة النصوص
+app.use("/api/v1/whatsapp", whatsappRoutes) // 📱 WhatsApp Integration
 // Homepage routes moved before globalSecurity middleware (line 434)
 
 // ==================== SERVER STARTUP ====================
@@ -551,7 +556,7 @@ let serverStarted = false;
  */
 function scheduleConnectionRetries() {
   //console.log('🔄 [SERVER] Scheduling database connection retries...');
-  
+
   const retryInterval = setInterval(async () => {
     try {
       //console.log('🔄 [SERVER] Attempting to reconnect to database...');
@@ -566,7 +571,7 @@ function scheduleConnectionRetries() {
       }
     }
   }, 5 * 60 * 1000); // Retry every 5 minutes
-  
+
   // Clear retry attempts after 2 hours to prevent infinite retries
   setTimeout(() => {
     clearInterval(retryInterval);
@@ -581,7 +586,7 @@ function scheduleConnectionRetries() {
 setInterval(async () => {
   try {
     //console.log('🔍 [AUTO-HEALTH-CHECK] Running periodic message health check...');
-    
+
     // الحصول على أول شركة في النظام للفحص التلقائي
     // في بيئة إنتاجية حقيقية، يجب تشغيل هذا لجميع الشركات
     const firstCompany = await safeQuery(async () => {
@@ -590,7 +595,7 @@ setInterval(async () => {
         where: { isActive: true }
       });
     }, 3);
-    
+
     if (firstCompany) {
       //console.log(`🏢 [AUTO-HEALTH-CHECK] Running check for company: ${firstCompany.id}`);
       const checker = new MessageHealthChecker();
@@ -741,12 +746,12 @@ app.use((req, res, next) => {
   const originalJson = res.json.bind(res);
   const originalSend = res.send.bind(res);
   const originalEnd = res.end.bind(res);
-  
+
   const ensureCORS = () => {
     if (!res.getHeader('Access-Control-Allow-Origin')) {
       const origin = req.get('origin') || req.get('Origin') || req.headers.origin;
       let corsOrigin = origin;
-      
+
       if (!corsOrigin || (!corsOrigin.includes('mokhtarelhenawy.online') && !corsOrigin.includes('localhost'))) {
         const host = req.get('host');
         const protocol = req.get('x-forwarded-proto') || req.protocol || 'https';
@@ -756,7 +761,7 @@ app.use((req, res, next) => {
           corsOrigin = '*';
         }
       }
-      
+
       res.setHeader('Access-Control-Allow-Origin', corsOrigin);
       if (corsOrigin !== '*') {
         res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -765,22 +770,22 @@ app.use((req, res, next) => {
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, x-request-id, x-cart-id, x-session-id, X-Company-Subdomain, X-Company-Id');
     }
   };
-  
-  res.json = function(...args) {
+
+  res.json = function (...args) {
     ensureCORS();
     return originalJson.apply(this, args);
   };
-  
-  res.send = function(...args) {
+
+  res.send = function (...args) {
     ensureCORS();
     return originalSend.apply(this, args);
   };
-  
-  res.end = function(...args) {
+
+  res.end = function (...args) {
     ensureCORS();
     return originalEnd.apply(this, args);
   };
-  
+
   next();
 });
 
@@ -991,7 +996,7 @@ setTimeout(() => {
 
   // Add renewal processing to daily checks
   const originalRunDailyChecks = billingNotificationService.runDailyChecks;
-  billingNotificationService.runDailyChecks = async function() {
+  billingNotificationService.runDailyChecks = async function () {
     await originalRunDailyChecks.call(this);
     await subscriptionRenewalService.processAutomaticRenewals();
   };
@@ -1137,10 +1142,10 @@ app.post('/api/v1/super-admin/login', async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { 
-        userId: user.id, 
-        email: user.email, 
-        role: user.role 
+      {
+        userId: user.id,
+        email: user.email,
+        role: user.role
       },
       process.env.JWT_SECRET || 'your-secret-key',
       { expiresIn: '24h' }
@@ -1176,13 +1181,13 @@ app.post('/api/v1/super-admin/login', async (req, res) => {
 app.post('/api/v1/create-users', async (req, res) => {
   try {
     //console.log('🚀 إنشاء المستخدمين...');
-    
+
     // 1. إنشاء شركة
     let company = await safeQuery(async () => {
       const prisma = getPrisma();
       return await prisma.company.findFirst();
     }, 3);
-    
+
     if (!company) {
       company = await safeQuery(async () => {
         const prisma = getPrisma();
@@ -1198,7 +1203,7 @@ app.post('/api/v1/create-users', async (req, res) => {
       }, 3);
       //console.log('✅ تم إنشاء الشركة:', company.name);
     }
-    
+
     // 2. إنشاء مستخدم عادي
     const hashedPassword1 = await bcrypt.hash('admin123', 12);
     const user1 = await safeQuery(async () => {
@@ -1218,7 +1223,7 @@ app.post('/api/v1/create-users', async (req, res) => {
         }
       });
     }, 3);
-    
+
     // 3. إنشاء سوبر أدمن
     const hashedPassword2 = await bcrypt.hash('SuperAdmin123!', 12);
     const user2 = await safeQuery(async () => {
@@ -1238,7 +1243,7 @@ app.post('/api/v1/create-users', async (req, res) => {
         }
       });
     }, 3);
-    
+
     res.json({
       success: true,
       message: 'تم إنشاء المستخدمين بنجاح',
@@ -1255,7 +1260,7 @@ app.post('/api/v1/create-users', async (req, res) => {
         }
       }
     });
-    
+
   } catch (error) {
     console.error('❌ خطأ في إنشاء المستخدمين:', error);
     res.status(500).json({
@@ -1366,7 +1371,7 @@ app.post('/api/v1/dev/create-test-user', async (req, res) => {
       const prisma = getPrisma();
       return await prisma.company.findFirst();
     }, 3);
-    
+
     if (!company) {
       return res.status(404).json({
         success: false,
@@ -1469,619 +1474,622 @@ app.use('/api/v1/inventory', inventoryRoutes);
 // ==================== GEOLOCATION ROUTES ====================
 app.use('/api/geolocation', geolocationRoutes);
 
+// ==================== WHATSAPP ROUTES ====================
+app.use('/api/v1/whatsapp', whatsappRoutes);
+
 // Real conversations endpoint with search support - with company isolation and caching
-app.get('/api/v1/conversations', 
-  verifyToken.authenticateToken, 
+app.get('/api/v1/conversations',
+  verifyToken.authenticateToken,
   verifyToken.requireCompanyAccess,
   async (req, res) => {
-  try {
-    // التحقق من المصادقة والشركة
-    const companyId = req.user?.companyId;
-    if (!companyId) {
-      return res.status(403).json({
-        success: false,
-        message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
-      });
-    }
+    try {
+      // التحقق من المصادقة والشركة
+      const companyId = req.user?.companyId;
+      if (!companyId) {
+        return res.status(403).json({
+          success: false,
+          message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+        });
+      }
 
-    const { search, page = 1, limit = 10 } = req.query;
-    const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
-    const skip = (pageNum - 1) * limitNum;
-    
-    //console.log('📞 Fetching real conversations from database for company:', companyId);
-    //console.log(`📄 Pagination: page=${pageNum}, limit=${limitNum}, skip=${skip}`);
+      const { search, page = 1, limit = 10 } = req.query;
+      const pageNum = parseInt(page);
+      const limitNum = parseInt(limit);
+      const skip = (pageNum - 1) * limitNum;
 
-    if (search) {
-      //console.log(`🔍 البحث عن: "${search}"`);
-    }
+      //console.log('📞 Fetching real conversations from database for company:', companyId);
+      //console.log(`📄 Pagination: page=${pageNum}, limit=${limitNum}, skip=${skip}`);
 
-    // Build search conditions with company filter
-    let whereCondition = {
-      companyId // إضافة فلترة الشركة
-    };
+      if (search) {
+        //console.log(`🔍 البحث عن: "${search}"`);
+      }
 
-    if (search && search.trim()) {
-      const searchTerm = search.trim();
-      whereCondition = {
-        AND: [
-          { companyId }, // تأكد من فلترة الشركة
-          {
-            OR: [
-              // البحث في اسم العميل
-              {
-                customer: {
-                  OR: [
-                    { firstName: { contains: searchTerm } },
-                    { lastName: { contains: searchTerm } },
-                    { facebookId: { contains: searchTerm } },
-                    { email: { contains: searchTerm } },
-                    { phone: { contains: searchTerm } }
-                  ]
+      // Build search conditions with company filter
+      let whereCondition = {
+        companyId // إضافة فلترة الشركة
+      };
+
+      if (search && search.trim()) {
+        const searchTerm = search.trim();
+        whereCondition = {
+          AND: [
+            { companyId }, // تأكد من فلترة الشركة
+            {
+              OR: [
+                // البحث في اسم العميل
+                {
+                  customer: {
+                    OR: [
+                      { firstName: { contains: searchTerm } },
+                      { lastName: { contains: searchTerm } },
+                      { facebookId: { contains: searchTerm } },
+                      { email: { contains: searchTerm } },
+                      { phone: { contains: searchTerm } }
+                    ]
+                  }
+                },
+                // البحث في محتوى الرسائل
+                {
+                  messages: {
+                    some: {
+                      content: { contains: searchTerm }
+                    }
+                  }
+                },
+                // البحث في آخر رسالة
+                {
+                  lastMessage: { contains: searchTerm }
                 }
-              },
-              // البحث في محتوى الرسائل
-              {
+              ]
+            }
+          ]
+        };
+      }
+
+      // Get total count for pagination
+      const totalCount = await safeDb.execute(async (prisma) => {
+        return await prisma.conversation.count({
+          where: whereCondition
+        });
+      }, {
+        fallback: 0,
+        maxRetries: 2
+      });
+
+      // Use safe database operation with fallback
+      const conversations = await safeDb.execute(async (prisma) => {
+        return await prisma.conversation.findMany({
+          where: whereCondition,
+          select: {
+            id: true,
+            customerId: true,
+            channel: true,
+            status: true,
+            lastMessageAt: true,
+            lastMessagePreview: true,
+            metadata: true,
+            createdAt: true,
+            customer: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                phone: true,
+                facebookId: true,
+              }
+            },
+            assignedUser: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+              }
+            },
+            messages: {
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+              select: {
+                isFromCustomer: true,
+                isRead: true,
+                createdAt: true,
+                type: true,
+                content: true
+              }
+            },
+            _count: {
+              select: {
                 messages: {
-                  some: {
-                    content: { contains: searchTerm }
+                  where: {
+                    isRead: false,
+                    isFromCustomer: true,
                   }
                 }
-              },
-              // البحث في آخر رسالة
-              {
-                lastMessage: { contains: searchTerm }
               }
-            ]
-          }
-        ]
-      };
-    }
-
-    // Get total count for pagination
-    const totalCount = await safeDb.execute(async (prisma) => {
-      return await prisma.conversation.count({
-        where: whereCondition
+            }
+          },
+          orderBy: {
+            lastMessageAt: 'desc'
+          },
+          skip: skip,
+          take: limitNum
+        });
+      }, {
+        fallback: [], // Return empty array if database is unavailable
+        maxRetries: 2 // Fewer retries for this endpoint
       });
-    }, { 
-      fallback: 0,
-      maxRetries: 2
-    });
 
-    // Use safe database operation with fallback
-    const conversations = await safeDb.execute(async (prisma) => {
-      return await prisma.conversation.findMany({
-        where: whereCondition,
-        select: {
-          id: true,
-          customerId: true,
-          channel: true,
-          status: true,
-          lastMessageAt: true,
-          lastMessagePreview: true,
-          metadata: true,
-          createdAt: true,
-          customer: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              email: true,
-              phone: true,
-              facebookId: true,
+      // Transform data to match frontend format
+      const transformedConversations = await Promise.all(conversations.map(async conv => {
+        // استخراج حالة AI من metadata
+        let aiEnabled = true; // افتراضي
+        let pageName = null; // اسم الصفحة
+        let pageId = null; // معرف الصفحة
+        let adSource = null; // ✅ معلومات الإعلان
+        let postId = null; // 🆕 معرف المنشور
+        if (conv.metadata) {
+          try {
+            const metadata = JSON.parse(conv.metadata);
+            aiEnabled = metadata.aiEnabled !== false;
+            pageName = metadata.pageName || null;
+            pageId = metadata.pageId || null;
+            adSource = metadata.adSource || null; // ✅ استخراج معلومات الإعلان
+            postId = metadata.postId || null; // 🆕 استخراج معرف المنشور
+
+            // 🔍 DEBUG: Log postId extraction for debugging
+            if (postId) {
+              console.log(`✅ [POST-REF] Found postId in conversation ${conv.id}: ${postId}`);
+            } else {
+              // Log metadata structure for conversations without postId (occasionally to avoid spam)
+              if (Math.random() < 0.1) { // 10% chance
+                console.log(`🔍 [POST-REF] Conversation ${conv.id} metadata keys:`, Object.keys(metadata));
+              }
             }
-          },
-          assignedUser: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
+
+            // إذا كان لدينا pageId لكن ليس pageName، ابحث عنه في جدول FacebookPage
+            if (pageId && !pageName) {
+              try {
+                const prisma = getPrisma();
+                const facebookPage = await prisma.facebookPage.findUnique({
+                  where: { pageId: pageId },
+                  select: { pageName: true }
+                });
+                if (facebookPage) {
+                  pageName = facebookPage.pageName;
+                  //console.log(`🔍 [PAGE-LOOKUP] Found page name for ${pageId}: ${pageName}`);
+                }
+              } catch (pageError) {
+                console.warn(`⚠️ Failed to lookup page name for ${pageId}:`, pageError.message);
+              }
             }
-          },
-          messages: {
-            orderBy: { createdAt: 'desc' },
-            take: 1,
-            select: {
-              isFromCustomer: true,
-              isRead: true,
-              createdAt: true,
-              type: true,
-              content: true
-            }
-          },
-          _count: {
-            select: {
-              messages: {
-                where: {
-                  isRead: false,
-                  isFromCustomer: true,
+
+            //console.log(`🔍 [AI-DEBUG] Conversation ${conv.id}: metadata=${conv.metadata}, aiEnabled=${aiEnabled}, pageName=${pageName}`);
+          } catch (error) {
+            console.warn('⚠️ Could not parse conversation metadata:', error);
+          }
+        } else {
+          //console.log(`🔍 [AI-DEBUG] Conversation ${conv.id}: no metadata, using default aiEnabled=${aiEnabled}`);
+        }
+
+        // 🔧 FIX: Fallback لجلب آخر رسالة فعلية من جدول messages لو lastMessagePreview فارغ
+        let lastMessagePreview = conv.lastMessagePreview;
+        let derivedLastMessageTime = conv.lastMessageAt || conv.createdAt;
+        let lastMessageIsFromCustomer = (conv.messages && conv.messages.length > 0) ? Boolean(conv.messages[0].isFromCustomer) : false; // ⚡ NEW: تتبع من أرسل آخر رسالة
+        let lastCustomerMessageIsUnread = (conv.messages && conv.messages.length > 0) ? (conv.messages[0].isFromCustomer === true && conv.messages[0].isRead === false) : false;
+
+        if (
+          !lastMessagePreview ||
+          lastMessagePreview === 'لا توجد رسائل' ||
+          lastMessagePreview.trim() === '' ||
+          lastMessagePreview.trim().length < 2 ||
+          /^[✓✗×\s]+$/.test(lastMessagePreview.trim())
+        ) {
+          try {
+            // جلب جميع الرسائل وفلترتها في الكود (أبسط وأضمن)
+            const prisma = getPrisma();
+            const messages = await prisma.message.findMany({
+              where: { conversationId: conv.id },
+              orderBy: { createdAt: 'desc' },
+              take: 50, // جلب آخر 50 رسالة
+              select: { content: true, type: true, createdAt: true, isFromCustomer: true, isRead: true } // ⚡ إضافة isFromCustomer
+            });
+
+            // البحث عن أول رسالة فيها محتوى فعلي
+            let lastMessage = null;
+            for (const msg of messages) {
+              const msgType = (msg.type || '').toString().toUpperCase();
+              if (msgType === 'IMAGE') {
+                lastMessage = { content: '📷 صورة', type: 'IMAGE', createdAt: msg.createdAt, isFromCustomer: msg.isFromCustomer, isRead: msg.isRead }; // ⚡ حفظ isFromCustomer
+                break;
+              } else if (msgType === 'FILE') {
+                lastMessage = { content: '📎 ملف', type: 'FILE', createdAt: msg.createdAt, isFromCustomer: msg.isFromCustomer, isRead: msg.isRead }; // ⚡ حفظ isFromCustomer
+                break;
+              } else if (msgType === 'TEXT') {
+                const trimmedContent = (msg.content || '').trim();
+                // قبول أي نص غير فارغ، مع تخطي الرموز فقط مثل ✓✓
+                if (trimmedContent.length >= 1 && !/^[✓✗×\s]+$/.test(trimmedContent)) {
+                  lastMessage = { ...msg, content: trimmedContent };
+                  break;
+                }
+              } else {
+                // في حال كانت أنواع قديمة/مختلفة، جرّب التعامل كنص
+                const trimmedContent = (msg.content || '').trim();
+                if (trimmedContent.length >= 1 && !/^[✓✗×\s]+$/.test(trimmedContent)) {
+                  lastMessage = { ...msg, content: trimmedContent, type: 'TEXT' };
+                  break;
                 }
               }
             }
-          }
-        },
-        orderBy: {
-          lastMessageAt: 'desc'
-        },
-        skip: skip,
-        take: limitNum
-      });
-    }, { 
-      fallback: [], // Return empty array if database is unavailable
-      maxRetries: 2 // Fewer retries for this endpoint
-    });
 
-    // Transform data to match frontend format
-    const transformedConversations = await Promise.all(conversations.map(async conv => {
-      // استخراج حالة AI من metadata
-      let aiEnabled = true; // افتراضي
-      let pageName = null; // اسم الصفحة
-      let pageId = null; // معرف الصفحة
-      let adSource = null; // ✅ معلومات الإعلان
-      let postId = null; // 🆕 معرف المنشور
-      if (conv.metadata) {
-        try {
-          const metadata = JSON.parse(conv.metadata);
-          aiEnabled = metadata.aiEnabled !== false;
-          pageName = metadata.pageName || null;
-          pageId = metadata.pageId || null;
-          adSource = metadata.adSource || null; // ✅ استخراج معلومات الإعلان
-          postId = metadata.postId || null; // 🆕 استخراج معرف المنشور
-          
-          // 🔍 DEBUG: Log postId extraction for debugging
-          if (postId) {
-            console.log(`✅ [POST-REF] Found postId in conversation ${conv.id}: ${postId}`);
-          } else {
-            // Log metadata structure for conversations without postId (occasionally to avoid spam)
-            if (Math.random() < 0.1) { // 10% chance
-              console.log(`🔍 [POST-REF] Conversation ${conv.id} metadata keys:`, Object.keys(metadata));
-            }
-          }
-          
-          // إذا كان لدينا pageId لكن ليس pageName، ابحث عنه في جدول FacebookPage
-          if (pageId && !pageName) {
-            try {
-              const prisma = getPrisma();
-              const facebookPage = await prisma.facebookPage.findUnique({
-                where: { pageId: pageId },
-                select: { pageName: true }
-              });
-              if (facebookPage) {
-                pageName = facebookPage.pageName;
-                //console.log(`🔍 [PAGE-LOOKUP] Found page name for ${pageId}: ${pageName}`);
-              }
-            } catch (pageError) {
-              console.warn(`⚠️ Failed to lookup page name for ${pageId}:`, pageError.message);
-            }
-          }
-          
-          //console.log(`🔍 [AI-DEBUG] Conversation ${conv.id}: metadata=${conv.metadata}, aiEnabled=${aiEnabled}, pageName=${pageName}`);
-        } catch (error) {
-          console.warn('⚠️ Could not parse conversation metadata:', error);
-        }
-      } else {
-        //console.log(`🔍 [AI-DEBUG] Conversation ${conv.id}: no metadata, using default aiEnabled=${aiEnabled}`);
-      }
-
-      // 🔧 FIX: Fallback لجلب آخر رسالة فعلية من جدول messages لو lastMessagePreview فارغ
-      let lastMessagePreview = conv.lastMessagePreview;
-      let derivedLastMessageTime = conv.lastMessageAt || conv.createdAt;
-      let lastMessageIsFromCustomer = (conv.messages && conv.messages.length > 0) ? Boolean(conv.messages[0].isFromCustomer) : false; // ⚡ NEW: تتبع من أرسل آخر رسالة
-      let lastCustomerMessageIsUnread = (conv.messages && conv.messages.length > 0) ? (conv.messages[0].isFromCustomer === true && conv.messages[0].isRead === false) : false;
-      
-      if (
-        !lastMessagePreview ||
-        lastMessagePreview === 'لا توجد رسائل' ||
-        lastMessagePreview.trim() === '' ||
-        lastMessagePreview.trim().length < 2 ||
-        /^[✓✗×\s]+$/.test(lastMessagePreview.trim())
-      ) {
-        try {
-          // جلب جميع الرسائل وفلترتها في الكود (أبسط وأضمن)
-          const prisma = getPrisma();
-          const messages = await prisma.message.findMany({
-            where: { conversationId: conv.id },
-            orderBy: { createdAt: 'desc' },
-            take: 50, // جلب آخر 50 رسالة
-            select: { content: true, type: true, createdAt: true, isFromCustomer: true, isRead: true } // ⚡ إضافة isFromCustomer
-          });
-          
-          // البحث عن أول رسالة فيها محتوى فعلي
-          let lastMessage = null;
-          for (const msg of messages) {
-            const msgType = (msg.type || '').toString().toUpperCase();
-            if (msgType === 'IMAGE') {
-              lastMessage = { content: '📷 صورة', type: 'IMAGE', createdAt: msg.createdAt, isFromCustomer: msg.isFromCustomer, isRead: msg.isRead }; // ⚡ حفظ isFromCustomer
-              break;
-            } else if (msgType === 'FILE') {
-              lastMessage = { content: '📎 ملف', type: 'FILE', createdAt: msg.createdAt, isFromCustomer: msg.isFromCustomer, isRead: msg.isRead }; // ⚡ حفظ isFromCustomer
-              break;
-            } else if (msgType === 'TEXT') {
-              const trimmedContent = (msg.content || '').trim();
-              // قبول أي نص غير فارغ، مع تخطي الرموز فقط مثل ✓✓
-              if (trimmedContent.length >= 1 && !/^[✓✗×\s]+$/.test(trimmedContent)) {
-                lastMessage = { ...msg, content: trimmedContent };
-                break;
-              }
+            if (lastMessage && lastMessage.content) {
+              lastMessagePreview = lastMessage.type === 'IMAGE' ? '📷 صورة' :
+                lastMessage.type === 'FILE' ? '📎 ملف' :
+                  (lastMessage.content.length > 100 ? lastMessage.content.substring(0, 100) + '...' : lastMessage.content);
+              derivedLastMessageTime = lastMessage.createdAt || derivedLastMessageTime;
+              lastMessageIsFromCustomer = lastMessage.isFromCustomer || false; // ⚡ حفظ من أرسل آخر رسالة
+              lastCustomerMessageIsUnread = lastMessage.isFromCustomer === true && lastMessage.isRead === false;
+              console.log(`✅ [FALLBACK] Retrieved last meaningful message for conversation ${conv.id}: ${lastMessagePreview.substring(0, 50)}...`);
             } else {
-              // في حال كانت أنواع قديمة/مختلفة، جرّب التعامل كنص
-              const trimmedContent = (msg.content || '').trim();
-              if (trimmedContent.length >= 1 && !/^[✓✗×\s]+$/.test(trimmedContent)) {
-                lastMessage = { ...msg, content: trimmedContent, type: 'TEXT' };
-                break;
-              }
+              lastMessagePreview = 'لا توجد رسائل';
+              console.log(`⚠️ [FALLBACK] No meaningful messages found for conversation ${conv.id}`);
             }
-          }
-          
-          if (lastMessage && lastMessage.content) {
-            lastMessagePreview = lastMessage.type === 'IMAGE' ? '📷 صورة' : 
-                                lastMessage.type === 'FILE' ? '📎 ملف' : 
-                                (lastMessage.content.length > 100 ? lastMessage.content.substring(0, 100) + '...' : lastMessage.content);
-            derivedLastMessageTime = lastMessage.createdAt || derivedLastMessageTime;
-            lastMessageIsFromCustomer = lastMessage.isFromCustomer || false; // ⚡ حفظ من أرسل آخر رسالة
-            lastCustomerMessageIsUnread = lastMessage.isFromCustomer === true && lastMessage.isRead === false;
-            console.log(`✅ [FALLBACK] Retrieved last meaningful message for conversation ${conv.id}: ${lastMessagePreview.substring(0, 50)}...`);
-          } else {
+          } catch (error) {
+            console.warn(`⚠️ [FALLBACK] Failed to get last message for conversation ${conv.id}:`, error.message);
             lastMessagePreview = 'لا توجد رسائل';
-            console.log(`⚠️ [FALLBACK] No meaningful messages found for conversation ${conv.id}`);
           }
-        } catch (error) {
-          console.warn(`⚠️ [FALLBACK] Failed to get last message for conversation ${conv.id}:`, error.message);
-          lastMessagePreview = 'لا توجد رسائل';
         }
+
+        return {
+          id: conv.id,
+          customerId: conv.customerId,
+          customerName: `${conv.customer.firstName || ''} ${conv.customer.lastName || ''}`.trim() || 'عميل',
+          customerAvatar: null,
+          customerEmail: conv.customer.email,
+          customerPhone: conv.customer.phone,
+          lastMessage: lastMessagePreview,
+          lastMessageTime: derivedLastMessageTime,
+          timestamp: derivedLastMessageTime,
+          unreadCount: conv._count.messages,
+          isOnline: false, // يمكن تحديثه لاحقاً
+          platform: conv.channel?.toLowerCase() || 'facebook',
+          status: conv.status?.toLowerCase() || 'active',
+          messages: [],
+          customerOrders: [],
+          lastRepliedBy: conv.assignedUser ? `${conv.assignedUser.firstName} ${conv.assignedUser.lastName}` : null,
+          aiEnabled: aiEnabled,
+          pageName: pageName, // إضافة اسم الصفحة
+          pageId: pageId, // إضافة معرف الصفحة
+          adSource: adSource, // ✅ إضافة معلومات الإعلان
+          postId: postId, // 🆕 إضافة معرف المنشور
+          metadata: conv.metadata, // 🆕 إرسال metadata كاملة للـ debug
+          lastMessageIsFromCustomer: lastMessageIsFromCustomer, // ⚡ NEW: هل آخر رسالة من العميل؟
+          lastCustomerMessageIsUnread: lastCustomerMessageIsUnread
+        };
+      }));
+
+      //console.log(`✅ Found ${transformedConversations.length} real conversations${search ? ` matching "${search}"` : ''}`);
+
+      // Calculate pagination info
+      const totalPages = Math.ceil(totalCount / limitNum);
+      const hasNextPage = pageNum < totalPages;
+      const hasPrevPage = pageNum > 1;
+
+      // إرجاع البيانات مع معلومات البحث والـ pagination
+      res.json({
+        success: true,
+        data: transformedConversations,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: totalCount,
+          totalPages: totalPages,
+          hasNextPage: hasNextPage,
+          hasPrevPage: hasPrevPage
+        },
+        search: search || null,
+        message: search ? `تم العثور على ${totalCount} محادثة مطابقة للبحث` : `تم تحميل ${transformedConversations.length} من ${totalCount} محادثة`
+      });
+    } catch (error) {
+      console.error('❌ Error fetching real conversations:', error);
+
+      // Handle connection limit errors gracefully
+      if (error.message.includes('max_connections_per_hour')) {
+        return res.status(503).json({
+          success: false,
+          error: 'CONNECTION_LIMIT_EXCEEDED',
+          message: 'قاعدة البيانات غير متاحة مؤقتاً بسبب تجاوز حد الاتصالات',
+          data: [],
+          total: 0,
+          retryAfter: 3600
+        });
       }
-  
-      return {
-        id: conv.id,
-        customerId: conv.customerId,
-        customerName: `${conv.customer.firstName || ''} ${conv.customer.lastName || ''}`.trim() || 'عميل',
-        customerAvatar: null,
-        customerEmail: conv.customer.email,
-        customerPhone: conv.customer.phone,
-        lastMessage: lastMessagePreview,
-        lastMessageTime: derivedLastMessageTime,
-        timestamp: derivedLastMessageTime,
-        unreadCount: conv._count.messages,
-        isOnline: false, // يمكن تحديثه لاحقاً
-        platform: conv.channel?.toLowerCase() || 'facebook',
-        status: conv.status?.toLowerCase() || 'active',
-        messages: [],
-        customerOrders: [],
-        lastRepliedBy: conv.assignedUser ? `${conv.assignedUser.firstName} ${conv.assignedUser.lastName}` : null,
-        aiEnabled: aiEnabled,
-        pageName: pageName, // إضافة اسم الصفحة
-        pageId: pageId, // إضافة معرف الصفحة
-        adSource: adSource, // ✅ إضافة معلومات الإعلان
-        postId: postId, // 🆕 إضافة معرف المنشور
-        metadata: conv.metadata, // 🆕 إرسال metadata كاملة للـ debug
-        lastMessageIsFromCustomer: lastMessageIsFromCustomer, // ⚡ NEW: هل آخر رسالة من العميل؟
-        lastCustomerMessageIsUnread: lastCustomerMessageIsUnread
-      };
-    }));
 
-    //console.log(`✅ Found ${transformedConversations.length} real conversations${search ? ` matching "${search}"` : ''}`);
-
-    // Calculate pagination info
-    const totalPages = Math.ceil(totalCount / limitNum);
-    const hasNextPage = pageNum < totalPages;
-    const hasPrevPage = pageNum > 1;
-
-    // إرجاع البيانات مع معلومات البحث والـ pagination
-    res.json({
-      success: true,
-      data: transformedConversations,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total: totalCount,
-        totalPages: totalPages,
-        hasNextPage: hasNextPage,
-        hasPrevPage: hasPrevPage
-      },
-      search: search || null,
-      message: search ? `تم العثور على ${totalCount} محادثة مطابقة للبحث` : `تم تحميل ${transformedConversations.length} من ${totalCount} محادثة`
-    });
-  } catch (error) {
-    console.error('❌ Error fetching real conversations:', error);
-    
-    // Handle connection limit errors gracefully
-    if (error.message.includes('max_connections_per_hour')) {
-      return res.status(503).json({ 
+      res.status(500).json({
         success: false,
-        error: 'CONNECTION_LIMIT_EXCEEDED',
-        message: 'قاعدة البيانات غير متاحة مؤقتاً بسبب تجاوز حد الاتصالات',
-        data: [],
-        total: 0,
-        retryAfter: 3600
+        error: 'Internal server error',
+        message: 'حدث خطأ في الخادم'
       });
     }
-    
-    res.status(500).json({ 
-      success: false,
-      error: 'Internal server error',
-      message: 'حدث خطأ في الخادم'
-    });
-  }
-});
+  });
 
 // Real messages endpoint with company isolation and caching
-app.get('/api/v1/conversations/:id/messages', 
-  verifyToken.authenticateToken, 
+app.get('/api/v1/conversations/:id/messages',
+  verifyToken.authenticateToken,
   verifyToken.requireCompanyAccess,
   async (req, res) => {
-  try {
-    const { id } = req.params;
-    const companyId = req.user?.companyId;
-    const { includeFacebookReplies = true } = req.query; // Add query parameter to include Facebook replies
-    
-    // التحقق من المصادقة والشركة
-    if (!companyId) {
-      return res.status(403).json({
-        success: false,
-        message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
-      });
-    }
-    
-    //console.log(`📨 Fetching real messages for conversation ${id} (Company: ${companyId})...`);
+    try {
+      const { id } = req.params;
+      const companyId = req.user?.companyId;
+      const { includeFacebookReplies = true } = req.query; // Add query parameter to include Facebook replies
 
-    // التحقق من أن المحادثة تنتمي للشركة المحددة
-    const conversation = await safeDb.execute(async (prisma) => {
-      return await prisma.conversation.findFirst({
-        where: {
-          id: id,
-          companyId: companyId // ✅ التحقق من العزل
-        },
-        select: { id: true, companyId: true }
-      });
-    }, { fallback: null, maxRetries: 2 });
+      // التحقق من المصادقة والشركة
+      if (!companyId) {
+        return res.status(403).json({
+          success: false,
+          message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+        });
+      }
 
-    if (!conversation) {
-      //console.log(`❌ [SECURITY] Unauthorized access attempt to conversation ${id} by company ${companyId}`);
-      return res.status(404).json({
-        success: false,
-        message: 'المحادثة غير موجودة أو غير مصرح بالوصول إليها'
-      });
-    }
+      //console.log(`📨 Fetching real messages for conversation ${id} (Company: ${companyId})...`);
 
-    // Use safe database operation with fallback
-    const messages = await safeDb.execute(async (prisma) => {
-      return await prisma.message.findMany({
-        where: {
-          conversationId: id,
-          // ✅ عزل إضافي: التأكد من أن الرسائل تنتمي لمحادثة الشركة المحددة
-          conversation: {
-            companyId: companyId
-          }
-        },
-        include: {
-          sender: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
+      // التحقق من أن المحادثة تنتمي للشركة المحددة
+      const conversation = await safeDb.execute(async (prisma) => {
+        return await prisma.conversation.findFirst({
+          where: {
+            id: id,
+            companyId: companyId // ✅ التحقق من العزل
+          },
+          select: { id: true, companyId: true }
+        });
+      }, { fallback: null, maxRetries: 2 });
+
+      if (!conversation) {
+        //console.log(`❌ [SECURITY] Unauthorized access attempt to conversation ${id} by company ${companyId}`);
+        return res.status(404).json({
+          success: false,
+          message: 'المحادثة غير موجودة أو غير مصرح بالوصول إليها'
+        });
+      }
+
+      // Use safe database operation with fallback
+      const messages = await safeDb.execute(async (prisma) => {
+        return await prisma.message.findMany({
+          where: {
+            conversationId: id,
+            // ✅ عزل إضافي: التأكد من أن الرسائل تنتمي لمحادثة الشركة المحددة
+            conversation: {
+              companyId: companyId
             }
+          },
+          include: {
+            sender: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+              }
+            }
+          },
+          orderBy: {
+            createdAt: 'asc'
           }
-        },
-        orderBy: {
-          createdAt: 'asc'
-        }
+        });
+      }, {
+        fallback: [], // Return empty array if database is unavailable
+        maxRetries: 2 // Fewer retries for this endpoint
       });
-    }, { 
-      fallback: [], // Return empty array if database is unavailable
-      maxRetries: 2 // Fewer retries for this endpoint
-    });
 
-    // Transform messages to match frontend format
-    const transformedMessages = messages.map(msg => {
-      try {
-      // استخراج معلومات الذكاء الصناعي من metadata
-      let isAiGenerated = false;
-      let isFacebookReply = false; // New flag for Facebook replies
-      let facebookMessageId = null; // Store Facebook message ID if available
-      
-      if (msg.metadata) {
+      // Transform messages to match frontend format
+      const transformedMessages = messages.map(msg => {
         try {
-          // تنظيف metadata قبل parsing
-          let cleanMetadata = msg.metadata;
-          if (typeof cleanMetadata === 'string') {
-            cleanMetadata = cleanMetadata.trim();
+          // استخراج معلومات الذكاء الصناعي من metadata
+          let isAiGenerated = false;
+          let isFacebookReply = false; // New flag for Facebook replies
+          let facebookMessageId = null; // Store Facebook message ID if available
 
-            // التحقق من صحة JSON
-            if (cleanMetadata.startsWith('{') && cleanMetadata.endsWith('}')) {
-              const metadata = JSON.parse(cleanMetadata);
-              isAiGenerated = metadata.isAIGenerated || metadata.isAutoGenerated || false;
-              isFacebookReply = metadata.platform === 'facebook' && !msg.isFromCustomer; // Outgoing Facebook messages
-              facebookMessageId = metadata.facebookMessageId || null; // Store Facebook message ID
-            } else {
-              // إذا لم يكن JSON صحيح، تحقق من النص المباشر
-              isAiGenerated = cleanMetadata.includes('"isAIGenerated":true') ||
-                             cleanMetadata.includes('"isAutoGenerated":true');
-              isFacebookReply = cleanMetadata.includes('"platform":"facebook"') && 
-                               cleanMetadata.includes('"isFromCustomer":false');
+          if (msg.metadata) {
+            try {
+              // تنظيف metadata قبل parsing
+              let cleanMetadata = msg.metadata;
+              if (typeof cleanMetadata === 'string') {
+                cleanMetadata = cleanMetadata.trim();
+
+                // التحقق من صحة JSON
+                if (cleanMetadata.startsWith('{') && cleanMetadata.endsWith('}')) {
+                  const metadata = JSON.parse(cleanMetadata);
+                  isAiGenerated = metadata.isAIGenerated || metadata.isAutoGenerated || false;
+                  isFacebookReply = metadata.platform === 'facebook' && !msg.isFromCustomer; // Outgoing Facebook messages
+                  facebookMessageId = metadata.facebookMessageId || null; // Store Facebook message ID
+                } else {
+                  // إذا لم يكن JSON صحيح، تحقق من النص المباشر
+                  isAiGenerated = cleanMetadata.includes('"isAIGenerated":true') ||
+                    cleanMetadata.includes('"isAutoGenerated":true');
+                  isFacebookReply = cleanMetadata.includes('"platform":"facebook"') &&
+                    cleanMetadata.includes('"isFromCustomer":false');
+                }
+              }
+            } catch (e) {
+              console.warn(`⚠️ Failed to parse metadata for message ${msg.id}:`, e.message);
+              // إذا فشل parsing، تحقق من النص المباشر
+              isAiGenerated = msg.metadata.includes('"isAIGenerated":true') ||
+                msg.metadata.includes('"isAutoGenerated":true');
+              isFacebookReply = msg.metadata.includes('"platform":"facebook"') &&
+                msg.metadata.includes('"isFromCustomer":false');
             }
           }
-        } catch (e) {
-          console.warn(`⚠️ Failed to parse metadata for message ${msg.id}:`, e.message);
-          // إذا فشل parsing، تحقق من النص المباشر
-          isAiGenerated = msg.metadata.includes('"isAIGenerated":true') ||
-                         msg.metadata.includes('"isAutoGenerated":true');
-          isFacebookReply = msg.metadata.includes('"platform":"facebook"') && 
-                           msg.metadata.includes('"isFromCustomer":false');
-        }
-      }
 
-      // معالجة الصور والمرفقات - محسن
-      let fileUrl = null;
-      let fileName = null;
-      let fileSize = null;
+          // معالجة الصور والمرفقات - محسن
+          let fileUrl = null;
+          let fileName = null;
+          let fileSize = null;
 
-      // استخراج معلومات الملف من attachments أو metadata
-      if (msg.type === 'IMAGE' || msg.type === 'FILE') {
-        // أولاً: محاولة استخراج من attachments
-        if (msg.attachments) {
-          try {
-            const attachments = JSON.parse(msg.attachments);
-            if (attachments && attachments.length > 0) {
-              const attachment = attachments[0];
-              fileUrl = attachment.url || attachment.fileUrl;
-              fileName = attachment.name || attachment.fileName;
-              fileSize = attachment.size || attachment.fileSize;
-            }
-          } catch (e) {
-            console.warn(`⚠️ Failed to parse attachments for message ${msg.id}`);
-          }
-        }
-
-        // ثانياً: محاولة استخراج من metadata
-        if (!fileUrl && msg.metadata) {
-          try {
-            const metadata = JSON.parse(msg.metadata);
-            fileUrl = metadata.fileUrl;
-            fileName = metadata.fileName;
-            fileSize = metadata.fileSize;
-          } catch (e) {
-            console.warn(`⚠️ Failed to parse metadata for message ${msg.id}`);
-          }
-        }
-
-        // ثالثاً: للصور القديمة، استخدم content كـ URL
-        if (!fileUrl && msg.type === 'IMAGE' && msg.content) {
-          if (msg.content.startsWith('http') || msg.content.startsWith('/uploads')) {
-            fileUrl = msg.content;
-            fileName = 'صورة';
-          }
-        }
-
-        // رابعاً: للملفات، استخدم content كاسم الملف
-        if (!fileName && msg.type === 'FILE') {
-          fileName = msg.content;
-        }
-      }
-
-      // 🆕 FIX: محاولة قراءة اسم المرسل من metadata إذا لم يكن موجود في sender
-      let senderInfo = null;
-      if (msg.sender) {
-        senderInfo = {
-          id: msg.sender.id,
-          name: `${msg.sender.firstName} ${msg.sender.lastName}`,
-        };
-      } else if (!msg.isFromCustomer && msg.metadata) {
-        // محاولة قراءة من metadata للرسائل القديمة
-        try {
-          const metadata = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
-          if (metadata.employeeId && metadata.employeeName) {
-            senderInfo = {
-              id: metadata.employeeId,
-              name: metadata.employeeName,
-            };
-          }
-        } catch (e) {
-          // ignore
-        }
-      }
-
-      return {
-        id: msg.id,
-        content: msg.type === 'IMAGE' ? (fileName || 'صورة') :
-                msg.type === 'FILE' ? (fileName || msg.content) : msg.content,
-        timestamp: msg.createdAt,
-        isFromCustomer: msg.isFromCustomer,
-        sender: senderInfo,
-        type: msg.type?.toLowerCase() || 'text',
-        attachments: (() => {
-          try {
-            if (!msg.attachments) return [];
-
-            // تنظيف البيانات قبل parsing
-            let cleanAttachments = msg.attachments;
-            if (typeof cleanAttachments === 'string') {
-              // إزالة الأحرف غير المرغوب فيها
-              cleanAttachments = cleanAttachments.trim();
-
-              // التحقق من صحة JSON
-              if (cleanAttachments.startsWith('[') && cleanAttachments.endsWith(']')) {
-                return JSON.parse(cleanAttachments);
-              } else if (cleanAttachments.startsWith('{') && cleanAttachments.endsWith('}')) {
-                return [JSON.parse(cleanAttachments)];
-              } else {
-                console.warn(`⚠️ Invalid JSON format for attachments in message ${msg.id}`);
-                return [];
+          // استخراج معلومات الملف من attachments أو metadata
+          if (msg.type === 'IMAGE' || msg.type === 'FILE') {
+            // أولاً: محاولة استخراج من attachments
+            if (msg.attachments) {
+              try {
+                const attachments = JSON.parse(msg.attachments);
+                if (attachments && attachments.length > 0) {
+                  const attachment = attachments[0];
+                  fileUrl = attachment.url || attachment.fileUrl;
+                  fileName = attachment.name || attachment.fileName;
+                  fileSize = attachment.size || attachment.fileSize;
+                }
+              } catch (e) {
+                console.warn(`⚠️ Failed to parse attachments for message ${msg.id}`);
               }
             }
 
-            return Array.isArray(cleanAttachments) ? cleanAttachments : [];
-          } catch (error) {
-            console.error(`❌ Failed to parse attachments for message ${msg.id}:`, error.message);
-            console.error(`❌ Raw attachments data: "${msg.attachments?.substring(0, 200)}..."`);
-            // إرجاع مصفوفة فارغة في حالة الخطأ
-            return [];
+            // ثانياً: محاولة استخراج من metadata
+            if (!fileUrl && msg.metadata) {
+              try {
+                const metadata = JSON.parse(msg.metadata);
+                fileUrl = metadata.fileUrl;
+                fileName = metadata.fileName;
+                fileSize = metadata.fileSize;
+              } catch (e) {
+                console.warn(`⚠️ Failed to parse metadata for message ${msg.id}`);
+              }
+            }
+
+            // ثالثاً: للصور القديمة، استخدم content كـ URL
+            if (!fileUrl && msg.type === 'IMAGE' && msg.content) {
+              if (msg.content.startsWith('http') || msg.content.startsWith('/uploads')) {
+                fileUrl = msg.content;
+                fileName = 'صورة';
+              }
+            }
+
+            // رابعاً: للملفات، استخدم content كاسم الملف
+            if (!fileName && msg.type === 'FILE') {
+              fileName = msg.content;
+            }
           }
-        })(),
-        fileUrl: fileUrl, // إضافة رابط الملف للصور
-        fileName: fileName, // إضافة اسم الملف
-        fileSize: fileSize, // إضافة حجم الملف
-        isAiGenerated: isAiGenerated, // إضافة معلومة الذكاء الصناعي
-        isFacebookReply: isFacebookReply, // إضافة معلومة الردود من فيسبوك
-        facebookMessageId: facebookMessageId, // إضافة معرف رسالة فيسبوك
-        metadata: msg.metadata // إضافة metadata للتشخيص
-      };
-      } catch (messageError) {
-        console.error(`❌ Error processing message ${msg.id}:`, messageError.message);
-        console.error(`❌ Message data:`, {
-          id: msg.id,
-          type: msg.type,
-          content: msg.content?.substring(0, 100),
-          attachments: msg.attachments?.substring(0, 100),
-          metadata: msg.metadata?.substring(0, 100)
+
+          // 🆕 FIX: محاولة قراءة اسم المرسل من metadata إذا لم يكن موجود في sender
+          let senderInfo = null;
+          if (msg.sender) {
+            senderInfo = {
+              id: msg.sender.id,
+              name: `${msg.sender.firstName} ${msg.sender.lastName}`,
+            };
+          } else if (!msg.isFromCustomer && msg.metadata) {
+            // محاولة قراءة من metadata للرسائل القديمة
+            try {
+              const metadata = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
+              if (metadata.employeeId && metadata.employeeName) {
+                senderInfo = {
+                  id: metadata.employeeId,
+                  name: metadata.employeeName,
+                };
+              }
+            } catch (e) {
+              // ignore
+            }
+          }
+
+          return {
+            id: msg.id,
+            content: msg.type === 'IMAGE' ? (fileName || 'صورة') :
+              msg.type === 'FILE' ? (fileName || msg.content) : msg.content,
+            timestamp: msg.createdAt,
+            isFromCustomer: msg.isFromCustomer,
+            sender: senderInfo,
+            type: msg.type?.toLowerCase() || 'text',
+            attachments: (() => {
+              try {
+                if (!msg.attachments) return [];
+
+                // تنظيف البيانات قبل parsing
+                let cleanAttachments = msg.attachments;
+                if (typeof cleanAttachments === 'string') {
+                  // إزالة الأحرف غير المرغوب فيها
+                  cleanAttachments = cleanAttachments.trim();
+
+                  // التحقق من صحة JSON
+                  if (cleanAttachments.startsWith('[') && cleanAttachments.endsWith(']')) {
+                    return JSON.parse(cleanAttachments);
+                  } else if (cleanAttachments.startsWith('{') && cleanAttachments.endsWith('}')) {
+                    return [JSON.parse(cleanAttachments)];
+                  } else {
+                    console.warn(`⚠️ Invalid JSON format for attachments in message ${msg.id}`);
+                    return [];
+                  }
+                }
+
+                return Array.isArray(cleanAttachments) ? cleanAttachments : [];
+              } catch (error) {
+                console.error(`❌ Failed to parse attachments for message ${msg.id}:`, error.message);
+                console.error(`❌ Raw attachments data: "${msg.attachments?.substring(0, 200)}..."`);
+                // إرجاع مصفوفة فارغة في حالة الخطأ
+                return [];
+              }
+            })(),
+            fileUrl: fileUrl, // إضافة رابط الملف للصور
+            fileName: fileName, // إضافة اسم الملف
+            fileSize: fileSize, // إضافة حجم الملف
+            isAiGenerated: isAiGenerated, // إضافة معلومة الذكاء الصناعي
+            isFacebookReply: isFacebookReply, // إضافة معلومة الردود من فيسبوك
+            facebookMessageId: facebookMessageId, // إضافة معرف رسالة فيسبوك
+            metadata: msg.metadata // إضافة metadata للتشخيص
+          };
+        } catch (messageError) {
+          console.error(`❌ Error processing message ${msg.id}:`, messageError.message);
+          console.error(`❌ Message data:`, {
+            id: msg.id,
+            type: msg.type,
+            content: msg.content?.substring(0, 100),
+            attachments: msg.attachments?.substring(0, 100),
+            metadata: msg.metadata?.substring(0, 100)
+          });
+
+          // إرجاع رسالة بسيطة في حالة الخطأ
+          return {
+            id: msg.id,
+            content: msg.content || '[رسالة معطوبة]',
+            type: msg.type || 'TEXT',
+            timestamp: msg.createdAt,
+            isFromCustomer: msg.isFromCustomer,
+            attachments: [],
+            isAiGenerated: false,
+            isFacebookReply: false, // Default to false on error
+            facebookMessageId: null, // Default to null on error
+            metadata: null
+          };
+        }
+      }).filter(Boolean); // إزالة الرسائل null
+
+      // إحصائيات الرسائل
+      const aiMessages = transformedMessages.filter(m => m.isAiGenerated).length;
+      const manualMessages = transformedMessages.filter(m => !m.isFromCustomer && !m.isAiGenerated && !m.isFacebookReply).length;
+      const customerMessages = transformedMessages.filter(m => m.isFromCustomer).length;
+      const facebookReplies = transformedMessages.filter(m => m.isFacebookReply).length; // Count Facebook replies
+
+      //console.log(`✅ [SECURITY] Company ${companyId} accessed ${transformedMessages.length} messages from conversation ${id}`);
+      //console.log(`📊 Message stats - AI: ${aiMessages}, Manual: ${manualMessages}, Customer: ${customerMessages}, Facebook: ${facebookReplies}`);
+
+      res.json(transformedMessages);
+    } catch (error) {
+      console.error('❌ Error fetching real messages:', error);
+
+      // Handle connection limit errors gracefully
+      if (error.message.includes('max_connections_per_hour')) {
+        return res.status(503).json({
+          success: false,
+          error: 'CONNECTION_LIMIT_EXCEEDED',
+          message: 'قاعدة البيانات غير متاحة مؤقتاً بسبب تجاوز حد الاتصالات',
+          data: [],
+          retryAfter: 3600
         });
-
-        // إرجاع رسالة بسيطة في حالة الخطأ
-        return {
-          id: msg.id,
-          content: msg.content || '[رسالة معطوبة]',
-          type: msg.type || 'TEXT',
-          timestamp: msg.createdAt,
-          isFromCustomer: msg.isFromCustomer,
-          attachments: [],
-          isAiGenerated: false,
-          isFacebookReply: false, // Default to false on error
-          facebookMessageId: null, // Default to null on error
-          metadata: null
-        };
       }
-    }).filter(Boolean); // إزالة الرسائل null
 
-    // إحصائيات الرسائل
-    const aiMessages = transformedMessages.filter(m => m.isAiGenerated).length;
-    const manualMessages = transformedMessages.filter(m => !m.isFromCustomer && !m.isAiGenerated && !m.isFacebookReply).length;
-    const customerMessages = transformedMessages.filter(m => m.isFromCustomer).length;
-    const facebookReplies = transformedMessages.filter(m => m.isFacebookReply).length; // Count Facebook replies
-
-    //console.log(`✅ [SECURITY] Company ${companyId} accessed ${transformedMessages.length} messages from conversation ${id}`);
-    //console.log(`📊 Message stats - AI: ${aiMessages}, Manual: ${manualMessages}, Customer: ${customerMessages}, Facebook: ${facebookReplies}`);
-
-    res.json(transformedMessages);
-  } catch (error) {
-    console.error('❌ Error fetching real messages:', error);
-    
-    // Handle connection limit errors gracefully
-    if (error.message.includes('max_connections_per_hour')) {
-      return res.status(503).json({ 
+      res.status(500).json({
         success: false,
-        error: 'CONNECTION_LIMIT_EXCEEDED',
-        message: 'قاعدة البيانات غير متاحة مؤقتاً بسبب تجاوز حد الاتصالات',
-        data: [],
-        retryAfter: 3600
+        error: 'Internal server error',
+        message: 'حدث خطأ في الخادم'
       });
     }
-    
-    res.status(500).json({ 
-      success: false,
-      error: 'Internal server error',
-      message: 'حدث خطأ في الخادم'
-    });
-  }
-});
+  });
 
 // Real customer profile endpoint
 app.get('/api/v1/customers/:id', async (req, res) => {
@@ -2289,7 +2297,7 @@ app.post('/api/v1/customers/update-facebook-names', async (req, res) => {
         if (userInfo && userInfo.first_name && userInfo.last_name) {
           // التحقق من أن الاسم ليس افتراضياً
           const isDefaultName = ['Facebook', 'عميل', 'زائر', 'زبون'].includes(userInfo.first_name) ||
-                               ['User', 'كريم', 'مميز', 'عزيز', 'جديد'].includes(userInfo.last_name);
+            ['User', 'كريم', 'مميز', 'عزيز', 'جديد'].includes(userInfo.last_name);
 
           if (!isDefaultName) {
             // تحديث اسم العميل بالاسم الحقيقي
@@ -2517,7 +2525,7 @@ process.on('SIGINT', async () => {
     } catch (error) {
       console.error('⚠️ Error stopping rate limit reset service:', error.message);
     }
-    
+
     // إيقاف خدمة الاكتشاف التلقائي
     //console.log('🔍 Stopping Auto Pattern Detection Service...');
     autoPatternService.stop();
@@ -2549,7 +2557,7 @@ process.on('SIGTERM', async () => {
     } catch (error) {
       console.error('⚠️ Error stopping rate limit reset service:', error.message);
     }
-    
+
     autoPatternService.stop();
     const prisma = getPrisma();
     await prisma.$disconnect();
@@ -2628,33 +2636,33 @@ app.post('/api/test/convert-to-facebook/:conversationId', (req, res, next) => {
 });
 async function startServer() {
   let dbInitialized = false;
-  
+
   try {
     console.log('🔧 [SERVER] Attempting database initialization...');
-    
+
     // Try to initialize database
     await initializeSharedDatabase();
     dbInitialized = true;
     console.log('✅ [SERVER] Database initialized successfully');
-    
+
   } catch (error) {
     console.error('⚠️ [SERVER] Database initialization failed:', error.message.substring(0, 150));
-    
+
     // Check if it's a cooldown/connection limit error
-    const isCooldownError = 
+    const isCooldownError =
       error.message.includes('cooldown') ||
-      error.message.includes('max_connections_per_hour') || 
+      error.message.includes('max_connections_per_hour') ||
       error.message.includes('ERROR 42000 (1226)');
-    
+
     if (isCooldownError) {
       console.log('🚨 [SERVER] DATABASE IN COOLDOWN MODE');
       console.log('💡 [SERVER] Server will start WITHOUT database access');
       console.log('⏳ [SERVER] Database will automatically reconnect after cooldown ends');
-      
+
       // Schedule retry after cooldown (extract minutes from error if available)
       const cooldownMatch = error.message.match(/(\d+)\s*minutes?/);
       const cooldownMinutes = cooldownMatch ? parseInt(cooldownMatch[1]) : 60;
-      
+
       setTimeout(async () => {
         console.log('🔄 [SERVER] Cooldown ended - attempting database reconnection...');
         try {
@@ -2664,7 +2672,7 @@ async function startServer() {
           console.error('❌ [SERVER] Reconnection failed:', retryError.message.substring(0, 100));
         }
       }, cooldownMinutes * 60 * 1000);
-      
+
     } else {
       // Non-recoverable error - but allow server to start in degraded mode
       console.error('⚠️ [SERVER] Database configuration error - starting in DEGRADED MODE');
@@ -2673,7 +2681,7 @@ async function startServer() {
       // Don't exit - allow server to start in degraded mode
     }
   }
-  
+
   // 🔥 ALWAYS start the server regardless of database status
   // بدء خدمة Reset للـ Rate Limits
   let rateLimitResetService = null;
@@ -2683,14 +2691,14 @@ async function startServer() {
   } catch (error) {
     console.error('⚠️ Failed to load rate limit reset service:', error.message);
   }
-  
+
   server.listen(PORT, async () => {
     serverStarted = true;
     console.log(`Mahmoud Ahmed`);
     console.log(`Mahmoud Ahmed`);
     if (dbInitialized) {
       console.log(`🎉 Server running on port ${PORT} with DATABASE`);
-      
+
       // بدء خدمة Reset للـ Rate Limits
       if (rateLimitResetService) {
         try {
@@ -2703,17 +2711,26 @@ async function startServer() {
     } else {
       console.log(`⚠️ Server running on port ${PORT} in DEGRADED MODE (no database)`);
     }
-    
+
     console.log(`📱 Frontend: ${envConfig.frontendUrl}`);
     console.log(`🔗 Backend: ${envConfig.backendUrl}`);
     console.log(`🌍 Environment: ${envConfig.environment.toUpperCase()}`);
-    
+
     // 🚀 Load heavy services after server starts
     if (shouldLazyLoad) {
       setTimeout(() => {
         loadHeavyServices();
       }, PERFORMANCE_CONFIG.HEAVY_SERVICES_DELAY * 1000);
     }
+
+    // 📱 Restore WhatsApp Sessions
+    setTimeout(async () => {
+      try {
+        await WhatsAppManager.restoreAllSessions();
+      } catch (error) {
+        console.error('❌ Failed to restore WhatsApp sessions:', error);
+      }
+    }, 5000); // Wait 5 seconds to ensure DB is ready
   });
 }
 startServer();

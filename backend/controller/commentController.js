@@ -19,7 +19,7 @@ const getFacebookComments = async (req, res) => {
     }
 
     const companyId = user.companyId;
-    
+
     // Get query parameters for filtering and pagination
     const {
       page = 1,
@@ -208,23 +208,23 @@ const updateFacebookComment = async (req, res) => {
       try {
         // Import required functions
         const { sendFacebookCommentReply, getPageToken } = require('../utils/allFunctions');
-        const { sendProductionFacebookMessage } = require('../production-facebook-fix');
-        
+        const { sendProductionFacebookMessage } = require('../utils/production-facebook-fix');
+
         // Get page access token
         let pageData = null;
         if (existingComment.pageId) {
           pageData = await getPageToken(existingComment.pageId);
         }
-        
+
         // Send the response to Facebook comment
         let commentReplySuccess = true;
         if (pageData && pageData.pageAccessToken) {
           commentReplySuccess = await sendFacebookCommentReply(
-            existingComment.commentId, 
-            response, 
+            existingComment.commentId,
+            response,
             pageData.pageAccessToken
           );
-          
+
           if (!commentReplySuccess) {
             console.warn(`[MANUAL-REPLY] Failed to send manual response to Facebook for comment ${existingComment.commentId}`);
           } else {
@@ -234,14 +234,14 @@ const updateFacebookComment = async (req, res) => {
           console.warn(`[MANUAL-REPLY] No page access token found for comment ${existingComment.commentId}`);
           commentReplySuccess = false;
         }
-        
+
         // NEW: Also send the response to Facebook Messenger
         let messengerSuccess = false;
         if (existingComment.senderId) {
           const messengerResult = await sendCommentReplyToMessenger(existingComment, response, pageData);
           messengerSuccess = messengerResult.messengerSuccess;
         }
-        
+
         // Return response with detailed success information
         return res.json({
           success: true,
@@ -319,14 +319,14 @@ const sendManualResponseToFacebook = async (req, res) => {
 
     // Import the Facebook comment reply function
     const { sendFacebookCommentReply, getPageToken } = require('../utils/allFunctions');
-    const { sendProductionFacebookMessage } = require('../production-facebook-fix');
-    
+    const { sendProductionFacebookMessage } = require('../utils/production-facebook-fix');
+
     // Get page access token
     let pageData = null;
     if (existingComment.pageId) {
       pageData = await getPageToken(existingComment.pageId);
     }
-    
+
     if (!pageData || !pageData.pageAccessToken) {
       return res.status(400).json({
         success: false,
@@ -336,11 +336,11 @@ const sendManualResponseToFacebook = async (req, res) => {
 
     // Send the response to Facebook comment
     const commentReplySuccess = await sendFacebookCommentReply(
-      existingComment.commentId, 
-      response, 
+      existingComment.commentId,
+      response,
       pageData.pageAccessToken
     );
-    
+
     if (!commentReplySuccess) {
       return res.status(500).json({
         success: false,
@@ -365,7 +365,7 @@ const sendManualResponseToFacebook = async (req, res) => {
     });
 
     console.log(`[MANUAL-REPLY] Successfully sent manual response to Facebook for comment ${existingComment.commentId}`);
-    
+
     res.json({
       success: true,
       message: 'Response sent to Facebook successfully',
@@ -416,24 +416,24 @@ const deleteFacebookComment = async (req, res) => {
     // Try to delete comment from Facebook first
     let facebookDeleteSuccess = true;
     let facebookDeleteError = null;
-    
+
     try {
       // Import the Facebook comment delete function
       const { deleteFacebookComment, getPageToken } = require('../utils/allFunctions');
-      
+
       // Get page access token
       let pageData = null;
       if (existingComment.pageId) {
         pageData = await getPageToken(existingComment.pageId);
       }
-      
+
       if (pageData && pageData.pageAccessToken) {
         // Delete the comment from Facebook
         facebookDeleteSuccess = await deleteFacebookComment(
-          existingComment.commentId, 
+          existingComment.commentId,
           pageData.pageAccessToken
         );
-        
+
         if (!facebookDeleteSuccess) {
           facebookDeleteError = 'Failed to delete comment from Facebook';
           console.warn(`[COMMENT-DELETE] Failed to delete comment from Facebook: ${existingComment.commentId}`);
@@ -510,7 +510,7 @@ const bulkDeleteFacebookComments = async (req, res) => {
     // Try to delete comments from Facebook
     const { deleteFacebookComment, getPageToken } = require('../utils/allFunctions');
     let facebookDeleteResults = [];
-    
+
     for (const comment of commentsToDelete) {
       try {
         // Get page access token
@@ -518,21 +518,21 @@ const bulkDeleteFacebookComments = async (req, res) => {
         if (comment.pageId) {
           pageData = await getPageToken(comment.pageId);
         }
-        
+
         if (pageData && pageData.pageAccessToken) {
           // Delete the comment from Facebook
           const success = await deleteFacebookComment(
-            comment.commentId, 
+            comment.commentId,
             pageData.pageAccessToken
           );
-          
+
           facebookDeleteResults.push({
             commentId: comment.id,
             facebookId: comment.commentId,
             success: success,
             error: success ? null : 'Failed to delete from Facebook'
           });
-          
+
           if (success) {
             console.log(`[BULK-COMMENT-DELETE] Successfully deleted comment from Facebook: ${comment.commentId}`);
           } else {
@@ -569,7 +569,7 @@ const bulkDeleteFacebookComments = async (req, res) => {
     // Prepare response message
     const successfulFacebookDeletes = facebookDeleteResults.filter(r => r.success).length;
     const failedFacebookDeletes = facebookDeleteResults.filter(r => !r.success).length;
-    
+
     let message = `${result.count} comments deleted successfully from database`;
     if (facebookDeleteResults.length > 0) {
       if (successfulFacebookDeletes > 0) {
@@ -677,7 +677,7 @@ const getFacebookPosts = async (req, res) => {
     }
 
     const companyId = user.companyId;
-    
+
     // Get query parameters for filtering and pagination
     const {
       page = 1,
@@ -889,7 +889,7 @@ const setPostResponseMethod = async (req, res) => {
     // Try to use database first, fallback to memory if not available
     let postSettings;
     const settingsKey = `${postId}-${companyId}`;
-    
+
     try {
       if (prisma.postResponseSettings) {
         // Create or update post response settings in database
@@ -922,7 +922,7 @@ const setPostResponseMethod = async (req, res) => {
     } catch (dbError) {
       // Fallback to in-memory storage
       console.warn(' Using in-memory storage for post response settings:', dbError.message);
-      
+
       postSettings = {
         id: settingsKey,
         postId: postId,
@@ -934,7 +934,7 @@ const setPostResponseMethod = async (req, res) => {
         createdAt: new Date(),
         updatedAt: new Date()
       };
-      
+
       // Store in memory
       postResponseSettingsMemory.set(settingsKey, postSettings);
     }
@@ -972,7 +972,7 @@ const getPostResponseMethod = async (req, res) => {
     // Try to use database first, fallback to memory if not available
     let postSettings = null;
     const settingsKey = `${postId}-${companyId}`;
-    
+
     try {
       if (prisma.postResponseSettings) {
         // Get post response settings from database
@@ -990,7 +990,7 @@ const getPostResponseMethod = async (req, res) => {
     } catch (dbError) {
       // Fallback to in-memory storage
       console.warn('⚠️ Using in-memory storage for post response settings:', dbError.message);
-      
+
       // Get from memory
       postSettings = postResponseSettingsMemory.get(settingsKey) || null;
     }
@@ -1027,7 +1027,7 @@ const applyPostResponseMethod = async (req, res) => {
     // Try to use database first, fallback to memory if not available
     let postSettings = null;
     const settingsKey = `${postId}-${companyId}`;
-    
+
     try {
       if (prisma.postResponseSettings) {
         // Get post response settings from database
@@ -1045,7 +1045,7 @@ const applyPostResponseMethod = async (req, res) => {
     } catch (dbError) {
       // Fallback to in-memory storage
       console.warn('⚠️ Using in-memory storage for post response settings:', dbError.message);
-      
+
       // Get from memory
       postSettings = postResponseSettingsMemory.get(settingsKey) || null;
     }
@@ -1111,10 +1111,10 @@ async function processCommentWithAI(comment, companyId) {
   try {
     // Import AI agent service
     const aiAgentService = require('../services/aiAgentService');
-    
+
     // Get AI settings for the company
     const aiSettings = await aiAgentService.getSettings(companyId);
-    
+
     // Only process if AI is enabled
     if (aiSettings && aiSettings.isEnabled) {
       // Prepare message data for AI Agent
@@ -1130,14 +1130,14 @@ async function processCommentWithAI(comment, companyId) {
           companyId: companyId
         }
       };
-      
+
       // Process comment with AI Agent
       const aiResponse = await aiAgentService.processCustomerMessage(aiMessageData);
-      
+
       // Check if we got a valid AI response
       if (aiResponse && aiResponse.content && !aiResponse.silent) {
         const responseText = aiResponse.content;
-        
+
         // Update comment with AI response
         await prisma.facebookComment.update({
           where: { id: comment.id },
@@ -1146,18 +1146,18 @@ async function processCommentWithAI(comment, companyId) {
             respondedAt: new Date()
           }
         });
-        
+
         // Send the response to Facebook
         const { sendFacebookCommentReply, getPageToken } = require('../utils/allFunctions');
         let pageData = null;
         if (comment.pageId) {
           pageData = await getPageToken(comment.pageId);
         }
-        
+
         if (pageData && pageData.pageAccessToken) {
           await sendFacebookCommentReply(comment.commentId, responseText, pageData.pageAccessToken);
         }
-        
+
         // NEW: Also send the response to Facebook Messenger
         if (comment.senderId && pageData && pageData.pageAccessToken) {
           await sendCommentReplyToMessenger(comment, responseText, pageData);
@@ -1180,25 +1180,25 @@ async function sendFixedResponse(comment, fixedMessage) {
         respondedAt: new Date()
       }
     });
-    
+
     // Send the response to Facebook comment
     const { sendFacebookCommentReply, getPageToken } = require('../utils/allFunctions');
-    const { sendProductionFacebookMessage } = require('../production-facebook-fix');
+    const { sendProductionFacebookMessage } = require('../utils/production-facebook-fix');
     let pageData = null;
     if (comment.pageId) {
       pageData = await getPageToken(comment.pageId);
     }
-    
+
     let commentReplySuccess = true;
     if (pageData && pageData.pageAccessToken) {
       commentReplySuccess = await sendFacebookCommentReply(comment.commentId, fixedMessage, pageData.pageAccessToken);
     }
-    
+
     // NEW: Also send the response to Facebook Messenger
     if (comment.senderId) {
       try {
         const companyId = comment.companyId;
-        
+
         // Find customer by Facebook ID
         let customer = await prisma.customer.findFirst({
           where: {
@@ -1206,7 +1206,7 @@ async function sendFixedResponse(comment, fixedMessage) {
             companyId: companyId
           }
         });
-        
+
         // If customer doesn't exist, create one
         if (!customer) {
           customer = await prisma.customer.create({
@@ -1225,7 +1225,7 @@ async function sendFixedResponse(comment, fixedMessage) {
             }
           });
         }
-        
+
         // Find or create conversation
         let conversation = await prisma.conversation.findFirst({
           where: {
@@ -1234,7 +1234,7 @@ async function sendFixedResponse(comment, fixedMessage) {
           },
           orderBy: { updatedAt: 'desc' }
         });
-        
+
         // If no conversation exists, create one
         if (!conversation) {
           // Get page data for metadata
@@ -1250,14 +1250,14 @@ async function sendFixedResponse(comment, fixedMessage) {
               pageName = page.pageName;
             }
           }
-          
+
           const conversationMetadata = {
             platform: 'facebook',
             source: 'comment_reply',
             pageId: comment.pageId,
             pageName: pageName
           };
-          
+
           conversation = await prisma.conversation.create({
             data: {
               customerId: customer.id,
@@ -1279,7 +1279,7 @@ async function sendFixedResponse(comment, fixedMessage) {
             }
           });
         }
-        
+
         // Save the response as a message from the admin (not from customer)
         const message = await prisma.message.create({
           data: {
@@ -1295,7 +1295,7 @@ async function sendFixedResponse(comment, fixedMessage) {
             })
           }
         });
-        
+
         // Send the message to Facebook Messenger
         let messengerSuccess = true;
         if (customer.facebookId && pageData && pageData.pageAccessToken) {
@@ -1306,10 +1306,10 @@ async function sendFixedResponse(comment, fixedMessage) {
             comment.pageId,
             pageData.pageAccessToken
           );
-          
+
           if (messengerResponse.success) {
             console.log(`✅ [FIXED-COMMENT-MESSENGER] Successfully sent fixed response to Messenger for user ${customer.facebookId}`);
-            
+
             // Update message with Facebook message ID
             await prisma.message.update({
               where: { id: message.id },
@@ -1342,7 +1342,7 @@ async function sendFixedResponse(comment, fixedMessage) {
 async function sendCommentReplyToMessenger(comment, responseText, pageData) {
   try {
     const companyId = comment.companyId;
-    
+
     // Find customer by Facebook ID
     let customer = await prisma.customer.findFirst({
       where: {
@@ -1350,7 +1350,7 @@ async function sendCommentReplyToMessenger(comment, responseText, pageData) {
         companyId: companyId
       }
     });
-    
+
     // If customer doesn't exist, create one
     if (!customer) {
       customer = await prisma.customer.create({
@@ -1369,7 +1369,7 @@ async function sendCommentReplyToMessenger(comment, responseText, pageData) {
         }
       });
     }
-    
+
     // Find or create conversation
     let conversation = await prisma.conversation.findFirst({
       where: {
@@ -1378,7 +1378,7 @@ async function sendCommentReplyToMessenger(comment, responseText, pageData) {
       },
       orderBy: { updatedAt: 'desc' }
     });
-    
+
     // If no conversation exists, create one
     if (!conversation) {
       // Get page data for metadata
@@ -1394,14 +1394,14 @@ async function sendCommentReplyToMessenger(comment, responseText, pageData) {
           pageName = page.pageName;
         }
       }
-      
+
       const conversationMetadata = {
         platform: 'facebook',
         source: 'comment_reply',
         pageId: comment.pageId,
         pageName: pageName
       };
-      
+
       conversation = await prisma.conversation.create({
         data: {
           customerId: customer.id,
@@ -1423,7 +1423,7 @@ async function sendCommentReplyToMessenger(comment, responseText, pageData) {
         }
       });
     }
-    
+
     // Save the response as a message from the admin (not from customer)
     const message = await prisma.message.create({
       data: {
@@ -1441,11 +1441,11 @@ async function sendCommentReplyToMessenger(comment, responseText, pageData) {
         })
       }
     });
-    
+
     // Send the message to Facebook Messenger
     let messengerSuccess = false;
     if (customer.facebookId && pageData && pageData.pageAccessToken) {
-      const { sendProductionFacebookMessage } = require('../production-facebook-fix');
+      const { sendProductionFacebookMessage } = require('../utils/production-facebook-fix');
       const messengerResponse = await sendProductionFacebookMessage(
         customer.facebookId,
         responseText,
@@ -1453,10 +1453,10 @@ async function sendCommentReplyToMessenger(comment, responseText, pageData) {
         comment.pageId,
         pageData.pageAccessToken
       );
-      
+
       if (messengerResponse.success) {
         console.log(`✅ [COMMENT-REPLY-MESSENGER] Successfully sent comment reply to Messenger for user ${customer.facebookId}`);
-        
+
         // Update message with Facebook message ID
         await prisma.message.update({
           where: { id: message.id },
@@ -1468,7 +1468,7 @@ async function sendCommentReplyToMessenger(comment, responseText, pageData) {
             })
           }
         });
-        
+
         messengerSuccess = true;
       } else {
         console.warn(`⚠️ [COMMENT-REPLY-MESSENGER] Failed to send comment reply to Messenger for user ${customer.facebookId}:`, messengerResponse.message);
@@ -1476,7 +1476,7 @@ async function sendCommentReplyToMessenger(comment, responseText, pageData) {
     } else {
       console.warn(`⚠️ [COMMENT-REPLY-MESSENGER] Cannot send to Messenger - missing data for user ${customer.facebookId}`);
     }
-    
+
     return { success: true, messengerSuccess };
   } catch (error) {
     console.error(`❌ [COMMENT-REPLY-MESSENGER] Error sending comment reply to Messenger:`, error);
@@ -1508,7 +1508,7 @@ const setPageResponseMethod = async (req, res) => {
 
     let pageSettings;
     const settingsKey = `${pageId}-${companyId}`;
-    
+
     try {
       if (prisma.pageResponseSettings) {
         pageSettings = await prisma.pageResponseSettings.upsert({
@@ -1567,7 +1567,7 @@ const getPageResponseMethod = async (req, res) => {
     const { pageId } = req.params;
     let pageSettings = null;
     const settingsKey = `${pageId}-${companyId}`;
-    
+
     try {
       if (prisma.pageResponseSettings) {
         pageSettings = await prisma.pageResponseSettings.findUnique({
@@ -1597,7 +1597,7 @@ const getFacebookPages = async (req, res) => {
     }
 
     const companyId = user.companyId;
-    
+
     // Get all connected/active pages for this company
     const connectedPages = await prisma.facebookPage.findMany({
       where: {
