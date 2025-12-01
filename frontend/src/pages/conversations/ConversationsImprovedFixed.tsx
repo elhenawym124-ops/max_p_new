@@ -104,6 +104,14 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // حالات البحث والفلترة
+  const [searchQuery, setSearchQuery] = useState('');
+  const [conversationFilter, setConversationFilter] = useState<'all' | 'unread'>('all');
+  
+  // حالة الرسالة الجديدة
+  const [newMessage, setNewMessage] = useState('');
+  
   // Socket.IO للرسائل الفورية
   const { socket, isConnected, isReconnecting, emit, on, off } = useSocket();
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
@@ -190,6 +198,9 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   // حالة الصور المختارة للإرسال المتعدد
   const [selectedImagesForSend, setSelectedImagesForSend] = useState<Set<string>>(new Set());
   const [sendingMultipleImages, setSendingMultipleImages] = useState(false);
+  
+  // حالة إرسال الرسالة
+  const [sending, setSending] = useState(false);
 
   // حالات حافظة النصوص
   const [showTextGallery, setShowTextGallery] = useState(false);
