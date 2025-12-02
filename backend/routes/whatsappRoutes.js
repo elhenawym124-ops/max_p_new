@@ -13,7 +13,7 @@ const path = require('path');
 // إعداد multer لرفع الملفات
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, path.join(__dirname, '../uploads/whatsapp/temp'));
+        cb(null, path.join(__dirname, '../public/uploads/whatsapp/temp'));
     },
     filename: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -46,6 +46,15 @@ const upload = multer({
         }
     }
 });
+
+// Logging middleware
+router.use((req, res, next) => {
+    console.log(`📱 WhatsApp Router: ${req.method} ${req.path}`);
+    next();
+});
+
+// Test route
+router.get('/test', (req, res) => res.json({ message: 'WhatsApp router is working' }));
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 📱 إدارة الجلسات

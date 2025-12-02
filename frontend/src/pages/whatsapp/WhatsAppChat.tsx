@@ -28,9 +28,12 @@ import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import { apiClient as api } from '../../services/apiClient';
 import useSocket from '../../hooks/useSocket';
 import AudioRecorder from './components/AudioRecorder';
+import { useAuth } from '../../hooks/useAuthSimple';
 
 interface Contact {
   id: string;
+  sessionId: string;
+  jid: string;
   jid: string;
   phoneNumber: string;
   name: string | null;
@@ -75,7 +78,10 @@ interface Message {
   status: string;
   timestamp: string;
   isAIResponse: boolean;
+  isAIResponse: boolean;
   aiConfidence: number | null;
+  senderId?: string;
+  senderName?: string; // For display
 }
 
 interface Session {
@@ -95,6 +101,7 @@ interface QuickReply {
 }
 
 const WhatsAppChat: React.FC = () => {
+  const { user } = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { socket } = useSocket();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -155,6 +162,71 @@ const WhatsAppChat: React.FC = () => {
     return format(date, 'dd/MM/yyyy');
   };
 
+  // Load Sessions
+  const loadSessions = async () => {
+    try {
+      const response = await api.get('/whatsapp/sessions');
+      // Add "All Sessions" option if there are sessions
+      const fetchedSessions = response.data.sessions || [];
+      if (fetchedSessions.length > 0) {
+        // Check if "All Sessions" already exists to avoid duplication
+        const allSessionsExists = fetchedSessions.some((s: Session) => s.id === 'all');
+        if (!allSessionsExists) {
+          fetchedSessions.unshift({
+            id: 'all',
+            name: 'كل الجلسات',
+            phoneNumber: null,
+            status: 'connected',
+            liveStatus: 'connected'
+          });
+        }
+      }
+      setSessions(fetchedSessions);
+
+      if (fetchedSessions.length > 0 && !selectedSession) {
+        setSelectedSession(fetchedSessions[0].id);
+      }
+    } catch (error) {
+      console.error('Error fetching sessions:', error);
+      enqueueSnackbar('فشل في جلب الجلسات', { variant: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadMessages = async () => {
+    if (!selectedContact || !selectedSession) return;
+    setLoadingMessages(true);
+    try {
+      // Use the contact's session ID if available, otherwise fallback to selectedSession (unless it's 'all')
+      const targetSessionId = selectedContact.sessionId || (selectedSession === 'all' ? null : selectedSession);
+
+      if (!targetSessionId) {
+        console.error('No valid session ID for loading messages');
+        return;
+      }
+
+      const res = await api.get(`/whatsapp/conversations/${encodeURIComponent(selectedContact.jid)}/messages`, {
+        params: { sessionId: targetSessionId }
+      });
+      setMessages(res.data.messages || []);
+    } catch (error) {
+      enqueueSnackbar('حدث خطأ أثناء تحميل الرسائل', { variant: 'error' });
+    } finally {
+      setLoadingMessages(false);
+    }
+  };
+
+  const markAsRead = async () => {
+    if (!selectedContact || !selectedSession) return;
+    const targetSessionId = selectedContact.sessionId || (selectedSession === 'all' ? null : selectedSession);
+    if (!targetSessionId) return;
+
+    try {
+      await api.post('/whatsapp/messages/read', { sessionId: targetSessionId, remoteJid: selectedContact.jid });
+    } catch (error) { console.error(error); }
+  };
+
   // Load initial data
   useEffect(() => {
     loadSessions();
@@ -206,7 +278,7 @@ const WhatsAppChat: React.FC = () => {
         return;
       }
 
-      const isCurrentChat = selectedContact && msgJid === currentJid && sessionId === selectedSession;
+      const isCurrentChat = selectedContact && msgJid === currentJid && (selectedSession === 'all' || sessionId === selectedSession);
 
       if (isCurrentChat) {
         setMessages(prev => {
@@ -221,7 +293,7 @@ const WhatsAppChat: React.FC = () => {
         }
       } else {
         // Show notification if chat is not open or different contact
-        if (sessionId === selectedSession) {
+        if (selectedSession === 'all' || sessionId === selectedSession) {
           const contactName = contacts.find(c => normalizeJid(c.jid) === msgJid)?.name ||
             contacts.find(c => normalizeJid(c.jid) === msgJid)?.pushName ||
             message.remoteJid.split('@')[0];
@@ -349,7 +421,7 @@ const WhatsAppChat: React.FC = () => {
       const msgJid = normalizeJid(message.remoteJid);
       const currentJid = selectedContact ? normalizeJid(selectedContact.jid) : '';
 
-      if (selectedContact && msgJid === currentJid && sessionId === selectedSession) {
+      if (selectedContact && msgJid === currentJid && (selectedSession === 'all' || sessionId === selectedSession)) {
         // Only add if not already present (to avoid duplicates)
         setMessages(prev => {
           if (prev.some(m => m.messageId === message.messageId)) return prev;
@@ -411,59 +483,117 @@ const WhatsAppChat: React.FC = () => {
     }
   }, [selectedContact]);
 
-  // Scroll to bottom on new messages
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  const loadSessions = async () => {
-    try {
-      const res = await api.get('/whatsapp/sessions');
-      const activeSessions = res.data.sessions || [];
-      setSessions(activeSessions);
-      const connectedSession = activeSessions.find((s: Session) => s.liveStatus === 'connected' || s.status === 'CONNECTED');
-      if (connectedSession) setSelectedSession(connectedSession.id);
-      else if (activeSessions.length > 0) setSelectedSession(activeSessions[0].id);
-    } catch (error) {
-      enqueueSnackbar('حدث خطأ أثناء تحميل الجلسات', { variant: 'error' });
-    } finally {
-      setLoading(false);
-    }
+  const getMediaUrl = (path: string | null) => {
+    if (!path) return '';
+    if (path.startsWith('http')) return path;
+    return `http://localhost:3007${path}`;
   };
+  const renderMessageContent = (message: Message) => {
+    const senderName = message.fromMe && message.senderName ? message.senderName : null;
 
-  const loadMessages = async () => {
-    if (!selectedContact || !selectedSession) return;
-    setLoadingMessages(true);
-    try {
-      const res = await api.get(`/whatsapp/conversations/${encodeURIComponent(selectedContact.jid)}/messages`, {
-        params: { sessionId: selectedSession }
-      });
-      setMessages(res.data.messages || []);
-    } catch (error) {
-      enqueueSnackbar('حدث خطأ أثناء تحميل الرسائل', { variant: 'error' });
-    } finally {
-      setLoadingMessages(false);
-    }
-  };
+    const content = (
+      <Box>
+        {senderName && (
+          <Typography variant="caption" color="primary" sx={{ display: 'block', mb: 0.5, fontWeight: 'bold' }}>
+            {senderName}
+          </Typography>
+        )}
+        {(() => {
+          if (message.mediaUrl) {
+            const fullMediaUrl = getMediaUrl(message.mediaUrl);
+            switch (message.messageType) {
+              case 'IMAGE':
+                return (
+                  <Box>
+                    <img
+                      src={fullMediaUrl}
+                      alt="Image"
+                      style={{ maxWidth: '100%', borderRadius: 8, cursor: 'pointer', maxHeight: 300, objectFit: 'cover' }}
+                      onClick={() => window.open(fullMediaUrl, '_blank')}
+                    />
+                    {message.content && <Typography variant="body2" sx={{ mt: 1 }}>{message.content}</Typography>}
+                  </Box>
+                );
+              case 'VIDEO':
+                return (
+                  <Box>
+                    <video src={fullMediaUrl} controls style={{ maxWidth: '100%', borderRadius: 8, maxHeight: 300 }} />
+                    {message.content && <Typography variant="body2" sx={{ mt: 1 }}>{message.content}</Typography>}
+                  </Box>
+                );
+              case 'AUDIO':
+                return <audio src={fullMediaUrl} controls style={{ width: '100%', minWidth: 200 }} />;
+              case 'DOCUMENT':
+                return (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1, bgcolor: 'rgba(0,0,0,0.05)', borderRadius: 1, minWidth: 200 }}>
+                    <DocumentIcon color="error" fontSize="large" />
+                    <Box sx={{ flex: 1, overflow: 'hidden' }}>
+                      <Typography variant="body2" noWrap>{message.mediaFileName || 'ملف'}</Typography>
+                      <Typography variant="caption" color="text.secondary">مستند</Typography>
+                    </Box>
+                    <IconButton href={message.mediaUrl} target="_blank" size="small">
+                      <DownloadIcon />
+                    </IconButton>
+                  </Box>
+                );
+              default:
+                return (
+                  <Box>
+                    <Typography variant="body2" color="error">نوع وسائط غير مدعوم: {message.messageType}</Typography>
+                    <Button href={fullMediaUrl} target="_blank" size="small" startIcon={<DownloadIcon />}>تحميل</Button>
+                  </Box>
+                );
+            }
+          }
 
-  const markAsRead = async () => {
-    if (!selectedContact || !selectedSession) return;
-    try {
-      await api.post('/whatsapp/messages/read', { sessionId: selectedSession, remoteJid: selectedContact.jid });
-    } catch (error) { console.error(error); }
+          if (message.messageType === 'LOCATION') {
+            try {
+              const loc = message.content ? JSON.parse(message.content) : {};
+              const mapUrl = `https://www.google.com/maps/search/?api=1&query=${loc.latitude},${loc.longitude}`;
+              return (
+                <Box>
+                  <a href={mapUrl} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: 'inherit' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1, bgcolor: 'rgba(0,0,0,0.05)', borderRadius: 1 }}>
+                      <LocationIcon color="primary" fontSize="large" />
+                      <Box>
+                        <Typography variant="body2" fontWeight="bold">موقع</Typography>
+                        <Typography variant="caption" display="block">{loc.address || loc.name || `${loc.latitude}, ${loc.longitude}`}</Typography>
+                      </Box>
+                    </Box>
+                  </a>
+                </Box>
+              );
+            } catch (e) {
+              return <Typography>{message.content}</Typography>;
+            }
+          }
+
+          return <Typography sx={{ whiteSpace: 'pre-wrap' }}>{message.content}</Typography>;
+        })()}
+      </Box>
+    );
+
+    return content;
   };
 
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !selectedContact || !selectedSession || sending) return;
+
+    const targetSessionId = selectedContact.sessionId || (selectedSession === 'all' ? null : selectedSession);
+    if (!targetSessionId) {
+      enqueueSnackbar('خطأ: لا يمكن تحديد الجلسة', { variant: 'error' });
+      return;
+    }
+
     setSending(true);
     try {
       await api.post('/whatsapp/messages/send', {
-        sessionId: selectedSession,
+        sessionId: targetSessionId,
         to: selectedContact.jid,
         text: newMessage,
         quotedMessageId: replyingTo?.messageId,
+        userId: user?.id
       });
-      // Don't add message manually - socket event will handle it
       setNewMessage('');
       setReplyingTo(null);
     } catch (error: any) {
@@ -476,14 +606,22 @@ const WhatsAppChat: React.FC = () => {
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0 || !selectedContact || !selectedSession) return;
+
+    const targetSessionId = selectedContact.sessionId || (selectedSession === 'all' ? null : selectedSession);
+    if (!targetSessionId) {
+      enqueueSnackbar('خطأ: لا يمكن تحديد الجلسة', { variant: 'error' });
+      return;
+    }
+
     const file = files[0];
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('sessionId', selectedSession);
+    formData.append('sessionId', targetSessionId);
     formData.append('to', selectedContact.jid);
+    if (user?.id) formData.append('userId', user.id);
+
     try {
       await api.post('/whatsapp/messages/upload-send', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      loadMessages();
     } catch (error: any) {
       enqueueSnackbar(error.response?.data?.error || 'حدث خطأ أثناء رفع الملف', { variant: 'error' });
     }
@@ -492,9 +630,12 @@ const WhatsAppChat: React.FC = () => {
 
   const handleClearChat = async (contact: Contact) => {
     if (!selectedSession) return;
+    const targetSessionId = contact.sessionId || (selectedSession === 'all' ? null : selectedSession);
+    if (!targetSessionId) return;
+
     if (!window.confirm('هل أنت متأكد من مسح محتوى هذه المحادثة؟')) return;
     try {
-      await api.post('/whatsapp/chats/clear', { sessionId: selectedSession, jid: contact.jid });
+      await api.post('/whatsapp/chats/clear', { sessionId: targetSessionId, jid: contact.jid });
       if (selectedContact?.id === contact.id) setMessages([]);
       loadContacts();
       enqueueSnackbar('تم مسح محتوى المحادثة', { variant: 'success' });
@@ -508,140 +649,43 @@ const WhatsAppChat: React.FC = () => {
       enqueueSnackbar('يجب اختيار جلسة أولاً', { variant: 'warning' });
       return;
     }
+    const targetSessionId = contact.sessionId || (selectedSession === 'all' ? null : selectedSession);
+    if (!targetSessionId) return;
+
     if (!window.confirm('هل أنت متأكد من حذف هذه المحادثة؟')) return;
 
     try {
       const response = await api.post('/whatsapp/chats/delete', {
-        sessionId: selectedSession,
+        sessionId: targetSessionId,
         jid: contact.jid
       });
 
       if (response.data.success) {
-        // Remove from contacts list immediately
         setContacts(prev => prev.filter(c => c.id !== contact.id));
-
-        // Clear selected contact if it's the deleted one
         if (selectedContact?.id === contact.id) {
           setSelectedContact(null);
           setMessages([]);
         }
-
         enqueueSnackbar('تم حذف المحادثة بنجاح', { variant: 'success' });
       }
     } catch (error: any) {
       console.error('Error deleting chat:', error);
-      const errorMessage = error.response?.data?.error || error.message || 'حدث خطأ أثناء حذف المحادثة';
-      enqueueSnackbar(errorMessage, { variant: 'error' });
+      enqueueSnackbar(error.response?.data?.error || 'حدث خطأ أثناء حذف المحادثة', { variant: 'error' });
     }
   };
 
   const handleArchiveChat = async (contact: Contact) => {
     if (!selectedSession) return;
+    const targetSessionId = contact.sessionId || (selectedSession === 'all' ? null : selectedSession);
+    if (!targetSessionId) return;
+
     try {
-      await api.post('/whatsapp/chats/archive', { sessionId: selectedSession, jid: contact.jid, archive: !contact.isArchived });
+      await api.post('/whatsapp/chats/archive', { sessionId: targetSessionId, jid: contact.jid, archive: !contact.isArchived });
       loadContacts();
       enqueueSnackbar(contact.isArchived ? 'تم إلغاء الأرشفة' : 'تمت الأرشفة', { variant: 'success' });
     } catch (e) { enqueueSnackbar('حدث خطأ', { variant: 'error' }); }
   };
 
-  const handlePinChat = async (contact: Contact) => {
-    if (!selectedSession) return;
-    try {
-      await api.post('/whatsapp/chats/pin', { sessionId: selectedSession, jid: contact.jid, pin: !contact.isPinned });
-      loadContacts();
-      enqueueSnackbar(contact.isPinned ? 'تم إلغاء التثبيت' : 'تم التثبيت', { variant: 'success' });
-    } catch (e) { enqueueSnackbar('حدث خطأ', { variant: 'error' }); }
-  };
-
-  const handleMuteChat = async (contact: Contact) => {
-    if (!selectedSession) return;
-    try {
-      await api.post('/whatsapp/chats/mute', { sessionId: selectedSession, jid: contact.jid, mute: !contact.isMuted });
-      loadContacts();
-      enqueueSnackbar(contact.isMuted ? 'تم إلغاء الكتم' : 'تم الكتم', { variant: 'success' });
-    } catch (e) { enqueueSnackbar('حدث خطأ', { variant: 'error' }); }
-  };
-
-  const handleMarkUnread = async (contact: Contact) => {
-    if (!selectedSession) return;
-    try {
-      await api.post('/whatsapp/chats/unread', { sessionId: selectedSession, jid: contact.jid });
-      loadContacts();
-      enqueueSnackbar('تم التحديد كغير مقروء', { variant: 'success' });
-    } catch (e) { enqueueSnackbar('حدث خطأ', { variant: 'error' }); }
-  };
-
-  const renderMessageContent = (message: Message) => {
-    if (message.mediaUrl) {
-      switch (message.messageType) {
-        case 'IMAGE':
-          return (
-            <Box>
-              <img
-                src={message.mediaUrl}
-                alt="Image"
-                style={{ maxWidth: '100%', borderRadius: 8, cursor: 'pointer', maxHeight: 300, objectFit: 'cover' }}
-                onClick={() => window.open(message.mediaUrl!, '_blank')}
-              />
-              {message.content && <Typography variant="body2" sx={{ mt: 1 }}>{message.content}</Typography>}
-            </Box>
-          );
-        case 'VIDEO':
-          return (
-            <Box>
-              <video src={message.mediaUrl} controls style={{ maxWidth: '100%', borderRadius: 8, maxHeight: 300 }} />
-              {message.content && <Typography variant="body2" sx={{ mt: 1 }}>{message.content}</Typography>}
-            </Box>
-          );
-        case 'AUDIO':
-          return <audio src={message.mediaUrl} controls style={{ width: '100%', minWidth: 200 }} />;
-        case 'DOCUMENT':
-          return (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1, bgcolor: 'rgba(0,0,0,0.05)', borderRadius: 1, minWidth: 200 }}>
-              <DocumentIcon color="error" fontSize="large" />
-              <Box sx={{ flex: 1, overflow: 'hidden' }}>
-                <Typography variant="body2" noWrap>{message.mediaFileName || 'ملف'}</Typography>
-                <Typography variant="caption" color="text.secondary">مستند</Typography>
-              </Box>
-              <IconButton href={message.mediaUrl} target="_blank" size="small">
-                <DownloadIcon />
-              </IconButton>
-            </Box>
-          );
-        default:
-          return (
-            <Box>
-              <Typography variant="body2" color="error">نوع وسائط غير مدعوم: {message.messageType}</Typography>
-              <Button href={message.mediaUrl} target="_blank" size="small" startIcon={<DownloadIcon />}>تحميل</Button>
-            </Box>
-          );
-      }
-    }
-
-    if (message.messageType === 'LOCATION') {
-      try {
-        const loc = message.content ? JSON.parse(message.content) : {};
-        const mapUrl = `https://www.google.com/maps/search/?api=1&query=${loc.latitude},${loc.longitude}`;
-        return (
-          <Box>
-            <a href={mapUrl} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: 'inherit' }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1, bgcolor: 'rgba(0,0,0,0.05)', borderRadius: 1 }}>
-                <LocationIcon color="primary" fontSize="large" />
-                <Box>
-                  <Typography variant="body2" fontWeight="bold">موقع</Typography>
-                  <Typography variant="caption" display="block">{loc.address || loc.name || `${loc.latitude}, ${loc.longitude}`}</Typography>
-                </Box>
-              </Box>
-            </a>
-          </Box>
-        );
-      } catch (e) {
-        return <Typography>{message.content}</Typography>;
-      }
-    }
-
-    return <Typography sx={{ whiteSpace: 'pre-wrap' }}>{message.content}</Typography>;
-  };
 
   // Message Actions Handlers
   const handleMessageContextMenu = (event: React.MouseEvent, message: Message) => {
@@ -667,6 +711,9 @@ const WhatsAppChat: React.FC = () => {
   const handleDeleteMessage = async () => {
     if (!selectedSession || !selectedContact || !selectedMessageForMenu) return;
 
+    const targetSessionId = selectedContact.sessionId || (selectedSession === 'all' ? null : selectedSession);
+    if (!targetSessionId) return;
+
     if (!window.confirm('هل أنت متأكد من حذف هذه الرسالة للجميع؟')) {
       setMessageMenuAnchor(null);
       return;
@@ -674,7 +721,7 @@ const WhatsAppChat: React.FC = () => {
 
     try {
       await api.post('/whatsapp/messages/delete', {
-        sessionId: selectedSession,
+        sessionId: targetSessionId,
         to: selectedContact.jid,
         key: {
           remoteJid: selectedContact.jid,
@@ -889,13 +936,13 @@ const WhatsAppChat: React.FC = () => {
                     </Box>
                   )}
                   {/* Message */}
-                  <Box sx={{ display: 'flex', justifyContent: message.fromMe ? 'flex-end' : 'flex-start', mb: 1 }}>
+                  <Box sx={{ display: 'flex', justifyContent: message.fromMe ? 'flex-start' : 'flex-end', mb: 1 }}>
                     <Paper
                       sx={{ p: 1, maxWidth: '70%', bgcolor: message.fromMe ? '#d9fdd3' : '#fff', cursor: 'context-menu' }}
                       onContextMenu={(e) => handleMessageContextMenu(e, message)}
                     >
                       {message.quotedContent && (
-                        <Box sx={{ bgcolor: 'rgba(0,0,0,0.05)', borderLeft: '4px solid #00a884', p: 0.5, mb: 0.5, borderRadius: 0.5 }}>
+                        <Box sx={{ bgcolor: 'rgba(0,0,0,0.05)', borderInlineStart: '4px solid #00a884', p: 0.5, mb: 0.5, borderRadius: 0.5 }}>
                           <Typography variant="caption" sx={{ display: 'block', color: 'primary.main' }}>رد على رسالة</Typography>
                           <Typography variant="caption" noWrap>{message.quotedContent}</Typography>
                         </Box>

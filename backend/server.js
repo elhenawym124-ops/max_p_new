@@ -368,6 +368,9 @@ app.use(cookieParser()); // ✅ Add cookie parser middleware
 
 // لو بتستقبل form data (application/x-www-form-urlencoded)
 app.use(express.urlencoded({ extended: true }));
+
+// Serve static files from public/uploads
+app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 // Initialize Socket.IO
 socketService.initialize(server);
 

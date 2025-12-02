@@ -132,6 +132,7 @@ model User {
   managedProjects       Project[]
   imageGallery          ImageGallery[]
   textGallery           TextGallery[] // 📝 حافظة النصوص
+  whatsappMessages      WhatsAppMessage[] // 💬 رسائل واتساب المرسلة
 
   @@index([companyId], map: "users_companyId_idx")
   @@map("users")
@@ -2706,6 +2707,10 @@ model WhatsAppMessage {
   // معرفات WhatsApp
   remoteJid       String   // رقم المرسل/المستقبل (JID)
   messageId       String   @unique // ID الرسالة من WhatsApp
+  
+  // تتبع الموظف
+  senderId        String?
+  sender          User?    @relation(fields: [senderId], references: [id])
   
   // معلومات الرسالة
   fromMe          Boolean  // هل الرسالة مني

@@ -306,7 +306,7 @@ async function getConversations(req, res) {
         const { sessionId, page = 1, limit = 50, search, category, archived } = req.query;
 
         // تحسين: استخدام Promise.all لجلب الجلسات والعدد الكلي إذا أمكن، لكن هنا نحتاج الجلسات أولاً لبناء الاستعلام
-        const sessionIds = sessionId
+        const sessionIds = (sessionId && sessionId !== 'all')
             ? [sessionId]
             : (await prisma.whatsAppSession.findMany({
                 where: { companyId },

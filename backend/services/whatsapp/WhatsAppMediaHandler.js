@@ -25,7 +25,7 @@ const prisma = getSharedPrismaClient();
 const WhatsAppManager = require('./WhatsAppManager');
 
 // مسار حفظ الوسائط
-const MEDIA_DIR = path.join(__dirname, '../../uploads/whatsapp');
+const MEDIA_DIR = path.join(__dirname, '../../public/uploads/whatsapp');
 
 // حدود حجم الملفات (بالبايت)
 const SIZE_LIMITS = {
@@ -74,6 +74,8 @@ async function initMediaDirectory() {
  */
 async function downloadMedia(message, sessionId) {
     try {
+        // Lazy load to avoid circular dependency
+        const WhatsAppManager = require('./WhatsAppManager');
         const session = WhatsAppManager.getSession(sessionId);
         if (!session) {
             throw new Error('الجلسة غير موجودة');
@@ -131,7 +133,7 @@ async function downloadMedia(message, sessionId) {
 async function uploadMedia(source, mimetype, originalName = '') {
     try {
         let buffer;
-        
+
         if (Buffer.isBuffer(source)) {
             buffer = source;
         } else if (typeof source === 'string') {
@@ -186,6 +188,8 @@ async function uploadMedia(source, mimetype, originalName = '') {
  * ضغط صورة
  */
 async function compressImage(buffer, maxSize) {
+    if (!sharp) return buffer; // Skip compression if sharp is not available
+
     try {
         let quality = 80;
         let compressed = buffer;
@@ -201,7 +205,7 @@ async function compressImage(buffer, maxSize) {
             // تصغير الأبعاد
             const metadata = await sharp(buffer).metadata();
             const scale = Math.sqrt(maxSize / compressed.length);
-            
+
             compressed = await sharp(buffer)
                 .resize(Math.floor(metadata.width * scale), Math.floor(metadata.height * scale))
                 .jpeg({ quality: 70 })
@@ -274,7 +278,7 @@ async function cleanupTempFiles(maxAgeHours = 24) {
         for (const file of files) {
             const filePath = path.join(tempDir, file);
             const stats = await fs.stat(filePath);
-            
+
             if (now - stats.mtimeMs > maxAge) {
                 await fs.unlink(filePath);
             }

@@ -7,7 +7,7 @@
 
 const { getSharedPrismaClient } = require('../sharedDatabase');
 const prisma = getSharedPrismaClient();
-const { initAuthCreds } = require('@whiskeysockets/baileys');
+const { initAuthCreds, BufferJSON } = require('@whiskeysockets/baileys');
 
 // Cache للحالة لتقليل استعلامات قاعدة البيانات
 const authStateCache = new Map();
@@ -28,8 +28,11 @@ async function useDatabaseAuthState(sessionId) {
     // تهيئة الحالة
     let state = {
         creds: authData.creds || initAuthCreds(),
-        keys: {}
+        keys: {} // سيتم استبداله بالـ interface لاحقاً
     };
+
+    // تخزين بيانات المفاتيح في متغير منفصل
+    let keysData = authData.keys || {};
 
     // دالة تحميل الحالة من قاعدة البيانات
     async function loadAuthState(sessionId) {
@@ -47,7 +50,8 @@ async function useDatabaseAuthState(sessionId) {
 
         if (session?.authState) {
             try {
-                authData = JSON.parse(session.authState);
+                // استخدام BufferJSON.reviver لاستعادة Buffers
+                authData = JSON.parse(session.authState, BufferJSON.reviver);
             } catch (error) {
                 console.error(`❌ Error parsing auth state for session ${sessionId}:`, error);
             }
@@ -71,13 +75,14 @@ async function useDatabaseAuthState(sessionId) {
             try {
                 const dataToSave = {
                     creds: state.creds,
-                    keys: state.keys
+                    keys: keysData // حفظ بيانات المفاتيح النظيفة
                 };
 
                 await prisma.whatsAppSession.update({
                     where: { id: sessionId },
                     data: {
-                        authState: JSON.stringify(dataToSave),
+                        // استخدام BufferJSON.replacer لحفظ Buffers
+                        authState: JSON.stringify(dataToSave, BufferJSON.replacer, 2),
                         updatedAt: new Date()
                     }
                 });
@@ -103,46 +108,40 @@ async function useDatabaseAuthState(sessionId) {
     }
 
     // إنشاء key management object متوافق مع Baileys
-    // Baileys يتوقع keys object بهذا الشكل:
-    // keys.get(type, ids) -> returns object of {id: data}
-    // keys.set(data) -> data is {type: {id: data}}
     const keys = {
         get: async (type, ids) => {
-            // إعادة تحميل من قاعدة البيانات للتأكد من أحدث البيانات
-            authData = await loadAuthState(sessionId);
+            // يمكننا إعادة التحميل هنا إذا أردنا التأكد من التزامن عبر العمليات
+            // ولكن للتبسيط سنعتمد على الذاكرة المحلية + التحديثات
+            // authData = await loadAuthState(sessionId); 
+            // keysData = authData.keys || {}; 
 
-            if (!authData.keys || !authData.keys[type]) {
+            if (!keysData[type]) {
                 return {};
             }
 
             const result = {};
             for (const id of ids) {
                 const keyId = String(id);
-                if (authData.keys[type][keyId]) {
-                    result[keyId] = authData.keys[type][keyId];
+                if (keysData[type][keyId]) {
+                    result[keyId] = keysData[type][keyId];
                 }
             }
             return result;
         },
         set: async (data) => {
-            // تحديث المفاتيح في الذاكرة أولاً
-            if (!state.keys) {
-                state.keys = {};
-            }
-
             // data format: { 'session': { 'id1': {...}, 'id2': {...} }, 'pre-key': {...} }
             for (const category in data) {
-                if (!state.keys[category]) {
-                    state.keys[category] = {};
+                if (!keysData[category]) {
+                    keysData[category] = {};
                 }
 
                 // دمج البيانات الجديدة
                 for (const keyId in data[category]) {
-                    state.keys[category][String(keyId)] = data[category][keyId];
+                    keysData[category][String(keyId)] = data[category][keyId];
                 }
             }
 
-            // حفظ في قاعدة البيانات (debounced لتقليل الاستعلامات)
+            // حفظ في قاعدة البيانات
             await saveAuthState();
         }
     };

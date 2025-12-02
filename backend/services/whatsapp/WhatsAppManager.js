@@ -9,7 +9,7 @@
  * - إرسال الأحداث عبر Socket.IO
  */
 
-const { makeWASocket, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { makeWASocket, DisconnectReason, fetchLatestBaileysVersion, downloadMediaMessage } = require('@whiskeysockets/baileys');
 const { useDatabaseAuthState } = require('./DatabaseAuthState');
 const { Boom } = require('@hapi/boom');
 const pino = require('pino');
@@ -25,17 +25,160 @@ const activeSessions = new Map();
 
 // مسار حفظ بيانات الجلسات
 const SESSIONS_DIR = path.join(__dirname, '../../data/whatsapp-sessions');
+// مسار حفظ الوسائط
+const MEDIA_DIR = path.join(__dirname, '../../public/uploads/whatsapp');
 
 /**
- * تهيئة مجلد الجلسات
+ * تهيئة مجلد الجلسات والوسائط
  */
 async function initSessionsDirectory() {
     try {
         await fs.mkdir(SESSIONS_DIR, { recursive: true });
-        console.log('📁 WhatsApp sessions directory initialized');
+        await fs.mkdir(MEDIA_DIR, { recursive: true });
+
+        // Lazy load to avoid circular dependency
+        const WhatsAppMediaHandler = require('./WhatsAppMediaHandler');
+        await WhatsAppMediaHandler.initMediaDirectory();
+
+        console.log('📁 WhatsApp sessions and media directories initialized');
     } catch (error) {
-        console.error('❌ Error creating sessions directory:', error);
+        console.error('❌ Error creating directories:', error);
     }
+}
+
+// ... (rest of the file until extractMessageContent)
+
+/**
+ * استخراج محتوى الرسالة (Async)
+ */
+async function extractMessageContent(msg, sock) {
+    const message = msg.message;
+    if (!message) return null;
+
+    let type = 'TEXT';
+    let text = null;
+    let mediaUrl = null;
+    let mediaType = null;
+    let mimetype = null;
+    let fileName = null;
+    let quotedId = null;
+    let quotedText = null;
+
+    // دالة مساعدة لتحميل الوسائط
+    const downloadMedia = async (messageType, fileExtension) => {
+        try {
+            const buffer = await downloadMediaMessage(
+                msg,
+                'buffer',
+                {},
+                {
+                    logger: pino({ level: 'silent' }),
+                    reuploadRequest: sock.updateMediaMessage
+                }
+            );
+
+            const filename = `media_${msg.key.id}_${Date.now()}.${fileExtension}`;
+            const filepath = path.join(MEDIA_DIR, filename);
+            await fs.writeFile(filepath, buffer);
+            return `/uploads/whatsapp/${filename}`;
+        } catch (error) {
+            console.error('❌ Error downloading media:', error);
+            return null;
+        }
+    };
+
+    // نص عادي
+    if (message.conversation) {
+        text = message.conversation;
+    }
+    // نص موسع
+    else if (message.extendedTextMessage) {
+        text = message.extendedTextMessage.text;
+        if (message.extendedTextMessage.contextInfo?.quotedMessage) {
+            quotedId = message.extendedTextMessage.contextInfo.stanzaId;
+            quotedText = message.extendedTextMessage.contextInfo.quotedMessage.conversation ||
+                message.extendedTextMessage.contextInfo.quotedMessage.extendedTextMessage?.text;
+        }
+    }
+    // صورة
+    else if (message.imageMessage) {
+        type = 'IMAGE';
+        text = message.imageMessage.caption;
+        mimetype = message.imageMessage.mimetype;
+        mediaType = 'image';
+        mediaUrl = await downloadMedia('imageMessage', 'jpg');
+    }
+    // فيديو
+    else if (message.videoMessage) {
+        type = 'VIDEO';
+        text = message.videoMessage.caption;
+        mimetype = message.videoMessage.mimetype;
+        mediaType = 'video';
+        mediaUrl = await downloadMedia('videoMessage', 'mp4');
+    }
+    // صوت
+    else if (message.audioMessage) {
+        type = 'AUDIO';
+        mimetype = message.audioMessage.mimetype;
+        mediaType = 'audio';
+        // تحديد الامتداد بناءً على mimetype (ogg للصوتيات عادةً)
+        const ext = mimetype.includes('mp4') ? 'm4a' : 'ogg';
+        mediaUrl = await downloadMedia('audioMessage', ext);
+    }
+    // ملف
+    else if (message.documentMessage) {
+        type = 'DOCUMENT';
+        text = message.documentMessage.caption;
+        mimetype = message.documentMessage.mimetype;
+        fileName = message.documentMessage.fileName;
+        mediaType = 'document';
+        // محاولة استخراج الامتداد من اسم الملف
+        const ext = fileName ? fileName.split('.').pop() : 'bin';
+        mediaUrl = await downloadMedia('documentMessage', ext);
+    }
+    // ستيكر
+    else if (message.stickerMessage) {
+        type = 'STICKER';
+        mimetype = message.stickerMessage.mimetype;
+        mediaType = 'sticker';
+        mediaUrl = await downloadMedia('stickerMessage', 'webp');
+    }
+    // موقع
+    else if (message.locationMessage) {
+        type = 'LOCATION';
+        text = `${message.locationMessage.degreesLatitude},${message.locationMessage.degreesLongitude}`;
+    }
+    // جهة اتصال
+    else if (message.contactMessage) {
+        type = 'CONTACT';
+        text = message.contactMessage.displayName;
+    }
+    // تفاعل
+    else if (message.reactionMessage) {
+        type = 'REACTION';
+        text = message.reactionMessage.text;
+    }
+    // أزرار تفاعلية
+    else if (message.buttonsMessage) {
+        type = 'BUTTONS';
+        text = message.buttonsMessage.contentText || message.buttonsMessage.text;
+    }
+    // قائمة
+    else if (message.listMessage) {
+        type = 'LIST';
+        text = message.listMessage.description || message.listMessage.title;
+    }
+    // منتج (قد يكون في templateMessage)
+    else if (message.templateMessage) {
+        type = 'TEMPLATE';
+        text = message.templateMessage.hydratedTemplate?.hydratedContentText ||
+            message.templateMessage.hydratedTemplate?.templateId;
+    }
+    else {
+        return null;
+    }
+
+    return { type, text, mediaUrl, mediaType, mimetype, fileName, quotedId, quotedText };
 }
 
 /**
@@ -276,19 +419,60 @@ async function handleIncomingMessages(sessionId, companyId, m, sock) {
             // تجاهل الرسائل القديمة
             if (msg.messageTimestamp < Date.now() / 1000 - 60) continue;
 
-            const remoteJid = msg.key.remoteJid;
+            // DEBUG: Log incoming message key
+            await logEvent(sessionId, companyId, 'debug_incoming_msg', {
+                key: msg.key,
+                pushName: msg.pushName
+            });
+
+            let remoteJid = msg.key.remoteJid;
             const fromMe = msg.key.fromMe;
             const messageId = msg.key.id;
 
+            // Handle @lid (Linked Device ID)
+            if (remoteJid && remoteJid.includes('@lid')) {
+                // Try to find the phone number JID from participant or senderPn (specific to LIDs)
+                const phoneJid = msg.key.participant || msg.key.senderPn;
+
+                if (phoneJid && phoneJid.includes('@s.whatsapp.net')) {
+                    remoteJid = phoneJid;
+                } else {
+                    // If we can't find the phone number, skip this message to avoid creating ghost contacts
+                    console.log(`⚠️ Skipping message from LID without participant/senderPn: ${remoteJid}`);
+                    continue;
+                }
+            }
+
+            // Normalize JID (only for non-group, non-broadcast, and already valid-looking JIDs)
+            if (remoteJid && !remoteJid.includes('@g.us') && remoteJid !== 'status@broadcast' && remoteJid.includes('@s.whatsapp.net')) {
+                const bareJid = remoteJid.split('@')[0].split(':')[0];
+                const cleaned = bareJid.replace(/\D/g, '');
+                remoteJid = `${cleaned}@s.whatsapp.net`;
+            }
+
             // استخراج محتوى الرسالة
-            const messageContent = extractMessageContent(msg);
+            const messageContent = await extractMessageContent(msg, sock, sessionId);
             if (!messageContent) continue;
 
             console.log(`📩 New message in session ${sessionId}: ${messageContent.type} from ${remoteJid}`);
 
             // حفظ الرسالة في قاعدة البيانات
-            const savedMessage = await prisma.whatsAppMessage.create({
-                data: {
+            // حفظ الرسالة في قاعدة البيانات
+            const savedMessage = await prisma.whatsAppMessage.upsert({
+                where: { messageId },
+                update: {
+                    status: 'SENT', // تأكيد الحالة
+                    messageType: messageContent.type,
+                    content: messageContent.text,
+                    mediaUrl: messageContent.mediaUrl,
+                    mediaType: messageContent.mediaType,
+                    mediaMimeType: messageContent.mimetype,
+                    mediaFileName: messageContent.fileName,
+                    quotedMessageId: messageContent.quotedId,
+                    quotedContent: messageContent.quotedText,
+                    metadata: JSON.stringify(msg)
+                },
+                create: {
                     sessionId,
                     remoteJid,
                     messageId,
@@ -307,7 +491,7 @@ async function handleIncomingMessages(sessionId, companyId, m, sock) {
             });
 
             // تحديث أو إنشاء جهة الاتصال
-            const contact = await updateOrCreateContact(sessionId, remoteJid, msg, sock);
+            const contact = await updateOrCreateContact(sessionId, remoteJid, msg, sock, { isOutgoing: fromMe });
 
             // إرسال الرسالة عبر Socket.IO
             io?.to(`company_${companyId}`).emit('whatsapp:message:new', {
@@ -393,9 +577,15 @@ async function handleIncomingMessages(sessionId, companyId, m, sock) {
 /**
  * استخراج محتوى الرسالة
  */
-function extractMessageContent(msg) {
+/**
+ * استخراج محتوى الرسالة
+ */
+async function extractMessageContent(msg, sock, sessionId) {
     const message = msg.message;
     if (!message) return null;
+
+    // Lazy load to avoid circular dependency
+    const WhatsAppMediaHandler = require('./WhatsAppMediaHandler');
 
     let type = 'TEXT';
     let text = null;
@@ -424,17 +614,47 @@ function extractMessageContent(msg) {
         type = 'IMAGE';
         text = message.imageMessage.caption;
         mimetype = message.imageMessage.mimetype;
+        try {
+            const media = await WhatsAppMediaHandler.downloadMedia(msg, sessionId);
+            if (media) {
+                mediaUrl = media.url;
+                mediaType = 'image';
+                fileName = media.fileName;
+            }
+        } catch (e) {
+            console.error('Failed to download image:', e);
+        }
     }
     // فيديو
     else if (message.videoMessage) {
         type = 'VIDEO';
         text = message.videoMessage.caption;
         mimetype = message.videoMessage.mimetype;
+        try {
+            const media = await WhatsAppMediaHandler.downloadMedia(msg, sessionId);
+            if (media) {
+                mediaUrl = media.url;
+                mediaType = 'video';
+                fileName = media.fileName;
+            }
+        } catch (e) {
+            console.error('Failed to download video:', e);
+        }
     }
     // صوت
     else if (message.audioMessage) {
         type = 'AUDIO';
         mimetype = message.audioMessage.mimetype;
+        try {
+            const media = await WhatsAppMediaHandler.downloadMedia(msg, sessionId);
+            if (media) {
+                mediaUrl = media.url;
+                mediaType = 'audio';
+                fileName = media.fileName;
+            }
+        } catch (e) {
+            console.error('Failed to download audio:', e);
+        }
     }
     // ملف
     else if (message.documentMessage) {
@@ -442,16 +662,42 @@ function extractMessageContent(msg) {
         text = message.documentMessage.caption;
         mimetype = message.documentMessage.mimetype;
         fileName = message.documentMessage.fileName;
+        try {
+            const media = await WhatsAppMediaHandler.downloadMedia(msg, sessionId);
+            if (media) {
+                mediaUrl = media.url;
+                mediaType = 'document';
+                // Keep original filename if available
+                if (!fileName) fileName = media.fileName;
+            }
+        } catch (e) {
+            console.error('Failed to download document:', e);
+        }
     }
     // ستيكر
     else if (message.stickerMessage) {
         type = 'STICKER';
         mimetype = message.stickerMessage.mimetype;
+        try {
+            const media = await WhatsAppMediaHandler.downloadMedia(msg, sessionId);
+            if (media) {
+                mediaUrl = media.url;
+                mediaType = 'sticker';
+                fileName = media.fileName;
+            }
+        } catch (e) {
+            console.error('Failed to download sticker:', e);
+        }
     }
     // موقع
     else if (message.locationMessage) {
         type = 'LOCATION';
-        text = `${message.locationMessage.degreesLatitude},${message.locationMessage.degreesLongitude}`;
+        text = JSON.stringify({
+            latitude: message.locationMessage.degreesLatitude,
+            longitude: message.locationMessage.degreesLongitude,
+            address: message.locationMessage.address,
+            name: message.locationMessage.name
+        });
     }
     // جهة اتصال
     else if (message.contactMessage) {
@@ -710,6 +956,29 @@ async function sendTextMessage(sessionId, to, text, options = {}) {
         ...options
     });
 
+    // إذا تم تمرير userId، قم بتحديث الرسالة
+    if (options.userId && result.key.id) {
+        try {
+            await prisma.whatsAppMessage.upsert({
+                where: { messageId: result.key.id },
+                update: { senderId: options.userId },
+                create: {
+                    sessionId,
+                    remoteJid: jid,
+                    messageId: result.key.id,
+                    fromMe: true,
+                    messageType: 'TEXT',
+                    content: text,
+                    timestamp: new Date(),
+                    senderId: options.userId,
+                    status: 'SENT'
+                }
+            });
+        } catch (e) {
+            console.error('Failed to save senderId for message:', e);
+        }
+    }
+
     return result;
 }
 
@@ -725,6 +994,28 @@ async function sendMediaMessage(sessionId, to, media, options = {}) {
     const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
 
     const result = await session.sock.sendMessage(jid, media, options);
+
+    // إذا تم تمرير userId، قم بتحديث الرسالة
+    if (options.userId && result.key.id) {
+        try {
+            await prisma.whatsAppMessage.upsert({
+                where: { messageId: result.key.id },
+                update: { senderId: options.userId },
+                create: {
+                    sessionId,
+                    remoteJid: jid,
+                    messageId: result.key.id,
+                    fromMe: true,
+                    messageType: 'IMAGE', // افتراضي، سيتم تحديثه لاحقاً
+                    timestamp: new Date(),
+                    senderId: options.userId,
+                    status: 'SENT'
+                }
+            });
+        } catch (e) {
+            console.error('Failed to save senderId for media message:', e);
+        }
+    }
 
     return result;
 }

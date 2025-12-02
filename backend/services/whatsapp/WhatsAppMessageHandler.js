@@ -103,7 +103,7 @@ async function sendImage(sessionId, to, imageSource, caption = '', options = {})
         const jid = formatJid(to);
 
         const messageOptions = {
-            image: imageSource.url ? { url: imageSource.url } : imageSource.buffer,
+            image: imageSource.buffer || { url: imageSource.filePath || imageSource.url },
             caption,
             mimetype: imageSource.mimetype || 'image/jpeg'
         };
@@ -149,7 +149,7 @@ async function sendVideo(sessionId, to, videoSource, caption = '', options = {})
         const jid = formatJid(to);
 
         const messageOptions = {
-            video: videoSource.url ? { url: videoSource.url } : videoSource.buffer,
+            video: videoSource.buffer || { url: videoSource.filePath || videoSource.url },
             caption,
             mimetype: videoSource.mimetype || 'video/mp4'
         };
@@ -188,7 +188,7 @@ async function sendAudio(sessionId, to, audioSource, options = {}) {
         const jid = formatJid(to);
 
         const messageOptions = {
-            audio: audioSource.url ? { url: audioSource.url } : audioSource.buffer,
+            audio: audioSource.buffer || { url: audioSource.filePath || audioSource.url },
             mimetype: audioSource.mimetype || 'audio/mp4',
             ptt: options.ptt || false // voice note
         };
@@ -226,7 +226,7 @@ async function sendDocument(sessionId, to, documentSource, options = {}) {
         const jid = formatJid(to);
 
         const messageOptions = {
-            document: documentSource.url ? { url: documentSource.url } : documentSource.buffer,
+            document: documentSource.buffer || { url: documentSource.filePath || documentSource.url },
             mimetype: documentSource.mimetype || 'application/pdf',
             fileName: documentSource.fileName || 'document',
             caption: options.caption
