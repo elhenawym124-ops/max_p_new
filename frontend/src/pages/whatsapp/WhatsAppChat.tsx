@@ -857,9 +857,26 @@ const WhatsAppChat: React.FC = () => {
     }
   };
 
+
   const sendQuickReply = async (qr: QuickReply) => {
-    // Implementation...
-    setShowQuickReplies(false);
+    if (!selectedSession || !selectedContact) return;
+    try {
+      await api.post('/whatsapp/messages/send', {
+        sessionId: selectedSession,
+        to: selectedContact.jid,
+        text: qr.text
+      });
+      setShowQuickReplies(false);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const getContactName = (contact: Contact) => {
+    if (contact.customer && (contact.customer.firstName || contact.customer.lastName)) {
+      return `${contact.customer.firstName} ${contact.customer.lastName}`.trim();
+    }
+    return contact.name || contact.pushName || contact.phoneNumber;
   };
 
   const filteredContacts = contacts.filter(c => {
@@ -869,7 +886,8 @@ const WhatsAppChat: React.FC = () => {
     if (searchQuery === 'individual:') return !c.jid.endsWith('@g.us');
     if (searchQuery === 'group:') return c.jid.endsWith('@g.us');
     if (!searchQuery) return true;
-    return (c.name || c.pushName || c.phoneNumber).toLowerCase().includes(searchQuery.toLowerCase());
+    const displayName = getContactName(c);
+    return (displayName || c.phoneNumber).toLowerCase().includes(searchQuery.toLowerCase());
   });
 
   if (loading) return <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh"><CircularProgress /></Box>;
@@ -899,10 +917,10 @@ const WhatsAppChat: React.FC = () => {
             <ListItem key={contact.id} button selected={selectedContact?.id === contact.id} onClick={() => setSelectedContact(contact)} onContextMenu={(e) => { e.preventDefault(); setChatMenuAnchor(e.currentTarget); setSelectedChatForMenu(contact); }}>
               <ListItemAvatar>
                 <Badge badgeContent={contact.unreadCount} color="primary">
-                  <Avatar src={contact.profilePicUrl || ''}>{(contact.name || contact.phoneNumber)[0]}</Avatar>
+                  <Avatar src={contact.profilePicUrl || ''}>{getContactName(contact)[0]}</Avatar>
                 </Badge>
               </ListItemAvatar>
-              <ListItemText primary={contact.name || contact.pushName || contact.phoneNumber} secondary={contact.lastMessage?.content || '...'} />
+              <ListItemText primary={getContactName(contact)} secondary={contact.lastMessage?.content || '...'} />
             </ListItem>
           ))}
         </List>
@@ -915,7 +933,7 @@ const WhatsAppChat: React.FC = () => {
             <Paper sx={{ p: 2, borderRadius: 0, borderBottom: 1, borderColor: 'divider', display: 'flex', justifyContent: 'space-between' }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Avatar src={selectedContact.profilePicUrl || ''} />
-                <Typography variant="subtitle1">{selectedContact.name || selectedContact.phoneNumber}</Typography>
+                <Typography variant="subtitle1">{getContactName(selectedContact)}</Typography>
               </Box>
               <Box>
                 <IconButton onClick={() => setShowContactInfo(true)}><InfoIcon /></IconButton>
@@ -972,7 +990,7 @@ const WhatsAppChat: React.FC = () => {
                 <Box sx={{ p: 1, mb: 1, bgcolor: 'rgba(0,0,0,0.05)', borderLeft: '4px solid #00a884', borderRadius: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Box>
                     <Typography variant="caption" color="primary" fontWeight="bold">
-                      {replyingTo.fromMe ? 'أنت' : selectedContact?.name || selectedContact?.phoneNumber}
+                      {replyingTo.fromMe ? 'أنت' : getContactName(selectedContact)}
                     </Typography>
                     <Typography variant="body2" noWrap sx={{ maxWidth: 300 }}>
                       {replyingTo.content || (replyingTo.mediaType ? `[${replyingTo.mediaType}]` : 'رسالة')}
@@ -1093,7 +1111,7 @@ const WhatsAppChat: React.FC = () => {
                 <ListItemAvatar>
                   <Avatar src={contact.profilePicUrl || ''} />
                 </ListItemAvatar>
-                <ListItemText primary={contact.name || contact.phoneNumber} />
+                <ListItemText primary={getContactName(contact)} />
                 {selectedContactsForForward.includes(contact.id) && <CheckIcon color="primary" />}
               </ListItem>
             ))}
@@ -1117,7 +1135,7 @@ const WhatsAppChat: React.FC = () => {
         {selectedContact && (
           <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <Avatar src={selectedContact.profilePicUrl || ''} sx={{ width: 120, height: 120, mb: 2 }} />
-            <Typography variant="h6">{selectedContact.name || selectedContact.phoneNumber}</Typography>
+            <Typography variant="h6">{getContactName(selectedContact)}</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>{selectedContact.phoneNumber}</Typography>
 
             <Divider sx={{ width: '100%', mb: 2 }} />
@@ -1141,10 +1159,10 @@ const WhatsAppChat: React.FC = () => {
               حذف المحادثة
             </Button>
             <Button fullWidth color="error" startIcon={<BlockIcon />} sx={{ mt: 1 }} onClick={() => enqueueSnackbar('قريباً', { variant: 'info' })}>
-              حظر {selectedContact.name || 'جهة الاتصال'}
+              حظر {getContactName(selectedContact)}
             </Button>
             <Button fullWidth color="error" startIcon={<ReportIcon />} sx={{ mt: 1 }} onClick={() => enqueueSnackbar('قريباً', { variant: 'info' })}>
-              الإبلاغ عن {selectedContact.name || 'جهة الاتصال'}
+              الإبلاغ عن {getContactName(selectedContact)}
             </Button>
           </Box>
         )}
