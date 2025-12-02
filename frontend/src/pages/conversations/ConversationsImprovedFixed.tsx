@@ -107,7 +107,8 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   
   // حالات البحث والفلترة
   const [searchQuery, setSearchQuery] = useState('');
-  const [conversationFilter, setConversationFilter] = useState<'all' | 'unread'>('all');
+  // tabs: all | unread (أي محادثة بها رسائل غير مقروءة) | unreplied (آخر رسالة من العميل ولم يتم الرد عليها)
+  const [conversationFilter, setConversationFilter] = useState<'all' | 'unread' | 'unreplied'>('all');
   
   // حالة الرسالة الجديدة
   const [newMessage, setNewMessage] = useState('');
@@ -131,7 +132,8 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   const [conversationsPage, setConversationsPage] = useState(1);
   const [hasMoreConversations, setHasMoreConversations] = useState(true);
   const [totalConversations, setTotalConversations] = useState(0);
-  const conversationsLimit = 50; // عدد المحادثات في كل صفحة
+  // ⬆️ زيادة عدد المحادثات في كل صفحة إلى 200 بدلاً من 50
+  const conversationsLimit = 200; // عدد المحادثات في كل صفحة
   
   const [uploadingFile, setUploadingFile] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -1123,8 +1125,20 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       newUrl.searchParams.set('conversationId', conversationId);
       window.history.replaceState({}, '', newUrl.toString());
 
-      // ✅ FIX: لا نضع علامة مقروءة عند فتح المحادثة - تبقى غير مقروءة حتى يرد المستخدم
-      // سيتم وضع علامة مقروءة فقط عند إرسال رد (في sendMessage)
+        // ✅ عند فتح المحادثة نضعها كمقروءة (إزالة من تبويب "غير مقروءة")
+        if (selectedConversation?.id === conversationId || conversation.unreadCount > 0) {
+          // تحديث الـ frontend فوراً
+          setConversations(prev => prev.map(conv =>
+            conv.id === conversationId
+              ? { ...conv, unreadCount: 0 }
+              : conv
+          ));
+          setSelectedConversation(prev =>
+            prev && prev.id === conversationId ? { ...prev, unreadCount: 0 } : prev
+          );
+          // استدعاء الـ API لتحديث حالة القراءة في الـ backend
+          markConversationAsRead(conversationId);
+        }
     } else {
       console.warn('❌ Conversation not found in selectConversation:', conversationId);
       console.log('📝 Available conversation IDs:', conversations.map(c => c.id));
@@ -3713,9 +3727,18 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   const filteredConversations = useMemo(() => {
     return conversations
       .filter(conv => {
-        // فلترة حسب نوع المحادثة (الكل أو غير مقروءة)
-        const matchesFilter = conversationFilter === 'all' ||
-          (conversationFilter === 'unread' && conv.lastMessageIsFromCustomer === true && conv.lastCustomerMessageIsUnread === true);
+        // فلترة حسب نوع المحادثة:
+        // all        => كل المحادثات
+        // unread     => أي محادثة بها رسائل غير مقروءة (unreadCount > 0)
+        // unreplied  => آخر رسالة من العميل ولم يتم الرد عليها (lastCustomerMessageIsUnread = true)
+        const matchesFilter =
+          conversationFilter === 'all' ||
+          (conversationFilter === 'unread' &&
+            (conv.unreadCount || 0) > 0 &&
+            conv.lastMessageIsFromCustomer === true) ||
+          (conversationFilter === 'unreplied' &&
+            conv.lastMessageIsFromCustomer === true &&
+            conv.lastCustomerMessageIsUnread === true);
 
         // إذا لم يكن هناك بحث، نرجع النتيجة حسب الفلتر فقط
         if (!searchQuery || searchQuery.trim() === '') {
@@ -3914,6 +3937,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
           {/* تبويبات الفلترة */}
           <div className="flex items-center space-x-2 mb-4 border-b border-gray-200">
+            {/* الكل */}
             <button
               onClick={() => setConversationFilter('all')}
               className={`flex-1 py-2 text-sm font-medium transition-colors relative ${conversationFilter === 'all'
@@ -3926,6 +3950,8 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                 {conversations.length}
               </span>
             </button>
+
+            {/* غير مقروءة: أي محادثة فيها unreadCount > 0 */}
             <button
               onClick={() => setConversationFilter('unread')}
               className={`flex-1 py-2 text-sm font-medium transition-colors relative ${conversationFilter === 'unread'
@@ -3935,7 +3961,25 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             >
               {t('conversations.unread', 'Unread')}
               <span className="ml-1 text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">
-                {conversations.filter(c => c.lastMessageIsFromCustomer === true && c.lastCustomerMessageIsUnread === true).length}
+                {conversations.filter(
+                  c => (c.unreadCount || 0) > 0 && c.lastMessageIsFromCustomer === true
+                ).length}
+              </span>
+            </button>
+
+            {/* غير مُرَدّ عليها: آخر رسالة من العميل ولم يتم الرد عليها */}
+            <button
+              onClick={() => setConversationFilter('unreplied')}
+              className={`flex-1 py-2 text-sm font-medium transition-colors relative ${conversationFilter === 'unreplied'
+                ? 'text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-500 hover:text-gray-700'
+                }`}
+            >
+              {t('conversations.unreplied', 'Unreplied')}
+              <span className="ml-1 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">
+                {conversations.filter(
+                  c => c.lastMessageIsFromCustomer === true && c.lastCustomerMessageIsUnread === true
+                ).length}
               </span>
             </button>
           </div>

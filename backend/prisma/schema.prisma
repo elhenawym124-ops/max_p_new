@@ -2327,7 +2327,7 @@ model TextGallery {
   imageUrls Json?    // روابط الصور المحفوظة في حافظة الصور
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
+  isPinned  Boolean  @default(false)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
