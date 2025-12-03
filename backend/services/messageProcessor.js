@@ -985,6 +985,18 @@ ${productsInfo}
         silent: true
       });
 
+      // إنشاء مهمة تلقائية عند حدوث خطأ في AI
+      try {
+        const aiErrorTaskService = require('./aiErrorTaskService');
+        await aiErrorTaskService.createErrorTask(error, {
+          ...errorContext,
+          errorType: errorType
+        });
+      } catch (taskError) {
+        // لا نريد إيقاف العملية الرئيسية إذا فشل إنشاء المهمة
+        console.error('⚠️ [MessageProcessor] Failed to create error task:', taskError.message);
+      }
+
       // 🤐 النظام الصامت - إرسال إشعار فوري لكل فشل حرج
       const criticalErrorTypes = ['auth_error', 'service_unavailable', 'api_quota_exceeded'];
       if (criticalErrorTypes.includes(errorType)) {

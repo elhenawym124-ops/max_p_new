@@ -1,6 +1,18 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 const prisma = getSharedPrismaClient();
 
+// Helper function to convert status to uppercase
+const normalizeStatus = (status) => {
+  if (!status) return 'PLANNING';
+  return status.toUpperCase();
+};
+
+// Helper function to convert priority to uppercase
+const normalizePriority = (priority) => {
+  if (!priority) return 'MEDIUM';
+  return priority.toUpperCase();
+};
+
 const projectController = {
   // Get all projects
   getAllProjects: async (req, res) => {
@@ -86,7 +98,7 @@ const projectController = {
       const {
         name,
         description,
-        priority = 'medium',
+        priority,
         startDate,
         endDate,
         budget = 0,
@@ -95,8 +107,15 @@ const projectController = {
         tags = []
       } = req.body;
 
-      const companyId = req.user.companyId;
-      const createdBy = req.user.id;
+      const companyId = req.user?.companyId;
+      const createdBy = req.user?.userId;
+
+      if (!createdBy) {
+        return res.status(403).json({
+          success: false,
+          message: 'معرف المستخدم مطلوب'
+        });
+      }
 
       if (!companyId) {
         return res.status(403).json({
@@ -117,8 +136,8 @@ const projectController = {
           companyId,
           name,
           description,
-          status: 'planning',
-          priority,
+          status: 'PLANNING',
+          priority: normalizePriority(priority),
           startDate: startDate ? new Date(startDate) : null,
           endDate: endDate ? new Date(endDate) : null,
           budget,

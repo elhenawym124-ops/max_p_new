@@ -1,6 +1,18 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 const prisma = getSharedPrismaClient();
 
+// Helper function to convert status to uppercase
+const normalizeStatus = (status) => {
+  if (!status) return null;
+  return status.toUpperCase();
+};
+
+// Helper function to convert priority to uppercase
+const normalizePriority = (priority) => {
+  if (!priority) return 'MEDIUM';
+  return priority.toUpperCase();
+};
+
 const taskController = {
   // Get all tasks with filtering
   // Get all tasks with filtering
@@ -101,7 +113,7 @@ getAllTasks: async (req, res) => {
         projectId,
         title,
         description,
-        priority = 'medium',
+        priority,
         type = 'general',
         assignedTo,
         dueDate,
@@ -109,13 +121,20 @@ getAllTasks: async (req, res) => {
         tags = []
       } = req.body;
 
-      const companyId = req.user.companyId;
-      const createdBy = req.user.id;
+      const companyId = req.user?.companyId;
+      const createdBy = req.user?.userId;
 
       if (!companyId) {
         return res.status(403).json({
           success: false,
           message: 'معرف الشركة مطلوب'
+        });
+      }
+
+      if (!createdBy) {
+        return res.status(403).json({
+          success: false,
+          message: 'معرف المستخدم مطلوب'
         });
       }
 
@@ -126,14 +145,33 @@ getAllTasks: async (req, res) => {
         });
       }
 
+      // التحقق من أن المستخدم المحدد موجود في نفس الشركة
+      const finalAssignedTo = assignedTo || createdBy;
+      if (finalAssignedTo !== createdBy) {
+        const assignedUser = await prisma.user.findFirst({
+          where: {
+            id: finalAssignedTo,
+            companyId: companyId,
+            isActive: true
+          }
+        });
+
+        if (!assignedUser) {
+          return res.status(400).json({
+            success: false,
+            error: 'المستخدم المحدد غير موجود أو غير نشط في الشركة'
+          });
+        }
+      }
+
       const newTask = await prisma.task.create({
         data: {
           companyId,
           projectId: projectId || null,
           title,
           description,
-          status: 'pending',
-          priority,
+          status: 'PENDING',
+          priority: normalizePriority(priority),
           type,
           assignedTo: assignedTo || createdBy,
           createdBy,
@@ -152,12 +190,14 @@ getAllTasks: async (req, res) => {
           },
           assignedUser: {
             select: {
-              name: true
+              firstName: true,
+              lastName: true
             }
           },
           createdByUser: {
             select: {
-              name: true
+              firstName: true,
+              lastName: true
             }
           }
         }
@@ -175,9 +215,13 @@ getAllTasks: async (req, res) => {
           priority: newTask.priority,
           type: newTask.type,
           assignedTo: newTask.assignedTo,
-          assignedToName: newTask.assignedUser?.name || 'غير محدد',
+          assignedToName: newTask.assignedUser
+            ? `${newTask.assignedUser.firstName} ${newTask.assignedUser.lastName}`
+            : 'غير محدد',
           createdBy: newTask.createdBy,
-          createdByName: newTask.createdByUser?.name || 'غير محدد',
+          createdByName: newTask.createdByUser
+            ? `${newTask.createdByUser.firstName} ${newTask.createdByUser.lastName}`
+            : 'غير محدد',
           dueDate: newTask.dueDate,
           estimatedHours: newTask.estimatedHours,
           actualHours: newTask.actualHours,
@@ -218,12 +262,14 @@ getAllTasks: async (req, res) => {
           },
           assignedUser: {
             select: {
-              name: true
+              firstName: true,
+              lastName: true
             }
           },
           createdByUser: {
             select: {
-              name: true
+              firstName: true,
+              lastName: true
             }
           }
         }
@@ -248,9 +294,13 @@ getAllTasks: async (req, res) => {
           priority: task.priority,
           type: task.type,
           assignedTo: task.assignedTo,
-          assignedToName: task.assignedUser?.name || 'غير محدد',
+          assignedToName: task.assignedUser
+            ? `${task.assignedUser.firstName} ${task.assignedUser.lastName}`
+            : 'غير محدد',
           createdBy: task.createdBy,
-          createdByName: task.createdByUser?.name || 'غير محدد',
+          createdByName: task.createdByUser
+            ? `${task.createdByUser.firstName} ${task.createdByUser.lastName}`
+            : 'غير محدد',
           dueDate: task.dueDate,
           estimatedHours: task.estimatedHours,
           actualHours: task.actualHours,
@@ -289,6 +339,24 @@ getAllTasks: async (req, res) => {
       } = req.body;
       const companyId = req.user.companyId;
 
+      // التحقق من أن المستخدم المحدد موجود في نفس الشركة (إذا تم تحديث assignedTo)
+      if (assignedTo) {
+        const assignedUser = await prisma.user.findFirst({
+          where: {
+            id: assignedTo,
+            companyId: companyId,
+            isActive: true
+          }
+        });
+
+        if (!assignedUser) {
+          return res.status(400).json({
+            success: false,
+            error: 'المستخدم المحدد غير موجود أو غير نشط في الشركة'
+          });
+        }
+      }
+
       const updatedTask = await prisma.task.updateMany({
         where: {
           id,
@@ -320,14 +388,56 @@ getAllTasks: async (req, res) => {
         where: { id, companyId },
         include: {
           project: { select: { name: true } },
-          assignedUser: { select: { name: true } },
-          createdByUser: { select: { name: true } }
+          assignedUser: { 
+            select: { 
+              firstName: true,
+              lastName: true
+            } 
+          },
+          createdByUser: { 
+            select: { 
+              firstName: true,
+              lastName: true
+            } 
+          }
         }
       });
 
+      if (!task) {
+        return res.status(404).json({
+          success: false,
+          error: 'المهمة غير موجودة'
+        });
+      }
+
       res.json({
         success: true,
-        data: task,
+        data: {
+          id: task.id,
+          projectId: task.projectId,
+          projectName: task.project?.name || 'مشروع غير محدد',
+          title: task.title,
+          description: task.description,
+          status: task.status,
+          priority: task.priority,
+          type: task.type,
+          assignedTo: task.assignedTo,
+          assignedToName: task.assignedUser
+            ? `${task.assignedUser.firstName} ${task.assignedUser.lastName}`
+            : 'غير محدد',
+          createdBy: task.createdBy,
+          createdByName: task.createdByUser
+            ? `${task.createdByUser.firstName} ${task.createdByUser.lastName}`
+            : 'غير محدد',
+          dueDate: task.dueDate,
+          estimatedHours: task.estimatedHours,
+          actualHours: task.actualHours,
+          progress: task.progress,
+          tags: task.tags || [],
+          dependencies: task.dependencies || [],
+          createdAt: task.createdAt,
+          updatedAt: task.updatedAt
+        },
         message: 'تم تحديث المهمة بنجاح'
       });
 
@@ -353,7 +463,7 @@ getAllTasks: async (req, res) => {
       }
 
       // If completing task, set progress to 100
-      if (status === 'completed') {
+      if (status === 'COMPLETED') {
         updateData.progress = 100;
       }
 
@@ -377,14 +487,56 @@ getAllTasks: async (req, res) => {
         where: { id, companyId },
         include: {
           project: { select: { name: true } },
-          assignedUser: { select: { name: true } },
-          createdByUser: { select: { name: true } }
+          assignedUser: { 
+            select: { 
+              firstName: true,
+              lastName: true
+            } 
+          },
+          createdByUser: { 
+            select: { 
+              firstName: true,
+              lastName: true
+            } 
+          }
         }
       });
 
+      if (!task) {
+        return res.status(404).json({
+          success: false,
+          error: 'المهمة غير موجودة'
+        });
+      }
+
       res.json({
         success: true,
-        data: task,
+        data: {
+          id: task.id,
+          projectId: task.projectId,
+          projectName: task.project?.name || 'مشروع غير محدد',
+          title: task.title,
+          description: task.description,
+          status: task.status,
+          priority: task.priority,
+          type: task.type,
+          assignedTo: task.assignedTo,
+          assignedToName: task.assignedUser
+            ? `${task.assignedUser.firstName} ${task.assignedUser.lastName}`
+            : 'غير محدد',
+          createdBy: task.createdBy,
+          createdByName: task.createdByUser
+            ? `${task.createdByUser.firstName} ${task.createdByUser.lastName}`
+            : 'غير محدد',
+          dueDate: task.dueDate,
+          estimatedHours: task.estimatedHours,
+          actualHours: task.actualHours,
+          progress: task.progress,
+          tags: task.tags || [],
+          dependencies: task.dependencies || [],
+          createdAt: task.createdAt,
+          updatedAt: task.updatedAt
+        },
         message: 'تم تحديث حالة المهمة بنجاح'
       });
 
@@ -427,6 +579,246 @@ getAllTasks: async (req, res) => {
       res.status(500).json({
         success: false,
         error: 'فشل في حذف المهمة'
+      });
+    }
+  },
+
+  // Get my tasks (tasks assigned to current user)
+  getMyTasks: async (req, res) => {
+    try {
+      const { projectId, status, priority } = req.query;
+      const companyId = req.user.companyId;
+      const userId = req.user.userId;
+
+      if (!companyId) {
+        return res.status(403).json({
+          success: false,
+          message: 'معرف الشركة مطلوب'
+        });
+      }
+
+      // Build filter conditions
+      const where = {
+        companyId,
+        assignedTo: userId,
+        ...(projectId && { projectId }),
+        ...(status && { status }),
+        ...(priority && { priority })
+      };
+
+      // Get tasks with project and user information
+      const tasks = await prisma.task.findMany({
+        where,
+        include: {
+          project: {
+            select: {
+              name: true
+            }
+          },
+          assignedUser: {
+            select: {
+              firstName: true,
+              lastName: true
+            }
+          },
+          createdByUser: {
+            select: {
+              firstName: true,
+              lastName: true
+            }
+          }
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      });
+
+      // Format response
+      const formattedTasks = tasks.map(task => ({
+        id: task.id,
+        projectId: task.projectId,
+        projectName: task.project?.name || 'مشروع غير محدد',
+        title: task.title,
+        description: task.description,
+        status: task.status,
+        priority: task.priority,
+        type: task.type,
+        assignedTo: task.assignedTo,
+        assignedToName: task.assignedUser
+          ? `${task.assignedUser.firstName} ${task.assignedUser.lastName}`
+          : 'غير محدد',
+        createdBy: task.createdBy,
+        createdByName: task.createdByUser
+          ? `${task.createdByUser.firstName} ${task.createdByUser.lastName}`
+          : 'غير محدد',
+        dueDate: task.dueDate,
+        estimatedHours: task.estimatedHours,
+        actualHours: task.actualHours,
+        progress: task.progress,
+        tags: task.tags || [],
+        dependencies: task.dependencies || [],
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt
+      }));
+
+      res.json({
+        success: true,
+        data: formattedTasks
+      });
+
+    } catch (error) {
+      console.error('Error fetching my tasks:', error);
+      res.status(500).json({
+        success: false,
+        error: 'فشل في جلب المهام'
+      });
+    }
+  },
+
+  // Get tasks assigned by me (tasks created by current user)
+  getTasksAssignedByMe: async (req, res) => {
+    try {
+      const { projectId, status, priority, assignedTo } = req.query;
+      const companyId = req.user.companyId;
+      const userId = req.user.userId;
+
+      if (!companyId) {
+        return res.status(403).json({
+          success: false,
+          message: 'معرف الشركة مطلوب'
+        });
+      }
+
+      // Build filter conditions
+      const where = {
+        companyId,
+        createdBy: userId,
+        ...(projectId && { projectId }),
+        ...(status && { status }),
+        ...(priority && { priority }),
+        ...(assignedTo && { assignedTo })
+      };
+
+      // Get tasks with project and user information
+      const tasks = await prisma.task.findMany({
+        where,
+        include: {
+          project: {
+            select: {
+              name: true
+            }
+          },
+          assignedUser: {
+            select: {
+              firstName: true,
+              lastName: true
+            }
+          },
+          createdByUser: {
+            select: {
+              firstName: true,
+              lastName: true
+            }
+          }
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      });
+
+      // Format response
+      const formattedTasks = tasks.map(task => ({
+        id: task.id,
+        projectId: task.projectId,
+        projectName: task.project?.name || 'مشروع غير محدد',
+        title: task.title,
+        description: task.description,
+        status: task.status,
+        priority: task.priority,
+        type: task.type,
+        assignedTo: task.assignedTo,
+        assignedToName: task.assignedUser
+          ? `${task.assignedUser.firstName} ${task.assignedUser.lastName}`
+          : 'غير محدد',
+        createdBy: task.createdBy,
+        createdByName: task.createdByUser
+          ? `${task.createdByUser.firstName} ${task.createdByUser.lastName}`
+          : 'غير محدد',
+        dueDate: task.dueDate,
+        estimatedHours: task.estimatedHours,
+        actualHours: task.actualHours,
+        progress: task.progress,
+        tags: task.tags || [],
+        dependencies: task.dependencies || [],
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt
+      }));
+
+      res.json({
+        success: true,
+        data: formattedTasks
+      });
+
+    } catch (error) {
+      console.error('Error fetching tasks assigned by me:', error);
+      res.status(500).json({
+        success: false,
+        error: 'فشل في جلب المهام'
+      });
+    }
+  },
+
+  // Get company users (for task assignment)
+  getCompanyUsers: async (req, res) => {
+    try {
+      const companyId = req.user.companyId;
+
+      if (!companyId) {
+        return res.status(403).json({
+          success: false,
+          message: 'معرف الشركة مطلوب'
+        });
+      }
+
+      // Get all active users in the company
+      const users = await prisma.user.findMany({
+        where: {
+          companyId: companyId,
+          isActive: true
+        },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          role: true
+        },
+        orderBy: [
+          { role: 'asc' }, // COMPANY_ADMIN first
+          { firstName: 'asc' }
+        ]
+      });
+
+      // Format response
+      const formattedUsers = users.map(user => ({
+        id: user.id,
+        name: `${user.firstName} ${user.lastName}`,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role
+      }));
+
+      res.json({
+        success: true,
+        data: formattedUsers
+      });
+
+    } catch (error) {
+      console.error('Error fetching company users:', error);
+      res.status(500).json({
+        success: false,
+        error: 'فشل في جلب المستخدمين'
       });
     }
   }

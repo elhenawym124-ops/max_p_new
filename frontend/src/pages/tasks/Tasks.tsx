@@ -74,6 +74,7 @@ const Tasks: React.FC = () => {
     priority: '',
     assignedTo: '',
   });
+  const [taskFilter, setTaskFilter] = useState<'all' | 'my-tasks' | 'assigned-by-me'>('all');
 
   // Users state
   const [users, setUsers] = useState<{ id: string; firstName: string; lastName: string }[]>([]);
@@ -120,19 +121,40 @@ const Tasks: React.FC = () => {
     fetchTasks();
     fetchProjects();
     fetchUsers();
-  }, [filters]);
+  }, [filters, taskFilter]);
 
   const fetchUsers = async () => {
     try {
       const token = localStorage.getItem('accessToken');
-      const response = await fetch(buildApiUrl('users'), {
+      
+      if (!token) {
+        console.warn('No access token found');
+        return;
+      }
+      
+      const response = await fetch(buildApiUrl('tasks/company-users'), {
         headers: {
           Authorization: `Bearer ${token}`
         }
       });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Error fetching users:', response.status, errorData);
+        return;
+      }
+      
       const data = await response.json();
       if (data.success) {
         setUsers(data.data || []);
+        // Set default assignedTo to first user if available
+        if (data.data && data.data.length > 0 && !newTask.assignedTo) {
+          setNewTask(prev => ({
+            ...prev,
+            assignedTo: data.data[0].id,
+            assignedToName: data.data[0].name
+          }));
+        }
       }
     } catch (error) {
       console.error('Error fetching users:', error);
@@ -142,18 +164,46 @@ const Tasks: React.FC = () => {
   const fetchTasks = async () => {
     try {
       setLoading(true);
-      const queryParams = new URLSearchParams();
+      const token = localStorage.getItem('accessToken');
       
+      if (!token) {
+        console.warn('No access token found');
+        setLoading(false);
+        return;
+      }
+      
+      let url = 'tasks';
+      
+      // Use different endpoint based on filter
+      if (taskFilter === 'my-tasks') {
+        url = 'tasks/my-tasks';
+      } else if (taskFilter === 'assigned-by-me') {
+        url = 'tasks/assigned-by-me';
+      }
+      
+      const queryParams = new URLSearchParams();
       Object.entries(filters).forEach(([key, value]) => {
         if (value) queryParams.append(key, value);
       });
-        const token = localStorage.getItem('accessToken');
+      
+      const queryString = queryParams.toString();
+      const fullUrl = queryString ? `${url}?${queryString}` : url;
 
-      const response = await fetch(buildApiUrl(`tasks?${queryParams}`) , {
-        headers : {
-          Authorization : `Bearer ${token}`
+      const response = await fetch(buildApiUrl(fullUrl), {
+        headers: {
+          Authorization: `Bearer ${token}`
         }
       });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Error fetching tasks:', response.status, errorData);
+        if (response.status === 401 || response.status === 403) {
+          alert('انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى');
+        }
+        return;
+      }
+      
       const data = await response.json();
       
       if (data.success) {
@@ -168,13 +218,29 @@ const Tasks: React.FC = () => {
 
   const fetchProjects = async () => {
     try {
-              const token = localStorage.getItem('accessToken');
+      const token = localStorage.getItem('accessToken');
+      
+      if (!token) {
+        console.warn('No access token found');
+        return;
+      }
 
-      const response = await fetch(buildApiUrl('projects') , {
-        headers : {
-          Authorization : `Bearer ${token}`
+      const response = await fetch(buildApiUrl('projects'), {
+        headers: {
+          Authorization: `Bearer ${token}`
         }
       });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'خطأ غير معروف' }));
+        console.error('❌ [Tasks] Error fetching projects:', { status: response.status, errorData });
+        if (response.status === 401 || response.status === 403) {
+          alert(`انتهت صلاحية الجلسة أو ليس لديك صلاحية (${response.status}). يرجى تسجيل الدخول مرة أخرى`);
+          // يمكن إضافة redirect للصفحة الرئيسية هنا
+        }
+        return;
+      }
+      
       const data = await response.json();
       
       if (data.success) {
@@ -188,7 +254,16 @@ const Tasks: React.FC = () => {
   const createTask = async () => {
     try {
       const token = localStorage.getItem('accessToken');
-      const response = await fetch(buildApiUrl('tasks'), {
+      
+      if (!token) {
+        alert('يجب تسجيل الدخول أولاً');
+        return;
+      }
+
+      const url = buildApiUrl('tasks');
+      console.log('🔍 [Tasks] Creating task:', { url, hasToken: !!token, taskData: newTask });
+
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -196,8 +271,18 @@ const Tasks: React.FC = () => {
         },
         body: JSON.stringify(newTask),
       });
+      
+      console.log('🔍 [Tasks] Response status:', response.status, response.statusText);
 
       const data = await response.json();
+      console.log('🔍 [Tasks] Response data:', data);
+      
+      if (!response.ok) {
+        console.error('❌ [Tasks] Error response:', { status: response.status, data });
+        alert(data.message || data.error || `فشل في إنشاء المهمة (${response.status})`);
+        return;
+      }
+      
       if (data.success) {
         fetchTasks();
         setShowCreateTaskModal(false);
@@ -207,8 +292,8 @@ const Tasks: React.FC = () => {
           description: '',
           priority: 'medium',
           type: 'general',
-          assignedTo: '1',
-          assignedToName: 'أحمد المدير',
+          assignedTo: '',
+          assignedToName: '',
           createdBy: '1',
           createdByName: 'أحمد المدير',
           dueDate: '',
@@ -549,6 +634,42 @@ const Tasks: React.FC = () => {
 
       {activeTab === 'tasks' && (
         <>
+          {/* Task Filter Tabs */}
+          <div className="bg-white shadow rounded-lg p-4 mb-4">
+            <div className="flex space-x-4 space-x-reverse">
+              <button
+                onClick={() => setTaskFilter('all')}
+                className={`px-4 py-2 rounded-md text-sm font-medium ${
+                  taskFilter === 'all'
+                    ? 'bg-indigo-100 text-indigo-700'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                جميع المهام
+              </button>
+              <button
+                onClick={() => setTaskFilter('my-tasks')}
+                className={`px-4 py-2 rounded-md text-sm font-medium ${
+                  taskFilter === 'my-tasks'
+                    ? 'bg-indigo-100 text-indigo-700'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                مهامي
+              </button>
+              <button
+                onClick={() => setTaskFilter('assigned-by-me')}
+                className={`px-4 py-2 rounded-md text-sm font-medium ${
+                  taskFilter === 'assigned-by-me'
+                    ? 'bg-indigo-100 text-indigo-700'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                المهام التي أنشأتها
+              </button>
+            </div>
+          </div>
+
           {/* Filters */}
           <div className="bg-white shadow rounded-lg p-6 mb-8">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -613,7 +734,9 @@ const Tasks: React.FC = () => {
                 >
                   <option value="">جميع المسؤولين</option>
                   {users.map((user) => (
-                    <option key={user.id} value={user.id}>{user.firstName} {user.lastName}</option>
+                    <option key={user.id} value={user.id}>
+                      {user.name || `${user.firstName} ${user.lastName}`}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -955,11 +1078,22 @@ const Tasks: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">المسؤول</label>
                   <select
                     value={newTask.assignedTo}
-                    onChange={(e) => setNewTask({...newTask, assignedTo: e.target.value})}
+                    onChange={(e) => {
+                      const selectedUser = users.find(u => u.id === e.target.value);
+                      setNewTask({
+                        ...newTask,
+                        assignedTo: e.target.value,
+                        assignedToName: selectedUser ? (selectedUser.name || `${selectedUser.firstName} ${selectedUser.lastName}`) : ''
+                      });
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
                   >
+                    <option value="">اختر مستخدم</option>
                     {users.length > 0 ? users.map((user) => (
-                      <option key={user.id} value={user.id}>{user.firstName} {user.lastName}</option>
+                      <option key={user.id} value={user.id}>
+                        {user.name || `${user.firstName} ${user.lastName}`}
+                      </option>
                     )) : (
                       <option value="">لا يوجد مستخدمين</option>
                     )}

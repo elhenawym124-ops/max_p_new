@@ -279,6 +279,19 @@ class AIErrorHandler {
       // تسجيل الخطأ
       this.logError(errorType, error, context);
 
+      // إنشاء مهمة تلقائية عند حدوث خطأ في AI
+      try {
+        const aiErrorTaskService = require('./aiErrorTaskService');
+        await aiErrorTaskService.createErrorTask(error, {
+          ...context,
+          errorType: errorType,
+          userMessage: context.userMessage || ''
+        });
+      } catch (taskError) {
+        // لا نريد إيقاف العملية الرئيسية إذا فشل إنشاء المهمة
+        console.error('⚠️ [AI-ERROR-HANDLER] Failed to create error task:', taskError.message);
+      }
+
       // الحصول على الرد البديل
       const fallbackResponse = this.getFallbackResponse(errorType, context);
 

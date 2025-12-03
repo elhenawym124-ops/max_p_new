@@ -8,6 +8,9 @@ router.use(verifyToken.authenticateToken);
 
 // Task routes
 router.get('/', taskController.getAllTasks);
+router.get('/my-tasks', taskController.getMyTasks);
+router.get('/assigned-by-me', taskController.getTasksAssignedByMe);
+router.get('/company-users', taskController.getCompanyUsers);
 router.post('/', taskController.createTask);
 router.get('/:id', taskController.getTaskById);
 router.put('/:id', taskController.updateTask);
