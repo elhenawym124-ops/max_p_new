@@ -37,7 +37,6 @@ import {
   Paper,
   Avatar,
   Badge,
-  Tooltip,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -158,6 +157,63 @@ const WhatsAppSettings: React.FC = () => {
     category: 'general',
   });
 
+  // Business Profile
+  const [businessProfile, setBusinessProfile] = useState<{
+    description: string;
+    email: string;
+    websites: string[];
+    address: string;
+    category: string;
+  } | null>(null);
+  const [loadingBusiness, setLoadingBusiness] = useState(false);
+
+  // Privacy Settings
+  const [privacySettings, setPrivacySettings] = useState<{
+    readReceipts: string;
+    profilePhoto: string;
+    status: string;
+    online: string;
+    lastSeen: string;
+    groupAdd: string;
+  } | null>(null);
+  const [blocklist, setBlocklist] = useState<string[]>([]);
+  const [loadingPrivacy, setLoadingPrivacy] = useState(false);
+
+  // Labels
+  const [labels, setLabels] = useState<{ id: string; name: string; color: string }[]>([]);
+  const [labelDialogOpen, setLabelDialogOpen] = useState(false);
+  const [editingLabel, setEditingLabel] = useState<{ id: string; name: string; color: string } | null>(null);
+  const [labelForm, setLabelForm] = useState({ name: '', color: '#25D366' });
+  const [loadingLabels, setLoadingLabels] = useState(false);
+
+  // Statistics
+  const [stats, setStats] = useState<{
+    totalMessages: number;
+    sentMessages: number;
+    receivedMessages: number;
+    aiResponses: number;
+    totalConversations: number;
+    activeConversations: number;
+    dailyStats: { date: string; sent: number; received: number }[];
+  } | null>(null);
+  const [loadingStats, setLoadingStats] = useState(false);
+
+  // Status
+  const [statusText, setStatusText] = useState('');
+  const [currentStatus, setCurrentStatus] = useState('');
+  const [loadingStatus, setLoadingStatus] = useState(false);
+
+  // Business Hours
+  const [businessHours, setBusinessHours] = useState<{
+    timezone: string;
+    config: { day: number; mode: string; openTime?: string; closeTime?: string }[];
+  } | null>(null);
+  const [loadingBusinessHours, setLoadingBusinessHours] = useState(false);
+
+  // Templates
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+
   // Load data
   useEffect(() => {
     loadData();
@@ -172,14 +228,14 @@ const WhatsAppSettings: React.FC = () => {
 
     const handleQRCode = (data: { sessionId: string; qr: string }) => {
       console.log('📱 QR Code received:', data.sessionId, 'QR length:', data.qr?.length);
-      
+
       // Update session with QR code
-      setSessions(prev => prev.map(session => 
-        session.id === data.sessionId 
+      setSessions(prev => prev.map(session =>
+        session.id === data.sessionId
           ? { ...session, qrCode: data.qr, status: 'QR_PENDING' }
           : session
       ));
-      
+
       // Show QR dialog
       setCurrentQR(data.qr);
       setQrDialogOpen(true);
@@ -188,16 +244,16 @@ const WhatsAppSettings: React.FC = () => {
 
     const handleConnectionUpdate = (data: { sessionId: string; status: string; phoneNumber?: string }) => {
       console.log('📱 Connection update:', data);
-      
-      setSessions(prev => prev.map(session => 
-        session.id === data.sessionId 
-          ? { 
-              ...session, 
-              status: data.status,
-              liveStatus: data.status.toLowerCase(),
-              phoneNumber: data.phoneNumber || session.phoneNumber,
-              qrCode: data.status === 'CONNECTED' ? null : session.qrCode
-            }
+
+      setSessions(prev => prev.map(session =>
+        session.id === data.sessionId
+          ? {
+            ...session,
+            status: data.status,
+            liveStatus: data.status.toLowerCase(),
+            phoneNumber: data.phoneNumber || session.phoneNumber,
+            qrCode: data.status === 'CONNECTED' ? null : session.qrCode
+          }
           : session
       ));
 
@@ -251,7 +307,7 @@ const WhatsAppSettings: React.FC = () => {
       setSessionDialogOpen(false);
       setNewSessionName('');
       enqueueSnackbar('تم إنشاء الجلسة بنجاح', { variant: 'success' });
-      
+
       // Show QR code
       if (res.data.session.qrCode) {
         setCurrentQR(res.data.session.qrCode);
@@ -327,7 +383,7 @@ const WhatsAppSettings: React.FC = () => {
       setSaving(true);
       if (editingQuickReply) {
         await api.put(`/whatsapp/quick-replies/${editingQuickReply.id}`, quickReplyForm);
-        setQuickReplies(quickReplies.map(qr => 
+        setQuickReplies(quickReplies.map(qr =>
           qr.id === editingQuickReply.id ? { ...qr, ...quickReplyForm } : qr
         ));
       } else {
@@ -354,6 +410,219 @@ const WhatsAppSettings: React.FC = () => {
       enqueueSnackbar('تم حذف الرد السريع', { variant: 'success' });
     } catch (error: any) {
       enqueueSnackbar(error.response?.data?.error || 'حدث خطأ', { variant: 'error' });
+    }
+  };
+
+  // Business Profile handlers
+  const loadBusinessProfile = async (sessionId: string) => {
+    setLoadingBusiness(true);
+    try {
+      const [profileRes, hoursRes] = await Promise.all([
+        api.get('/whatsapp/business/profile', { params: { sessionId } }),
+        api.get('/whatsapp/business/hours', { params: { sessionId } })
+      ]);
+      setBusinessProfile(profileRes.data.profile || null);
+      setBusinessHours(hoursRes.data.hours || null);
+    } catch (error) {
+      console.error('Error loading business profile:', error);
+    } finally {
+      setLoadingBusiness(false);
+    }
+  };
+
+  const handleSaveBusinessProfile = async () => {
+    if (!sessions[0]?.id || !businessProfile) return;
+    try {
+      setSaving(true);
+      await api.post('/whatsapp/business/profile', {
+        sessionId: sessions[0].id,
+        profileData: businessProfile
+      });
+      enqueueSnackbar('تم حفظ ملف الأعمال', { variant: 'success' });
+    } catch (error: any) {
+      enqueueSnackbar(error.response?.data?.error || 'حدث خطأ', { variant: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Privacy handlers
+  const loadPrivacySettings = async (sessionId: string) => {
+    setLoadingPrivacy(true);
+    try {
+      const [privacyRes, blocklistRes] = await Promise.all([
+        api.get('/whatsapp/privacy/settings', { params: { sessionId } }),
+        api.get('/whatsapp/privacy/blocklist', { params: { sessionId } })
+      ]);
+      setPrivacySettings(privacyRes.data.settings || null);
+      setBlocklist(blocklistRes.data.blocklist || []);
+    } catch (error) {
+      console.error('Error loading privacy settings:', error);
+    } finally {
+      setLoadingPrivacy(false);
+    }
+  };
+
+  const handleSavePrivacy = async () => {
+    if (!sessions[0]?.id || !privacySettings) return;
+    try {
+      setSaving(true);
+      await api.post('/whatsapp/privacy/settings', {
+        sessionId: sessions[0].id,
+        settings: privacySettings
+      });
+      enqueueSnackbar('تم حفظ إعدادات الخصوصية', { variant: 'success' });
+    } catch (error: any) {
+      enqueueSnackbar(error.response?.data?.error || 'حدث خطأ', { variant: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUnblock = async (jid: string) => {
+    if (!sessions[0]?.id) return;
+    try {
+      await api.post('/whatsapp/contacts/unblock', {
+        sessionId: sessions[0].id,
+        jid
+      });
+      setBlocklist(blocklist.filter(b => b !== jid));
+      enqueueSnackbar('تم إلغاء الحظر', { variant: 'success' });
+    } catch (error: any) {
+      enqueueSnackbar(error.response?.data?.error || 'حدث خطأ', { variant: 'error' });
+    }
+  };
+
+  // Labels handlers
+  const loadLabels = async (sessionId: string) => {
+    setLoadingLabels(true);
+    try {
+      const res = await api.get('/whatsapp/labels', { params: { sessionId } });
+      setLabels(res.data.labels || []);
+    } catch (error) {
+      console.error('Error loading labels:', error);
+    } finally {
+      setLoadingLabels(false);
+    }
+  };
+
+  const handleCreateLabel = async () => {
+    if (!sessions[0]?.id || !labelForm.name.trim()) return;
+    try {
+      setSaving(true);
+      const res = await api.post('/whatsapp/labels', {
+        sessionId: sessions[0].id,
+        name: labelForm.name,
+        color: labelForm.color
+      });
+      setLabels([...labels, res.data.label]);
+      setLabelDialogOpen(false);
+      setLabelForm({ name: '', color: '#25D366' });
+      enqueueSnackbar('تم إنشاء العلامة', { variant: 'success' });
+    } catch (error: any) {
+      enqueueSnackbar(error.response?.data?.error || 'حدث خطأ', { variant: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteLabel = async (labelId: string) => {
+    if (!sessions[0]?.id) return;
+    if (!window.confirm('هل أنت متأكد من حذف هذه العلامة؟')) return;
+    try {
+      await api.delete(`/whatsapp/labels/${labelId}`, {
+        data: { sessionId: sessions[0].id }
+      });
+      setLabels(labels.filter(l => l.id !== labelId));
+      enqueueSnackbar('تم حذف العلامة', { variant: 'success' });
+    } catch (error: any) {
+      enqueueSnackbar(error.response?.data?.error || 'حدث خطأ', { variant: 'error' });
+    }
+  };
+
+  // Statistics handlers
+  const loadStats = async (sessionId: string) => {
+    setLoadingStats(true);
+    try {
+      const res = await api.get('/whatsapp/stats', { params: { sessionId } });
+      setStats(res.data.stats || null);
+    } catch (error) {
+      console.error('Error loading stats:', error);
+    } finally {
+      setLoadingStats(false);
+    }
+  };
+
+  // Status handlers
+  const loadStatus = async (sessionId: string) => {
+    setLoadingStatus(true);
+    try {
+      const res = await api.get('/whatsapp/status', { params: { sessionId } });
+      setCurrentStatus(res.data.status || '');
+      setStatusText(res.data.status || '');
+    } catch (error) {
+      console.error('Error loading status:', error);
+    } finally {
+      setLoadingStatus(false);
+    }
+  };
+
+  const handleSetStatus = async () => {
+    if (!sessions[0]?.id || !statusText.trim()) return;
+    try {
+      setSaving(true);
+      await api.post('/whatsapp/status', {
+        sessionId: sessions[0].id,
+        status: statusText
+      });
+      setCurrentStatus(statusText);
+      enqueueSnackbar('تم تحديث الحالة', { variant: 'success' });
+    } catch (error: any) {
+      enqueueSnackbar(error.response?.data?.error || 'حدث خطأ', { variant: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Business Hours handlers
+  const loadBusinessHours = async (sessionId: string) => {
+    setLoadingBusinessHours(true);
+    try {
+      const res = await api.get('/whatsapp/business/hours', { params: { sessionId } });
+      setBusinessHours(res.data.businessHours || null);
+    } catch (error) {
+      console.error('Error loading business hours:', error);
+    } finally {
+      setLoadingBusinessHours(false);
+    }
+  };
+
+  const handleSaveBusinessHours = async () => {
+    if (!sessions[0]?.id || !businessHours) return;
+    try {
+      setSaving(true);
+      await api.post('/whatsapp/business/hours', {
+        sessionId: sessions[0].id,
+        ...businessHours
+      });
+      enqueueSnackbar('تم حفظ ساعات العمل', { variant: 'success' });
+    } catch (error: any) {
+      enqueueSnackbar(error.response?.data?.error || 'حدث خطأ', { variant: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Templates handlers
+  const loadTemplates = async (sessionId: string) => {
+    setLoadingTemplates(true);
+    try {
+      const res = await api.get('/whatsapp/templates', { params: { sessionId } });
+      setTemplates(res.data.templates || []);
+    } catch (error) {
+      console.error('Error loading templates:', error);
+    } finally {
+      setLoadingTemplates(false);
     }
   };
 
@@ -401,11 +670,18 @@ const WhatsAppSettings: React.FC = () => {
         إعدادات WhatsApp
       </Typography>
 
-      <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{ mb: 2 }}>
+      <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{ mb: 2 }} variant="scrollable" scrollButtons="auto">
         <Tab icon={<PhoneIcon />} label="الجلسات" />
         <Tab icon={<SettingsIcon />} label="الإعدادات العامة" />
         <Tab icon={<AIIcon />} label="إعدادات AI" />
         <Tab icon={<CopyIcon />} label="الردود السريعة" />
+        <Tab icon={<StorageIcon />} label="ملف الأعمال" />
+        <Tab icon={<SettingsIcon />} label="الخصوصية" />
+        <Tab icon={<SettingsIcon />} label="العلامات" />
+        <Tab icon={<StorageIcon />} label="الإحصائيات" />
+        <Tab icon={<SettingsIcon />} label="الحالة" />
+        <Tab icon={<StorageIcon />} label="ساعات العمل" />
+        <Tab icon={<CopyIcon />} label="القوالب" />
       </Tabs>
 
       {/* Sessions Tab */}
@@ -485,7 +761,7 @@ const WhatsAppSettings: React.FC = () => {
                     <Divider sx={{ my: 1 }} />
 
                     <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                      {session.liveStatus === 'connected' || session.status === 'CONNECTED' ? (
+                      {(session.liveStatus || session.status) === 'connected' || (session.liveStatus || session.status) === 'CONNECTED' ? (
                         <Button
                           size="small"
                           color="error"
@@ -504,7 +780,7 @@ const WhatsAppSettings: React.FC = () => {
                           اتصال
                         </Button>
                       )}
-                      
+
                       {session.qrCode && (
                         <Button
                           size="small"
@@ -796,6 +1072,757 @@ const WhatsAppSettings: React.FC = () => {
         )}
       </TabPanel>
 
+      {/* Business Profile Tab */}
+      <TabPanel value={tabValue} index={4}>
+        <Grid container spacing={3}>
+          <Grid item xs={12}>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              يرجى اختيار جلسة متصلة لتحميل ملف الأعمال. هذه الميزة متاحة فقط لحسابات WhatsApp Business.
+            </Alert>
+            <FormControl fullWidth sx={{ mb: 3 }}>
+              <InputLabel>اختر الجلسة</InputLabel>
+              <Select
+                value={sessions.find(s => s.liveStatus === 'connected')?.id || ''}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    loadBusinessProfile(e.target.value);
+                  }
+                }}
+                label="اختر الجلسة"
+              >
+                {sessions.filter(s => s.liveStatus === 'connected').map(s => (
+                  <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {loadingBusiness ? (
+            <Grid item xs={12}>
+              <Box display="flex" justifyContent="center" p={4}>
+                <CircularProgress />
+              </Box>
+            </Grid>
+          ) : businessProfile ? (
+            <>
+              <Grid item xs={12} md={6}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>معلومات النشاط التجاري</Typography>
+
+                    <TextField
+                      fullWidth
+                      label="وصف النشاط"
+                      multiline
+                      rows={3}
+                      value={businessProfile.description || ''}
+                      onChange={(e) => setBusinessProfile({ ...businessProfile, description: e.target.value })}
+                      sx={{ mb: 2 }}
+                    />
+
+                    <TextField
+                      fullWidth
+                      label="البريد الإلكتروني"
+                      value={businessProfile.email || ''}
+                      onChange={(e) => setBusinessProfile({ ...businessProfile, email: e.target.value })}
+                      sx={{ mb: 2 }}
+                    />
+
+                    <TextField
+                      fullWidth
+                      label="العنوان"
+                      value={businessProfile.address || ''}
+                      onChange={(e) => setBusinessProfile({ ...businessProfile, address: e.target.value })}
+                      sx={{ mb: 2 }}
+                    />
+
+                    <FormControl fullWidth sx={{ mb: 2 }}>
+                      <InputLabel>فئة النشاط</InputLabel>
+                      <Select
+                        value={businessProfile.category || ''}
+                        onChange={(e) => setBusinessProfile({ ...businessProfile, category: e.target.value })}
+                        label="فئة النشاط"
+                      >
+                        <MenuItem value="RETAIL">تجارة التجزئة</MenuItem>
+                        <MenuItem value="RESTAURANT">مطعم</MenuItem>
+                        <MenuItem value="HEALTH">صحة</MenuItem>
+                        <MenuItem value="EDUCATION">تعليم</MenuItem>
+                        <MenuItem value="FINANCE">مالية</MenuItem>
+                        <MenuItem value="PROFESSIONAL_SERVICES">خدمات مهنية</MenuItem>
+                        <MenuItem value="OTHER">أخرى</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              <Grid item xs={12} md={6}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>المواقع الإلكترونية</Typography>
+                    {(businessProfile.websites || []).map((website, index) => (
+                      <Box key={index} sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          value={website}
+                          onChange={(e) => {
+                            const newWebsites = [...(businessProfile.websites || [])];
+                            newWebsites[index] = e.target.value;
+                            setBusinessProfile({ ...businessProfile, websites: newWebsites });
+                          }}
+                        />
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => {
+                            const newWebsites = (businessProfile.websites || []).filter((_, i) => i !== index);
+                            setBusinessProfile({ ...businessProfile, websites: newWebsites });
+                          }}
+                        >
+                          <DeleteIcon />
+                        </IconButton>
+                      </Box>
+                    ))}
+                    <Button
+                      size="small"
+                      onClick={() => setBusinessProfile({
+                        ...businessProfile,
+                        websites: [...(businessProfile.websites || []), '']
+                      })}
+                    >
+                      + إضافة موقع
+                    </Button>
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              <Grid item xs={12}>
+                <Button
+                  variant="contained"
+                  startIcon={<SaveIcon />}
+                  onClick={handleSaveBusinessProfile}
+                  disabled={saving}
+                >
+                  {saving ? <CircularProgress size={20} /> : 'حفظ ملف الأعمال'}
+                </Button>
+              </Grid>
+            </>
+          ) : (
+            <Grid item xs={12}>
+              <Alert severity="warning">
+                لم يتم العثور على ملف أعمال. تأكد من أن الحساب هو WhatsApp Business.
+              </Alert>
+            </Grid>
+          )}
+        </Grid>
+      </TabPanel>
+
+      {/* Privacy Settings Tab */}
+      <TabPanel value={tabValue} index={5}>
+        <Grid container spacing={3}>
+          <Grid item xs={12}>
+            <FormControl fullWidth sx={{ mb: 3 }}>
+              <InputLabel>اختر الجلسة</InputLabel>
+              <Select
+                value={sessions.find(s => s.liveStatus === 'connected')?.id || ''}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    loadPrivacySettings(e.target.value);
+                  }
+                }}
+                label="اختر الجلسة"
+              >
+                {sessions.filter(s => s.liveStatus === 'connected').map(s => (
+                  <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {loadingPrivacy ? (
+            <Grid item xs={12}>
+              <Box display="flex" justifyContent="center" p={4}>
+                <CircularProgress />
+              </Box>
+            </Grid>
+          ) : privacySettings ? (
+            <>
+              <Grid item xs={12} md={6}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>إعدادات الخصوصية</Typography>
+
+                    <FormControl fullWidth sx={{ mb: 2 }}>
+                      <InputLabel>آخر ظهور</InputLabel>
+                      <Select
+                        value={privacySettings.lastSeen || 'all'}
+                        onChange={(e) => setPrivacySettings({ ...privacySettings, lastSeen: e.target.value })}
+                        label="آخر ظهور"
+                      >
+                        <MenuItem value="all">الجميع</MenuItem>
+                        <MenuItem value="contacts">جهات الاتصال</MenuItem>
+                        <MenuItem value="contact_blacklist">جهات الاتصال ما عدا...</MenuItem>
+                        <MenuItem value="none">لا أحد</MenuItem>
+                      </Select>
+                    </FormControl>
+
+                    <FormControl fullWidth sx={{ mb: 2 }}>
+                      <InputLabel>صورة الملف الشخصي</InputLabel>
+                      <Select
+                        value={privacySettings.profilePhoto || 'all'}
+                        onChange={(e) => setPrivacySettings({ ...privacySettings, profilePhoto: e.target.value })}
+                        label="صورة الملف الشخصي"
+                      >
+                        <MenuItem value="all">الجميع</MenuItem>
+                        <MenuItem value="contacts">جهات الاتصال</MenuItem>
+                        <MenuItem value="contact_blacklist">جهات الاتصال ما عدا...</MenuItem>
+                        <MenuItem value="none">لا أحد</MenuItem>
+                      </Select>
+                    </FormControl>
+
+                    <FormControl fullWidth sx={{ mb: 2 }}>
+                      <InputLabel>الحالة</InputLabel>
+                      <Select
+                        value={privacySettings.status || 'all'}
+                        onChange={(e) => setPrivacySettings({ ...privacySettings, status: e.target.value })}
+                        label="الحالة"
+                      >
+                        <MenuItem value="all">الجميع</MenuItem>
+                        <MenuItem value="contacts">جهات الاتصال</MenuItem>
+                        <MenuItem value="contact_blacklist">جهات الاتصال ما عدا...</MenuItem>
+                        <MenuItem value="none">لا أحد</MenuItem>
+                      </Select>
+                    </FormControl>
+
+                    <FormControl fullWidth sx={{ mb: 2 }}>
+                      <InputLabel>من يمكنه إضافتي للمجموعات</InputLabel>
+                      <Select
+                        value={privacySettings.groupAdd || 'all'}
+                        onChange={(e) => setPrivacySettings({ ...privacySettings, groupAdd: e.target.value })}
+                        label="من يمكنه إضافتي للمجموعات"
+                      >
+                        <MenuItem value="all">الجميع</MenuItem>
+                        <MenuItem value="contacts">جهات الاتصال</MenuItem>
+                        <MenuItem value="contact_blacklist">جهات الاتصال ما عدا...</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              <Grid item xs={12} md={6}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>قائمة المحظورين ({blocklist.length})</Typography>
+                    {blocklist.length === 0 ? (
+                      <Typography color="text.secondary">لا يوجد أرقام محظورة</Typography>
+                    ) : (
+                      <List dense>
+                        {blocklist.map((jid, index) => (
+                          <ListItem key={index}>
+                            <ListItemText primary={jid.split('@')[0]} />
+                            <ListItemSecondaryAction>
+                              <Button size="small" onClick={() => handleUnblock(jid)}>
+                                إلغاء الحظر
+                              </Button>
+                            </ListItemSecondaryAction>
+                          </ListItem>
+                        ))}
+                      </List>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              <Grid item xs={12}>
+                <Button
+                  variant="contained"
+                  startIcon={<SaveIcon />}
+                  onClick={handleSavePrivacy}
+                  disabled={saving}
+                >
+                  {saving ? <CircularProgress size={20} /> : 'حفظ إعدادات الخصوصية'}
+                </Button>
+              </Grid>
+            </>
+          ) : (
+            <Grid item xs={12}>
+              <Alert severity="info">اختر جلسة متصلة لعرض إعدادات الخصوصية</Alert>
+            </Grid>
+          )}
+        </Grid>
+      </TabPanel>
+
+      {/* Labels Tab */}
+      <TabPanel value={tabValue} index={6}>
+        <Grid container spacing={3}>
+          <Grid item xs={12}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6">إدارة العلامات</Typography>
+              <Box>
+                <FormControl size="small" sx={{ minWidth: 200, mr: 2 }}>
+                  <InputLabel>اختر الجلسة</InputLabel>
+                  <Select
+                    value={sessions.find(s => s.liveStatus === 'connected')?.id || ''}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        loadLabels(e.target.value);
+                      }
+                    }}
+                    label="اختر الجلسة"
+                  >
+                    {sessions.filter(s => s.liveStatus === 'connected').map(s => (
+                      <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <Button
+                  variant="contained"
+                  startIcon={<AddIcon />}
+                  onClick={() => {
+                    setEditingLabel(null);
+                    setLabelForm({ name: '', color: '#25D366' });
+                    setLabelDialogOpen(true);
+                  }}
+                >
+                  إضافة علامة
+                </Button>
+              </Box>
+            </Box>
+          </Grid>
+
+          {loadingLabels ? (
+            <Grid item xs={12}>
+              <Box display="flex" justifyContent="center" p={4}>
+                <CircularProgress />
+              </Box>
+            </Grid>
+          ) : labels.length === 0 ? (
+            <Grid item xs={12}>
+              <Alert severity="info">لا توجد علامات. اختر جلسة متصلة وأضف علامات جديدة.</Alert>
+            </Grid>
+          ) : (
+            <Grid item xs={12}>
+              <Paper>
+                <List>
+                  {labels.map((label) => (
+                    <ListItem key={label.id}>
+                      <Box
+                        sx={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: '50%',
+                          bgcolor: label.color || '#25D366',
+                          mr: 2
+                        }}
+                      />
+                      <ListItemText primary={label.name} />
+                      <ListItemSecondaryAction>
+                        <IconButton
+                          color="error"
+                          onClick={() => handleDeleteLabel(label.id)}
+                        >
+                          <DeleteIcon />
+                        </IconButton>
+                      </ListItemSecondaryAction>
+                    </ListItem>
+                  ))}
+                </List>
+              </Paper>
+            </Grid>
+          )}
+        </Grid>
+      </TabPanel>
+
+      {/* Statistics Tab */}
+      <TabPanel value={tabValue} index={7}>
+        <Grid container spacing={3}>
+          <Grid item xs={12}>
+            <FormControl fullWidth sx={{ mb: 3 }}>
+              <InputLabel>اختر الجلسة</InputLabel>
+              <Select
+                value={sessions.find(s => s.liveStatus === 'connected')?.id || ''}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    loadStats(e.target.value);
+                  }
+                }}
+                label="اختر الجلسة"
+              >
+                {sessions.filter(s => s.liveStatus === 'connected').map(s => (
+                  <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {loadingStats ? (
+            <Grid item xs={12}>
+              <Box display="flex" justifyContent="center" p={4}>
+                <CircularProgress />
+              </Box>
+            </Grid>
+          ) : stats ? (
+            <>
+              <Grid item xs={12} md={4}>
+                <Card sx={{ bgcolor: 'primary.main', color: 'white' }}>
+                  <CardContent>
+                    <Typography variant="h3" align="center">{stats.totalMessages}</Typography>
+                    <Typography variant="subtitle1" align="center">إجمالي الرسائل</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <Card sx={{ bgcolor: 'success.main', color: 'white' }}>
+                  <CardContent>
+                    <Typography variant="h3" align="center">{stats.sentMessages}</Typography>
+                    <Typography variant="subtitle1" align="center">رسائل مرسلة</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <Card sx={{ bgcolor: 'info.main', color: 'white' }}>
+                  <CardContent>
+                    <Typography variant="h3" align="center">{stats.receivedMessages}</Typography>
+                    <Typography variant="subtitle1" align="center">رسائل مستلمة</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              <Grid item xs={12} md={4}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h4" align="center" color="secondary">{stats.aiResponses}</Typography>
+                    <Typography variant="subtitle1" align="center" color="text.secondary">ردود AI</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h4" align="center" color="primary">{stats.totalConversations}</Typography>
+                    <Typography variant="subtitle1" align="center" color="text.secondary">إجمالي المحادثات</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h4" align="center" color="success.main">{stats.activeConversations}</Typography>
+                    <Typography variant="subtitle1" align="center" color="text.secondary">محادثات نشطة</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {stats.dailyStats && stats.dailyStats.length > 0 && (
+                <Grid item xs={12}>
+                  <Card>
+                    <CardContent>
+                      <Typography variant="h6" gutterBottom>إحصائيات الأيام الأخيرة</Typography>
+                      <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', py: 2 }}>
+                        {stats.dailyStats.map((day, index) => (
+                          <Paper key={index} sx={{ p: 2, minWidth: 120, textAlign: 'center' }}>
+                            <Typography variant="caption" color="text.secondary">{day.date}</Typography>
+                            <Typography variant="body2" color="success.main">↑ {day.sent}</Typography>
+                            <Typography variant="body2" color="info.main">↓ {day.received}</Typography>
+                          </Paper>
+                        ))}
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              )}
+            </>
+          ) : (
+            <Grid item xs={12}>
+              <Alert severity="info">اختر جلسة متصلة لعرض الإحصائيات</Alert>
+            </Grid>
+          )}
+        </Grid>
+      </TabPanel>
+
+      {/* Label Dialog */}
+      <Dialog open={labelDialogOpen} onClose={() => setLabelDialogOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>{editingLabel ? 'تعديل العلامة' : 'إضافة علامة جديدة'}</DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            label="اسم العلامة"
+            value={labelForm.name}
+            onChange={(e) => setLabelForm({ ...labelForm, name: e.target.value })}
+            sx={{ mt: 2, mb: 2 }}
+          />
+          <Typography variant="subtitle2" gutterBottom>اللون:</Typography>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            {['#25D366', '#128C7E', '#075E54', '#34B7F1', '#00A884', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'].map(color => (
+              <Box
+                key={color}
+                onClick={() => setLabelForm({ ...labelForm, color })}
+                sx={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  bgcolor: color,
+                  cursor: 'pointer',
+                  border: labelForm.color === color ? '3px solid #000' : 'none'
+                }}
+              />
+            ))}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLabelDialogOpen(false)}>إلغاء</Button>
+          <Button variant="contained" onClick={handleCreateLabel} disabled={saving || !labelForm.name.trim()}>
+            {saving ? <CircularProgress size={20} /> : 'حفظ'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Status Tab */}
+      <TabPanel value={tabValue} index={8}>
+        <Grid container spacing={3}>
+          <Grid item xs={12}>
+            <FormControl fullWidth sx={{ mb: 3 }}>
+              <InputLabel>اختر الجلسة</InputLabel>
+              <Select
+                value={sessions.find(s => s.liveStatus === 'connected')?.id || ''}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    loadStatus(e.target.value);
+                  }
+                }}
+                label="اختر الجلسة"
+              >
+                {sessions.filter(s => s.liveStatus === 'connected').map(s => (
+                  <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {loadingStatus ? (
+            <Grid item xs={12}>
+              <Box display="flex" justifyContent="center" p={4}>
+                <CircularProgress />
+              </Box>
+            </Grid>
+          ) : (
+            <>
+              <Grid item xs={12}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>الحالة الحالية</Typography>
+                    <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+                      {currentStatus || 'لا توجد حالة'}
+                    </Typography>
+
+                    <TextField
+                      fullWidth
+                      multiline
+                      rows={3}
+                      label="الحالة الجديدة"
+                      value={statusText}
+                      onChange={(e) => setStatusText(e.target.value)}
+                      placeholder="اكتب حالتك هنا..."
+                      sx={{ mb: 2 }}
+                    />
+
+                    <Button
+                      variant="contained"
+                      startIcon={<SaveIcon />}
+                      onClick={handleSetStatus}
+                      disabled={saving || !statusText.trim()}
+                    >
+                      {saving ? <CircularProgress size={20} /> : 'تحديث الحالة'}
+                    </Button>
+                  </CardContent>
+                </Card>
+              </Grid>
+            </>
+          )}
+        </Grid>
+      </TabPanel>
+
+      {/* Business Hours Tab */}
+      <TabPanel value={tabValue} index={9}>
+        <Grid container spacing={3}>
+          <Grid item xs={12}>
+            <FormControl fullWidth sx={{ mb: 3 }}>
+              <InputLabel>اختر الجلسة</InputLabel>
+              <Select
+                value={sessions.find(s => s.liveStatus === 'connected')?.id || ''}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    loadBusinessHours(e.target.value);
+                  }
+                }}
+                label="اختر الجلسة"
+              >
+                {sessions.filter(s => s.liveStatus === 'connected').map(s => (
+                  <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {loadingBusinessHours ? (
+            <Grid item xs={12}>
+              <Box display="flex" justifyContent="center" p={4}>
+                <CircularProgress />
+              </Box>
+            </Grid>
+          ) : businessHours ? (
+            <>
+              <Grid item xs={12}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>ساعات العمل</Typography>
+
+                    <TextField
+                      fullWidth
+                      label="المنطقة الزمنية"
+                      value={businessHours.timezone || 'Africa/Cairo'}
+                      onChange={(e) => setBusinessHours({ ...businessHours, timezone: e.target.value })}
+                      sx={{ mb: 3 }}
+                    />
+
+                    {['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'].map((day, index) => {
+                      const dayConfig = businessHours.config?.find((c: { day: number; mode: string; openTime?: string; closeTime?: string }) => c.day === index) || { day: index, mode: 'closed' };
+                      return (
+                        <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                          <Typography sx={{ minWidth: 80 }}>{day}</Typography>
+                          <FormControl size="small" sx={{ minWidth: 120 }}>
+                            <Select
+                              value={dayConfig.mode}
+                              onChange={(e) => {
+                                const newConfig = businessHours.config?.filter((c: { day: number; mode: string; openTime?: string; closeTime?: string }) => c.day !== index) || [];
+                                newConfig.push({ ...dayConfig, mode: e.target.value });
+                                setBusinessHours({ ...businessHours, config: newConfig });
+                              }}
+                            >
+                              <MenuItem value="open_24h">مفتوح 24 ساعة</MenuItem>
+                              <MenuItem value="appointment_only">بموعد فقط</MenuItem>
+                              <MenuItem value="specific_hours">ساعات محددة</MenuItem>
+                              <MenuItem value="closed">مغلق</MenuItem>
+                            </Select>
+                          </FormControl>
+                          {dayConfig.mode === 'specific_hours' && (
+                            <>
+                              <TextField
+                                size="small"
+                                type="time"
+                                label="من"
+                                value={dayConfig.openTime || '09:00'}
+                                onChange={(e) => {
+                                  const newConfig = businessHours.config?.filter((c: { day: number; mode: string; openTime?: string; closeTime?: string }) => c.day !== index) || [];
+                                  newConfig.push({ ...dayConfig, openTime: e.target.value });
+                                  setBusinessHours({ ...businessHours, config: newConfig });
+                                }}
+                                InputLabelProps={{ shrink: true }}
+                              />
+                              <TextField
+                                size="small"
+                                type="time"
+                                label="إلى"
+                                value={dayConfig.closeTime || '17:00'}
+                                onChange={(e) => {
+                                  const newConfig = businessHours.config?.filter((c: { day: number; mode: string; openTime?: string; closeTime?: string }) => c.day !== index) || [];
+                                  newConfig.push({ ...dayConfig, closeTime: e.target.value });
+                                  setBusinessHours({ ...businessHours, config: newConfig });
+                                }}
+                                InputLabelProps={{ shrink: true }}
+                              />
+                            </>
+                          )}
+                        </Box>
+                      );
+                    })}
+
+                    <Button
+                      variant="contained"
+                      startIcon={<SaveIcon />}
+                      onClick={handleSaveBusinessHours}
+                      disabled={saving}
+                      sx={{ mt: 2 }}
+                    >
+                      {saving ? <CircularProgress size={20} /> : 'حفظ ساعات العمل'}
+                    </Button>
+                  </CardContent>
+                </Card>
+              </Grid>
+            </>
+          ) : (
+            <Grid item xs={12}>
+              <Alert severity="info">اختر جلسة متصلة لعرض ساعات العمل</Alert>
+            </Grid>
+          )}
+        </Grid>
+      </TabPanel>
+
+      {/* Templates Tab */}
+      <TabPanel value={tabValue} index={10}>
+        <Grid container spacing={3}>
+          <Grid item xs={12}>
+            <FormControl fullWidth sx={{ mb: 3 }}>
+              <InputLabel>اختر الجلسة</InputLabel>
+              <Select
+                value={sessions.find(s => s.liveStatus === 'connected')?.id || ''}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    loadTemplates(e.target.value);
+                  }
+                }}
+                label="اختر الجلسة"
+              >
+                {sessions.filter(s => s.liveStatus === 'connected').map(s => (
+                  <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {loadingTemplates ? (
+            <Grid item xs={12}>
+              <Box display="flex" justifyContent="center" p={4}>
+                <CircularProgress />
+              </Box>
+            </Grid>
+          ) : templates.length === 0 ? (
+            <Grid item xs={12}>
+              <Alert severity="info">
+                لا توجد قوالب رسائل. يمكنك إنشاء قوالب من خلال WhatsApp Business Manager.
+              </Alert>
+            </Grid>
+          ) : (
+            <Grid item xs={12}>
+              <Typography variant="h6" gutterBottom>قوالب الرسائل المعتمدة</Typography>
+              {templates.map((template, index) => (
+                <Card key={index} sx={{ mb: 2 }}>
+                  <CardContent>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Box>
+                        <Typography variant="h6">{template.name}</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          اللغة: {template.language} | الفئة: {template.category}
+                        </Typography>
+                        <Typography variant="body1" sx={{ mt: 1 }}>
+                          {template.content || template.body}
+                        </Typography>
+                      </Box>
+                      <Chip
+                        label={template.status === 'APPROVED' ? 'معتمد' : template.status}
+                        color={template.status === 'APPROVED' ? 'success' : 'default'}
+                      />
+                    </Box>
+                  </CardContent>
+                </Card>
+              ))}
+            </Grid>
+          )}
+        </Grid>
+      </TabPanel>
+
       {/* Create Session Dialog */}
       <Dialog open={sessionDialogOpen} onClose={() => setSessionDialogOpen(false)}>
         <DialogTitle>إضافة جلسة WhatsApp جديدة</DialogTitle>
@@ -837,8 +1864,8 @@ const WhatsAppSettings: React.FC = () => {
       </Dialog>
 
       {/* Edit Session Dialog */}
-      <Dialog 
-        open={!!selectedSession} 
+      <Dialog
+        open={!!selectedSession}
         onClose={() => setSelectedSession(null)}
         maxWidth="sm"
         fullWidth
@@ -937,8 +1964,8 @@ const WhatsAppSettings: React.FC = () => {
       </Dialog>
 
       {/* Quick Reply Dialog */}
-      <Dialog 
-        open={quickReplyDialogOpen} 
+      <Dialog
+        open={quickReplyDialogOpen}
         onClose={() => setQuickReplyDialogOpen(false)}
         maxWidth="sm"
         fullWidth

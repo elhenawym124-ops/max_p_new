@@ -2535,6 +2535,7 @@ process.on('SIGINT', async () => {
 
     // إغلاق اتصال قاعدة البيانات
     //console.log('🔌 Closing database connection...');
+    await WhatsAppManager.disconnectAllSessions();
     const prisma = getPrisma();
     await prisma.$disconnect();
 

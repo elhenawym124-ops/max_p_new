@@ -819,6 +819,232 @@ function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// ==================== Poll Features ====================
+
+/**
+ * إرسال استطلاع
+ */
+async function sendPoll(sessionId, to, pollData, options = {}) {
+    try {
+        const session = WhatsAppManager.getSession(sessionId);
+        if (!session || session.status !== 'connected') {
+            throw new Error('الجلسة غير متصلة');
+        }
+
+        const jid = formatJid(to);
+
+        const messageOptions = {
+            poll: {
+                name: pollData.name,
+                selectableCount: pollData.selectableCount || 1,
+                values: pollData.values || []
+            }
+        };
+
+        if (options.quotedMessageId) {
+            messageOptions.quoted = {
+                key: {
+                    remoteJid: jid,
+                    id: options.quotedMessageId
+                }
+            };
+        }
+
+        const result = await session.sock.sendMessage(jid, messageOptions);
+
+        const savedMessage = await saveOutgoingMessage(sessionId, jid, {
+            messageId: result.key.id,
+            type: 'POLL',
+            content: pollData.name,
+            interactiveData: JSON.stringify(pollData),
+            isAIResponse: options.isAIResponse || false
+        });
+
+        return savedMessage;
+    } catch (error) {
+        console.error('❌ Error sending poll:', error);
+        throw error;
+    }
+}
+
+// ==================== Order & Catalog Features ====================
+
+/**
+ * إرسال طلب (لحسابات Business)
+ */
+async function sendOrder(sessionId, to, orderData, options = {}) {
+    try {
+        const session = WhatsAppManager.getSession(sessionId);
+        if (!session || session.status !== 'connected') {
+            throw new Error('الجلسة غير متصلة');
+        }
+
+        const jid = formatJid(to);
+
+        const messageOptions = {
+            order: orderData
+        };
+
+        const result = await session.sock.sendMessage(jid, messageOptions);
+
+        const savedMessage = await saveOutgoingMessage(sessionId, jid, {
+            messageId: result.key.id,
+            type: 'PRODUCT',
+            content: `طلب: ${orderData.orderId || ''}`,
+            interactiveData: JSON.stringify(orderData),
+            isAIResponse: options.isAIResponse || false
+        });
+
+        return savedMessage;
+    } catch (error) {
+        console.error('❌ Error sending order:', error);
+        throw error;
+    }
+}
+
+/**
+ * إرسال كتالوج (لحسابات Business)
+ */
+async function sendCatalog(sessionId, to, catalogData, options = {}) {
+    try {
+        const session = WhatsAppManager.getSession(sessionId);
+        if (!session || session.status !== 'connected') {
+            throw new Error('الجلسة غير متصلة');
+        }
+
+        const jid = formatJid(to);
+
+        const messageOptions = {
+            catalog: catalogData
+        };
+
+        const result = await session.sock.sendMessage(jid, messageOptions);
+
+        const savedMessage = await saveOutgoingMessage(sessionId, jid, {
+            messageId: result.key.id,
+            type: 'PRODUCT',
+            content: 'كتالوج المنتجات',
+            interactiveData: JSON.stringify(catalogData),
+            isAIResponse: options.isAIResponse || false
+        });
+
+        return savedMessage;
+    } catch (error) {
+        console.error('❌ Error sending catalog:', error);
+        throw error;
+    }
+}
+
+/**
+ * الحصول على الكتالوج
+ */
+async function getCatalog(sessionId) {
+    try {
+        const session = WhatsAppManager.getSession(sessionId);
+        if (!session || session.status !== 'connected') {
+            throw new Error('الجلسة غير متصلة');
+        }
+
+        const catalog = await session.sock.getCatalog();
+        return catalog;
+    } catch (error) {
+        console.error('❌ Error getting catalog:', error);
+        throw error;
+    }
+}
+
+/**
+ * الحصول على المنتجات
+ */
+async function getProducts(sessionId, catalogId) {
+    try {
+        const session = WhatsAppManager.getSession(sessionId);
+        if (!session || session.status !== 'connected') {
+            throw new Error('الجلسة غير متصلة');
+        }
+
+        const products = await session.sock.getProducts(catalogId);
+        return products;
+    } catch (error) {
+        console.error('❌ Error getting products:', error);
+        throw error;
+    }
+}
+
+/**
+ * الحصول على السلة
+ */
+async function getCart(sessionId, cartId) {
+    try {
+        const session = WhatsAppManager.getSession(sessionId);
+        if (!session || session.status !== 'connected') {
+            throw new Error('الجلسة غير متصلة');
+        }
+
+        const cart = await session.sock.getCart(cartId);
+        return cart;
+    } catch (error) {
+        console.error('❌ Error getting cart:', error);
+        throw error;
+    }
+}
+
+// ==================== Template Messages ====================
+
+/**
+ * إرسال رسالة قالب (لحسابات Business)
+ */
+async function sendTemplateMessage(sessionId, to, templateId, parameters = {}, options = {}) {
+    try {
+        const session = WhatsAppManager.getSession(sessionId);
+        if (!session || session.status !== 'connected') {
+            throw new Error('الجلسة غير متصلة');
+        }
+
+        const jid = formatJid(to);
+
+        const messageOptions = {
+            template: {
+                id: templateId,
+                params: parameters
+            }
+        };
+
+        const result = await session.sock.sendMessage(jid, messageOptions);
+
+        const savedMessage = await saveOutgoingMessage(sessionId, jid, {
+            messageId: result.key.id,
+            type: 'TEMPLATE',
+            content: `Template: ${templateId}`,
+            interactiveData: JSON.stringify({ templateId, parameters }),
+            isAIResponse: options.isAIResponse || false
+        });
+
+        return savedMessage;
+    } catch (error) {
+        console.error('❌ Error sending template message:', error);
+        throw error;
+    }
+}
+
+/**
+ * الحصول على قوالب الرسائل
+ */
+async function getMessageTemplate(sessionId) {
+    try {
+        const session = WhatsAppManager.getSession(sessionId);
+        if (!session || session.status !== 'connected') {
+            throw new Error('الجلسة غير متصلة');
+        }
+
+        const templates = await session.sock.getMessageTemplate();
+        return templates;
+    } catch (error) {
+        console.error('❌ Error getting message templates:', error);
+        throw error;
+    }
+}
+
 module.exports = {
     sendText,
     sendImage,
@@ -835,5 +1061,15 @@ module.exports = {
     getMessages,
     deleteMessage,
     markAsRead,
-    formatJid
+    formatJid,
+    // Poll & Order Features
+    sendPoll,
+    sendOrder,
+    sendCatalog,
+    getCatalog,
+    getProducts,
+    getCart,
+    // Template Messages
+    sendTemplateMessage,
+    getMessageTemplate
 };

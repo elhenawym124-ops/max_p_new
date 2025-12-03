@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
     Dialog,
     DialogTitle,
@@ -28,6 +28,7 @@ interface Contact {
     name: string | null;
     pushName: string | null;
     profilePicUrl: string | null;
+    phoneNumber?: string;
     isGroup: boolean;
 }
 
@@ -159,7 +160,7 @@ const CreateGroupDialog: React.FC<CreateGroupDialogProps> = ({
                             onClick={() => handleToggleParticipant(contact.jid)}
                         >
                             <ListItemAvatar>
-                                <Avatar src={contact.profilePicUrl || undefined}>
+                                <Avatar src={contact.profilePicUrl || ''}>
                                     {contact.name?.[0] || contact.pushName?.[0] || '?'}
                                 </Avatar>
                             </ListItemAvatar>

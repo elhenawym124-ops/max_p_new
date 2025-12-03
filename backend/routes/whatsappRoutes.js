@@ -311,4 +311,149 @@ router.get('/profile', verifyToken.authenticateToken, whatsappController.getProf
 // تحديث الملف الشخصي
 router.post('/profile/update', verifyToken.authenticateToken, upload.single('picture'), whatsappController.updateProfile);
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🏢 Business Profile
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// جلب ملف الأعمال
+router.get('/business/profile', verifyToken.authenticateToken, whatsappController.getBusinessProfile);
+
+// تعيين ملف الأعمال
+router.post('/business/profile', verifyToken.authenticateToken, whatsappController.setBusinessProfile);
+
+// تحديث ملف الأعمال
+router.put('/business/profile', verifyToken.authenticateToken, whatsappController.updateBusinessProfile);
+
+// جلب ساعات العمل
+router.get('/business/hours', verifyToken.authenticateToken, whatsappController.getBusinessHours);
+
+// تعيين ساعات العمل
+router.post('/business/hours', verifyToken.authenticateToken, whatsappController.setBusinessHours);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 📢 البث (Broadcast)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// إرسال بث جماعي
+router.post('/broadcast/send', verifyToken.authenticateToken, whatsappController.sendBroadcast);
+
+// إنشاء قائمة بث
+router.post('/broadcast/lists', verifyToken.authenticateToken, whatsappController.createBroadcastList);
+
+// جلب قوائم البث
+router.get('/broadcast/lists', verifyToken.authenticateToken, whatsappController.getBroadcastLists);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🏷️ العلامات (Labels)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// إضافة علامة للمحادثة
+router.post('/labels/chat', verifyToken.authenticateToken, whatsappController.labelChat);
+
+// جلب العلامات
+router.get('/labels', verifyToken.authenticateToken, whatsappController.getLabels);
+
+// إنشاء علامة جديدة
+router.post('/labels', verifyToken.authenticateToken, whatsappController.createLabel);
+
+// حذف علامة
+router.delete('/labels/:id', verifyToken.authenticateToken, whatsappController.deleteLabel);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ⭐ الرسائل المميزة (Starred Messages)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// تمييز رسالة
+router.post('/messages/star', verifyToken.authenticateToken, whatsappController.starMessage);
+
+// إلغاء تمييز رسالة
+router.post('/messages/unstar', verifyToken.authenticateToken, whatsappController.unstarMessage);
+
+// جلب الرسائل المميزة
+router.get('/messages/starred', verifyToken.authenticateToken, whatsappController.getStarredMessages);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🔒 الخصوصية المتقدمة
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// جلب قائمة المحظورين
+router.get('/privacy/blocklist', verifyToken.authenticateToken, whatsappController.fetchBlocklist);
+
+// جلب إعدادات الخصوصية
+router.get('/privacy/settings', verifyToken.authenticateToken, whatsappController.fetchPrivacySettings);
+
+// تعيين إعدادات الخصوصية
+router.post('/privacy/settings', verifyToken.authenticateToken, whatsappController.setPrivacy);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 👥 ميزات المجموعات المتقدمة
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// جلب جميع المجموعات
+router.get('/groups/all', verifyToken.authenticateToken, whatsappController.groupFetchAllParticipating);
+
+// تفعيل/تعطيل الرسائل المؤقتة
+router.post('/groups/:jid/ephemeral', verifyToken.authenticateToken, whatsappController.groupToggleEphemeral);
+
+// تحديث صورة المجموعة
+router.post('/groups/:jid/picture', verifyToken.authenticateToken, whatsappController.groupUpdatePicture);
+
+// قبول دعوة للمجموعة
+router.post('/groups/invite/accept', verifyToken.authenticateToken, whatsappController.groupInviteAccept);
+
+// رفض دعوة للمجموعة
+router.post('/groups/invite/reject', verifyToken.authenticateToken, whatsappController.groupInviteReject);
+
+// معلومات عن رابط الدعوة
+router.get('/groups/invite/info', verifyToken.authenticateToken, whatsappController.groupInviteInfo);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 📊 الحالة (Status)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// جلب حالة مستخدم
+router.get('/status', verifyToken.authenticateToken, whatsappController.getStatus);
+
+// تعيين حالة المستخدم
+router.post('/status', verifyToken.authenticateToken, whatsappController.setStatus);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🔗 معلومات الرابط
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// الحصول على معلومات رابط
+router.get('/url/info', verifyToken.authenticateToken, whatsappController.getUrlInfo);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 📊 الاستطلاعات والطلبات
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// إرسال استطلاع
+router.post('/messages/send-poll', verifyToken.authenticateToken, whatsappController.sendPoll);
+
+// إرسال طلب
+router.post('/messages/send-order', verifyToken.authenticateToken, whatsappController.sendOrder);
+
+// إرسال كتالوج
+router.post('/messages/send-catalog', verifyToken.authenticateToken, whatsappController.sendCatalog);
+
+// جلب الكتالوج
+router.get('/catalog', verifyToken.authenticateToken, whatsappController.getCatalog);
+
+// جلب المنتجات
+router.get('/products', verifyToken.authenticateToken, whatsappController.getProducts);
+
+// جلب السلة
+router.get('/cart', verifyToken.authenticateToken, whatsappController.getCart);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 📝 قوالب الرسائل
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// إرسال رسالة قالب
+router.post('/messages/send-template', verifyToken.authenticateToken, whatsappController.sendTemplateMessage);
+
+// جلب قوالب الرسائل
+router.get('/templates', verifyToken.authenticateToken, whatsappController.getMessageTemplate);
+
 module.exports = router;

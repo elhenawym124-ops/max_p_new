@@ -1999,7 +1999,7 @@ async function getGroupMetadata(req, res) {
         const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
         if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
 
-        const metadata = await WhatsAppManager.getGroupMetadata(sessionId, jid);
+        const metadata = await WhatsAppManager.getGroupMetadata(sessionId, jid, companyId);
         res.json({ success: true, metadata });
     } catch (error) {
         console.error('❌ Error fetching group metadata:', error);
@@ -2279,7 +2279,7 @@ async function getProfile(req, res) {
         const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
         if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
 
-        const profile = await WhatsAppManager.getProfile(sessionId);
+        const profile = await WhatsAppManager.getProfile(sessionId, companyId);
         res.json({ success: true, profile });
     } catch (error) {
         console.error('❌ Error fetching profile:', error);
@@ -2388,7 +2388,7 @@ async function getGroupMetadata(req, res) {
             return res.status(404).json({ error: 'الجلسة غير موجودة' });
         }
 
-        const metadata = await WhatsAppManager.getGroupMetadata(sessionId, jid);
+        const metadata = await WhatsAppManager.getGroupMetadata(sessionId, jid, companyId);
         res.json({ success: true, metadata });
     } catch (error) {
         console.error('❌ Error fetching group metadata:', error);
@@ -2606,6 +2606,901 @@ async function revokeGroupInviteCode(req, res) {
     }
 }
 
+// ==================== Business Profile Controllers ====================
+
+async function getBusinessProfile(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId } = req.query;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const profile = await WhatsAppManager.getBusinessProfile(sessionId);
+        res.json({ success: true, profile });
+    } catch (error) {
+        console.error('❌ Error getting business profile:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب ملف الأعمال' });
+    }
+}
+
+async function setBusinessProfile(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, profileData } = req.body;
+
+        if (!sessionId || !profileData) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const result = await WhatsAppManager.setBusinessProfile(sessionId, profileData);
+        res.json({ success: true, result });
+    } catch (error) {
+        console.error('❌ Error setting business profile:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء تعيين ملف الأعمال' });
+    }
+}
+
+async function updateBusinessProfile(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, profileData } = req.body;
+
+        if (!sessionId || !profileData) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const result = await WhatsAppManager.updateBusinessProfile(sessionId, profileData);
+        res.json({ success: true, result });
+    } catch (error) {
+        console.error('❌ Error updating business profile:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء تحديث ملف الأعمال' });
+    }
+}
+
+async function getBusinessHours(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId } = req.query;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const hours = await WhatsAppManager.getBusinessHours(sessionId);
+        res.json({ success: true, hours });
+    } catch (error) {
+        console.error('❌ Error getting business hours:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب ساعات العمل' });
+    }
+}
+
+async function setBusinessHours(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, hours } = req.body;
+
+        if (!sessionId || !hours) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const result = await WhatsAppManager.setBusinessHours(sessionId, hours);
+        res.json({ success: true, result });
+    } catch (error) {
+        console.error('❌ Error setting business hours:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء تعيين ساعات العمل' });
+    }
+}
+
+// ==================== Broadcast Controllers ====================
+
+async function sendBroadcast(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, jids, message } = req.body;
+
+        if (!sessionId || !jids || !Array.isArray(jids) || !message) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const results = await WhatsAppManager.sendBroadcast(sessionId, jids, message);
+        res.json({ success: true, results });
+    } catch (error) {
+        console.error('❌ Error sending broadcast:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء إرسال البث' });
+    }
+}
+
+async function createBroadcastList(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, name, jids } = req.body;
+
+        if (!sessionId || !name || !jids || !Array.isArray(jids)) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const list = await WhatsAppManager.createBroadcastList(sessionId, name, jids);
+        res.json({ success: true, list });
+    } catch (error) {
+        console.error('❌ Error creating broadcast list:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء إنشاء قائمة البث' });
+    }
+}
+
+async function getBroadcastLists(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId } = req.query;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const lists = await WhatsAppManager.getBroadcastLists(sessionId);
+        res.json({ success: true, lists });
+    } catch (error) {
+        console.error('❌ Error getting broadcast lists:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب قوائم البث' });
+    }
+}
+
+// ==================== Labels Controllers ====================
+
+async function labelChat(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, jid, labelId } = req.body;
+
+        if (!sessionId || !jid || !labelId) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const result = await WhatsAppManager.labelChat(sessionId, jid, labelId);
+        res.json({ success: true, result });
+    } catch (error) {
+        console.error('❌ Error labeling chat:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء إضافة علامة للمحادثة' });
+    }
+}
+
+async function getLabels(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId } = req.query;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const labels = await WhatsAppManager.getLabels(sessionId);
+        res.json({ success: true, labels });
+    } catch (error) {
+        console.error('❌ Error getting labels:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب العلامات' });
+    }
+}
+
+async function createLabel(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, name, color } = req.body;
+
+        if (!sessionId || !name) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const label = await WhatsAppManager.createLabel(sessionId, name, color);
+        res.json({ success: true, label });
+    } catch (error) {
+        console.error('❌ Error creating label:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء إنشاء علامة' });
+    }
+}
+
+async function deleteLabel(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, labelId } = req.body;
+
+        if (!sessionId || !labelId) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const result = await WhatsAppManager.deleteLabel(sessionId, labelId);
+        res.json({ success: true, result });
+    } catch (error) {
+        console.error('❌ Error deleting label:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء حذف علامة' });
+    }
+}
+
+// ==================== Starred Messages Controllers ====================
+
+async function starMessage(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, key } = req.body;
+
+        if (!sessionId || !key) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const result = await WhatsAppManager.starMessage(sessionId, key);
+        res.json({ success: true, result });
+    } catch (error) {
+        console.error('❌ Error starring message:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء تمييز الرسالة' });
+    }
+}
+
+async function unstarMessage(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, key } = req.body;
+
+        if (!sessionId || !key) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const result = await WhatsAppManager.unstarMessage(sessionId, key);
+        res.json({ success: true, result });
+    } catch (error) {
+        console.error('❌ Error unstarring message:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء إلغاء تمييز الرسالة' });
+    }
+}
+
+async function getStarredMessages(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, jid } = req.query;
+
+        if (!sessionId || !jid) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const messages = await WhatsAppManager.getStarredMessages(sessionId, jid);
+        res.json({ success: true, messages });
+    } catch (error) {
+        console.error('❌ Error getting starred messages:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب الرسائل المميزة' });
+    }
+}
+
+// ==================== Privacy Controllers ====================
+
+async function fetchBlocklist(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId } = req.query;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const blocklist = await WhatsAppManager.fetchBlocklist(sessionId);
+        res.json({ success: true, blocklist });
+    } catch (error) {
+        console.error('❌ Error fetching blocklist:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب قائمة المحظورين' });
+    }
+}
+
+async function fetchPrivacySettings(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId } = req.query;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const settings = await WhatsAppManager.fetchPrivacySettings(sessionId);
+        res.json({ success: true, settings });
+    } catch (error) {
+        console.error('❌ Error fetching privacy settings:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب إعدادات الخصوصية' });
+    }
+}
+
+async function setPrivacy(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, settings } = req.body;
+
+        if (!sessionId || !settings) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const result = await WhatsAppManager.setPrivacy(sessionId, settings);
+        res.json({ success: true, result });
+    } catch (error) {
+        console.error('❌ Error setting privacy:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء تعيين إعدادات الخصوصية' });
+    }
+}
+
+// ==================== Advanced Group Features Controllers ====================
+
+async function groupFetchAllParticipating(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId } = req.query;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const groups = await WhatsAppManager.groupFetchAllParticipating(sessionId);
+        res.json({ success: true, groups });
+    } catch (error) {
+        console.error('❌ Error fetching all groups:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب جميع المجموعات' });
+    }
+}
+
+async function groupToggleEphemeral(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, jid, ephemeral } = req.body;
+
+        if (!sessionId || !jid || typeof ephemeral !== 'boolean') {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const result = await WhatsAppManager.groupToggleEphemeral(sessionId, jid, ephemeral);
+        res.json({ success: true, result });
+    } catch (error) {
+        console.error('❌ Error toggling group ephemeral:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء تفعيل/تعطيل الرسائل المؤقتة' });
+    }
+}
+
+async function groupUpdatePicture(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, jid, picture } = req.body;
+
+        if (!sessionId || !jid || !picture) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const result = await WhatsAppManager.groupUpdatePicture(sessionId, jid, picture);
+        res.json({ success: true, result });
+    } catch (error) {
+        console.error('❌ Error updating group picture:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء تحديث صورة المجموعة' });
+    }
+}
+
+async function groupInviteAccept(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, inviteCode } = req.body;
+
+        if (!sessionId || !inviteCode) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const result = await WhatsAppManager.groupInviteAccept(sessionId, inviteCode);
+        res.json({ success: true, result });
+    } catch (error) {
+        console.error('❌ Error accepting group invite:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء قبول دعوة المجموعة' });
+    }
+}
+
+async function groupInviteReject(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, inviteCode } = req.body;
+
+        if (!sessionId || !inviteCode) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const result = await WhatsAppManager.groupInviteReject(sessionId, inviteCode);
+        res.json({ success: true, result });
+    } catch (error) {
+        console.error('❌ Error rejecting group invite:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء رفض دعوة المجموعة' });
+    }
+}
+
+async function groupInviteInfo(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, inviteCode } = req.query;
+
+        if (!sessionId || !inviteCode) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const info = await WhatsAppManager.groupInviteInfo(sessionId, inviteCode);
+        res.json({ success: true, info });
+    } catch (error) {
+        console.error('❌ Error getting group invite info:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب معلومات الدعوة' });
+    }
+}
+
+// ==================== Status Controllers ====================
+
+async function getStatus(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, jid } = req.query;
+
+        if (!sessionId || !jid) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const status = await WhatsAppManager.getStatus(sessionId, jid);
+        res.json({ success: true, status });
+    } catch (error) {
+        console.error('❌ Error getting status:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب الحالة' });
+    }
+}
+
+async function setStatus(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, status } = req.body;
+
+        if (!sessionId || !status) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const result = await WhatsAppManager.setStatus(sessionId, status);
+        res.json({ success: true, result });
+    } catch (error) {
+        console.error('❌ Error setting status:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء تعيين الحالة' });
+    }
+}
+
+// ==================== URL Info Controller ====================
+
+async function getUrlInfo(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, url } = req.query;
+
+        if (!sessionId || !url) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const info = await WhatsAppManager.getUrlInfo(sessionId, url);
+        res.json({ success: true, info });
+    } catch (error) {
+        console.error('❌ Error getting URL info:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب معلومات الرابط' });
+    }
+}
+
+// ==================== Poll & Order Controllers ====================
+
+async function sendPoll(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, to, pollData } = req.body;
+
+        if (!sessionId || !to || !pollData) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const message = await WhatsAppMessageHandler.sendPoll(sessionId, to, pollData);
+        res.json({ success: true, message });
+    } catch (error) {
+        console.error('❌ Error sending poll:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء إرسال الاستطلاع' });
+    }
+}
+
+async function sendOrder(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, to, orderData } = req.body;
+
+        if (!sessionId || !to || !orderData) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const message = await WhatsAppMessageHandler.sendOrder(sessionId, to, orderData);
+        res.json({ success: true, message });
+    } catch (error) {
+        console.error('❌ Error sending order:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء إرسال الطلب' });
+    }
+}
+
+async function sendCatalog(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, to, catalogData } = req.body;
+
+        if (!sessionId || !to || !catalogData) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const message = await WhatsAppMessageHandler.sendCatalog(sessionId, to, catalogData);
+        res.json({ success: true, message });
+    } catch (error) {
+        console.error('❌ Error sending catalog:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء إرسال الكتالوج' });
+    }
+}
+
+async function getCatalog(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId } = req.query;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const catalog = await WhatsAppMessageHandler.getCatalog(sessionId);
+        res.json({ success: true, catalog });
+    } catch (error) {
+        console.error('❌ Error getting catalog:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب الكتالوج' });
+    }
+}
+
+async function getProducts(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, catalogId } = req.query;
+
+        if (!sessionId || !catalogId) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const products = await WhatsAppMessageHandler.getProducts(sessionId, catalogId);
+        res.json({ success: true, products });
+    } catch (error) {
+        console.error('❌ Error getting products:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب المنتجات' });
+    }
+}
+
+async function getCart(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, cartId } = req.query;
+
+        if (!sessionId || !cartId) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const cart = await WhatsAppMessageHandler.getCart(sessionId, cartId);
+        res.json({ success: true, cart });
+    } catch (error) {
+        console.error('❌ Error getting cart:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب السلة' });
+    }
+}
+
+// ==================== Template Messages Controllers ====================
+
+async function sendTemplateMessage(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, to, templateId, parameters } = req.body;
+
+        if (!sessionId || !to || !templateId) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const message = await WhatsAppMessageHandler.sendTemplateMessage(sessionId, to, templateId, parameters || {});
+        res.json({ success: true, message });
+    } catch (error) {
+        console.error('❌ Error sending template message:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء إرسال رسالة القالب' });
+    }
+}
+
+async function getMessageTemplate(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId } = req.query;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const templates = await WhatsAppMessageHandler.getMessageTemplate(sessionId);
+        res.json({ success: true, templates });
+    } catch (error) {
+        console.error('❌ Error getting message templates:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب قوالب الرسائل' });
+    }
+}
+
 module.exports = {
     // Sessions
     createSession,
@@ -2688,7 +3583,62 @@ module.exports = {
     checkNumber,
     updateProfile,
     getGroupMetadata,
-    getProfile
+    getProfile,
+
+    // Business Profile
+    getBusinessProfile,
+    setBusinessProfile,
+    updateBusinessProfile,
+    getBusinessHours,
+    setBusinessHours,
+
+    // Broadcast
+    sendBroadcast,
+    createBroadcastList,
+    getBroadcastLists,
+
+    // Labels
+    labelChat,
+    getLabels,
+    createLabel,
+    deleteLabel,
+
+    // Starred Messages
+    starMessage,
+    unstarMessage,
+    getStarredMessages,
+
+    // Privacy Advanced
+    fetchBlocklist,
+    fetchPrivacySettings,
+    setPrivacy,
+
+    // Advanced Group Features
+    groupFetchAllParticipating,
+    groupToggleEphemeral,
+    groupUpdatePicture,
+    groupInviteAccept,
+    groupInviteReject,
+    groupInviteInfo,
+
+    // Status
+    getStatus,
+    setStatus,
+
+    // URL Info
+    getUrlInfo,
+
+    // Poll & Order
+    sendPoll,
+    sendOrder,
+    sendCatalog,
+    getCatalog,
+    getProducts,
+    getCart,
+
+    // Template Messages
+    sendTemplateMessage,
+    getMessageTemplate
 };
 
 

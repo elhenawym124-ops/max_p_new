@@ -8,7 +8,7 @@ import {
   Box, Paper, Typography, TextField, IconButton, Avatar, Badge, List, ListItem,
   ListItemAvatar, ListItemText, Divider, CircularProgress, Chip, Menu, MenuItem,
   InputAdornment, Dialog, DialogTitle, DialogContent, DialogActions, Button,
-  Select, FormControl, InputLabel, Alert, Drawer, Tabs, Tab
+  Select, FormControl, InputLabel, Alert, Drawer, Tabs, Tab, Grid, ListItemSecondaryAction
 } from '@mui/material';
 import {
   Send as SendIcon, AttachFile as AttachIcon, EmojiEmotions as EmojiEmotionsIcon,
@@ -21,7 +21,14 @@ import {
   VolumeOff as MuteIcon, Reply as ReplyIcon, ContentCopy as CopyIcon,
   Forward as ForwardIcon, Refresh as RefreshIcon, Close as CloseIcon,
   GetApp as DownloadIcon, Block as BlockIcon, Report as ReportIcon,
-  GroupAdd as GroupAddIcon, PersonSearch as PersonSearchIcon
+  GroupAdd as GroupAddIcon, PersonSearch as PersonSearchIcon,
+  Star as StarIcon, StarBorder as StarBorderIcon,
+  AddReaction as AddReactionIcon, Label as LabelIcon,
+  Poll as PollIcon, LocalOffer as TagIcon,
+  ViewList as ListIcon, SmartButton as ButtonIcon,
+  Campaign as BroadcastIcon, Storefront as CatalogIcon,
+  ShoppingCart as CartIcon, Inventory as ProductIcon,
+  Security as SecurityIcon, Business as StoreIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { format, isToday, isYesterday } from 'date-fns';
@@ -32,6 +39,10 @@ import CreateGroupDialog from '../../components/whatsapp/CreateGroupDialog';
 import GroupInfoDrawer from '../../components/whatsapp/GroupInfoDrawer';
 import ProfileDialog from '../../components/whatsapp/ProfileDialog';
 import CheckNumberDialog from '../../components/whatsapp/CheckNumberDialog';
+import LabelsDialog from '../../components/whatsapp/LabelsDialog';
+import BroadcastDialog from '../../components/whatsapp/BroadcastDialog';
+import PrivacySettingsDialog from '../../components/whatsapp/PrivacySettingsDialog';
+import BusinessProfileDialog from '../../components/whatsapp/BusinessProfileDialog';
 import AudioRecorder from './components/AudioRecorder';
 import { useAuth } from '../../hooks/useAuthSimple';
 import { config } from '../../config';
@@ -46,6 +57,7 @@ interface Contact {
   profilePicUrl: string | null;
   isGroup: boolean;
   category: string | null;
+  labels?: string[]; // Add labels support
   unreadCount: number;
   lastMessageAt: string | null;
   isArchived: boolean;
@@ -143,8 +155,53 @@ const WhatsAppChat: React.FC = () => {
   const [selectedMessageForInfo, setSelectedMessageForInfo] = useState<Message | null>(null);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [checkNumberDialogOpen, setCheckNumberDialogOpen] = useState(false);
+  const [privacyDialogOpen, setPrivacyDialogOpen] = useState(false);
+  const [businessProfileDialogOpen, setBusinessProfileDialogOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
+  const [showReactionPicker, setShowReactionPicker] = useState<string | null>(null);
+
+  const [labelDialogOpen, setLabelDialogOpen] = useState(false);
+  const [selectedContactForLabel, setSelectedContactForLabel] = useState<Contact | null>(null);
+  const [pollDialogOpen, setPollDialogOpen] = useState(false);
+  const [pollData, setPollData] = useState({ question: '', options: ['', ''], selectableCount: 1 });
+
+  // Interactive Messages
+  const [buttonsDialogOpen, setButtonsDialogOpen] = useState(false);
+  const [buttonsData, setButtonsData] = useState({ text: '', footer: '', buttons: [{ id: '1', text: '' }] });
+  const [listDialogOpen, setListDialogOpen] = useState(false);
+  const [listData, setListData] = useState({
+    text: '',
+    buttonText: 'اختر',
+    title: '',
+    sections: [{ title: 'القسم 1', rows: [{ id: '1', title: '', description: '' }] }]
+  });
+
+  // Broadcast
+  const [broadcastDialogOpen, setBroadcastDialogOpen] = useState(false);
+  const [broadcastData, setBroadcastData] = useState({ message: '', selectedContacts: [] as string[] });
+
+  // Catalog
+  const [catalogDialogOpen, setCatalogDialogOpen] = useState(false);
+  const [products, setProducts] = useState<any[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<any>(null);
+
+  // Starred Messages
+  const [starredMessagesOpen, setStarredMessagesOpen] = useState(false);
+  const [starredMessages, setStarredMessages] = useState<Message[]>([]);
+
+  // Location
+  const [locationDialogOpen, setLocationDialogOpen] = useState(false);
+  const [locationData, setLocationData] = useState({ latitude: '', longitude: '', address: '' });
+
+  // Order/Cart
+  const [orderDialogOpen, setOrderDialogOpen] = useState(false);
+  const [cartItems, setCartItems] = useState<any[]>([]);
+  const [orderData, setOrderData] = useState({
+    items: [] as { productId: string; quantity: number; price: number }[],
+    currency: 'EGP',
+    note: ''
+  });
   const loadContactsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [notificationSettings, setNotificationSettings] = useState<{
     notificationSound: boolean;
@@ -290,7 +347,8 @@ const WhatsAppChat: React.FC = () => {
     // Helper to normalize JID for comparison
     const normalizeJid = (jid: string) => {
       if (!jid) return '';
-      const bareJid = jid.split('@')[0].split(':')[0];
+      const parts = jid.split('@')[0];
+      const bareJid = parts?.split(':')[0] || '';
       return bareJid.replace(/\D/g, '');
     };
 
@@ -647,6 +705,7 @@ const WhatsAppChat: React.FC = () => {
     }
 
     const file = files[0];
+    if (!file) return;
     const formData = new FormData();
     formData.append('file', file);
     formData.append('sessionId', targetSessionId);
@@ -823,7 +882,7 @@ const WhatsAppChat: React.FC = () => {
 
   const handleMessageContextMenu = (event: React.MouseEvent, message: Message) => {
     event.preventDefault();
-    setMessageMenuAnchor(event.currentTarget);
+    setMessageMenuAnchor(event.currentTarget as HTMLElement);
     setSelectedMessageForMenu(message);
   };
 
@@ -911,6 +970,280 @@ const WhatsAppChat: React.FC = () => {
     }
   };
 
+  // ==================== Reactions ====================
+  const handleSendReaction = async (messageId: string, emoji: string) => {
+    if (!selectedSession || !selectedContact) return;
+    const targetSessionId = selectedContact.sessionId || selectedSession;
+    try {
+      await api.post('/whatsapp/messages/send-reaction', {
+        sessionId: targetSessionId,
+        to: selectedContact.jid,
+        messageId,
+        emoji
+      });
+      setShowReactionPicker(null);
+      enqueueSnackbar('تم إرسال التفاعل', { variant: 'success' });
+    } catch (error) {
+      enqueueSnackbar('فشل إرسال التفاعل', { variant: 'error' });
+    }
+  };
+
+  const commonReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
+  // ==================== Star Messages ====================
+  const handleStarMessage = async (message: Message) => {
+    if (!selectedSession || !selectedContact) return;
+    const targetSessionId = selectedContact.sessionId || selectedSession;
+    try {
+      await api.post('/whatsapp/messages/star', {
+        sessionId: targetSessionId,
+        key: {
+          remoteJid: message.remoteJid,
+          id: message.messageId,
+          fromMe: message.fromMe
+        }
+      });
+      enqueueSnackbar('تم تمييز الرسالة بنجمة', { variant: 'success' });
+      setMessageMenuAnchor(null);
+    } catch (error) {
+      enqueueSnackbar('فشل تمييز الرسالة', { variant: 'error' });
+    }
+  };
+
+  const handleUnstarMessage = async (message: Message) => {
+    if (!selectedSession || !selectedContact) return;
+    const targetSessionId = selectedContact.sessionId || selectedSession;
+    try {
+      await api.post('/whatsapp/messages/unstar', {
+        sessionId: targetSessionId,
+        key: {
+          remoteJid: message.remoteJid,
+          id: message.messageId,
+          fromMe: message.fromMe
+        }
+      });
+      enqueueSnackbar('تم إلغاء تمييز الرسالة', { variant: 'success' });
+      setMessageMenuAnchor(null);
+    } catch (error) {
+      enqueueSnackbar('فشل إلغاء تمييز الرسالة', { variant: 'error' });
+    }
+  };
+
+  // ==================== Labels ====================
+  const loadLabels = async () => {
+    if (!selectedSession || selectedSession === 'all') return;
+    try {
+      const res = await api.get('/whatsapp/labels', { params: { sessionId: selectedSession } });
+      setLabels(res.data.labels || []);
+    } catch (error) {
+      console.error('Error loading labels:', error);
+    }
+  };
+
+  const handleLabelChat = async (labelId: string) => {
+    if (!selectedSession || !selectedContactForLabel) return;
+    try {
+      await api.post('/whatsapp/labels/chat', {
+        sessionId: selectedSession,
+        jid: selectedContactForLabel.jid,
+        labelId
+      });
+      enqueueSnackbar('تم إضافة العلامة للمحادثة', { variant: 'success' });
+      setLabelDialogOpen(false);
+      setSelectedContactForLabel(null);
+    } catch (error) {
+      enqueueSnackbar('فشل إضافة العلامة', { variant: 'error' });
+    }
+  };
+
+  // ==================== Polls ====================
+  const handleSendPoll = async () => {
+    if (!selectedSession || !selectedContact || !pollData.question.trim()) return;
+    const targetSessionId = selectedContact.sessionId || selectedSession;
+    const validOptions = pollData.options.filter(o => o.trim());
+    if (validOptions.length < 2) {
+      enqueueSnackbar('يجب إضافة خيارين على الأقل', { variant: 'warning' });
+      return;
+    }
+    try {
+      await api.post('/whatsapp/messages/send-poll', {
+        sessionId: targetSessionId,
+        to: selectedContact.jid,
+        pollData: {
+          name: pollData.question,
+          values: validOptions,
+          selectableCount: pollData.selectableCount
+        }
+      });
+      enqueueSnackbar('تم إرسال الاستطلاع', { variant: 'success' });
+      setPollDialogOpen(false);
+      setPollData({ question: '', options: ['', ''], selectableCount: 1 });
+    } catch (error) {
+      enqueueSnackbar('فشل إرسال الاستطلاع', { variant: 'error' });
+    }
+  };
+
+  // ==================== Interactive Buttons ====================
+  const handleSendButtons = async () => {
+    if (!selectedSession || !selectedContact || !buttonsData.text.trim()) return;
+    const targetSessionId = selectedContact.sessionId || selectedSession;
+    const validButtons = buttonsData.buttons.filter(b => b.text.trim());
+    if (validButtons.length === 0 || validButtons.length > 3) {
+      enqueueSnackbar('يجب إضافة 1-3 أزرار', { variant: 'warning' });
+      return;
+    }
+    try {
+      await api.post('/whatsapp/messages/send-buttons', {
+        sessionId: targetSessionId,
+        to: selectedContact.jid,
+        text: buttonsData.text,
+        buttons: validButtons.map((b, i) => ({ buttonId: `btn_${i}`, buttonText: { displayText: b.text }, type: 1 })),
+        footer: buttonsData.footer || undefined
+      });
+      enqueueSnackbar('تم إرسال الرسالة بالأزرار', { variant: 'success' });
+      setButtonsDialogOpen(false);
+      setButtonsData({ text: '', footer: '', buttons: [{ id: '1', text: '' }] });
+    } catch (error) {
+      enqueueSnackbar('فشل إرسال الرسالة', { variant: 'error' });
+    }
+  };
+
+  // ==================== Interactive List ====================
+  const handleSendList = async () => {
+    if (!selectedSession || !selectedContact || !listData.text.trim()) return;
+    const targetSessionId = selectedContact.sessionId || selectedSession;
+    try {
+      await api.post('/whatsapp/messages/send-list', {
+        sessionId: targetSessionId,
+        to: selectedContact.jid,
+        text: listData.text,
+        buttonText: listData.buttonText,
+        title: listData.title,
+        sections: listData.sections.map(s => ({
+          title: s.title,
+          rows: s.rows.filter(r => r.title.trim()).map(r => ({
+            rowId: r.id,
+            title: r.title,
+            description: r.description
+          }))
+        }))
+      });
+      enqueueSnackbar('تم إرسال القائمة', { variant: 'success' });
+      setListDialogOpen(false);
+      setListData({ text: '', buttonText: 'اختر', title: '', sections: [{ title: 'القسم 1', rows: [{ id: '1', title: '', description: '' }] }] });
+    } catch (error) {
+      enqueueSnackbar('فشل إرسال القائمة', { variant: 'error' });
+    }
+  };
+
+  // ==================== Broadcast ====================
+  const handleSendBroadcast = async () => {
+    if (!selectedSession || !broadcastData.message.trim() || broadcastData.selectedContacts.length === 0) return;
+    try {
+      await api.post('/whatsapp/broadcast/send', {
+        sessionId: selectedSession,
+        jids: broadcastData.selectedContacts,
+        message: { text: broadcastData.message }
+      });
+      enqueueSnackbar(`تم إرسال البث إلى ${broadcastData.selectedContacts.length} جهة اتصال`, { variant: 'success' });
+      setBroadcastDialogOpen(false);
+      setBroadcastData({ message: '', selectedContacts: [] });
+    } catch (error) {
+      enqueueSnackbar('فشل إرسال البث', { variant: 'error' });
+    }
+  };
+
+  // ==================== Catalog ====================
+  const loadProducts = async () => {
+    if (!selectedSession || selectedSession === 'all') return;
+    try {
+      const res = await api.get('/whatsapp/catalog/products', { params: { sessionId: selectedSession } });
+      setProducts(res.data.products || []);
+    } catch (error) {
+      console.error('Error loading products:', error);
+    }
+  };
+
+  const handleSendProduct = async (product: any) => {
+    if (!selectedSession || !selectedContact) return;
+    const targetSessionId = selectedContact.sessionId || selectedSession;
+    try {
+      await api.post('/whatsapp/messages/send-product', {
+        sessionId: targetSessionId,
+        to: selectedContact.jid,
+        product: {
+          name: product.name,
+          description: product.description,
+          price: product.price,
+          currency: product.currency || 'EGP',
+          imageUrl: product.imageUrl
+        }
+      });
+      enqueueSnackbar('تم إرسال المنتج', { variant: 'success' });
+      setCatalogDialogOpen(false);
+    } catch (error) {
+      enqueueSnackbar('فشل إرسال المنتج', { variant: 'error' });
+    }
+  };
+
+  // ==================== Starred Messages ====================
+  const loadStarredMessages = async () => {
+    if (!selectedSession || !selectedContact) return;
+    const targetSessionId = selectedContact.sessionId || selectedSession;
+    try {
+      const res = await api.get('/whatsapp/messages/starred', {
+        params: { sessionId: targetSessionId, jid: selectedContact.jid }
+      });
+      setStarredMessages(res.data.messages || []);
+      setStarredMessagesOpen(true);
+    } catch (error) {
+      enqueueSnackbar('فشل تحميل الرسائل المميزة', { variant: 'error' });
+    }
+  };
+
+  // ==================== Location Sharing ====================
+  const getCurrentLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setLocationData({
+            latitude: position.coords.latitude.toString(),
+            longitude: position.coords.longitude.toString(),
+            address: ''
+          });
+          enqueueSnackbar('تم تحديد موقعك الحالي', { variant: 'success' });
+        },
+        (error) => {
+          enqueueSnackbar('فشل تحديد الموقع: ' + error.message, { variant: 'error' });
+        }
+      );
+    } else {
+      enqueueSnackbar('المتصفح لا يدعم تحديد الموقع', { variant: 'error' });
+    }
+  };
+
+  const handleSendLocation = async () => {
+    if (!selectedSession || !selectedContact || !locationData.latitude || !locationData.longitude) return;
+    const targetSessionId = selectedContact.sessionId || selectedSession;
+    try {
+      await api.post('/whatsapp/messages/send-location', {
+        sessionId: targetSessionId,
+        to: selectedContact.jid,
+        location: {
+          degreesLatitude: parseFloat(locationData.latitude),
+          degreesLongitude: parseFloat(locationData.longitude),
+          name: locationData.address || 'موقعي',
+          address: locationData.address
+        }
+      });
+      enqueueSnackbar('تم إرسال الموقع', { variant: 'success' });
+      setLocationDialogOpen(false);
+      setLocationData({ latitude: '', longitude: '', address: '' });
+    } catch (error) {
+      enqueueSnackbar('فشل إرسال الموقع', { variant: 'error' });
+    }
+  };
+
   const handleBlockContact = async (contact: Contact) => {
     if (!window.confirm(`هل أنت متأكد من حظر ${getContactName(contact)}؟`)) return;
     try {
@@ -934,6 +1267,122 @@ const WhatsAppChat: React.FC = () => {
     }
   };
 
+  // ==================== Group Advanced Features ====================
+  const handleToggleEphemeral = async (duration: number) => {
+    if (!selectedSession || !selectedContact?.isGroup) return;
+    try {
+      await api.post('/whatsapp/groups/ephemeral', {
+        sessionId: selectedSession,
+        groupId: selectedContact.jid,
+        duration // 0 = off, 86400 = 24h, 604800 = 7 days, 7776000 = 90 days
+      });
+      enqueueSnackbar('تم تحديث إعدادات الرسائل المؤقتة', { variant: 'success' });
+    } catch (error) {
+      enqueueSnackbar('فشل تحديث الإعدادات', { variant: 'error' });
+    }
+  };
+
+  const handleUpdateGroupPicture = async (file: File) => {
+    if (!selectedSession || !selectedContact?.isGroup) return;
+    try {
+      const formData = new FormData();
+      formData.append('sessionId', selectedSession);
+      formData.append('groupId', selectedContact.jid);
+      formData.append('image', file);
+      await api.post('/whatsapp/groups/picture', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      enqueueSnackbar('تم تحديث صورة المجموعة', { variant: 'success' });
+    } catch (error) {
+      enqueueSnackbar('فشل تحديث الصورة', { variant: 'error' });
+    }
+  };
+
+  const handleAcceptGroupInvite = async (inviteCode: string) => {
+    if (!selectedSession) return;
+    try {
+      await api.post('/whatsapp/groups/invite/accept', {
+        sessionId: selectedSession,
+        inviteCode
+      });
+      enqueueSnackbar('تم قبول الدعوة والانضمام للمجموعة', { variant: 'success' });
+      loadContacts();
+    } catch (error) {
+      enqueueSnackbar('فشل قبول الدعوة', { variant: 'error' });
+    }
+  };
+
+  const handleGetUrlInfo = async (url: string) => {
+    if (!selectedSession) return null;
+    try {
+      const res = await api.get('/whatsapp/url-info', {
+        params: { sessionId: selectedSession, url }
+      });
+      return res.data;
+    } catch (error) {
+      console.error('Error getting URL info:', error);
+      return null;
+    }
+  };
+
+  // ==================== Order/Cart ====================
+  const loadCart = async () => {
+    if (!selectedSession || !selectedContact) return;
+    try {
+      const res = await api.get('/whatsapp/cart', {
+        params: { sessionId: selectedSession, jid: selectedContact.jid }
+      });
+      setCartItems(res.data.cart || []);
+    } catch (error) {
+      console.error('Error loading cart:', error);
+    }
+  };
+
+  const handleSendOrder = async () => {
+    if (!selectedSession || !selectedContact || orderData.items.length === 0) return;
+    try {
+      await api.post('/whatsapp/messages/send-order', {
+        sessionId: selectedSession,
+        to: selectedContact.jid,
+        order: {
+          items: orderData.items,
+          currency: orderData.currency,
+          note: orderData.note
+        }
+      });
+      enqueueSnackbar('تم إرسال الطلب', { variant: 'success' });
+      setOrderDialogOpen(false);
+      setOrderData({ items: [], currency: 'EGP', note: '' });
+    } catch (error) {
+      enqueueSnackbar('فشل إرسال الطلب', { variant: 'error' });
+    }
+  };
+
+  const addToOrder = (product: any) => {
+    const existingItem = orderData.items.find(i => i.productId === product.id);
+    if (existingItem) {
+      setOrderData({
+        ...orderData,
+        items: orderData.items.map(i =>
+          i.productId === product.id
+            ? { ...i, quantity: i.quantity + 1 }
+            : i
+        )
+      });
+    } else {
+      setOrderData({
+        ...orderData,
+        items: [...orderData.items, { productId: product.id, quantity: 1, price: product.price || 0 }]
+      });
+    }
+  };
+
+  const removeFromOrder = (productId: string) => {
+    setOrderData({
+      ...orderData,
+      items: orderData.items.filter(i => i.productId !== productId)
+    });
+  };
 
   const sendQuickReply = async (qr: QuickReply) => {
     if (!selectedSession || !selectedContact) return;
@@ -941,7 +1390,7 @@ const WhatsAppChat: React.FC = () => {
       await api.post('/whatsapp/messages/send', {
         sessionId: selectedSession,
         to: selectedContact.jid,
-        text: qr.text
+        text: qr.content
       });
       setShowQuickReplies(false);
     } catch (error) {
@@ -993,6 +1442,9 @@ const WhatsAppChat: React.FC = () => {
           <IconButton onClick={() => setProfileDialogOpen(true)} title="الملف الشخصي" disabled={!selectedSession}>
             <PersonIcon />
           </IconButton>
+          <IconButton onClick={() => setLabelDialogOpen(true)} title="التصنيفات" disabled={!selectedSession}>
+            <LabelIcon />
+          </IconButton>
         </Box>
         <Box sx={{ p: 2 }}>
           <TextField fullWidth size="small" placeholder="بحث..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> }} />
@@ -1006,6 +1458,15 @@ const WhatsAppChat: React.FC = () => {
             </IconButton>
             <IconButton size="small" onClick={() => setCheckNumberDialogOpen(true)} title="التحقق من رقم">
               <PersonSearchIcon fontSize="small" />
+            </IconButton>
+            <IconButton size="small" onClick={() => setBroadcastDialogOpen(true)} title="إرسال بث">
+              <BroadcastIcon fontSize="small" />
+            </IconButton>
+            <IconButton size="small" onClick={() => setPrivacyDialogOpen(true)} title="الخصوصية">
+              <SecurityIcon fontSize="small" />
+            </IconButton>
+            <IconButton size="small" onClick={() => setBusinessProfileDialogOpen(true)} title="ملف النشاط التجاري">
+              <StoreIcon fontSize="small" />
             </IconButton>
           </Box>
         </Box>
@@ -1133,6 +1594,24 @@ const WhatsAppChat: React.FC = () => {
                     <EmojiEmotionsIcon color={showEmojiPicker ? 'primary' : 'inherit'} />
                   </IconButton>
                   <IconButton onClick={() => fileInputRef.current?.click()}><AttachIcon /></IconButton>
+                  <IconButton onClick={() => setPollDialogOpen(true)} title="إنشاء استطلاع">
+                    <PollIcon />
+                  </IconButton>
+                  <IconButton onClick={() => setButtonsDialogOpen(true)} title="رسالة بأزرار">
+                    <ButtonIcon />
+                  </IconButton>
+                  <IconButton onClick={() => setListDialogOpen(true)} title="رسالة بقائمة">
+                    <ListIcon />
+                  </IconButton>
+                  <IconButton onClick={() => { loadProducts(); setCatalogDialogOpen(true); }} title="إرسال منتج">
+                    <CatalogIcon />
+                  </IconButton>
+                  <IconButton onClick={() => setLocationDialogOpen(true)} title="إرسال موقع">
+                    <LocationIcon />
+                  </IconButton>
+                  <IconButton onClick={() => { loadProducts(); setOrderDialogOpen(true); }} title="إرسال طلب">
+                    <CatalogIcon color="secondary" />
+                  </IconButton>
                   <input type="file" ref={fileInputRef} hidden onChange={handleFileUpload} />
                   <TextField fullWidth size="small" placeholder="اكتب رسالة..." value={newMessage} onChange={(e) => setNewMessage(e.target.value)} onKeyPress={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }} />
                   {newMessage.trim() ? (
@@ -1166,6 +1645,15 @@ const WhatsAppChat: React.FC = () => {
         <MenuItem onClick={() => { if (selectedChatForMenu) handleMarkUnread(selectedChatForMenu); setChatMenuAnchor(null); }}>
           <PendingIcon fontSize="small" sx={{ mr: 1 }} /> تمييز كغير مقروء
         </MenuItem>
+        <MenuItem onClick={() => {
+          if (selectedChatForMenu) {
+            setSelectedContactForLabel(selectedChatForMenu);
+            setLabelDialogOpen(true);
+          }
+          setChatMenuAnchor(null);
+        }}>
+          <LabelIcon fontSize="small" sx={{ mr: 1 }} /> إضافة علامة
+        </MenuItem>
         <MenuItem onClick={() => { if (selectedChatForMenu) handleDeleteChat(selectedChatForMenu); setChatMenuAnchor(null); }} sx={{ color: 'error.main' }}>
           <DeleteIcon fontSize="small" sx={{ mr: 1 }} /> حذف المحادثة
         </MenuItem>
@@ -1177,6 +1665,35 @@ const WhatsAppChat: React.FC = () => {
         open={Boolean(messageMenuAnchor)}
         onClose={() => setMessageMenuAnchor(null)}
       >
+        {/* Quick Reactions */}
+        <Box sx={{ display: 'flex', gap: 0.5, p: 1, borderBottom: 1, borderColor: 'divider' }}>
+          {commonReactions.map(emoji => (
+            <IconButton
+              key={emoji}
+              size="small"
+              onClick={() => {
+                if (selectedMessageForMenu) {
+                  handleSendReaction(selectedMessageForMenu.messageId, emoji);
+                  setMessageMenuAnchor(null);
+                }
+              }}
+              sx={{ fontSize: '1.2rem' }}
+            >
+              {emoji}
+            </IconButton>
+          ))}
+          <IconButton
+            size="small"
+            onClick={() => {
+              if (selectedMessageForMenu) {
+                setShowReactionPicker(selectedMessageForMenu.messageId);
+                setMessageMenuAnchor(null);
+              }
+            }}
+          >
+            <AddReactionIcon fontSize="small" />
+          </IconButton>
+        </Box>
         <MenuItem onClick={handleReply}>
           <ReplyIcon fontSize="small" sx={{ mr: 1 }} /> رد
         </MenuItem>
@@ -1185,6 +1702,9 @@ const WhatsAppChat: React.FC = () => {
         </MenuItem>
         <MenuItem onClick={() => { setForwardDialogOpen(true); setMessageMenuAnchor(null); }}>
           <ForwardIcon fontSize="small" sx={{ mr: 1 }} /> إعادة توجيه
+        </MenuItem>
+        <MenuItem onClick={() => { if (selectedMessageForMenu) handleStarMessage(selectedMessageForMenu); }}>
+          <StarBorderIcon fontSize="small" sx={{ mr: 1 }} /> تمييز بنجمة
         </MenuItem>
         {selectedMessageForMenu?.fromMe && (
           <MenuItem onClick={handleDeleteMessage} sx={{ color: 'error.main' }}>
@@ -1246,8 +1766,9 @@ const WhatsAppChat: React.FC = () => {
               <ListItem button>
                 <ListItemText primary="الوسائط والروابط والمستندات" secondary="0" />
               </ListItem>
-              <ListItem button>
-                <ListItemText primary="الرسائل المميزة بنجمة" secondary="لا يوجد" />
+              <ListItem button onClick={loadStarredMessages}>
+                <ListItemText primary="الرسائل المميزة بنجمة" />
+                <StarIcon sx={{ color: 'warning.main' }} />
               </ListItem>
               <ListItem button onClick={() => handleMuteChat(selectedContact)}>
                 <ListItemText primary="كتم الإشعارات" />
@@ -1280,7 +1801,7 @@ const WhatsAppChat: React.FC = () => {
       <GroupInfoDrawer
         open={showContactInfo && !!selectedContact?.isGroup}
         onClose={() => setShowContactInfo(false)}
-        sessionId={selectedSession}
+        sessionId={selectedContact?.sessionId || selectedSession}
         groupJid={selectedContact?.jid || ''}
         contacts={contacts}
       />
@@ -1300,9 +1821,9 @@ const WhatsAppChat: React.FC = () => {
         open={profileDialogOpen}
         onClose={() => setProfileDialogOpen(false)}
         sessionId={selectedSession}
-        currentName={currentUserProfile?.name}
-        currentStatus={currentUserProfile?.status}
-        currentPicture={currentUserProfile?.profilePicUrl}
+        currentName={currentUserProfile?.name || ''}
+        currentStatus={currentUserProfile?.status || ''}
+        currentPicture={currentUserProfile?.profilePicUrl || ''}
       />
 
       <CheckNumberDialog
@@ -1318,7 +1839,7 @@ const WhatsAppChat: React.FC = () => {
               id: jid,
               sessionId: selectedSession,
               jid: jid,
-              phoneNumber: jid.split('@')[0],
+              phoneNumber: jid.split('@')[0] || jid,
               name: null,
               pushName: null,
               profilePicUrl: null,
@@ -1337,6 +1858,652 @@ const WhatsAppChat: React.FC = () => {
             setSelectedContact(newContact);
           }
         }}
+      />
+
+
+
+      {/* Poll Dialog */}
+      <Dialog open={pollDialogOpen} onClose={() => setPollDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <PollIcon color="primary" />
+            إنشاء استطلاع
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          <TextField
+            fullWidth
+            label="السؤال"
+            value={pollData.question}
+            onChange={(e) => setPollData(prev => ({ ...prev, question: e.target.value }))}
+            sx={{ mb: 2 }}
+          />
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>الخيارات:</Typography>
+          {pollData.options.map((option, index) => (
+            <Box key={index} sx={{ display: 'flex', gap: 1, mb: 1 }}>
+              <TextField
+                fullWidth
+                size="small"
+                placeholder={`الخيار ${index + 1}`}
+                value={option}
+                onChange={(e) => {
+                  const newOptions = [...pollData.options];
+                  newOptions[index] = e.target.value;
+                  setPollData(prev => ({ ...prev, options: newOptions }));
+                }}
+              />
+              {pollData.options.length > 2 && (
+                <IconButton
+                  size="small"
+                  onClick={() => {
+                    const newOptions = pollData.options.filter((_, i) => i !== index);
+                    setPollData(prev => ({ ...prev, options: newOptions }));
+                  }}
+                >
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              )}
+            </Box>
+          ))}
+          {pollData.options.length < 12 && (
+            <Button
+              size="small"
+              onClick={() => setPollData(prev => ({ ...prev, options: [...prev.options, ''] }))}
+              sx={{ mb: 2 }}
+            >
+              + إضافة خيار
+            </Button>
+          )}
+          <FormControl fullWidth size="small">
+            <InputLabel>عدد الاختيارات المسموحة</InputLabel>
+            <Select
+              value={pollData.selectableCount}
+              label="عدد الاختيارات المسموحة"
+              onChange={(e) => setPollData(prev => ({ ...prev, selectableCount: Number(e.target.value) }))}
+            >
+              <MenuItem value={1}>اختيار واحد فقط</MenuItem>
+              <MenuItem value={0}>اختيارات متعددة</MenuItem>
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPollDialogOpen(false)}>إلغاء</Button>
+          <Button
+            variant="contained"
+            onClick={handleSendPoll}
+            disabled={!pollData.question.trim() || pollData.options.filter(o => o.trim()).length < 2}
+          >
+            إرسال الاستطلاع
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Reaction Picker Dialog */}
+      <Dialog
+        open={!!showReactionPicker}
+        onClose={() => setShowReactionPicker(null)}
+        maxWidth="xs"
+      >
+        <DialogTitle>اختر تفاعل</DialogTitle>
+        <DialogContent>
+          <EmojiPicker
+            onEmojiClick={(data: EmojiClickData) => {
+              if (showReactionPicker) {
+                handleSendReaction(showReactionPicker, data.emoji);
+              }
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Buttons Dialog */}
+      <Dialog open={buttonsDialogOpen} onClose={() => setButtonsDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <ButtonIcon color="primary" />
+            إرسال رسالة بأزرار
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          <TextField
+            fullWidth
+            label="نص الرسالة"
+            multiline
+            rows={3}
+            value={buttonsData.text}
+            onChange={(e) => setButtonsData(prev => ({ ...prev, text: e.target.value }))}
+            sx={{ mb: 2 }}
+          />
+          <TextField
+            fullWidth
+            label="نص التذييل (اختياري)"
+            value={buttonsData.footer}
+            onChange={(e) => setButtonsData(prev => ({ ...prev, footer: e.target.value }))}
+            sx={{ mb: 2 }}
+          />
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>الأزرار (حد أقصى 3):</Typography>
+          {buttonsData.buttons.map((btn, index) => (
+            <Box key={index} sx={{ display: 'flex', gap: 1, mb: 1 }}>
+              <TextField
+                fullWidth
+                size="small"
+                placeholder={`الزر ${index + 1}`}
+                value={btn.text}
+                onChange={(e) => {
+                  const newButtons = [...buttonsData.buttons];
+                  newButtons[index] = { ...btn, text: e.target.value };
+                  setButtonsData(prev => ({ ...prev, buttons: newButtons }));
+                }}
+              />
+              {buttonsData.buttons.length > 1 && (
+                <IconButton size="small" onClick={() => {
+                  setButtonsData(prev => ({ ...prev, buttons: prev.buttons.filter((_, i) => i !== index) }));
+                }}>
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              )}
+            </Box>
+          ))}
+          {buttonsData.buttons.length < 3 && (
+            <Button size="small" onClick={() => setButtonsData(prev => ({
+              ...prev,
+              buttons: [...prev.buttons, { id: String(prev.buttons.length + 1), text: '' }]
+            }))}>
+              + إضافة زر
+            </Button>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setButtonsDialogOpen(false)}>إلغاء</Button>
+          <Button variant="contained" onClick={handleSendButtons} disabled={!buttonsData.text.trim()}>
+            إرسال
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* List Dialog */}
+      <Dialog open={listDialogOpen} onClose={() => setListDialogOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <ListIcon color="primary" />
+            إرسال رسالة بقائمة
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          <TextField
+            fullWidth
+            label="نص الرسالة"
+            multiline
+            rows={2}
+            value={listData.text}
+            onChange={(e) => setListData(prev => ({ ...prev, text: e.target.value }))}
+            sx={{ mb: 2 }}
+          />
+          <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+            <TextField
+              fullWidth
+              label="عنوان القائمة"
+              value={listData.title}
+              onChange={(e) => setListData(prev => ({ ...prev, title: e.target.value }))}
+            />
+            <TextField
+              fullWidth
+              label="نص الزر"
+              value={listData.buttonText}
+              onChange={(e) => setListData(prev => ({ ...prev, buttonText: e.target.value }))}
+            />
+          </Box>
+
+          {listData.sections.map((section, sIndex) => (
+            <Paper key={sIndex} sx={{ p: 2, mb: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                <TextField
+                  size="small"
+                  label="عنوان القسم"
+                  value={section.title}
+                  onChange={(e) => {
+                    const newSections = [...listData.sections];
+                    newSections[sIndex] = { ...section, title: e.target.value };
+                    setListData(prev => ({ ...prev, sections: newSections }));
+                  }}
+                />
+                {listData.sections.length > 1 && (
+                  <IconButton size="small" color="error" onClick={() => {
+                    setListData(prev => ({ ...prev, sections: prev.sections.filter((_, i) => i !== sIndex) }));
+                  }}>
+                    <DeleteIcon />
+                  </IconButton>
+                )}
+              </Box>
+
+              {section.rows.map((row, rIndex) => (
+                <Box key={rIndex} sx={{ display: 'flex', gap: 1, mb: 1, ml: 2 }}>
+                  <TextField
+                    size="small"
+                    placeholder="العنوان"
+                    value={row.title}
+                    onChange={(e) => {
+                      const newSections = [...listData.sections];
+                      if (newSections[sIndex]?.rows[rIndex]) {
+                        newSections[sIndex].rows[rIndex] = { ...row, title: e.target.value };
+                        setListData(prev => ({ ...prev, sections: newSections }));
+                      }
+                    }}
+                    sx={{ flex: 1 }}
+                  />
+                  <TextField
+                    size="small"
+                    placeholder="الوصف (اختياري)"
+                    value={row.description}
+                    onChange={(e) => {
+                      const newSections = [...listData.sections];
+                      if (newSections[sIndex]?.rows[rIndex]) {
+                        newSections[sIndex].rows[rIndex] = { ...row, description: e.target.value };
+                        setListData(prev => ({ ...prev, sections: newSections }));
+                      }
+                    }}
+                    sx={{ flex: 1 }}
+                  />
+                  {section.rows.length > 1 && (
+                    <IconButton size="small" onClick={() => {
+                      const newSections = [...listData.sections];
+                      if (newSections[sIndex]) {
+                        newSections[sIndex].rows = section.rows.filter((_, i) => i !== rIndex);
+                        setListData(prev => ({ ...prev, sections: newSections }));
+                      }
+                    }}>
+                      <CloseIcon fontSize="small" />
+                    </IconButton>
+                  )}
+                </Box>
+              ))}
+              <Button size="small" onClick={() => {
+                const newSections = [...listData.sections];
+                if (newSections[sIndex]) {
+                  newSections[sIndex].rows.push({ id: String(section.rows.length + 1), title: '', description: '' });
+                  setListData(prev => ({ ...prev, sections: newSections }));
+                }
+              }}>
+                + إضافة عنصر
+              </Button>
+            </Paper>
+          ))}
+
+          {listData.sections.length < 10 && (
+            <Button onClick={() => setListData(prev => ({
+              ...prev,
+              sections: [...prev.sections, { title: `القسم ${prev.sections.length + 1}`, rows: [{ id: '1', title: '', description: '' }] }]
+            }))}>
+              + إضافة قسم
+            </Button>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setListDialogOpen(false)}>إلغاء</Button>
+          <Button variant="contained" onClick={handleSendList} disabled={!listData.text.trim()}>
+            إرسال
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Broadcast Dialog */}
+      <Dialog open={broadcastDialogOpen} onClose={() => setBroadcastDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <BroadcastIcon color="primary" />
+            إرسال بث جماعي
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            سيتم إرسال الرسالة لجميع جهات الاتصال المحددة بشكل فردي.
+          </Alert>
+          <TextField
+            fullWidth
+            label="نص الرسالة"
+            multiline
+            rows={4}
+            value={broadcastData.message}
+            onChange={(e) => setBroadcastData(prev => ({ ...prev, message: e.target.value }))}
+            sx={{ mb: 2 }}
+          />
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>
+            اختر جهات الاتصال ({broadcastData.selectedContacts.length} محدد):
+          </Typography>
+          <Paper sx={{ maxHeight: 300, overflow: 'auto' }}>
+            <List dense>
+              {contacts.filter(c => !c.isGroup).map(contact => (
+                <ListItem
+                  key={contact.id}
+                  button
+                  onClick={() => {
+                    if (broadcastData.selectedContacts.includes(contact.jid)) {
+                      setBroadcastData(prev => ({
+                        ...prev,
+                        selectedContacts: prev.selectedContacts.filter(j => j !== contact.jid)
+                      }));
+                    } else {
+                      setBroadcastData(prev => ({
+                        ...prev,
+                        selectedContacts: [...prev.selectedContacts, contact.jid]
+                      }));
+                    }
+                  }}
+                >
+                  <ListItemAvatar>
+                    <Avatar src={contact.profilePicUrl || ''} sx={{ width: 32, height: 32 }}>
+                      {getContactName(contact)[0]}
+                    </Avatar>
+                  </ListItemAvatar>
+                  <ListItemText primary={getContactName(contact)} secondary={contact.phoneNumber} />
+                  {broadcastData.selectedContacts.includes(contact.jid) && (
+                    <CheckIcon color="primary" />
+                  )}
+                </ListItem>
+              ))}
+            </List>
+          </Paper>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBroadcastDialogOpen(false)}>إلغاء</Button>
+          <Button
+            variant="contained"
+            onClick={handleSendBroadcast}
+            disabled={!broadcastData.message.trim() || broadcastData.selectedContacts.length === 0}
+          >
+            إرسال ({broadcastData.selectedContacts.length})
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Catalog Dialog */}
+      <Dialog open={catalogDialogOpen} onClose={() => setCatalogDialogOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <CatalogIcon color="primary" />
+            إرسال منتج
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          {products.length === 0 ? (
+            <Alert severity="info">لا توجد منتجات في الكتالوج.</Alert>
+          ) : (
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 2 }}>
+              {products.map((product, index) => (
+                <Paper
+                  key={index}
+                  sx={{
+                    p: 2,
+                    cursor: 'pointer',
+                    border: selectedProduct?.id === product.id ? '2px solid' : '1px solid',
+                    borderColor: selectedProduct?.id === product.id ? 'primary.main' : 'divider',
+                    '&:hover': { borderColor: 'primary.light' }
+                  }}
+                  onClick={() => setSelectedProduct(product)}
+                >
+                  {product.imageUrl && (
+                    <Box
+                      component="img"
+                      src={product.imageUrl}
+                      sx={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 1, mb: 1 }}
+                    />
+                  )}
+                  <Typography variant="subtitle2" noWrap>{product.name}</Typography>
+                  <Typography variant="body2" color="text.secondary" noWrap>
+                    {product.description}
+                  </Typography>
+                  <Typography variant="h6" color="primary">
+                    {product.price} {product.currency || 'EGP'}
+                  </Typography>
+                </Paper>
+              ))}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCatalogDialogOpen(false)}>إلغاء</Button>
+          <Button
+            variant="contained"
+            onClick={() => selectedProduct && handleSendProduct(selectedProduct)}
+            disabled={!selectedProduct}
+          >
+            إرسال المنتج
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Starred Messages Drawer */}
+      <Drawer
+        anchor="right"
+        open={starredMessagesOpen}
+        onClose={() => setStarredMessagesOpen(false)}
+        PaperProps={{ sx: { width: 400 } }}
+      >
+        <Box sx={{ p: 2 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6">
+              <StarIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'warning.main' }} />
+              الرسائل المميزة
+            </Typography>
+            <IconButton onClick={() => setStarredMessagesOpen(false)}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
+          <Divider sx={{ mb: 2 }} />
+          {starredMessages.length === 0 ? (
+            <Typography color="text.secondary" textAlign="center">
+              لا توجد رسائل مميزة
+            </Typography>
+          ) : (
+            <List>
+              {starredMessages.map((msg, index) => (
+                <Paper key={index} sx={{ p: 1, mb: 1 }}>
+                  <Typography variant="body2">{msg.content}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {format(new Date(msg.timestamp), 'dd/MM/yyyy HH:mm')}
+                  </Typography>
+                </Paper>
+              ))}
+            </List>
+          )}
+        </Box>
+      </Drawer>
+
+      {/* Order Dialog */}
+      <Dialog open={orderDialogOpen} onClose={() => setOrderDialogOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <CatalogIcon color="secondary" />
+            إنشاء طلب
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={7}>
+              <Typography variant="subtitle1" gutterBottom>المنتجات المتاحة</Typography>
+              {products.length === 0 ? (
+                <Alert severity="info">لا توجد منتجات</Alert>
+              ) : (
+                <List sx={{ maxHeight: 300, overflow: 'auto' }}>
+                  {products.map((product, index) => (
+                    <ListItem key={index} secondaryAction={
+                      <Button size="small" onClick={() => addToOrder(product)}>إضافة</Button>
+                    }>
+                      <ListItemText
+                        primary={product.name}
+                        secondary={`${product.price || 0} ${orderData.currency}`}
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              )}
+            </Grid>
+            <Grid item xs={12} md={5}>
+              <Typography variant="subtitle1" gutterBottom>الطلب الحالي</Typography>
+              {orderData.items.length === 0 ? (
+                <Typography color="text.secondary">لم تتم إضافة منتجات</Typography>
+              ) : (
+                <>
+                  <List>
+                    {orderData.items.map((item, index) => {
+                      const product = products.find(p => p.id === item.productId);
+                      return (
+                        <ListItem key={index} secondaryAction={
+                          <IconButton size="small" color="error" onClick={() => removeFromOrder(item.productId)}>
+                            <DeleteIcon />
+                          </IconButton>
+                        }>
+                          <ListItemText
+                            primary={product?.name || item.productId}
+                            secondary={`${item.quantity} × ${item.price} = ${item.quantity * item.price} ${orderData.currency}`}
+                          />
+                        </ListItem>
+                      );
+                    })}
+                  </List>
+                  <Divider sx={{ my: 1 }} />
+                  <Typography variant="h6">
+                    الإجمالي: {orderData.items.reduce((sum, i) => sum + (i.quantity * i.price), 0)} {orderData.currency}
+                  </Typography>
+                </>
+              )}
+
+              <TextField
+                fullWidth
+                label="ملاحظات"
+                value={orderData.note}
+                onChange={(e) => setOrderData({ ...orderData, note: e.target.value })}
+                multiline
+                rows={2}
+                sx={{ mt: 2 }}
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOrderDialogOpen(false)}>إلغاء</Button>
+          <Button
+            variant="contained"
+            onClick={handleSendOrder}
+            disabled={orderData.items.length === 0}
+          >
+            إرسال الطلب
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Location Dialog */}
+      <Dialog open={locationDialogOpen} onClose={() => setLocationDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <LocationIcon color="primary" />
+            إرسال موقع
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Button
+            fullWidth
+            variant="outlined"
+            startIcon={<LocationIcon />}
+            onClick={getCurrentLocation}
+            sx={{ mb: 3 }}
+          >
+            استخدام موقعي الحالي
+          </Button>
+
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>أو أدخل الإحداثيات يدوياً:</Typography>
+
+          <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+            <TextField
+              fullWidth
+              label="خط العرض (Latitude)"
+              value={locationData.latitude}
+              onChange={(e) => setLocationData(prev => ({ ...prev, latitude: e.target.value }))}
+              type="number"
+              inputProps={{ step: 'any' }}
+            />
+            <TextField
+              fullWidth
+              label="خط الطول (Longitude)"
+              value={locationData.longitude}
+              onChange={(e) => setLocationData(prev => ({ ...prev, longitude: e.target.value }))}
+              type="number"
+              inputProps={{ step: 'any' }}
+            />
+          </Box>
+
+          <TextField
+            fullWidth
+            label="العنوان (اختياري)"
+            value={locationData.address}
+            onChange={(e) => setLocationData(prev => ({ ...prev, address: e.target.value }))}
+            placeholder="مثال: القاهرة، مصر"
+          />
+
+          {locationData.latitude && locationData.longitude && (
+            <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+              <Typography variant="body2">
+                📍 الموقع: {locationData.latitude}, {locationData.longitude}
+              </Typography>
+              <Button
+                size="small"
+                href={`https://www.google.com/maps?q=${locationData.latitude},${locationData.longitude}`}
+                target="_blank"
+                sx={{ mt: 1 }}
+              >
+                عرض على الخريطة
+              </Button>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLocationDialogOpen(false)}>إلغاء</Button>
+          <Button
+            variant="contained"
+            onClick={handleSendLocation}
+            disabled={!locationData.latitude || !locationData.longitude}
+          >
+            إرسال الموقع
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Labels Dialog */}
+      <LabelsDialog
+        open={labelDialogOpen}
+        onClose={() => {
+          setLabelDialogOpen(false);
+          setSelectedContactForLabel(null);
+        }}
+        sessionId={selectedSession}
+        contactJid={selectedContactForLabel?.jid}
+        initialLabels={selectedContactForLabel?.labels || []}
+        onLabelsUpdated={() => {
+          loadContacts(); // Refresh contacts to show new labels
+        }}
+      />
+
+      {/* Broadcast Dialog */}
+      <BroadcastDialog
+        open={broadcastDialogOpen}
+        onClose={() => setBroadcastDialogOpen(false)}
+        sessionId={selectedSession}
+        contacts={contacts}
+      />
+
+      {/* Privacy Settings Dialog */}
+      <PrivacySettingsDialog
+        open={privacyDialogOpen}
+        onClose={() => setPrivacyDialogOpen(false)}
+        sessionId={selectedSession}
+        contacts={contacts}
+      />
+
+      {/* Business Profile Dialog */}
+      <BusinessProfileDialog
+        open={businessProfileDialogOpen}
+        onClose={() => setBusinessProfileDialogOpen(false)}
+        sessionId={selectedSession}
       />
     </Box>
   );
