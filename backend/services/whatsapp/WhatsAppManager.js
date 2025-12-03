@@ -470,13 +470,15 @@ async function handleIncomingMessages(sessionId, companyId, m, sock) {
                     mediaFileName: messageContent.fileName,
                     quotedMessageId: messageContent.quotedId,
                     quotedContent: messageContent.quotedText,
-                    metadata: JSON.stringify(msg)
+                    metadata: JSON.stringify(msg),
+                    participant: msg.key.participant // تحديث المشارك
                 },
                 create: {
                     sessionId,
                     remoteJid,
                     messageId,
                     fromMe,
+                    participant: msg.key.participant, // حفظ المشارك
                     messageType: messageContent.type,
                     content: messageContent.text,
                     mediaUrl: messageContent.mediaUrl,
@@ -492,6 +494,14 @@ async function handleIncomingMessages(sessionId, companyId, m, sock) {
 
             // تحديث أو إنشاء جهة الاتصال
             const contact = await updateOrCreateContact(sessionId, remoteJid, msg, sock, { isOutgoing: fromMe });
+
+            // إذا كانت رسالة مجموعة، نحفظ المرسل كجهة اتصال أيضاً
+            if (remoteJid.endsWith('@g.us') && msg.key.participant) {
+                await updateOrCreateContact(sessionId, msg.key.participant, msg, sock, {
+                    isOutgoing: false,
+                    isGroupParticipant: true
+                });
+            }
 
             // إرسال الرسالة عبر Socket.IO
             io?.to(`company_${companyId}`).emit('whatsapp:message:new', {
@@ -740,7 +750,7 @@ async function extractMessageContent(msg, sock, sessionId) {
  */
 async function updateOrCreateContact(sessionId, remoteJid, msg, sock, options = {}) {
     try {
-        const { isOutgoing = false } = options;
+        const { isOutgoing = false, isGroupParticipant = false } = options;
 
         // Ensure JID is normalized using the same logic as MessageHandler
         const formatJid = (to) => {
@@ -781,13 +791,17 @@ async function updateOrCreateContact(sessionId, remoteJid, msg, sock, options = 
         const updateData = {
             pushName,
             profilePicUrl,
-            lastMessageAt: new Date(),
-            totalMessages: { increment: 1 }
         };
 
-        // Only increment unreadCount if it's an incoming message
-        if (!isOutgoing) {
-            updateData.unreadCount = { increment: 1 };
+        // Only update chat metadata if it's NOT a background participant update
+        if (!isGroupParticipant) {
+            updateData.lastMessageAt = new Date();
+            updateData.totalMessages = { increment: 1 };
+
+            // Only increment unreadCount if it's an incoming message
+            if (!isOutgoing) {
+                updateData.unreadCount = { increment: 1 };
+            }
         }
 
         const createData = {
@@ -796,10 +810,10 @@ async function updateOrCreateContact(sessionId, remoteJid, msg, sock, options = 
             phoneNumber,
             pushName,
             profilePicUrl,
-            isGroup,
             lastMessageAt: new Date(),
-            unreadCount: isOutgoing ? 0 : 1,
-            totalMessages: 1
+            unreadCount: (!isOutgoing && !isGroupParticipant) ? 1 : 0,
+            totalMessages: 1,
+            isGroup
         };
 
         const contact = await prisma.whatsAppContact.upsert({
@@ -1545,6 +1559,276 @@ async function restoreAllSessions() {
     }
 }
 
+
+/**
+ * إنشاء مجموعة جديدة
+ */
+async function createGroup(sessionId, subject, participants) {
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
+
+    try {
+        const group = await session.sock.groupCreate(subject, participants);
+        console.log(`👥 Group created: ${group.id}`);
+        return group;
+    } catch (error) {
+        console.error('❌ Error creating group:', error);
+        throw error;
+    }
+}
+
+/**
+ * تحديث المشاركين في المجموعة (إضافة، حذف، ترقية، خفض رتبة)
+ * action: 'add' | 'remove' | 'promote' | 'demote'
+ */
+async function updateGroupParticipants(sessionId, jid, participants, action) {
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
+
+    try {
+        const response = await session.sock.groupParticipantsUpdate(jid, participants, action);
+        console.log(`👥 Group participants updated (${action}): ${jid}`);
+        return response;
+    } catch (error) {
+        console.error(`❌ Error updating group participants (${action}):`, error);
+        throw error;
+    }
+}
+
+/**
+ * جلب بيانات المجموعة
+ */
+async function getGroupMetadata(sessionId, jid) {
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
+
+    try {
+        const metadata = await session.sock.groupMetadata(jid);
+        return metadata;
+    } catch (error) {
+        console.error('❌ Error getting group metadata:', error);
+        throw error;
+    }
+}
+
+/**
+ * تحديث اسم المجموعة
+ */
+async function updateGroupSubject(sessionId, jid, subject) {
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
+
+    try {
+        await session.sock.groupSubjectUpdate(jid, subject);
+        console.log(`📝 Group subject updated: ${jid}`);
+        return { success: true };
+    } catch (error) {
+        console.error('❌ Error updating group subject:', error);
+        throw error;
+    }
+}
+
+/**
+ * تحديث وصف المجموعة
+ */
+async function updateGroupDescription(sessionId, jid, description) {
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
+
+    try {
+        await session.sock.groupUpdateDescription(jid, description);
+        console.log(`📝 Group description updated: ${jid}`);
+        return { success: true };
+    } catch (error) {
+        console.error('❌ Error updating group description:', error);
+        throw error;
+    }
+}
+
+/**
+ * تحديث إعدادات المجموعة
+ * settings: 'announcement' | 'not_announcement' | 'locked' | 'unlocked'
+ */
+async function updateGroupSettings(sessionId, jid, settings) {
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
+
+    try {
+        await session.sock.groupSettingUpdate(jid, settings);
+        console.log(`⚙️ Group settings updated: ${jid} -> ${settings}`);
+        return { success: true };
+    } catch (error) {
+        console.error('❌ Error updating group settings:', error);
+        throw error;
+    }
+}
+
+/**
+ * مغادرة المجموعة
+ */
+async function leaveGroup(sessionId, jid) {
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
+
+    try {
+        await session.sock.groupLeave(jid);
+        console.log(`👋 Left group: ${jid}`);
+        return { success: true };
+    } catch (error) {
+        console.error('❌ Error leaving group:', error);
+        throw error;
+    }
+}
+
+/**
+ * الحصول على رابط دعوة المجموعة
+ */
+async function getGroupInviteCode(sessionId, jid) {
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
+
+    try {
+        const code = await session.sock.groupInviteCode(jid);
+        return code;
+    } catch (error) {
+        console.error('❌ Error getting group invite code:', error);
+        throw error;
+    }
+}
+
+/**
+ * إلغاء رابط دعوة المجموعة
+ */
+async function revokeGroupInviteCode(sessionId, jid) {
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
+
+    try {
+        const code = await session.sock.groupRevokeInvite(jid);
+        return code;
+    } catch (error) {
+        console.error('❌ Error revoking group invite code:', error);
+        throw error;
+    }
+}
+
+/**
+ * الحصول على بيانات المجموعة (المشاركين، الوصف، الإعدادات)
+ */
+async function getGroupMetadata(sessionId, jid) {
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
+
+    try {
+        const metadata = await session.sock.groupMetadata(jid);
+        return metadata;
+    } catch (error) {
+        console.error('❌ Error getting group metadata:', error);
+        throw error;
+    }
+}
+
+/**
+ * حظر جهة اتصال
+ */
+async function blockContact(sessionId, jid) {
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
+
+    try {
+        await session.sock.updateBlockStatus(jid, 'block');
+        console.log(`🚫 Blocked contact: ${jid}`);
+        return { success: true };
+    } catch (error) {
+        console.error('❌ Error blocking contact:', error);
+        throw error;
+    }
+}
+
+/**
+ * إلغاء حظر جهة اتصال
+ */
+async function unblockContact(sessionId, jid) {
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
+
+    try {
+        await session.sock.updateBlockStatus(jid, 'unblock');
+        console.log(`✅ Unblocked contact: ${jid}`);
+        return { success: true };
+    } catch (error) {
+        console.error('❌ Error unblocking contact:', error);
+        throw error;
+    }
+}
+
+/**
+ * تحديث حالة الملف الشخصي (About)
+ */
+async function updateProfileStatus(sessionId, status) {
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
+
+    try {
+        await session.sock.updateProfileStatus(status);
+        console.log(`📝 Profile status updated`);
+        return { success: true };
+    } catch (error) {
+        console.error('❌ Error updating profile status:', error);
+        throw error;
+    }
+}
+
+/**
+ * تحديث اسم الملف الشخصي (Push Name)
+ */
+async function updateProfileName(sessionId, name) {
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
+
+    try {
+        await session.sock.updateProfileName(name);
+        console.log(`📝 Profile name updated: ${name}`);
+        return { success: true };
+    } catch (error) {
+        console.error('❌ Error updating profile name:', error);
+        throw error;
+    }
+}
+
+/**
+ * تحديث صورة الملف الشخصي
+ */
+async function updateProfilePicture(sessionId, jid, content) {
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
+
+    try {
+        await session.sock.updateProfilePicture(jid, content);
+        console.log(`🖼️ Profile picture updated for: ${jid}`);
+        return { success: true };
+    } catch (error) {
+        console.error('❌ Error updating profile picture:', error);
+        throw error;
+    }
+}
+
+/**
+ * التحقق من وجود الرقم على واتساب
+ */
+async function onWhatsApp(sessionId, number) {
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
+
+    try {
+        const [result] = await session.sock.onWhatsApp(number);
+        return result;
+    } catch (error) {
+        console.error('❌ Error checking number on WhatsApp:', error);
+        throw error;
+    }
+}
+
 module.exports = {
     createSession,
     getSession,
@@ -1567,5 +1851,53 @@ module.exports = {
     sendReaction,
     initSessionsDirectory,
     logEvent,
-    updateContact
+    updateContact,
+    createGroup,
+    updateGroupParticipants,
+    updateGroupSubject,
+    updateGroupDescription,
+    updateGroupSettings,
+    leaveGroup,
+    getGroupInviteCode,
+    revokeGroupInviteCode,
+    blockContact,
+    unblockContact,
+    updateProfileStatus,
+    updateProfileName,
+    updateProfilePicture,
+    onWhatsApp,
+    getGroupMetadata,
+    getProfile
 };
+
+/**
+ * الحصول على الملف الشخصي
+ */
+async function getProfile(sessionId) {
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
+
+    const jid = session.sock.user.id;
+    // Clean JID (remove :device@...)
+    const cleanJid = jid.split(':')[0] + '@s.whatsapp.net';
+
+    try {
+        const status = await session.sock.fetchStatus(cleanJid);
+        let profilePicUrl;
+        try {
+            profilePicUrl = await session.sock.profilePictureUrl(cleanJid, 'image');
+        } catch (err) {
+            profilePicUrl = null;
+        }
+
+        return {
+            name: session.sock.user.name || session.sock.user.notify,
+            status: status?.status || '',
+            profilePicUrl: profilePicUrl
+        };
+    } catch (error) {
+        console.error('❌ Error fetching profile:', error);
+        throw new Error('Failed to fetch profile');
+    }
+}
+

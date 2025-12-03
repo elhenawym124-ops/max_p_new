@@ -702,9 +702,9 @@ async function deleteMessage(sessionId, remoteJid, messageId, forEveryone = fals
 async function markAsRead(sessionId, remoteJid) {
     try {
         const session = WhatsAppManager.getSession(sessionId);
-        if (!session || session.status !== 'connected') {
-            throw new Error('الجلسة غير متصلة');
-        }
+
+        // We don't throw error if session is not connected, we just skip socket update
+        // and proceed to update database so the UI reflects the read status.
 
         const jid = formatJid(remoteJid);
 
@@ -720,30 +720,32 @@ async function markAsRead(sessionId, remoteJid) {
         });
 
         if (lastMessage) {
-            try {
-                // محاولة استخدام readMessages أولاً
-                if (typeof session.sock.readMessages === 'function') {
-                    await session.sock.readMessages([{
-                        remoteJid: jid,
-                        id: lastMessage.messageId,
-                        fromMe: false
-                    }]);
+            if (session && session.status === 'connected') {
+                try {
+                    // محاولة استخدام readMessages أولاً
+                    if (typeof session.sock.readMessages === 'function') {
+                        await session.sock.readMessages([{
+                            remoteJid: jid,
+                            id: lastMessage.messageId,
+                            fromMe: false
+                        }]);
+                    }
+                    // استخدام chatModify كبديل
+                    else if (typeof session.sock.chatModify === 'function') {
+                        await session.sock.chatModify({
+                            markRead: true,
+                            lastMessages: [{
+                                key: {
+                                    remoteJid: jid,
+                                    id: lastMessage.messageId,
+                                    fromMe: false
+                                }
+                            }]
+                        }, jid);
+                    }
+                } catch (sockError) {
+                    console.warn('⚠️ Error in socket read/modify, continuing to DB update:', sockError.message);
                 }
-                // استخدام chatModify كبديل
-                else if (typeof session.sock.chatModify === 'function') {
-                    await session.sock.chatModify({
-                        markRead: true,
-                        lastMessages: [{
-                            key: {
-                                remoteJid: jid,
-                                id: lastMessage.messageId,
-                                fromMe: false
-                            }
-                        }]
-                    }, jid);
-                }
-            } catch (sockError) {
-                console.warn('⚠️ Error in socket read/modify, continuing to DB update:', sockError.message);
             }
         }
 

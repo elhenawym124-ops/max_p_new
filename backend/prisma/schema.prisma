@@ -2706,6 +2706,7 @@ model WhatsAppMessage {
   
   // معرفات WhatsApp
   remoteJid       String   // رقم المرسل/المستقبل (JID)
+  participant     String?  // المرسل الفعلي في المجموعات
   messageId       String   @unique // ID الرسالة من WhatsApp
   
   // تتبع الموظف

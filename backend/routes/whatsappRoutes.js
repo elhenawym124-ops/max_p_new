@@ -198,6 +198,41 @@ router.put('/settings', verifyToken.authenticateToken, whatsappController.update
 // 📊 الإحصائيات
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// 👥 المجموعات
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// إنشاء مجموعة
+router.post('/groups', verifyToken.authenticateToken, whatsappController.createGroup);
+
+// جلب بيانات مجموعة
+router.get('/groups/:jid', verifyToken.authenticateToken, whatsappController.getGroupMetadata);
+
+// تحديث اسم المجموعة
+router.put('/groups/:jid/subject', verifyToken.authenticateToken, whatsappController.updateGroupSubject);
+
+// تحديث وصف المجموعة
+router.put('/groups/:jid/description', verifyToken.authenticateToken, whatsappController.updateGroupDescription);
+
+// تحديث إعدادات المجموعة
+router.put('/groups/:jid/settings', verifyToken.authenticateToken, whatsappController.updateGroupSettings);
+
+// إضافة/إزالة مشاركين
+router.put('/groups/:jid/participants', verifyToken.authenticateToken, whatsappController.updateGroupParticipants);
+
+// الخروج من المجموعة
+router.post('/groups/:jid/leave', verifyToken.authenticateToken, whatsappController.leaveGroup);
+
+// جلب رابط الدعوة
+router.get('/groups/:jid/invite-code', verifyToken.authenticateToken, whatsappController.getGroupInviteCode);
+
+// إلغاء رابط الدعوة
+router.post('/groups/:jid/revoke-invite', verifyToken.authenticateToken, whatsappController.revokeGroupInviteCode);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 📊 الإحصائيات
+// ═══════════════════════════════════════════════════════════════════════════════
+
 // جلب الإحصائيات
 router.get('/stats', verifyToken.authenticateToken, whatsappController.getStats);
 
@@ -238,5 +273,42 @@ router.post('/chats/clear', verifyToken.authenticateToken, whatsappController.cl
 
 // Migration endpoint
 router.post('/migrate-auth', verifyToken.authenticateToken, whatsappController.migrateAuthToDatabase);
+
+router.put('/groups/:jid/description', verifyToken.authenticateToken, whatsappController.updateGroupDescription);
+
+// تحديث إعدادات المجموعة
+router.put('/groups/:jid/settings', verifyToken.authenticateToken, whatsappController.updateGroupSettings);
+
+// مغادرة المجموعة
+router.post('/groups/:jid/leave', verifyToken.authenticateToken, whatsappController.leaveGroup);
+
+// الحصول على رابط الدعوة
+router.get('/groups/:jid/invite-code', verifyToken.authenticateToken, whatsappController.getGroupInviteCode);
+
+// إلغاء رابط الدعوة
+router.post('/groups/:jid/revoke-invite', verifyToken.authenticateToken, whatsappController.revokeGroupInviteCode);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🔒 الخصوصية والحظر
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// حظر جهة اتصال
+router.post('/contacts/block', verifyToken.authenticateToken, whatsappController.blockContact);
+
+// إلغاء حظر جهة اتصال
+router.post('/contacts/unblock', verifyToken.authenticateToken, whatsappController.unblockContact);
+
+// التحقق من الرقم
+router.post('/check-number', verifyToken.authenticateToken, whatsappController.checkNumber);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 👤 الملف الشخصي
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// جلب الملف الشخصي
+router.get('/profile', verifyToken.authenticateToken, whatsappController.getProfile);
+
+// تحديث الملف الشخصي
+router.post('/profile/update', verifyToken.authenticateToken, upload.single('picture'), whatsappController.updateProfile);
 
 module.exports = router;

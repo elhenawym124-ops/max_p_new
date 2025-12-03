@@ -16,6 +16,7 @@ export const config = {
   apiUrl: envConfig.apiUrl,
   wsUrl: envConfig.wsUrl,
   appUrl: envConfig.appUrl,
+  backendUrl: envConfig.backendUrl,
 
   // App Information
   app: {

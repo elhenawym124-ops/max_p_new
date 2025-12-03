@@ -13,7 +13,7 @@ class FacebookAudiencesService {
   constructor(accessToken, adAccountId = null) {
     this.accessToken = accessToken;
     this.adAccountId = adAccountId;
-    this.apiVersion = 'v18.0';
+    this.apiVersion = 'v22.0'; // ✅ Updated to v22.0
     this.baseUrl = `https://graph.facebook.com/${this.apiVersion}`;
   }
 

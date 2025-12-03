@@ -2,7 +2,7 @@ const axios = require('axios');
 
 class PostDetailsService {
   constructor() {
-    this.graphApiBaseUrl = 'https://graph.facebook.com/v18.0';
+    this.graphApiBaseUrl = 'https://graph.facebook.com/v22.0'; // ✅ Updated to v22.0
   }
 
   /**

@@ -20,20 +20,25 @@ import {
   Archive as ArchiveIcon, Delete as DeleteIcon, PushPin as PinIcon,
   VolumeOff as MuteIcon, Reply as ReplyIcon, ContentCopy as CopyIcon,
   Forward as ForwardIcon, Refresh as RefreshIcon, Close as CloseIcon,
-  GetApp as DownloadIcon, Block as BlockIcon, Report as ReportIcon
+  GetApp as DownloadIcon, Block as BlockIcon, Report as ReportIcon,
+  GroupAdd as GroupAddIcon, PersonSearch as PersonSearchIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { format, isToday, isYesterday } from 'date-fns';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import { apiClient as api } from '../../services/apiClient';
 import useSocket from '../../hooks/useSocket';
+import CreateGroupDialog from '../../components/whatsapp/CreateGroupDialog';
+import GroupInfoDrawer from '../../components/whatsapp/GroupInfoDrawer';
+import ProfileDialog from '../../components/whatsapp/ProfileDialog';
+import CheckNumberDialog from '../../components/whatsapp/CheckNumberDialog';
 import AudioRecorder from './components/AudioRecorder';
 import { useAuth } from '../../hooks/useAuthSimple';
+import { config } from '../../config';
 
 interface Contact {
   id: string;
   sessionId: string;
-  jid: string;
   jid: string;
   phoneNumber: string;
   name: string | null;
@@ -46,6 +51,7 @@ interface Contact {
   isArchived: boolean;
   isPinned: boolean;
   isMuted: boolean;
+  isBlocked?: boolean;
   session: {
     name: string;
     phoneNumber: string | null;
@@ -78,10 +84,10 @@ interface Message {
   status: string;
   timestamp: string;
   isAIResponse: boolean;
-  isAIResponse: boolean;
   aiConfidence: number | null;
   senderId?: string;
   senderName?: string; // For display
+  participant?: string; // Group participant
 }
 
 interface Session {
@@ -135,6 +141,8 @@ const WhatsAppChat: React.FC = () => {
   const [selectedContactsForForward, setSelectedContactsForForward] = useState<string[]>([]);
   const [messageInfoDialogOpen, setMessageInfoDialogOpen] = useState(false);
   const [selectedMessageForInfo, setSelectedMessageForInfo] = useState<Message | null>(null);
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const [checkNumberDialogOpen, setCheckNumberDialogOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
   const loadContactsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -146,6 +154,26 @@ const WhatsAppChat: React.FC = () => {
     browserNotifications: true
   });
   const [chatFilter, setChatFilter] = useState('all'); // 'all', 'unread', 'groups'
+  const [createGroupDialogOpen, setCreateGroupDialogOpen] = useState(false);
+  const [currentUserProfile, setCurrentUserProfile] = useState<{ name: string; status: string; profilePicUrl: string } | null>(null);
+
+  const fetchUserProfile = async () => {
+    if (!selectedSession || selectedSession === 'all') return;
+    try {
+      const response = await api.get('/whatsapp/profile', { params: { sessionId: selectedSession } });
+      if (response.data.success) {
+        setCurrentUserProfile(response.data.profile);
+      }
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedSession && selectedSession !== 'all') {
+      fetchUserProfile();
+    }
+  }, [selectedSession]);
 
   // Helper for Date Separators
   const shouldShowDateSeparator = (currentMessage: Message, previousMessage: Message | undefined) => {
@@ -483,6 +511,11 @@ const WhatsAppChat: React.FC = () => {
     }
   }, [selectedContact]);
 
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, typingUsers]);
+
   const getMediaUrl = (path: string | null) => {
     if (!path) return '';
     if (path.startsWith('http')) return path;
@@ -628,149 +661,170 @@ const WhatsAppChat: React.FC = () => {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+
   const handleClearChat = async (contact: Contact) => {
     if (!selectedSession) return;
-    const targetSessionId = contact.sessionId || (selectedSession === 'all' ? null : selectedSession);
-    if (!targetSessionId) return;
-
-    if (!window.confirm('هل أنت متأكد من مسح محتوى هذه المحادثة؟')) return;
+    if (!window.confirm('هل أنت متأكد من مسح محتوى المحادثة؟')) return;
     try {
-      await api.post('/whatsapp/chats/clear', { sessionId: targetSessionId, jid: contact.jid });
-      if (selectedContact?.id === contact.id) setMessages([]);
-      loadContacts();
-      enqueueSnackbar('تم مسح محتوى المحادثة', { variant: 'success' });
+      await api.post(`/whatsapp/conversations/${contact.jid}/clear`, { sessionId: selectedSession });
+      enqueueSnackbar('تم مسح المحادثة', { variant: 'success' });
+      if (selectedContact?.jid === contact.jid) {
+        setMessages([]);
+      }
     } catch (error) {
-      enqueueSnackbar('حدث خطأ', { variant: 'error' });
+      enqueueSnackbar('فشل مسح المحادثة', { variant: 'error' });
     }
   };
 
   const handleDeleteChat = async (contact: Contact) => {
-    if (!selectedSession) {
-      enqueueSnackbar('يجب اختيار جلسة أولاً', { variant: 'warning' });
-      return;
-    }
-    const targetSessionId = contact.sessionId || (selectedSession === 'all' ? null : selectedSession);
-    if (!targetSessionId) return;
-
-    if (!window.confirm('هل أنت متأكد من حذف هذه المحادثة؟')) return;
-
+    if (!selectedSession) return;
+    if (!window.confirm('هل أنت متأكد من حذف المحادثة؟')) return;
     try {
-      const response = await api.post('/whatsapp/chats/delete', {
-        sessionId: targetSessionId,
-        jid: contact.jid
-      });
-
-      if (response.data.success) {
-        setContacts(prev => prev.filter(c => c.id !== contact.id));
-        if (selectedContact?.id === contact.id) {
-          setSelectedContact(null);
-          setMessages([]);
-        }
-        enqueueSnackbar('تم حذف المحادثة بنجاح', { variant: 'success' });
+      await api.delete(`/whatsapp/conversations/${contact.jid}`, { data: { sessionId: selectedSession } });
+      enqueueSnackbar('تم حذف المحادثة', { variant: 'success' });
+      if (selectedContact?.jid === contact.jid) {
+        setSelectedContact(null);
+        setMessages([]);
       }
-    } catch (error: any) {
-      console.error('Error deleting chat:', error);
-      enqueueSnackbar(error.response?.data?.error || 'حدث خطأ أثناء حذف المحادثة', { variant: 'error' });
+      loadContacts();
+    } catch (error) {
+      enqueueSnackbar('فشل حذف المحادثة', { variant: 'error' });
     }
   };
 
   const handleArchiveChat = async (contact: Contact) => {
     if (!selectedSession) return;
-    const targetSessionId = contact.sessionId || (selectedSession === 'all' ? null : selectedSession);
-    if (!targetSessionId) return;
-
     try {
-      await api.post('/whatsapp/chats/archive', { sessionId: targetSessionId, jid: contact.jid, archive: !contact.isArchived });
-      loadContacts();
-      enqueueSnackbar(contact.isArchived ? 'تم إلغاء الأرشفة' : 'تمت الأرشفة', { variant: 'success' });
-    } catch (e) { enqueueSnackbar('حدث خطأ', { variant: 'error' }); }
-  };
-
-
-  // Message Actions Handlers
-  const handleMessageContextMenu = (event: React.MouseEvent, message: Message) => {
-    event.preventDefault();
-    setMessageMenuAnchor(event.currentTarget as HTMLElement);
-    setSelectedMessageForMenu(message);
-  };
-
-  const handleReply = () => {
-    setReplyingTo(selectedMessageForMenu);
-    setMessageMenuAnchor(null);
-    fileInputRef.current?.focus();
-  };
-
-  const handleCopy = () => {
-    if (selectedMessageForMenu?.content) {
-      navigator.clipboard.writeText(selectedMessageForMenu.content);
-      enqueueSnackbar('تم نسخ النص', { variant: 'success' });
-    }
-    setMessageMenuAnchor(null);
-  };
-
-  const handleDeleteMessage = async () => {
-    if (!selectedSession || !selectedContact || !selectedMessageForMenu) return;
-
-    const targetSessionId = selectedContact.sessionId || (selectedSession === 'all' ? null : selectedSession);
-    if (!targetSessionId) return;
-
-    if (!window.confirm('هل أنت متأكد من حذف هذه الرسالة للجميع؟')) {
-      setMessageMenuAnchor(null);
-      return;
-    }
-
-    try {
-      await api.post('/whatsapp/messages/delete', {
-        sessionId: targetSessionId,
-        to: selectedContact.jid,
-        key: {
-          remoteJid: selectedContact.jid,
-          fromMe: selectedMessageForMenu.fromMe,
-          id: selectedMessageForMenu.messageId
-        }
+      await api.post(`/whatsapp/conversations/${contact.jid}/archive`, {
+        sessionId: selectedSession,
+        archive: !contact.isArchived
       });
-      // Optimistic update or wait for socket? Socket usually handles it.
-      enqueueSnackbar('تم طلب حذف الرسالة', { variant: 'info' });
-    } catch (error: any) {
-      enqueueSnackbar('فشل حذف الرسالة', { variant: 'error' });
+      enqueueSnackbar(contact.isArchived ? 'تم إلغاء الأرشفة' : 'تمت الأرشفة', { variant: 'success' });
+      loadContacts();
+    } catch (error) {
+      enqueueSnackbar('فشل تحديث حالة الأرشفة', { variant: 'error' });
     }
-    setMessageMenuAnchor(null);
+  };
+
+  const handlePinChat = async (contact: Contact) => {
+    if (!selectedSession) return;
+    try {
+      await api.post(`/whatsapp/conversations/${contact.jid}/pin`, {
+        sessionId: selectedSession,
+        pin: !contact.isPinned
+      });
+      enqueueSnackbar(contact.isPinned ? 'تم إلغاء التثبيت' : 'تم التثبيت', { variant: 'success' });
+      loadContacts();
+    } catch (error) {
+      enqueueSnackbar('فشل تحديث حالة التثبيت', { variant: 'error' });
+    }
+  };
+
+  const handleMuteChat = async (contact: Contact) => {
+    if (!selectedSession) return;
+    try {
+      await api.post(`/whatsapp/conversations/${contact.jid}/mute`, {
+        sessionId: selectedSession,
+        mute: !contact.isMuted
+      });
+      enqueueSnackbar(contact.isMuted ? 'تم إلغاء الكتم' : 'تم الكتم', { variant: 'success' });
+      loadContacts();
+    } catch (error) {
+      enqueueSnackbar('فشل تحديث حالة الكتم', { variant: 'error' });
+    }
+  };
+
+  const handleMarkUnread = async (contact: Contact) => {
+    if (!selectedSession) return;
+    try {
+      await api.post(`/whatsapp/conversations/${contact.jid}/mark-unread`, { sessionId: selectedSession });
+      enqueueSnackbar('تم تمييز المحادثة كغير مقروءة', { variant: 'success' });
+      loadContacts();
+    } catch (error) {
+      enqueueSnackbar('فشل تحديث حالة القراءة', { variant: 'error' });
+    }
   };
 
   const handleForwardMessage = async () => {
     if (!selectedSession || !selectedMessageForMenu || selectedContactsForForward.length === 0) return;
 
     try {
-      for (const contactId of selectedContactsForForward) {
-        const contact = contacts.find(c => c.id === contactId);
-        if (contact) {
-          await api.post('/whatsapp/messages/forward', {
-            sessionId: selectedSession,
-            to: contact.jid,
-            message: selectedMessageForMenu
-          });
-        }
-      }
+      await Promise.all(selectedContactsForForward.map(jid =>
+        api.post('/whatsapp/messages/forward', {
+          sessionId: selectedSession,
+          to: jid,
+          messageId: selectedMessageForMenu.messageId
+        })
+      ));
       enqueueSnackbar('تم إعادة توجيه الرسالة', { variant: 'success' });
       setForwardDialogOpen(false);
       setSelectedContactsForForward([]);
+      setSelectedMessageForMenu(null);
     } catch (error) {
-      enqueueSnackbar('فشل إعادة التوجيه', { variant: 'error' });
+      enqueueSnackbar('فشل إعادة توجيه الرسالة', { variant: 'error' });
     }
-    setMessageMenuAnchor(null);
   };
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const handleDeleteMessage = async () => {
+    if (!selectedSession || !selectedMessageForMenu) return;
+    if (!window.confirm('هل أنت متأكد من حذف هذه الرسالة؟')) return;
+
+    try {
+      await api.delete(`/whatsapp/messages/${selectedMessageForMenu.messageId}`, {
+        data: {
+          sessionId: selectedSession,
+          remoteJid: selectedMessageForMenu.remoteJid,
+          fromMe: selectedMessageForMenu.fromMe
+        }
+      });
+      enqueueSnackbar('تم حذف الرسالة', { variant: 'success' });
+      setMessages(prev => prev.filter(m => m.messageId !== selectedMessageForMenu?.messageId));
+      setMessageMenuAnchor(null);
+      setSelectedMessageForMenu(null);
+    } catch (error) {
+      enqueueSnackbar('فشل حذف الرسالة', { variant: 'error' });
+    }
   };
+
+  const handleReply = () => {
+    if (selectedMessageForMenu) {
+      setReplyingTo(selectedMessageForMenu);
+      setMessageMenuAnchor(null);
+      setSelectedMessageForMenu(null);
+    }
+  };
+
+  const handleCopy = () => {
+    if (selectedMessageForMenu?.content) {
+      navigator.clipboard.writeText(selectedMessageForMenu.content);
+      enqueueSnackbar('تم نسخ النص', { variant: 'success' });
+      setMessageMenuAnchor(null);
+      setSelectedMessageForMenu(null);
+    }
+  };
+
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'READ': return <DoneAllIcon sx={{ fontSize: 16, color: '#53bdeb' }} />;
-      case 'DELIVERED': return <DoneAllIcon sx={{ fontSize: 16, color: 'grey.500' }} />;
-      case 'SENT': return <CheckIcon sx={{ fontSize: 16, color: 'grey.500' }} />;
-      default: return <PendingIcon sx={{ fontSize: 16, color: 'grey.500' }} />;
+      case 'PENDING': return <PendingIcon fontSize="small" color="action" />;
+      case 'SENT': return <CheckIcon fontSize="small" color="action" />;
+      case 'DELIVERED': return <DoneAllIcon fontSize="small" color="action" />;
+      case 'READ': return <DoneAllIcon fontSize="small" color="primary" />;
+      case 'ERROR': return <ErrorIcon fontSize="small" color="error" />;
+      default: return <PendingIcon fontSize="small" color="action" />;
     }
+  };
+
+
+  const handleMessageContextMenu = (event: React.MouseEvent, message: Message) => {
+    event.preventDefault();
+    setMessageMenuAnchor(event.currentTarget);
+    setSelectedMessageForMenu(message);
   };
 
   const loadQuickReplies = async () => {
@@ -857,6 +911,29 @@ const WhatsAppChat: React.FC = () => {
     }
   };
 
+  const handleBlockContact = async (contact: Contact) => {
+    if (!window.confirm(`هل أنت متأكد من حظر ${getContactName(contact)}؟`)) return;
+    try {
+      await api.post('/whatsapp/contacts/block', { sessionId: selectedSession, jid: contact.jid });
+      enqueueSnackbar('تم حظر جهة الاتصال', { variant: 'success' });
+      loadContacts();
+      setShowContactInfo(false);
+    } catch (error) {
+      enqueueSnackbar('فشل حظر جهة الاتصال', { variant: 'error' });
+    }
+  };
+
+  const handleUnblockContact = async (contact: Contact) => {
+    try {
+      await api.post('/whatsapp/contacts/unblock', { sessionId: selectedSession, jid: contact.jid });
+      enqueueSnackbar('تم إلغاء حظر جهة الاتصال', { variant: 'success' });
+      loadContacts();
+      setShowContactInfo(false);
+    } catch (error) {
+      enqueueSnackbar('فشل إلغاء حظر جهة الاتصال', { variant: 'error' });
+    }
+  };
+
 
   const sendQuickReply = async (qr: QuickReply) => {
     if (!selectedSession || !selectedContact) return;
@@ -879,6 +956,16 @@ const WhatsAppChat: React.FC = () => {
     return contact.name || contact.pushName || contact.phoneNumber;
   };
 
+  const getParticipantName = (participantJid: string) => {
+    // Normalize JID for lookup
+    const normalizedJid = participantJid.includes('@') ? participantJid : `${participantJid}@s.whatsapp.net`;
+    const contact = contacts.find(c => c.jid === normalizedJid || c.jid === normalizedJid.split('@')[0] + '@s.whatsapp.net');
+    if (contact) {
+      return getContactName(contact);
+    }
+    return participantJid.split('@')[0];
+  };
+
   const filteredContacts = contacts.filter(c => {
     if (chatFilter === 'unread' && c.unreadCount === 0) return false;
     if (chatFilter === 'groups' && !c.isGroup) return false;
@@ -896,13 +983,16 @@ const WhatsAppChat: React.FC = () => {
     <Box sx={{ display: 'flex', height: 'calc(100vh - 64px)', bgcolor: 'background.default' }}>
       {/* Sidebar */}
       <Paper sx={{ width: 350, display: 'flex', flexDirection: 'column', borderRadius: 0 }}>
-        <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+        <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', display: 'flex', gap: 1, alignItems: 'center' }}>
           <FormControl fullWidth size="small">
             <InputLabel>الجلسة</InputLabel>
             <Select value={selectedSession} onChange={(e) => setSelectedSession(e.target.value)} label="الجلسة">
               {sessions.map(s => <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>)}
             </Select>
           </FormControl>
+          <IconButton onClick={() => setProfileDialogOpen(true)} title="الملف الشخصي" disabled={!selectedSession}>
+            <PersonIcon />
+          </IconButton>
         </Box>
         <Box sx={{ p: 2 }}>
           <TextField fullWidth size="small" placeholder="بحث..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> }} />
@@ -910,6 +1000,13 @@ const WhatsAppChat: React.FC = () => {
             <Chip label="الكل" size="small" onClick={() => setChatFilter('all')} color={chatFilter === 'all' ? 'primary' : 'default'} clickable />
             <Chip label="غير مقروء" size="small" onClick={() => setChatFilter('unread')} color={chatFilter === 'unread' ? 'primary' : 'default'} clickable />
             <Chip label="مجموعات" size="small" onClick={() => setChatFilter('groups')} color={chatFilter === 'groups' ? 'primary' : 'default'} clickable />
+            <Box sx={{ flex: 1 }} />
+            <IconButton size="small" onClick={() => setCreateGroupDialogOpen(true)} title="إنشاء مجموعة جديدة">
+              <GroupAddIcon fontSize="small" />
+            </IconButton>
+            <IconButton size="small" onClick={() => setCheckNumberDialogOpen(true)} title="التحقق من رقم">
+              <PersonSearchIcon fontSize="small" />
+            </IconButton>
           </Box>
         </Box>
         <List sx={{ flex: 1, overflow: 'auto' }}>
@@ -959,6 +1056,11 @@ const WhatsAppChat: React.FC = () => {
                       sx={{ p: 1, maxWidth: '70%', bgcolor: message.fromMe ? '#d9fdd3' : '#fff', cursor: 'context-menu' }}
                       onContextMenu={(e) => handleMessageContextMenu(e, message)}
                     >
+                      {selectedContact?.isGroup && !message.fromMe && message.participant && (
+                        <Typography variant="caption" sx={{ display: 'block', color: 'secondary.main', fontWeight: 'bold', mb: 0.5 }}>
+                          {getParticipantName(message.participant)}
+                        </Typography>
+                      )}
                       {message.quotedContent && (
                         <Box sx={{ bgcolor: 'rgba(0,0,0,0.05)', borderInlineStart: '4px solid #00a884', p: 0.5, mb: 0.5, borderRadius: 0.5 }}>
                           <Typography variant="caption" sx={{ display: 'block', color: 'primary.main' }}>رد على رسالة</Typography>
@@ -1125,14 +1227,14 @@ const WhatsAppChat: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Contact Info Drawer */}
+      {/* Contact Info Drawer (Individual) */}
       <Drawer
         anchor="right"
-        open={showContactInfo}
+        open={showContactInfo && !selectedContact?.isGroup}
         onClose={() => setShowContactInfo(false)}
         PaperProps={{ sx: { width: 350 } }}
       >
-        {selectedContact && (
+        {selectedContact && !selectedContact.isGroup && (
           <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <Avatar src={selectedContact.profilePicUrl || ''} sx={{ width: 120, height: 120, mb: 2 }} />
             <Typography variant="h6">{getContactName(selectedContact)}</Typography>
@@ -1158,15 +1260,84 @@ const WhatsAppChat: React.FC = () => {
             <Button fullWidth color="error" startIcon={<DeleteIcon />} onClick={() => { handleDeleteChat(selectedContact); setShowContactInfo(false); }}>
               حذف المحادثة
             </Button>
-            <Button fullWidth color="error" startIcon={<BlockIcon />} sx={{ mt: 1 }} onClick={() => enqueueSnackbar('قريباً', { variant: 'info' })}>
-              حظر {getContactName(selectedContact)}
-            </Button>
+            {selectedContact.isBlocked ? (
+              <Button fullWidth color="primary" startIcon={<CheckIcon />} sx={{ mt: 1 }} onClick={() => handleUnblockContact(selectedContact)}>
+                إلغاء حظر {getContactName(selectedContact)}
+              </Button>
+            ) : (
+              <Button fullWidth color="error" startIcon={<BlockIcon />} sx={{ mt: 1 }} onClick={() => handleBlockContact(selectedContact)}>
+                حظر {getContactName(selectedContact)}
+              </Button>
+            )}
             <Button fullWidth color="error" startIcon={<ReportIcon />} sx={{ mt: 1 }} onClick={() => enqueueSnackbar('قريباً', { variant: 'info' })}>
               الإبلاغ عن {getContactName(selectedContact)}
             </Button>
           </Box>
         )}
       </Drawer>
+
+      {/* Group Info Drawer */}
+      <GroupInfoDrawer
+        open={showContactInfo && !!selectedContact?.isGroup}
+        onClose={() => setShowContactInfo(false)}
+        sessionId={selectedSession}
+        groupJid={selectedContact?.jid || ''}
+        contacts={contacts}
+      />
+
+      <CreateGroupDialog
+        open={createGroupDialogOpen}
+        onClose={() => setCreateGroupDialogOpen(false)}
+        sessionId={selectedSession}
+        contacts={contacts}
+        onGroupCreated={(group) => {
+          loadContacts();
+          // Optionally select the new group
+          // setSelectedContact(group); 
+        }}
+      />
+      <ProfileDialog
+        open={profileDialogOpen}
+        onClose={() => setProfileDialogOpen(false)}
+        sessionId={selectedSession}
+        currentName={currentUserProfile?.name}
+        currentStatus={currentUserProfile?.status}
+        currentPicture={currentUserProfile?.profilePicUrl}
+      />
+
+      <CheckNumberDialog
+        open={checkNumberDialogOpen}
+        onClose={() => setCheckNumberDialogOpen(false)}
+        sessionId={selectedSession}
+        onChatStart={(jid) => {
+          const existingContact = contacts.find(c => c.jid === jid);
+          if (existingContact) {
+            setSelectedContact(existingContact);
+          } else {
+            const newContact: Contact = {
+              id: jid,
+              sessionId: selectedSession,
+              jid: jid,
+              phoneNumber: jid.split('@')[0],
+              name: null,
+              pushName: null,
+              profilePicUrl: null,
+              isGroup: false,
+              category: null,
+              unreadCount: 0,
+              lastMessageAt: new Date().toISOString(),
+              isArchived: false,
+              isPinned: false,
+              isMuted: false,
+              isBlocked: false,
+              session: { name: '', phoneNumber: '' },
+              customer: null
+            };
+            setContacts(prev => [newContact, ...prev]);
+            setSelectedContact(newContact);
+          }
+        }}
+      />
     </Box>
   );
 };

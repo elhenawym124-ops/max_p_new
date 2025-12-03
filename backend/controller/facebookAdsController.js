@@ -2986,6 +2986,194 @@ module.exports = {
   // v22.0: Saved Audiences
   createSavedAudience,
   getSavedAudiences,
-  deleteSavedAudience
+  deleteSavedAudience,
+
+  // v22.0: Ad Recommendations
+  getAdRecommendations: async (req, res) => {
+    try {
+      const { adId } = req.params;
+      const companyId = req.user?.companyId;
+      
+      const accessToken = await getCompanyAdsAccessToken(companyId);
+      if (!accessToken) {
+        return res.status(400).json({
+          success: false,
+          error: 'Facebook Ads Access Token not found.'
+        });
+      }
+
+      const adAccount = await prisma.facebookAdAccount.findFirst({
+        where: { companyId, isActive: true }
+      });
+
+      if (!adAccount) {
+        return res.status(404).json({
+          success: false,
+          error: 'No active Facebook Ad Account found.'
+        });
+      }
+
+      const adsService = new FacebookAdsService(accessToken, adAccount.accountId);
+      const result = await adsService.getAdRecommendations(adId);
+
+      res.json(result);
+    } catch (error) {
+      console.error('Error getting Ad Recommendations:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  },
+
+  applyAdRecommendation: async (req, res) => {
+    try {
+      const { adId } = req.params;
+      const { recommendationId } = req.body;
+      const companyId = req.user?.companyId;
+      
+      const accessToken = await getCompanyAdsAccessToken(companyId);
+      if (!accessToken) {
+        return res.status(400).json({
+          success: false,
+          error: 'Facebook Ads Access Token not found.'
+        });
+      }
+
+      const adAccount = await prisma.facebookAdAccount.findFirst({
+        where: { companyId, isActive: true }
+      });
+
+      if (!adAccount) {
+        return res.status(404).json({
+          success: false,
+          error: 'No active Facebook Ad Account found.'
+        });
+      }
+
+      const adsService = new FacebookAdsService(accessToken, adAccount.accountId);
+      const result = await adsService.applyAdRecommendation(adId, recommendationId);
+
+      res.json(result);
+    } catch (error) {
+      console.error('Error applying Ad Recommendation:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  },
+
+  // v22.0: Instagram Reels Ads
+  createInstagramReelsCreative: async (req, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      const accessToken = await getCompanyAdsAccessToken(companyId);
+      
+      if (!accessToken) {
+        return res.status(400).json({
+          success: false,
+          error: 'Facebook Ads Access Token not found.'
+        });
+      }
+
+      const adAccount = await prisma.facebookAdAccount.findFirst({
+        where: { companyId, isActive: true }
+      });
+
+      if (!adAccount) {
+        return res.status(404).json({
+          success: false,
+          error: 'No active Facebook Ad Account found.'
+        });
+      }
+
+      const adsService = new FacebookAdsService(accessToken, adAccount.accountId);
+      const result = await adsService.createInstagramReelsCreative(req.body);
+
+      res.json(result);
+    } catch (error) {
+      console.error('Error creating Instagram Reels Creative:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  },
+
+  // v22.0: WhatsApp Ads
+  createWhatsAppAd: async (req, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      const accessToken = await getCompanyAdsAccessToken(companyId);
+      
+      if (!accessToken) {
+        return res.status(400).json({
+          success: false,
+          error: 'Facebook Ads Access Token not found.'
+        });
+      }
+
+      const adAccount = await prisma.facebookAdAccount.findFirst({
+        where: { companyId, isActive: true }
+      });
+
+      if (!adAccount) {
+        return res.status(404).json({
+          success: false,
+          error: 'No active Facebook Ad Account found.'
+        });
+      }
+
+      const adsService = new FacebookAdsService(accessToken, adAccount.accountId);
+      const result = await adsService.createWhatsAppAd(req.body);
+
+      res.json(result);
+    } catch (error) {
+      console.error('Error creating WhatsApp Ad:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  },
+
+  // v22.0: Ad Quality Metrics
+  getAdQualityMetrics: async (req, res) => {
+    try {
+      const { adId } = req.params;
+      const companyId = req.user?.companyId;
+      
+      const accessToken = await getCompanyAdsAccessToken(companyId);
+      if (!accessToken) {
+        return res.status(400).json({
+          success: false,
+          error: 'Facebook Ads Access Token not found.'
+        });
+      }
+
+      const adAccount = await prisma.facebookAdAccount.findFirst({
+        where: { companyId, isActive: true }
+      });
+
+      if (!adAccount) {
+        return res.status(404).json({
+          success: false,
+          error: 'No active Facebook Ad Account found.'
+        });
+      }
+
+      const adsService = new FacebookAdsService(accessToken, adAccount.accountId);
+      const result = await adsService.getAdQualityMetrics(adId);
+
+      res.json(result);
+    } catch (error) {
+      console.error('Error getting Ad Quality Metrics:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  }
 };
 

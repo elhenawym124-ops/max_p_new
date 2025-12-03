@@ -1,5 +1,5 @@
-﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, ShoppingCart, User, Trash2, Plus, Minus, CreditCard, PauseCircle, RotateCcw, Maximize, Minimize, Barcode, Image as ImageIcon, Loader2, Printer, FileText, X, Clock, DollarSign, Package, TrendingUp, Banknote, Check } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, RotateCcw, Maximize, Minimize, Image as ImageIcon, Loader2, Printer, FileText, X, Clock, DollarSign, Package, TrendingUp, Banknote, Check } from 'lucide-react';
 import { config } from '../../config';
 import { authService } from '../../services/authService';
 
@@ -25,11 +25,19 @@ const PosPage = () => {
   const [showShiftReport, setShowShiftReport] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
   const [lastOrder, setLastOrder] = useState<LastOrder | null>(null);
-  const [shiftData, setShiftData] = useState<ShiftData>({ startTime: new Date(), totalSales: 0, totalOrders: 0, totalItems: 0, cashPayments: 0, orders: [] });
+  const [shiftData, setShiftData] = useState<ShiftData>(() => {
+    const saved = localStorage.getItem('pos_shift_data');
+    if (saved) {
+      const parsed = safeJsonParse(saved, null);
+      if (parsed) return { ...parsed, startTime: new Date(parsed.startTime) };
+    }
+    return { startTime: new Date(), totalSales: 0, totalOrders: 0, totalItems: 0, cashPayments: 0, orders: [] };
+  });
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CARD'>('CASH');
   const [cashReceived, setCashReceived] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
   const barcodeBuffer = useRef('');
+  const barcodeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -71,15 +79,33 @@ const PosPage = () => {
 
   const updateQty = (id: string, d: number) => setCart(prev => prev.map(i => i.id === id ? { ...i, qty: Math.max(1, Math.min(i.stock, i.qty + d)) } : i));
   const removeItem = (id: string) => setCart(prev => prev.filter(i => i.id !== id));
-  const clearCart = () => { setCart([]); setCustomer(null); };
+  const clearCart = () => {
+    if (cart.length > 0 && !window.confirm('هل تريد مسح السلة؟')) return;
+    setCart([]); setCustomer(null);
+  };
 
   const handleBarcode = useCallback((e: KeyboardEvent) => {
     if (e.target instanceof HTMLInputElement) return;
     if (e.key === 'Enter' && barcodeBuffer.current) {
-      const p = products.find(x => x.sku === barcodeBuffer.current);
-      if (p) addToCart(p); else setSearchQuery(barcodeBuffer.current);
+      const sku = barcodeBuffer.current;
+      const p = products.find(x => x.sku === sku || x.id === sku);
+      if (p) {
+        if (p.stock <= 0) { alert('غير متوفر'); }
+        else {
+          setCart(prev => {
+            const ex = prev.find(i => i.id === p.id);
+            if (ex) { if (ex.qty >= p.stock) return prev; return prev.map(i => i.id === p.id ? { ...i, qty: i.qty + 1 } : i); }
+            return [...prev, { ...p, qty: 1 }];
+          });
+        }
+      } else { setSearchQuery(sku); }
       barcodeBuffer.current = '';
-    } else if (e.key.length === 1 && !e.ctrlKey) { barcodeBuffer.current += e.key; setTimeout(() => { barcodeBuffer.current = ''; }, 100); }
+      if (barcodeTimeout.current) clearTimeout(barcodeTimeout.current);
+    } else if (e.key.length === 1 && !e.ctrlKey) {
+      barcodeBuffer.current += e.key;
+      if (barcodeTimeout.current) clearTimeout(barcodeTimeout.current);
+      barcodeTimeout.current = setTimeout(() => { barcodeBuffer.current = ''; }, 500);
+    }
   }, [products]);
 
   useEffect(() => { window.addEventListener('keydown', handleBarcode); return () => window.removeEventListener('keydown', handleBarcode); }, [handleBarcode]);
@@ -105,8 +131,17 @@ const PosPage = () => {
       const data = await res.json();
       if (data.success) {
         setLastOrder({ orderNumber: data.data.orderNumber, items: [...cart], subtotal, tax, total, customer, date: new Date(), paymentMethod, cashReceived, change: change > 0 ? change : 0 });
-        setShiftData(prev => ({ ...prev, totalSales: prev.totalSales + total, totalOrders: prev.totalOrders + 1, totalItems: prev.totalItems + cart.reduce((a, i) => a + i.qty, 0), cashPayments: prev.cashPayments + (paymentMethod === 'CASH' ? total : 0), orders: [...prev.orders, { orderNumber: data.data.orderNumber, total, paymentMethod }] }));
-        setShowPayment(false); setShowReceipt(true); clearCart(); setCashReceived(0);
+        const newShiftData = {
+          ...shiftData,
+          totalSales: shiftData.totalSales + total,
+          totalOrders: shiftData.totalOrders + 1,
+          totalItems: shiftData.totalItems + cart.reduce((a, i) => a + i.qty, 0),
+          cashPayments: shiftData.cashPayments + (paymentMethod === 'CASH' ? total : 0),
+          orders: [...shiftData.orders, { orderNumber: data.data.orderNumber, total, paymentMethod }]
+        };
+        setShiftData(newShiftData);
+        localStorage.setItem('pos_shift_data', JSON.stringify(newShiftData));
+        setShowPayment(false); setShowReceipt(true); setCart([]); setCustomer(null); setCashReceived(0);
       } else alert(data.message);
     } catch { alert('خطأ في الاتصال'); } finally { setProcessing(false); }
   };
@@ -131,7 +166,12 @@ const PosPage = () => {
   };
 
   const endShift = () => { if (window.confirm('إنهاء الوردية؟')) setShowShiftReport(true); };
-  const resetShift = () => { setShiftData({ startTime: new Date(), totalSales: 0, totalOrders: 0, totalItems: 0, cashPayments: 0, orders: [] }); setShowShiftReport(false); };
+  const resetShift = () => {
+    const newShift = { startTime: new Date(), totalSales: 0, totalOrders: 0, totalItems: 0, cashPayments: 0, orders: [] };
+    setShiftData(newShift);
+    localStorage.setItem('pos_shift_data', JSON.stringify(newShift));
+    setShowShiftReport(false);
+  };
 
   return (
     <div className="h-screen bg-gray-100 flex" dir="rtl">
@@ -162,7 +202,7 @@ const PosPage = () => {
               {filtered.map(p => (
                 <div key={p.id} onClick={() => addToCart(p)} className={'bg-white rounded-xl border-2 cursor-pointer hover:border-blue-400 hover:shadow-lg ' + (p.stock <= 0 ? 'opacity-50' : 'border-transparent')}>
                   <div className="h-28 bg-gray-100 rounded-t-xl flex items-center justify-center relative">
-                    {p.images[0] ? <img src={p.images[0]} className="h-full w-full object-cover rounded-t-xl" /> : <ImageIcon className="h-10 w-10 text-gray-300" />}
+                    {(Array.isArray(p.images) ? p.images[0] : p.images) ? <img src={Array.isArray(p.images) ? p.images[0] : p.images} alt={p.name} className="h-full w-full object-cover rounded-t-xl" /> : <ImageIcon className="h-10 w-10 text-gray-300" />}
                     <span className={'absolute top-2 right-2 text-xs px-2 py-0.5 rounded-full font-medium text-white ' + (p.stock <= 0 ? 'bg-red-500' : p.stock < 5 ? 'bg-yellow-500' : 'bg-green-500')}>
                       {p.stock <= 0 ? 'نفذ' : p.stock}
                     </span>
@@ -203,7 +243,7 @@ const PosPage = () => {
             <div key={item.id} className="bg-gray-50 rounded-xl p-3">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 bg-gray-200 rounded-lg overflow-hidden">
-                  {item.images[0] ? <img src={item.images[0]} className="w-full h-full object-cover" /> : <ImageIcon className="w-full h-full p-2 text-gray-400" />}
+                  {(Array.isArray(item.images) ? item.images[0] : item.images) ? <img src={Array.isArray(item.images) ? item.images[0] : item.images} alt={item.name} className="w-full h-full object-cover" /> : <ImageIcon className="w-full h-full p-2 text-gray-400" />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <h4 className="font-medium text-sm truncate">{item.name}</h4>

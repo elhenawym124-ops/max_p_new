@@ -117,9 +117,19 @@ class FacebookAdsService {
         buying_type: buyingType
       };
 
-      // إضافة Campaign Budget Optimization (CBO) إذا كان مفعل
+      // ✅ v22.0: Advantage+ Budget Optimization (CBO) - Enhanced
       if (budgetOptimization && budgetAmount) {
         campaignData.is_campaign_budget_optimization_on = true;
+        
+        // ✅ v22.0: Budget Rebalance Flag
+        if (data.budgetRebalance !== undefined) {
+          campaignData.budget_rebalance_flag = data.budgetRebalance;
+        }
+        
+        // ✅ v22.0: Lifetime Budget Optimization
+        if (data.lifetimeBudgetOptimization !== undefined) {
+          campaignData.lifetime_budget_optimization = data.lifetimeBudgetOptimization;
+        }
         
         // تحديد نوع الميزانية (Facebook يتوقع القيمة بالسنتات)
         if (budgetType === 'DAILY') {
@@ -372,8 +382,18 @@ class FacebookAdsService {
         adSetData.attribution_spec = attributionSpec;
       }
 
-      // إضافة Placements إذا كان يدوي
-      if (placementType === 'MANUAL' && placements && placements.length > 0) {
+      // ✅ v22.0: Advantage+ Placements (Automatic) or Manual Placements
+      if (placementType === 'AUTOMATIC' || !placementType) {
+        // Enable Advantage+ Placements (default in v22.0)
+        adSetData.targeting = {
+          ...adSetData.targeting,
+          targeting_automation: {
+            ...(adSetData.targeting.targeting_automation || {}),
+            advantage_placement: 1
+          }
+        };
+      } else if (placementType === 'MANUAL' && placements && placements.length > 0) {
+        // Manual Placements
         adSetData.targeting = {
           ...adSetData.targeting,
           ...this.buildPlacementsSpec(placements)
@@ -538,16 +558,29 @@ class FacebookAdsService {
       spec.excluded_custom_audiences = targeting.excludedAudiences.map(aud => ({ id: aud }));
     }
 
-    // ✅ v22.0: Advantage+ Audience (Targeting Automation)
-    if (targeting.advantageAudience) {
+    // ✅ v22.0: Advantage+ Audience (Targeting Automation) - Enhanced
+    if (targeting.advantageAudience !== false) {
+      // Default to enabled if not explicitly disabled
       spec.targeting_automation = {
-        advantage_audience: 1
+        advantage_audience: targeting.advantageAudience === true ? 1 : (targeting.advantageAudience || 1)
       };
+      
+      // ✅ v22.0: Audience Expansion Settings
+      if (targeting.audienceExpansion) {
+        spec.targeting_automation.audience_expansion = targeting.audienceExpansion;
+      }
+      
+      // ✅ v22.0: Lookalike Expansion
+      if (targeting.lookalikeExpansion !== undefined) {
+        spec.targeting_automation.lookalike_expansion = targeting.lookalikeExpansion;
+      }
     }
 
-    // ✅ v22.0: Detailed Targeting Expansion
+    // ✅ v22.0: Detailed Targeting Expansion - Enhanced
     if (targeting.targetingExpansion) {
-      spec.targeting_optimization = 'expansion_all';
+      spec.targeting_optimization = targeting.targetingExpansion === true 
+        ? 'expansion_all' 
+        : targeting.targetingExpansion;
     }
 
     // Flexible targeting (AND/OR logic)
@@ -3092,7 +3125,7 @@ class FacebookAdsService {
   async getFacebookPages() {
     try {
       const response = await axios.get(
-        `https://graph.facebook.com/v18.0/me/accounts`,
+        `https://graph.facebook.com/v22.0/me/accounts`, // ✅ Updated to v22.0
         {
           params: {
             access_token: this.accessToken,
@@ -3234,6 +3267,274 @@ class FacebookAdsService {
     }
 
     return bidData;
+  }
+
+  /**
+   * ============================================
+   * v22.0: Ad Recommendations API
+   * ============================================
+   */
+
+  /**
+   * جلب توصيات الإعلان
+   */
+  async getAdRecommendations(adId) {
+    try {
+      const response = await axios.get(
+        `${this.baseUrl}/${adId}/recommendations`,
+        {
+          params: {
+            access_token: this.accessToken,
+            fields: 'id,title,description,reason,link,action_type,priority'
+          }
+        }
+      );
+
+      return {
+        success: true,
+        recommendations: response.data.data || [],
+        data: response.data
+      };
+    } catch (error) {
+      console.error('❌ Error getting Ad Recommendations:', error.response?.data || error.message);
+      return {
+        success: false,
+        error: error.response?.data?.error?.message || error.message,
+        recommendations: []
+      };
+    }
+  }
+
+  /**
+   * تطبيق توصية على الإعلان
+   */
+  async applyAdRecommendation(adId, recommendationId) {
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/${adId}/apply_recommendation`,
+        {
+          recommendation_id: recommendationId
+        },
+        {
+          params: {
+            access_token: this.accessToken
+          }
+        }
+      );
+
+      return {
+        success: true,
+        data: response.data
+      };
+    } catch (error) {
+      console.error('❌ Error applying Ad Recommendation:', error.response?.data || error.message);
+      return {
+        success: false,
+        error: error.response?.data?.error?.message || error.message
+      };
+    }
+  }
+
+  /**
+   * ============================================
+   * v22.0: Instagram Reels Ads
+   * ============================================
+   */
+
+  /**
+   * إنشاء Instagram Reels Ad Creative
+   */
+  async createInstagramReelsCreative(data) {
+    try {
+      const {
+        pageId,
+        instagramAccountId,
+        videoId, // Required for Reels
+        primaryText,
+        callToAction,
+        linkUrl,
+        // Reels-specific options
+        coverImageHash,
+        musicId,
+        // Advantage+ Creative for Reels
+        advantageCreative = true
+      } = data;
+
+      if (!videoId) {
+        throw new Error('Video ID is required for Instagram Reels');
+      }
+
+      const accountId = this.getAccountId();
+
+      const creativeData = {
+        name: data.name || 'Instagram Reels Ad',
+        object_story_spec: {
+          page_id: pageId,
+          instagram_actor_id: instagramAccountId,
+          video_data: {
+            video_id: videoId,
+            image_url: coverImageHash ? undefined : data.imageUrl,
+            image_hash: coverImageHash,
+            message: primaryText,
+            call_to_action: {
+              type: callToAction || 'LEARN_MORE',
+              value: {
+                link: linkUrl
+              }
+            }
+          }
+        },
+        product_set_id: data.productSetId,
+        url_tags: data.urlTags
+      };
+
+      // ✅ v22.0: Advantage+ Creative for Reels
+      if (advantageCreative) {
+        creativeData.degrees_of_freedom_spec = {
+          creative_features_spec: {
+            video_highlight: {
+              enroll_status: 'OPT_IN' // Auto-trim to best moments
+            }
+          }
+        };
+
+        // Music for Reels
+        if (musicId) {
+          creativeData.object_story_spec.video_data.music_id = musicId;
+        }
+      }
+
+      console.log('📤 Creating Instagram Reels Creative:', JSON.stringify(creativeData, null, 2));
+
+      const response = await axios.post(
+        `${this.baseUrl}/${accountId}/adcreatives`,
+        creativeData,
+        { params: { access_token: this.accessToken } }
+      );
+
+      console.log('✅ Instagram Reels Creative created:', response.data.id);
+
+      return {
+        success: true,
+        creativeId: response.data.id,
+        data: response.data
+      };
+    } catch (error) {
+      console.error('❌ Error creating Instagram Reels Creative:', error.response?.data || error.message);
+      return {
+        success: false,
+        error: error.response?.data?.error?.message || error.message
+      };
+    }
+  }
+
+  /**
+   * ============================================
+   * v22.0: WhatsApp Ads Support
+   * ============================================
+   */
+
+  /**
+   * إنشاء WhatsApp Click-to-Message Ad
+   */
+  async createWhatsAppAd(data) {
+    try {
+      const {
+        pageId,
+        whatsappBusinessAccountId,
+        creativeId,
+        adSetId,
+        name,
+        status = 'PAUSED'
+      } = data;
+
+      if (!whatsappBusinessAccountId) {
+        throw new Error('WhatsApp Business Account ID is required');
+      }
+
+      const accountId = this.getAccountId();
+
+      const adData = {
+        name: name || 'WhatsApp Click-to-Message Ad',
+        status,
+        adset_id: adSetId,
+        creative: {
+          creative_id: creativeId
+        },
+        // WhatsApp-specific fields
+        object_story_spec: {
+          page_id: pageId,
+          link_data: {
+            link: `https://wa.me/${whatsappBusinessAccountId}`,
+            call_to_action: {
+              type: 'MESSAGE_PAGE'
+            }
+          }
+        }
+      };
+
+      console.log('📤 Creating WhatsApp Ad:', JSON.stringify(adData, null, 2));
+
+      const response = await axios.post(
+        `${this.baseUrl}/${accountId}/ads`,
+        adData,
+        { params: { access_token: this.accessToken } }
+      );
+
+      console.log('✅ WhatsApp Ad created:', response.data.id);
+
+      return {
+        success: true,
+        adId: response.data.id,
+        data: response.data
+      };
+    } catch (error) {
+      console.error('❌ Error creating WhatsApp Ad:', error.response?.data || error.message);
+      return {
+        success: false,
+        error: error.response?.data?.error?.message || error.message
+      };
+    }
+  }
+
+  /**
+   * ============================================
+   * v22.0: Ad Quality & Relevance Metrics
+   * ============================================
+   */
+
+  /**
+   * جلب Ad Quality Metrics
+   */
+  async getAdQualityMetrics(adId) {
+    try {
+      const response = await axios.get(
+        `${this.baseUrl}/${adId}`,
+        {
+          params: {
+            access_token: this.accessToken,
+            fields: 'id,quality_ranking,engagement_rate_ranking,conversion_rate_ranking,quality_score'
+          }
+        }
+      );
+
+      return {
+        success: true,
+        metrics: {
+          qualityRanking: response.data.quality_ranking,
+          engagementRateRanking: response.data.engagement_rate_ranking,
+          conversionRateRanking: response.data.conversion_rate_ranking,
+          qualityScore: response.data.quality_score
+        },
+        data: response.data
+      };
+    } catch (error) {
+      console.error('❌ Error getting Ad Quality Metrics:', error.response?.data || error.message);
+      return {
+        success: false,
+        error: error.response?.data?.error?.message || error.message
+      };
+    }
   }
 }
 

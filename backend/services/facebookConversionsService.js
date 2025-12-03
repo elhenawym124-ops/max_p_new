@@ -311,7 +311,7 @@ class FacebookConversionsService {
         eventName: event.event_name,
         eventId: event.event_id,
         testMode: !!this.testEventCode,
-        url: `https://graph.facebook.com/v18.0/${this.pixelId}/events`
+        url: `https://graph.facebook.com/v22.0/${this.pixelId}/events` // ✅ Updated to v22.0
       });
 
       // If SDK is not available, use direct HTTP call
@@ -414,7 +414,7 @@ class FacebookConversionsService {
    */
   async sendEventViaHTTP(event) {
     const axios = require('axios');
-    const url = `https://graph.facebook.com/v18.0/${this.pixelId}/events`;
+    const url = `https://graph.facebook.com/v22.0/${this.pixelId}/events`; // ✅ Updated to v22.0
     
     if (!this.accessToken) {
       throw new Error('Access Token is required for Facebook Conversions API');

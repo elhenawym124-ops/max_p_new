@@ -4,6 +4,7 @@
  */
 
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
+const fs = require('fs');
 const prisma = getSharedPrismaClient();
 const { Prisma } = require('@prisma/client');
 const {
@@ -1952,6 +1953,659 @@ async function migrateAuthToDatabase(req, res) {
     }
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 👥 إدارة المجموعات
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * إنشاء مجموعة
+ * POST /api/whatsapp/groups/create
+ */
+async function createGroup(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, subject, participants } = req.body;
+
+        if (!sessionId || !subject || !participants || !Array.isArray(participants)) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
+
+        const group = await WhatsAppManager.createGroup(sessionId, subject, participants);
+        res.json({ success: true, group });
+    } catch (error) {
+        console.error('❌ Error creating group:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء إنشاء المجموعة' });
+    }
+}
+
+/**
+ * الحصول على بيانات المجموعة
+ * GET /api/whatsapp/groups/:jid
+ */
+async function getGroupMetadata(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { jid } = req.params;
+        const { sessionId } = req.query;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'Session ID is required' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
+
+        const metadata = await WhatsAppManager.getGroupMetadata(sessionId, jid);
+        res.json({ success: true, metadata });
+    } catch (error) {
+        console.error('❌ Error fetching group metadata:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب بيانات المجموعة' });
+    }
+}
+
+/**
+ * تحديث المشاركين
+ * POST /api/whatsapp/groups/:jid/participants
+ */
+async function updateGroupParticipants(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { jid } = req.params;
+        const { sessionId, participants, action } = req.body;
+
+        if (!sessionId || !participants || !action) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+
+        if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
+
+        const result = await WhatsAppManager.updateGroupParticipants(sessionId, jid, participants, action);
+        res.json({ success: true, result });
+    } catch (error) {
+        console.error('❌ Error updating participants:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء تحديث المشاركين' });
+    }
+}
+
+/**
+ * تحديث اسم المجموعة
+ * PUT /api/whatsapp/groups/:jid/subject
+ */
+async function updateGroupSubject(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { jid } = req.params;
+        const { sessionId, subject } = req.body;
+
+        if (!sessionId || !subject) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
+
+        await WhatsAppManager.updateGroupSubject(sessionId, jid, subject);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('❌ Error updating subject:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء تحديث اسم المجموعة' });
+    }
+}
+
+/**
+ * تحديث وصف المجموعة
+ * PUT /api/whatsapp/groups/:jid/description
+ */
+async function updateGroupDescription(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { jid } = req.params;
+        const { sessionId, description } = req.body;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
+
+        await WhatsAppManager.updateGroupDescription(sessionId, jid, description);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('❌ Error updating description:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء تحديث وصف المجموعة' });
+    }
+}
+
+/**
+ * تحديث إعدادات المجموعة
+ * PUT /api/whatsapp/groups/:jid/settings
+ */
+async function updateGroupSettings(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { jid } = req.params;
+        const { sessionId, settings } = req.body;
+
+        if (!sessionId || !settings) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
+
+        await WhatsAppManager.updateGroupSettings(sessionId, jid, settings);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('❌ Error updating settings:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء تحديث إعدادات المجموعة' });
+    }
+}
+
+/**
+ * مغادرة المجموعة
+ * POST /api/whatsapp/groups/:jid/leave
+ */
+async function leaveGroup(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { jid } = req.params;
+        const { sessionId } = req.body;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
+
+        await WhatsAppManager.leaveGroup(sessionId, jid);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('❌ Error leaving group:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء مغادرة المجموعة' });
+    }
+}
+
+/**
+ * الحصول على رابط الدعوة
+ * GET /api/whatsapp/groups/:jid/invite-code
+ */
+async function getGroupInviteCode(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { jid } = req.params;
+        const { sessionId } = req.query;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
+
+        const code = await WhatsAppManager.getGroupInviteCode(sessionId, jid);
+        res.json({ success: true, code });
+    } catch (error) {
+        console.error('❌ Error getting invite code:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب رابط الدعوة' });
+    }
+}
+
+/**
+ * إلغاء رابط الدعوة
+ * POST /api/whatsapp/groups/:jid/revoke-invite
+ */
+async function revokeGroupInviteCode(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { jid } = req.params;
+        const { sessionId } = req.body;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
+
+        const code = await WhatsAppManager.revokeGroupInviteCode(sessionId, jid);
+        res.json({ success: true, code });
+    } catch (error) {
+        console.error('❌ Error revoking invite code:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء إلغاء رابط الدعوة' });
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🔒 الخصوصية والحظر
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * حظر جهة اتصال
+ * POST /api/whatsapp/contacts/block
+ */
+async function blockContact(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, jid } = req.body;
+
+        if (!sessionId || !jid) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
+
+        await WhatsAppManager.blockContact(sessionId, jid);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('❌ Error blocking contact:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء حظر جهة الاتصال' });
+    }
+}
+
+/**
+ * إلغاء حظر جهة اتصال
+ * POST /api/whatsapp/contacts/unblock
+ */
+async function unblockContact(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, jid } = req.body;
+
+        if (!sessionId || !jid) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
+
+        await WhatsAppManager.unblockContact(sessionId, jid);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('❌ Error unblocking contact:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء إلغاء حظر جهة الاتصال' });
+    }
+}
+
+/**
+ * التحقق من الرقم
+ * POST /api/whatsapp/check-number
+ */
+async function checkNumber(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, number } = req.body;
+
+        if (!sessionId || !number) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
+
+        const result = await WhatsAppManager.onWhatsApp(sessionId, number);
+        res.json({ success: true, exists: !!result, jid: result?.jid });
+    } catch (error) {
+        console.error('❌ Error checking number:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء التحقق من الرقم' });
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 👤 الملف الشخصي
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * الحصول على الملف الشخصي
+ * GET /api/whatsapp/profile
+ */
+async function getProfile(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId } = req.query;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'Session ID is required' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
+
+        const profile = await WhatsAppManager.getProfile(sessionId);
+        res.json({ success: true, profile });
+    } catch (error) {
+        console.error('❌ Error fetching profile:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب الملف الشخصي' });
+    }
+}
+
+/**
+ * تحديث الملف الشخصي
+ * POST /api/whatsapp/profile/update
+ */
+async function updateProfile(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, name, status, picture } = req.body;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
+
+        if (name) await WhatsAppManager.updateProfileName(sessionId, name);
+        if (status) await WhatsAppManager.updateProfileStatus(sessionId, status);
+
+        if (req.file || picture) {
+            const sessionObj = WhatsAppManager.getSession(sessionId);
+            if (!sessionObj?.sock?.user) {
+                return res.status(400).json({ error: 'الجلسة غير متصلة' });
+            }
+            // Get JID from session user
+            const jid = (sessionObj.sock.user.id || sessionObj.sock.user.jid).split(':')[0] + '@s.whatsapp.net';
+
+            if (req.file) {
+                const imageBuffer = fs.readFileSync(req.file.path);
+                await WhatsAppManager.updateProfilePicture(sessionId, jid, imageBuffer);
+                // Clean up temp file
+                try { fs.unlinkSync(req.file.path); } catch (e) { }
+            } else if (picture) {
+                await WhatsAppManager.updateProfilePicture(sessionId, jid, { url: picture });
+            }
+        }
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('❌ Error updating profile:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء تحديث الملف الشخصي' });
+    }
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 👥 إدارة المجموعات
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+/**
+ * إنشاء مجموعة
+ * POST /api/whatsapp/groups
+ */
+async function createGroup(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, subject, participants } = req.body;
+
+        if (!sessionId || !subject || !participants || !Array.isArray(participants)) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const group = await WhatsAppManager.createGroup(sessionId, subject, participants);
+        res.json({ success: true, group });
+    } catch (error) {
+        console.error('❌ Error creating group:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء إنشاء المجموعة' });
+    }
+}
+
+/**
+ * جلب بيانات مجموعة
+ * GET /api/whatsapp/groups/:jid
+ */
+async function getGroupMetadata(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { jid } = req.params;
+        const { sessionId } = req.query;
+
+        if (!sessionId || !jid) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const metadata = await WhatsAppManager.getGroupMetadata(sessionId, jid);
+        res.json({ success: true, metadata });
+    } catch (error) {
+        console.error('❌ Error fetching group metadata:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب بيانات المجموعة' });
+    }
+}
+
+/**
+ * تحديث اسم المجموعة
+ * PUT /api/whatsapp/groups/:jid/subject
+ */
+async function updateGroupSubject(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { jid } = req.params;
+        const { sessionId, subject } = req.body;
+
+        if (!sessionId || !jid || !subject) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        await WhatsAppManager.updateGroupSubject(sessionId, jid, subject);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('❌ Error updating group subject:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء تحديث اسم المجموعة' });
+    }
+}
+
+/**
+ * تحديث وصف المجموعة
+ * PUT /api/whatsapp/groups/:jid/description
+ */
+async function updateGroupDescription(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { jid } = req.params;
+        const { sessionId, description } = req.body;
+
+        if (!sessionId || !jid) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        await WhatsAppManager.updateGroupDescription(sessionId, jid, description);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('❌ Error updating group description:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء تحديث وصف المجموعة' });
+    }
+}
+
+/**
+ * تحديث إعدادات المجموعة
+ * PUT /api/whatsapp/groups/:jid/settings
+ */
+async function updateGroupSettings(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { jid } = req.params;
+        const { sessionId, setting, value } = req.body;
+
+        if (!sessionId || !jid || !setting) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        await WhatsAppManager.updateGroupSettings(sessionId, jid, setting, value);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('❌ Error updating group settings:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء تحديث إعدادات المجموعة' });
+    }
+}
+
+/**
+ * تحديث مشاركي المجموعة
+ * PUT /api/whatsapp/groups/:jid/participants
+ */
+async function updateGroupParticipants(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { jid } = req.params;
+        const { sessionId, action, participants } = req.body;
+
+        if (!sessionId || !jid || !action || !participants) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        await WhatsAppManager.updateGroupParticipants(sessionId, jid, action, participants);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('❌ Error updating group participants:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء تحديث مشاركي المجموعة' });
+    }
+}
+
+/**
+ * الخروج من المجموعة
+ * POST /api/whatsapp/groups/:jid/leave
+ */
+async function leaveGroup(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { jid } = req.params;
+        const { sessionId } = req.body;
+
+        if (!sessionId || !jid) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        await WhatsAppManager.leaveGroup(sessionId, jid);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('❌ Error leaving group:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء الخروج من المجموعة' });
+    }
+}
+
+/**
+ * جلب رابط الدعوة
+ * GET /api/whatsapp/groups/:jid/invite-code
+ */
+async function getGroupInviteCode(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { jid } = req.params;
+        const { sessionId } = req.query;
+
+        if (!sessionId || !jid) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const code = await WhatsAppManager.getGroupInviteCode(sessionId, jid);
+        res.json({ success: true, code });
+    } catch (error) {
+        console.error('❌ Error fetching invite code:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب رابط الدعوة' });
+    }
+}
+
+/**
+ * إلغاء رابط الدعوة
+ * POST /api/whatsapp/groups/:jid/revoke-invite
+ */
+async function revokeGroupInviteCode(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { jid } = req.params;
+        const { sessionId } = req.body;
+
+        if (!sessionId || !jid) {
+            return res.status(400).json({ error: 'البيانات غير مكتملة' });
+        }
+
+        const session = await prisma.whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const code = await WhatsAppManager.revokeGroupInviteCode(sessionId, jid);
+        res.json({ success: true, code });
+    } catch (error) {
+        console.error('❌ Error revoking invite code:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء إلغاء رابط الدعوة' });
+    }
+}
+
 module.exports = {
     // Sessions
     createSession,
@@ -1972,6 +2626,17 @@ module.exports = {
     sendList,
     sendProduct,
     sendReaction,
+
+    // Groups
+    createGroup,
+    getGroupMetadata,
+    updateGroupSubject,
+    updateGroupDescription,
+    updateGroupSettings,
+    updateGroupParticipants,
+    leaveGroup,
+    getGroupInviteCode,
+    revokeGroupInviteCode,
 
     // Contacts
     updateContact,
@@ -2005,7 +2670,25 @@ module.exports = {
     deleteChat,
 
     // Migration
-    migrateAuthToDatabase
+    migrateAuthToDatabase,
+
+    // Groups
+    createGroup,
+    updateGroupParticipants,
+    updateGroupSubject,
+    updateGroupDescription,
+    updateGroupSettings,
+    leaveGroup,
+    getGroupInviteCode,
+    revokeGroupInviteCode,
+
+    // Privacy & Profile
+    blockContact,
+    unblockContact,
+    checkNumber,
+    updateProfile,
+    getGroupMetadata,
+    getProfile
 };
 
 
