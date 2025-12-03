@@ -9,7 +9,7 @@ import {
   ArrowTrendingUpIcon,
   CurrencyDollarIcon
 } from '@heroicons/react/24/outline';
-import { buildApiUrl } from '../../services/api';
+import { buildApiUrl } from '../../utils/urlHelper';
 
 interface DashboardStats {
   tasks: {
