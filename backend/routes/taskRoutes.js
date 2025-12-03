@@ -11,6 +11,7 @@ router.get('/', taskController.getAllTasks);
 router.get('/my-tasks', taskController.getMyTasks);
 router.get('/assigned-by-me', taskController.getTasksAssignedByMe);
 router.get('/company-users', taskController.getCompanyUsers);
+router.get('/dashboard-stats', taskController.getDashboardStats);
 router.post('/', taskController.createTask);
 router.get('/:id', taskController.getTaskById);
 router.put('/:id', taskController.updateTask);

@@ -821,6 +821,133 @@ getAllTasks: async (req, res) => {
         error: 'فشل في جلب المستخدمين'
       });
     }
+  },
+
+  // Get dashboard statistics
+  getDashboardStats: async (req, res) => {
+    try {
+      const companyId = req.user.companyId;
+      const userId = req.user.userId;
+
+      if (!companyId) {
+        return res.status(403).json({
+          success: false,
+          message: 'معرف الشركة مطلوب'
+        });
+      }
+
+      // Get all tasks for the company
+      const allTasks = await prisma.task.findMany({
+        where: { companyId },
+        include: {
+          project: { select: { name: true, status: true } }
+        }
+      });
+
+      // Get user's tasks
+      const myTasks = allTasks.filter(t => t.assignedTo === userId);
+
+      // Calculate statistics
+      const stats = {
+        totalTasks: allTasks.length,
+        myTasks: myTasks.length,
+        tasksByStatus: {
+          pending: allTasks.filter(t => t.status === 'PENDING').length,
+          inProgress: allTasks.filter(t => t.status === 'IN_PROGRESS').length,
+          completed: allTasks.filter(t => t.status === 'COMPLETED').length,
+          cancelled: allTasks.filter(t => t.status === 'CANCELLED').length
+        },
+        myTasksByStatus: {
+          pending: myTasks.filter(t => t.status === 'PENDING').length,
+          inProgress: myTasks.filter(t => t.status === 'IN_PROGRESS').length,
+          completed: myTasks.filter(t => t.status === 'COMPLETED').length,
+          cancelled: myTasks.filter(t => t.status === 'CANCELLED').length
+        },
+        tasksByPriority: {
+          urgent: allTasks.filter(t => t.priority === 'URGENT').length,
+          high: allTasks.filter(t => t.priority === 'HIGH').length,
+          medium: allTasks.filter(t => t.priority === 'MEDIUM').length,
+          low: allTasks.filter(t => t.priority === 'LOW').length
+        },
+        overdueTasks: allTasks.filter(t => 
+          t.dueDate && 
+          new Date(t.dueDate) < new Date() && 
+          t.status !== 'COMPLETED' && 
+          t.status !== 'CANCELLED'
+        ).length,
+        myOverdueTasks: myTasks.filter(t => 
+          t.dueDate && 
+          new Date(t.dueDate) < new Date() && 
+          t.status !== 'COMPLETED' && 
+          t.status !== 'CANCELLED'
+        ).length,
+        completionRate: allTasks.length > 0 
+          ? Math.round((allTasks.filter(t => t.status === 'COMPLETED').length / allTasks.length) * 100)
+          : 0,
+        myCompletionRate: myTasks.length > 0
+          ? Math.round((myTasks.filter(t => t.status === 'COMPLETED').length / myTasks.length) * 100)
+          : 0
+      };
+
+      // Get project statistics
+      const allProjects = await prisma.project.findMany({
+        where: { companyId },
+        include: {
+          tasks: true
+        }
+      });
+
+      const projectStats = {
+        totalProjects: allProjects.length,
+        activeProjects: allProjects.filter(p => p.status === 'ACTIVE').length,
+        completedProjects: allProjects.filter(p => p.status === 'COMPLETED').length,
+        planningProjects: allProjects.filter(p => p.status === 'PLANNING').length,
+        onHoldProjects: allProjects.filter(p => p.status === 'ON_HOLD').length,
+        averageProgress: allProjects.length > 0
+          ? Math.round(allProjects.reduce((sum, p) => sum + (p.progress || 0), 0) / allProjects.length)
+          : 0,
+        totalBudget: allProjects.reduce((sum, p) => sum + (p.budget || 0), 0),
+        totalSpent: allProjects.reduce((sum, p) => sum + (p.spentBudget || 0), 0)
+      };
+
+      // Get recent activities (last 10 tasks)
+      const recentTasks = await prisma.task.findMany({
+        where: { companyId },
+        include: {
+          project: { select: { name: true } },
+          assignedUser: { select: { firstName: true, lastName: true } },
+          createdByUser: { select: { firstName: true, lastName: true } }
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10
+      });
+
+      res.json({
+        success: true,
+        data: {
+          tasks: stats,
+          projects: projectStats,
+          recentTasks: recentTasks.map(task => ({
+            id: task.id,
+            title: task.title,
+            status: task.status,
+            priority: task.priority,
+            projectName: task.project?.name || 'بدون مشروع',
+            assignedToName: task.assignedUser
+              ? `${task.assignedUser.firstName} ${task.assignedUser.lastName}`
+              : 'غير محدد',
+            createdAt: task.createdAt
+          }))
+        }
+      });
+
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', error);
+      res.status(500).json({
+        success: false,
+        error: 'فشل في جلب الإحصائيات'
+      });
+    }
   }
 };
 

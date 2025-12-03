@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { buildApiUrl } from '../../utils/urlHelper';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useDateFormat } from '../../hooks/useDateFormat';
@@ -15,6 +16,7 @@ import {
   XMarkIcon,
   PencilIcon,
   TrashIcon,
+  ChartBarIcon,
 } from '@heroicons/react/24/outline';
 
 interface Task {
@@ -586,6 +588,13 @@ const Tasks: React.FC = () => {
             <p className="mt-2 text-gray-600">تنظيم ومتابعة المهام والمشاريع</p>
           </div>
           <div className="flex space-x-2 space-x-reverse">
+            <Link
+              to="/tasks/dashboard"
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700"
+            >
+              <ChartBarIcon className="h-5 w-5 mr-2" />
+              لوحة التحكم
+            </Link>
             <button
               onClick={() => setShowCreateTaskModal(true)}
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"

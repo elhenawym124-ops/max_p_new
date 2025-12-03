@@ -106,6 +106,7 @@ import Appointments from './pages/appointments/Appointments';
 import OrderDemo from './pages/OrderDemo';
 import Opportunities from './pages/opportunities/Opportunities';
 import Tasks from './pages/tasks/Tasks';
+import TasksDashboard from './pages/tasks/Dashboard';
 import AdvancedReports from './pages/reports/AdvancedReports';
 import PosPage from './pages/pos/PosPage';
 
@@ -349,6 +350,7 @@ const AppContent = () => {
             <Route path="/coupons" element={<Layout><Coupons /></Layout>} />
             <Route path="/appointments" element={<Layout><Appointments /></Layout>} />
             <Route path="/tasks" element={<Layout><Tasks /></Layout>} />
+            <Route path="/tasks/dashboard" element={<Layout><TasksDashboard /></Layout>} />
             <Route path="/reports" element={<Layout><Reports /></Layout>} />
             <Route path="/analytics" element={<Layout><AdvancedReports /></Layout>} />
             <Route path="/pos" element={<Layout><PosPage /></Layout>} />
