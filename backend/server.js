@@ -161,8 +161,9 @@ const {
 const emergencySecurityPatch = require('./middleware/emergencySecurityPatch');
 
 // Set UTF-8 encoding for console output
-process.stdout.setEncoding('utf8');
-process.stderr.setEncoding('utf8');
+// Set UTF-8 encoding for console output
+// process.stdout.setEncoding('utf8');
+// process.stderr.setEncoding('utf8');
 
 //console.log('🚀 Starting Clean Server (No AI)...');
 
@@ -2728,13 +2729,12 @@ async function startServer() {
     }
 
     // 📱 Restore WhatsApp Sessions
-    setTimeout(async () => {
-      try {
-        await WhatsAppManager.restoreAllSessions();
-      } catch (error) {
-        console.error('❌ Failed to restore WhatsApp sessions:', error);
-      }
-    }, 5000); // Wait 5 seconds to ensure DB is ready
+    // No delay needed - DB is already initialized
+    try {
+      await WhatsAppManager.restoreAllSessions();
+    } catch (error) {
+      console.error('❌ Failed to restore WhatsApp sessions:', error);
+    }
   });
 }
 startServer();

@@ -59,6 +59,14 @@ model Company {
   systemPrompts          SystemPrompt[] // 📝 البرومبت النظامية خاصة بكل شركة
   tasks                  Task[] // 📋 المهام خاصة بكل شركة
   projects               Project[] // 📁 المشاريع خاصة بكل شركة
+  taskComments           TaskComment[] // 💬 تعليقات المهام
+  taskAttachments        TaskAttachment[] // 📎 مرفقات المهام
+  timeEntries            TimeEntry[] // ⏰ سجلات الوقت
+  taskWatchers           TaskWatcher[] // 👁️ متابعي المهام
+  taskActivities         TaskActivity[] // 📊 سجل النشاطات
+  taskTemplates          TaskTemplate[] // 📋 قوالب المهام
+  taskNotifications      TaskNotification[] // 🔔 إشعارات المهام
+  taskCategories         TaskCategory[] // 📂 أقسام المهام
   broadcastCampaigns     BroadcastCampaign[] // 📢 حملات البرودكاست
   broadcastSettings      BroadcastSettings? // ⚙️ إعدادات البرودكاست
   customerLists          CustomerList[] // 📋 قوائم العملاء
@@ -133,6 +141,14 @@ model User {
   imageGallery          ImageGallery[]
   textGallery           TextGallery[] // 📝 حافظة النصوص
   whatsappMessages      WhatsAppMessage[] // 💬 رسائل واتساب المرسلة
+  // Task Management Relations
+  taskComments          TaskComment[]
+  taskAttachments       TaskAttachment[]
+  timeEntries           TimeEntry[]
+  taskWatchers          TaskWatcher[]
+  taskActivities        TaskActivity[]
+  taskTemplates         TaskTemplate[]
+  taskNotifications     TaskNotification[]
 
   @@index([companyId], map: "users_companyId_idx")
   @@map("users")
@@ -1209,10 +1225,35 @@ model ResponseEffectiveness {
   @@map("response_effectiveness")
 }
 
+// أقسام المهام
+model TaskCategory {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  color       String   @default("#6366f1") // لون القسم
+  icon        String?  // أيقونة القسم
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  companyId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  tasks       Task[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@index([isActive])
+  @@map("task_categories")
+}
+
 // Task Management Models
 model Task {
   id             String       @id @default(cuid())
   projectId      String?
+  parentTaskId   String?      // للمهام الفرعية
+  categoryId     String?      // قسم المهمة
   title          String
   description    String       @db.Text
   status         TaskStatus   @default(PENDING)
@@ -1221,28 +1262,223 @@ model Task {
   assignedTo     String
   createdBy      String
   dueDate        DateTime?
+  startDate      DateTime?    // تاريخ البدء
+  completedDate  DateTime?    // تاريخ الإكمال الفعلي
   estimatedHours Int          @default(0)
   actualHours    Int          @default(0)
   progress       Int          @default(0) // 0-100
   tags           Json?
   dependencies   Json?
+  order          Int          @default(0) // ترتيب المهمة في Kanban
+  color          String?      // لون المهمة
+  isRecurring    Boolean      @default(false) // مهمة متكررة
+  recurringRule  Json?        // قاعدة التكرار
   companyId      String
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
   // Relations
-  project       Project? @relation(fields: [projectId], references: [id])
-  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  assignedUser  User     @relation("TaskAssignedTo", fields: [assignedTo], references: [id])
-  createdByUser User     @relation("TaskCreatedBy", fields: [createdBy], references: [id])
+  project       Project?       @relation(fields: [projectId], references: [id])
+  category      TaskCategory?  @relation(fields: [categoryId], references: [id])
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignedUser  User           @relation("TaskAssignedTo", fields: [assignedTo], references: [id])
+  createdByUser User           @relation("TaskCreatedBy", fields: [createdBy], references: [id])
+  parentTask    Task?          @relation("TaskSubtasks", fields: [parentTaskId], references: [id])
+  subtasks      Task[]         @relation("TaskSubtasks")
+  comments      TaskComment[]
+  attachments   TaskAttachment[]
+  timeEntries   TimeEntry[]
+  watchers      TaskWatcher[]
+  activities    TaskActivity[]
 
   @@index([companyId])
   @@index([projectId])
+  @@index([categoryId])
+  @@index([parentTaskId])
   @@index([assignedTo])
   @@index([status])
   @@index([priority])
   @@index([dueDate])
+  @@index([order])
   @@map("tasks")
+}
+
+// التعليقات على المهام
+model TaskComment {
+  id              String   @id @default(cuid())
+  taskId          String
+  userId          String
+  content         String   @db.Text
+  parentCommentId String?  // للردود على التعليقات
+  mentions        Json?    // الأشخاص المذكورين @mentions
+  isEdited        Boolean  @default(false)
+  editedAt        DateTime?
+  companyId       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  task          Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id])
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parentComment TaskComment?  @relation("CommentReplies", fields: [parentCommentId], references: [id])
+  replies       TaskComment[] @relation("CommentReplies")
+
+  @@index([taskId])
+  @@index([userId])
+  @@index([companyId])
+  @@index([parentCommentId])
+  @@map("task_comments")
+}
+
+// المرفقات
+model TaskAttachment {
+  id            String   @id @default(cuid())
+  taskId        String
+  userId        String
+  fileName      String
+  originalName  String
+  fileSize      Int
+  fileType      String
+  filePath      String
+  downloadCount Int      @default(0)
+  companyId     String
+  createdAt     DateTime @default(now())
+
+  // Relations
+  task    Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([userId])
+  @@index([companyId])
+  @@map("task_attachments")
+}
+
+// تتبع الوقت
+model TimeEntry {
+  id          String    @id @default(cuid())
+  taskId      String
+  userId      String
+  startTime   DateTime
+  endTime     DateTime?
+  duration    Int       @default(0) // بالدقائق
+  description String?   @db.Text
+  isBillable  Boolean   @default(false)
+  hourlyRate  Decimal?  @db.Decimal(10, 2)
+  isRunning   Boolean   @default(false) // هل المؤقت يعمل
+  companyId   String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  task    Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([userId])
+  @@index([companyId])
+  @@index([startTime])
+  @@map("time_entries")
+}
+
+// متابعي المهام
+model TaskWatcher {
+  id        String   @id @default(cuid())
+  taskId    String
+  userId    String
+  companyId String
+  createdAt DateTime @default(now())
+
+  // Relations
+  task    Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, userId])
+  @@index([taskId])
+  @@index([userId])
+  @@index([companyId])
+  @@map("task_watchers")
+}
+
+// سجل النشاطات
+model TaskActivity {
+  id          String   @id @default(cuid())
+  taskId      String
+  userId      String
+  action      String   // created, updated, status_changed, assigned, commented, etc.
+  field       String?  // الحقل الذي تم تغييره
+  oldValue    String?  @db.Text
+  newValue    String?  @db.Text
+  description String?  @db.Text
+  companyId   String
+  createdAt   DateTime @default(now())
+
+  // Relations
+  task    Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([userId])
+  @@index([companyId])
+  @@index([createdAt])
+  @@map("task_activities")
+}
+
+// قوالب المهام
+model TaskTemplate {
+  id             String       @id @default(cuid())
+  name           String
+  description    String?      @db.Text
+  defaultStatus  TaskStatus   @default(PENDING)
+  defaultPriority TaskPriority @default(MEDIUM)
+  type           String       @default("general")
+  estimatedHours Int          @default(0)
+  tags           Json?
+  checklist      Json?        // قائمة مهام فرعية افتراضية
+  isPublic       Boolean      @default(false) // متاح لكل الشركة
+  createdBy      String
+  companyId      String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  // Relations
+  company       Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdByUser User    @relation(fields: [createdBy], references: [id])
+
+  @@index([companyId])
+  @@index([createdBy])
+  @@map("task_templates")
+}
+
+// الإشعارات
+model TaskNotification {
+  id          String   @id @default(cuid())
+  userId      String
+  taskId      String?
+  projectId   String?
+  type        String   // task_assigned, due_soon, overdue, comment, mention, etc.
+  title       String
+  message     String   @db.Text
+  isRead      Boolean  @default(false)
+  readAt      DateTime?
+  link        String?  // رابط للانتقال للمهمة
+  companyId   String
+  createdAt   DateTime @default(now())
+
+  // Relations
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([companyId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("task_notifications")
 }
 
 model Project {

@@ -1999,7 +1999,7 @@ async function getGroupMetadata(req, res) {
         const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
         if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
 
-        const metadata = await WhatsAppManager.getGroupMetadata(sessionId, jid, companyId);
+        const metadata = await WhatsAppManager.getGroupMetadata(sessionId, jid);
         res.json({ success: true, metadata });
     } catch (error) {
         console.error('❌ Error fetching group metadata:', error);
@@ -2388,7 +2388,7 @@ async function getGroupMetadata(req, res) {
             return res.status(404).json({ error: 'الجلسة غير موجودة' });
         }
 
-        const metadata = await WhatsAppManager.getGroupMetadata(sessionId, jid, companyId);
+        const metadata = await WhatsAppManager.getGroupMetadata(sessionId, jid);
         res.json({ success: true, metadata });
     } catch (error) {
         console.error('❌ Error fetching group metadata:', error);

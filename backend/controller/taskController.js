@@ -335,7 +335,8 @@ getAllTasks: async (req, res) => {
         estimatedHours,
         actualHours,
         progress,
-        tags
+        tags,
+        categoryId
       } = req.body;
       const companyId = req.user.companyId;
 
@@ -365,14 +366,15 @@ getAllTasks: async (req, res) => {
         data: {
           ...(title && { title }),
           ...(description && { description }),
-          ...(priority && { priority }),
+          ...(priority && { priority: normalizePriority(priority) }),
           ...(type && { type }),
           ...(assignedTo && { assignedTo }),
           ...(dueDate && { dueDate: new Date(dueDate) }),
           ...(estimatedHours !== undefined && { estimatedHours }),
           ...(actualHours !== undefined && { actualHours }),
           ...(progress !== undefined && { progress }),
-          ...(tags && { tags })
+          ...(tags && { tags }),
+          ...(categoryId !== undefined && { categoryId: categoryId || null })
         }
       });
 
@@ -457,13 +459,14 @@ getAllTasks: async (req, res) => {
       const { status, progress } = req.body;
       const companyId = req.user.companyId;
 
-      const updateData = { status };
+      const normalizedStatus = normalizeStatus(status);
+      const updateData = { status: normalizedStatus };
       if (progress !== undefined) {
         updateData.progress = progress;
       }
 
       // If completing task, set progress to 100
-      if (status === 'COMPLETED') {
+      if (normalizedStatus === 'COMPLETED') {
         updateData.progress = 100;
       }
 
@@ -947,6 +950,871 @@ getAllTasks: async (req, res) => {
         success: false,
         error: 'فشل في جلب الإحصائيات'
       });
+    }
+  },
+
+  // ==================== المهام الفرعية (Subtasks) ====================
+  
+  createSubtask: async (req, res) => {
+    try {
+      const { parentTaskId } = req.params;
+      const { title, description, priority, assignedTo, dueDate, estimatedHours } = req.body;
+      const companyId = req.user.companyId;
+      const createdBy = req.user.userId;
+
+      const parentTask = await prisma.task.findFirst({
+        where: { id: parentTaskId, companyId }
+      });
+
+      if (!parentTask) {
+        return res.status(404).json({ success: false, error: 'المهمة الأب غير موجودة' });
+      }
+
+      const subtask = await prisma.task.create({
+        data: {
+          companyId,
+          projectId: parentTask.projectId,
+          parentTaskId,
+          title,
+          description: description || '',
+          status: 'PENDING',
+          priority: normalizePriority(priority),
+          assignedTo: assignedTo || createdBy,
+          createdBy,
+          dueDate: dueDate ? new Date(dueDate) : null,
+          estimatedHours: estimatedHours || 0
+        },
+        include: {
+          assignedUser: { select: { firstName: true, lastName: true } },
+          createdByUser: { select: { firstName: true, lastName: true } }
+        }
+      });
+
+      await prisma.taskActivity.create({
+        data: { taskId: parentTaskId, userId: createdBy, action: 'subtask_created', description: `تم إنشاء مهمة فرعية: ${title}`, companyId }
+      });
+
+      res.json({ success: true, data: subtask, message: 'تم إنشاء المهمة الفرعية بنجاح' });
+    } catch (error) {
+      console.error('Error creating subtask:', error);
+      res.status(500).json({ success: false, error: 'فشل في إنشاء المهمة الفرعية' });
+    }
+  },
+
+  getSubtasks: async (req, res) => {
+    try {
+      const { parentTaskId } = req.params;
+      const companyId = req.user.companyId;
+
+      const subtasks = await prisma.task.findMany({
+        where: { parentTaskId, companyId },
+        include: {
+          assignedUser: { select: { firstName: true, lastName: true } },
+          createdByUser: { select: { firstName: true, lastName: true } }
+        },
+        orderBy: { order: 'asc' }
+      });
+
+      res.json({ success: true, data: subtasks });
+    } catch (error) {
+      console.error('Error fetching subtasks:', error);
+      res.status(500).json({ success: false, error: 'فشل في جلب المهام الفرعية' });
+    }
+  },
+
+  // ==================== التعليقات (Comments) ====================
+  
+  addComment: async (req, res) => {
+    try {
+      const { taskId } = req.params;
+      const { content, parentCommentId, mentions } = req.body;
+      const companyId = req.user.companyId;
+      const userId = req.user.userId;
+
+      const task = await prisma.task.findFirst({ where: { id: taskId, companyId } });
+      if (!task) {
+        return res.status(404).json({ success: false, error: 'المهمة غير موجودة' });
+      }
+
+      const comment = await prisma.taskComment.create({
+        data: {
+          taskId, userId, content,
+          parentCommentId: parentCommentId || null,
+          mentions: mentions || [],
+          companyId
+        },
+        include: {
+          user: { select: { firstName: true, lastName: true, avatar: true } },
+          replies: { include: { user: { select: { firstName: true, lastName: true, avatar: true } } } }
+        }
+      });
+
+      await prisma.taskActivity.create({
+        data: { taskId, userId, action: 'commented', description: 'تم إضافة تعليق', companyId }
+      });
+
+      if (mentions && mentions.length > 0) {
+        const notifications = mentions.map(mentionedUserId => ({
+          userId: mentionedUserId, taskId, type: 'mention',
+          title: 'تم ذكرك في تعليق', message: content.substring(0, 100),
+          link: `/tasks/${taskId}`, companyId
+        }));
+        await prisma.taskNotification.createMany({ data: notifications });
+      }
+
+      res.json({ success: true, data: comment, message: 'تم إضافة التعليق بنجاح' });
+    } catch (error) {
+      console.error('Error adding comment:', error);
+      res.status(500).json({ success: false, error: 'فشل في إضافة التعليق' });
+    }
+  },
+
+  getComments: async (req, res) => {
+    try {
+      const { taskId } = req.params;
+      const companyId = req.user.companyId;
+
+      const comments = await prisma.taskComment.findMany({
+        where: { taskId, companyId, parentCommentId: null },
+        include: {
+          user: { select: { firstName: true, lastName: true, avatar: true } },
+          replies: {
+            include: { user: { select: { firstName: true, lastName: true, avatar: true } } },
+            orderBy: { createdAt: 'asc' }
+          }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      res.json({ success: true, data: comments });
+    } catch (error) {
+      console.error('Error fetching comments:', error);
+      res.status(500).json({ success: false, error: 'فشل في جلب التعليقات' });
+    }
+  },
+
+  updateComment: async (req, res) => {
+    try {
+      const { commentId } = req.params;
+      const { content } = req.body;
+      const companyId = req.user.companyId;
+      const userId = req.user.userId;
+
+      const comment = await prisma.taskComment.findFirst({ where: { id: commentId, companyId, userId } });
+      if (!comment) {
+        return res.status(404).json({ success: false, error: 'التعليق غير موجود أو ليس لديك صلاحية تعديله' });
+      }
+
+      const updatedComment = await prisma.taskComment.update({
+        where: { id: commentId },
+        data: { content, isEdited: true, editedAt: new Date() },
+        include: { user: { select: { firstName: true, lastName: true, avatar: true } } }
+      });
+
+      res.json({ success: true, data: updatedComment, message: 'تم تعديل التعليق بنجاح' });
+    } catch (error) {
+      console.error('Error updating comment:', error);
+      res.status(500).json({ success: false, error: 'فشل في تعديل التعليق' });
+    }
+  },
+
+  deleteComment: async (req, res) => {
+    try {
+      const { commentId } = req.params;
+      const companyId = req.user.companyId;
+      const userId = req.user.userId;
+
+      const comment = await prisma.taskComment.findFirst({ where: { id: commentId, companyId, userId } });
+      if (!comment) {
+        return res.status(404).json({ success: false, error: 'التعليق غير موجود أو ليس لديك صلاحية حذفه' });
+      }
+
+      await prisma.taskComment.delete({ where: { id: commentId } });
+      res.json({ success: true, message: 'تم حذف التعليق بنجاح' });
+    } catch (error) {
+      console.error('Error deleting comment:', error);
+      res.status(500).json({ success: false, error: 'فشل في حذف التعليق' });
+    }
+  },
+
+  // ==================== تتبع الوقت (Time Tracking) ====================
+  
+  startTimeTracking: async (req, res) => {
+    try {
+      const { taskId } = req.params;
+      const { description, isBillable, hourlyRate } = req.body;
+      const companyId = req.user.companyId;
+      const userId = req.user.userId;
+
+      const runningEntry = await prisma.timeEntry.findFirst({ where: { userId, companyId, isRunning: true } });
+      if (runningEntry) {
+        return res.status(400).json({ success: false, error: 'يوجد مؤقت يعمل بالفعل. يرجى إيقافه أولاً' });
+      }
+
+      const timeEntry = await prisma.timeEntry.create({
+        data: {
+          taskId, userId, startTime: new Date(),
+          description: description || '', isBillable: isBillable || false,
+          hourlyRate: hourlyRate || null, isRunning: true, companyId
+        },
+        include: { task: { select: { title: true } } }
+      });
+
+      res.json({ success: true, data: timeEntry, message: 'تم بدء تتبع الوقت' });
+    } catch (error) {
+      console.error('Error starting time tracking:', error);
+      res.status(500).json({ success: false, error: 'فشل في بدء تتبع الوقت' });
+    }
+  },
+
+  stopTimeTracking: async (req, res) => {
+    try {
+      const { entryId } = req.params;
+      const companyId = req.user.companyId;
+      const userId = req.user.userId;
+
+      const timeEntry = await prisma.timeEntry.findFirst({ where: { id: entryId, userId, companyId, isRunning: true } });
+      if (!timeEntry) {
+        return res.status(404).json({ success: false, error: 'سجل الوقت غير موجود أو متوقف بالفعل' });
+      }
+
+      const endTime = new Date();
+      const duration = Math.round((endTime - timeEntry.startTime) / 60000);
+
+      const updatedEntry = await prisma.timeEntry.update({
+        where: { id: entryId },
+        data: { endTime, duration, isRunning: false },
+        include: { task: { select: { title: true } } }
+      });
+
+      await prisma.task.update({
+        where: { id: timeEntry.taskId },
+        data: { actualHours: { increment: Math.round(duration / 60) } }
+      });
+
+      res.json({ success: true, data: updatedEntry, message: `تم إيقاف تتبع الوقت. المدة: ${duration} دقيقة` });
+    } catch (error) {
+      console.error('Error stopping time tracking:', error);
+      res.status(500).json({ success: false, error: 'فشل في إيقاف تتبع الوقت' });
+    }
+  },
+
+  addManualTimeEntry: async (req, res) => {
+    try {
+      const { taskId } = req.params;
+      const { startTime, endTime, duration, description, isBillable, hourlyRate } = req.body;
+      const companyId = req.user.companyId;
+      const userId = req.user.userId;
+
+      const calculatedDuration = duration || Math.round((new Date(endTime) - new Date(startTime)) / 60000);
+
+      const timeEntry = await prisma.timeEntry.create({
+        data: {
+          taskId, userId, startTime: new Date(startTime),
+          endTime: endTime ? new Date(endTime) : null,
+          duration: calculatedDuration, description: description || '',
+          isBillable: isBillable || false, hourlyRate: hourlyRate || null,
+          isRunning: false, companyId
+        },
+        include: { task: { select: { title: true } } }
+      });
+
+      await prisma.task.update({
+        where: { id: taskId },
+        data: { actualHours: { increment: Math.round(calculatedDuration / 60) } }
+      });
+
+      res.json({ success: true, data: timeEntry, message: 'تم إضافة سجل الوقت بنجاح' });
+    } catch (error) {
+      console.error('Error adding manual time entry:', error);
+      res.status(500).json({ success: false, error: 'فشل في إضافة سجل الوقت' });
+    }
+  },
+
+  getTimeEntries: async (req, res) => {
+    try {
+      const { taskId } = req.params;
+      const companyId = req.user.companyId;
+
+      const timeEntries = await prisma.timeEntry.findMany({
+        where: { taskId, companyId },
+        include: { user: { select: { firstName: true, lastName: true } } },
+        orderBy: { startTime: 'desc' }
+      });
+
+      const totalMinutes = timeEntries.reduce((sum, entry) => sum + entry.duration, 0);
+
+      res.json({
+        success: true,
+        data: { entries: timeEntries, totalMinutes, totalHours: Math.round(totalMinutes / 60 * 100) / 100 }
+      });
+    } catch (error) {
+      console.error('Error fetching time entries:', error);
+      res.status(500).json({ success: false, error: 'فشل في جلب سجلات الوقت' });
+    }
+  },
+
+  getRunningTimer: async (req, res) => {
+    try {
+      const companyId = req.user.companyId;
+      const userId = req.user.userId;
+
+      const runningEntry = await prisma.timeEntry.findFirst({
+        where: { userId, companyId, isRunning: true },
+        include: { task: { select: { id: true, title: true } } }
+      });
+
+      res.json({ success: true, data: runningEntry });
+    } catch (error) {
+      console.error('Error fetching running timer:', error);
+      res.status(500).json({ success: false, error: 'فشل في جلب المؤقت الجاري' });
+    }
+  },
+
+  // ==================== سجل النشاطات (Activity Log) ====================
+  
+  getTaskActivities: async (req, res) => {
+    try {
+      const { taskId } = req.params;
+      const companyId = req.user.companyId;
+
+      const activities = await prisma.taskActivity.findMany({
+        where: { taskId, companyId },
+        include: { user: { select: { firstName: true, lastName: true, avatar: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 50
+      });
+
+      res.json({ success: true, data: activities });
+    } catch (error) {
+      console.error('Error fetching task activities:', error);
+      res.status(500).json({ success: false, error: 'فشل في جلب سجل النشاطات' });
+    }
+  },
+
+  // ==================== المتابعون (Watchers) ====================
+  
+  addWatcher: async (req, res) => {
+    try {
+      const { taskId } = req.params;
+      const { userId: watcherUserId } = req.body;
+      const companyId = req.user.companyId;
+
+      const watcher = await prisma.taskWatcher.create({
+        data: { taskId, userId: watcherUserId, companyId },
+        include: { user: { select: { firstName: true, lastName: true } } }
+      });
+
+      res.json({ success: true, data: watcher, message: 'تم إضافة المتابع بنجاح' });
+    } catch (error) {
+      if (error.code === 'P2002') {
+        return res.status(400).json({ success: false, error: 'المستخدم يتابع هذه المهمة بالفعل' });
+      }
+      console.error('Error adding watcher:', error);
+      res.status(500).json({ success: false, error: 'فشل في إضافة المتابع' });
+    }
+  },
+
+  removeWatcher: async (req, res) => {
+    try {
+      const { taskId, watcherUserId } = req.params;
+      const companyId = req.user.companyId;
+
+      await prisma.taskWatcher.deleteMany({ where: { taskId, userId: watcherUserId, companyId } });
+      res.json({ success: true, message: 'تم إزالة المتابع بنجاح' });
+    } catch (error) {
+      console.error('Error removing watcher:', error);
+      res.status(500).json({ success: false, error: 'فشل في إزالة المتابع' });
+    }
+  },
+
+  getWatchers: async (req, res) => {
+    try {
+      const { taskId } = req.params;
+      const companyId = req.user.companyId;
+
+      const watchers = await prisma.taskWatcher.findMany({
+        where: { taskId, companyId },
+        include: { user: { select: { id: true, firstName: true, lastName: true, avatar: true } } }
+      });
+
+      res.json({ success: true, data: watchers.map(w => w.user) });
+    } catch (error) {
+      console.error('Error fetching watchers:', error);
+      res.status(500).json({ success: false, error: 'فشل في جلب المتابعين' });
+    }
+  },
+
+  // ==================== الإشعارات (Notifications) ====================
+  
+  getNotifications: async (req, res) => {
+    try {
+      const companyId = req.user.companyId;
+      const userId = req.user.userId;
+      const { unreadOnly } = req.query;
+
+      const where = { userId, companyId };
+      if (unreadOnly === 'true') where.isRead = false;
+
+      const notifications = await prisma.taskNotification.findMany({
+        where, orderBy: { createdAt: 'desc' }, take: 50
+      });
+
+      const unreadCount = await prisma.taskNotification.count({
+        where: { userId, companyId, isRead: false }
+      });
+
+      res.json({ success: true, data: { notifications, unreadCount } });
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      res.status(500).json({ success: false, error: 'فشل في جلب الإشعارات' });
+    }
+  },
+
+  markNotificationAsRead: async (req, res) => {
+    try {
+      const { notificationId } = req.params;
+      const companyId = req.user.companyId;
+      const userId = req.user.userId;
+
+      await prisma.taskNotification.updateMany({
+        where: { id: notificationId, userId, companyId },
+        data: { isRead: true, readAt: new Date() }
+      });
+
+      res.json({ success: true, message: 'تم تحديد الإشعار كمقروء' });
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+      res.status(500).json({ success: false, error: 'فشل في تحديث الإشعار' });
+    }
+  },
+
+  markAllNotificationsAsRead: async (req, res) => {
+    try {
+      const companyId = req.user.companyId;
+      const userId = req.user.userId;
+
+      await prisma.taskNotification.updateMany({
+        where: { userId, companyId, isRead: false },
+        data: { isRead: true, readAt: new Date() }
+      });
+
+      res.json({ success: true, message: 'تم تحديد كل الإشعارات كمقروءة' });
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
+      res.status(500).json({ success: false, error: 'فشل في تحديث الإشعارات' });
+    }
+  },
+
+  // ==================== Kanban Board ====================
+  
+  getKanbanTasks: async (req, res) => {
+    try {
+      const { projectId } = req.query;
+      const companyId = req.user.companyId;
+
+      const where = { companyId, parentTaskId: null };
+      if (projectId) where.projectId = projectId;
+
+      const tasks = await prisma.task.findMany({
+        where,
+        include: {
+          assignedUser: { select: { firstName: true, lastName: true, avatar: true } },
+          subtasks: { select: { id: true, status: true } },
+          _count: { select: { comments: true, attachments: true } }
+        },
+        orderBy: { order: 'asc' }
+      });
+
+      const kanbanData = { PENDING: [], IN_PROGRESS: [], COMPLETED: [], CANCELLED: [] };
+
+      tasks.forEach(task => {
+        const formattedTask = {
+          ...task,
+          subtasksCount: task.subtasks.length,
+          completedSubtasks: task.subtasks.filter(s => s.status === 'COMPLETED').length,
+          commentsCount: task._count.comments,
+          attachmentsCount: task._count.attachments
+        };
+        delete formattedTask.subtasks;
+        delete formattedTask._count;
+        
+        if (kanbanData[task.status]) kanbanData[task.status].push(formattedTask);
+      });
+
+      res.json({ success: true, data: kanbanData });
+    } catch (error) {
+      console.error('Error fetching kanban tasks:', error);
+      res.status(500).json({ success: false, error: 'فشل في جلب مهام Kanban' });
+    }
+  },
+
+  updateTaskOrder: async (req, res) => {
+    try {
+      const { taskId } = req.params;
+      const { newStatus, newOrder } = req.body;
+      const companyId = req.user.companyId;
+      const userId = req.user.userId;
+
+      const task = await prisma.task.findFirst({ where: { id: taskId, companyId } });
+      if (!task) {
+        return res.status(404).json({ success: false, error: 'المهمة غير موجودة' });
+      }
+
+      const oldStatus = task.status;
+
+      const updatedTask = await prisma.task.update({
+        where: { id: taskId },
+        data: {
+          status: newStatus,
+          order: newOrder,
+          ...(newStatus === 'COMPLETED' && { completedDate: new Date(), progress: 100 }),
+          ...(newStatus !== 'COMPLETED' && oldStatus === 'COMPLETED' && { completedDate: null })
+        }
+      });
+
+      if (oldStatus !== newStatus) {
+        await prisma.taskActivity.create({
+          data: { taskId, userId, action: 'status_changed', field: 'status', oldValue: oldStatus, newValue: newStatus, companyId }
+        });
+      }
+
+      res.json({ success: true, data: updatedTask, message: 'تم تحديث ترتيب المهمة' });
+    } catch (error) {
+      console.error('Error updating task order:', error);
+      res.status(500).json({ success: false, error: 'فشل في تحديث ترتيب المهمة' });
+    }
+  },
+
+  // ==================== تفاصيل المهمة الكاملة ====================
+  
+  getTaskDetails: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const companyId = req.user.companyId;
+
+      const task = await prisma.task.findFirst({
+        where: { id, companyId },
+        include: {
+          project: { select: { id: true, name: true } },
+          assignedUser: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+          createdByUser: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+          parentTask: { select: { id: true, title: true } },
+          subtasks: {
+            include: { assignedUser: { select: { firstName: true, lastName: true } } },
+            orderBy: { order: 'asc' }
+          },
+          comments: {
+            where: { parentCommentId: null },
+            include: {
+              user: { select: { firstName: true, lastName: true, avatar: true } },
+              replies: { include: { user: { select: { firstName: true, lastName: true, avatar: true } } } }
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 10
+          },
+          attachments: {
+            include: { user: { select: { firstName: true, lastName: true } } },
+            orderBy: { createdAt: 'desc' }
+          },
+          timeEntries: {
+            include: { user: { select: { firstName: true, lastName: true } } },
+            orderBy: { startTime: 'desc' },
+            take: 10
+          },
+          watchers: {
+            include: { user: { select: { id: true, firstName: true, lastName: true, avatar: true } } }
+          },
+          activities: {
+            include: { user: { select: { firstName: true, lastName: true, avatar: true } } },
+            orderBy: { createdAt: 'desc' },
+            take: 20
+          }
+        }
+      });
+
+      if (!task) {
+        return res.status(404).json({ success: false, error: 'المهمة غير موجودة' });
+      }
+
+      const totalMinutes = task.timeEntries.reduce((sum, entry) => sum + entry.duration, 0);
+
+      res.json({
+        success: true,
+        data: {
+          ...task,
+          totalTimeMinutes: totalMinutes,
+          totalTimeHours: Math.round(totalMinutes / 60 * 100) / 100,
+          watchersList: task.watchers.map(w => w.user)
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching task details:', error);
+      res.status(500).json({ success: false, error: 'فشل في جلب تفاصيل المهمة' });
+    }
+  },
+
+  // ==================== المرفقات (Attachments) ====================
+
+  // جلب مرفقات المهمة
+  getAttachments: async (req, res) => {
+    try {
+      const { taskId } = req.params;
+      const companyId = req.user.companyId;
+
+      const attachments = await prisma.taskAttachment.findMany({
+        where: { taskId, companyId },
+        include: {
+          user: { select: { firstName: true, lastName: true } }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      res.json({ success: true, data: attachments });
+    } catch (error) {
+      console.error('Error fetching attachments:', error);
+      res.status(500).json({ success: false, error: 'فشل في جلب المرفقات' });
+    }
+  },
+
+  // إضافة مرفق
+  addAttachment: async (req, res) => {
+    try {
+      const { taskId } = req.params;
+      const { fileName, originalName, fileSize, fileType, filePath } = req.body;
+      const companyId = req.user.companyId;
+      const userId = req.user.userId;
+
+      const task = await prisma.task.findFirst({
+        where: { id: taskId, companyId }
+      });
+
+      if (!task) {
+        return res.status(404).json({ success: false, error: 'المهمة غير موجودة' });
+      }
+
+      const attachment = await prisma.taskAttachment.create({
+        data: {
+          taskId,
+          userId,
+          fileName,
+          originalName,
+          fileSize,
+          fileType,
+          filePath,
+          companyId
+        },
+        include: {
+          user: { select: { firstName: true, lastName: true } }
+        }
+      });
+
+      // تسجيل النشاط
+      await prisma.taskActivity.create({
+        data: {
+          taskId,
+          userId,
+          action: 'attachment_added',
+          description: `تم إضافة مرفق: ${originalName}`,
+          companyId
+        }
+      });
+
+      res.json({ success: true, data: attachment, message: 'تم إضافة المرفق بنجاح' });
+    } catch (error) {
+      console.error('Error adding attachment:', error);
+      res.status(500).json({ success: false, error: 'فشل في إضافة المرفق' });
+    }
+  },
+
+  // حذف مرفق
+  deleteAttachment: async (req, res) => {
+    try {
+      const { attachmentId } = req.params;
+      const companyId = req.user.companyId;
+      const userId = req.user.userId;
+
+      const attachment = await prisma.taskAttachment.findFirst({
+        where: { id: attachmentId, companyId }
+      });
+
+      if (!attachment) {
+        return res.status(404).json({ success: false, error: 'المرفق غير موجود' });
+      }
+
+      // التحقق من صلاحية الحذف (صاحب المرفق فقط)
+      if (attachment.userId !== userId) {
+        return res.status(403).json({ success: false, error: 'لا يمكنك حذف هذا المرفق' });
+      }
+
+      await prisma.taskAttachment.delete({
+        where: { id: attachmentId }
+      });
+
+      // تسجيل النشاط
+      await prisma.taskActivity.create({
+        data: {
+          taskId: attachment.taskId,
+          userId,
+          action: 'attachment_deleted',
+          description: `تم حذف مرفق: ${attachment.originalName}`,
+          companyId
+        }
+      });
+
+      res.json({ success: true, message: 'تم حذف المرفق بنجاح' });
+    } catch (error) {
+      console.error('Error deleting attachment:', error);
+      res.status(500).json({ success: false, error: 'فشل في حذف المرفق' });
+    }
+  },
+
+  // ==================== Task Categories ====================
+
+  // جلب جميع الأقسام
+  getCategories: async (req, res) => {
+    try {
+      const companyId = req.user.companyId;
+
+      const categories = await prisma.taskCategory.findMany({
+        where: { companyId },
+        include: {
+          _count: {
+            select: { tasks: true }
+          }
+        },
+        orderBy: { order: 'asc' }
+      });
+
+      res.json({ 
+        success: true, 
+        data: categories.map(cat => ({
+          ...cat,
+          taskCount: cat._count.tasks
+        }))
+      });
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      res.status(500).json({ success: false, error: 'فشل في جلب الأقسام' });
+    }
+  },
+
+  // إنشاء قسم جديد
+  createCategory: async (req, res) => {
+    try {
+      const companyId = req.user.companyId;
+      const { name, description, color, icon } = req.body;
+
+      if (!name) {
+        return res.status(400).json({ success: false, error: 'اسم القسم مطلوب' });
+      }
+
+      // التحقق من عدم وجود قسم بنفس الاسم
+      const existingCategory = await prisma.taskCategory.findFirst({
+        where: { companyId, name }
+      });
+
+      if (existingCategory) {
+        return res.status(400).json({ success: false, error: 'يوجد قسم بنفس الاسم' });
+      }
+
+      // الحصول على أعلى ترتيب
+      const maxOrder = await prisma.taskCategory.aggregate({
+        where: { companyId },
+        _max: { order: true }
+      });
+
+      const category = await prisma.taskCategory.create({
+        data: {
+          name,
+          description: description || null,
+          color: color || '#6366f1',
+          icon: icon || null,
+          order: (maxOrder._max.order || 0) + 1,
+          companyId
+        }
+      });
+
+      res.status(201).json({ success: true, data: category });
+    } catch (error) {
+      console.error('Error creating category:', error);
+      res.status(500).json({ success: false, error: 'فشل في إنشاء القسم' });
+    }
+  },
+
+  // تحديث قسم
+  updateCategory: async (req, res) => {
+    try {
+      const companyId = req.user.companyId;
+      const { id } = req.params;
+      const { name, description, color, icon, isActive, order } = req.body;
+
+      const category = await prisma.taskCategory.findFirst({
+        where: { id, companyId }
+      });
+
+      if (!category) {
+        return res.status(404).json({ success: false, error: 'القسم غير موجود' });
+      }
+
+      // التحقق من عدم وجود قسم آخر بنفس الاسم
+      if (name && name !== category.name) {
+        const existingCategory = await prisma.taskCategory.findFirst({
+          where: { companyId, name, id: { not: id } }
+        });
+        if (existingCategory) {
+          return res.status(400).json({ success: false, error: 'يوجد قسم آخر بنفس الاسم' });
+        }
+      }
+
+      const updatedCategory = await prisma.taskCategory.update({
+        where: { id },
+        data: {
+          name: name || category.name,
+          description: description !== undefined ? description : category.description,
+          color: color || category.color,
+          icon: icon !== undefined ? icon : category.icon,
+          isActive: isActive !== undefined ? isActive : category.isActive,
+          order: order !== undefined ? order : category.order
+        }
+      });
+
+      res.json({ success: true, data: updatedCategory });
+    } catch (error) {
+      console.error('Error updating category:', error);
+      res.status(500).json({ success: false, error: 'فشل في تحديث القسم' });
+    }
+  },
+
+  // حذف قسم
+  deleteCategory: async (req, res) => {
+    try {
+      const companyId = req.user.companyId;
+      const { id } = req.params;
+
+      const category = await prisma.taskCategory.findFirst({
+        where: { id, companyId },
+        include: { _count: { select: { tasks: true } } }
+      });
+
+      if (!category) {
+        return res.status(404).json({ success: false, error: 'القسم غير موجود' });
+      }
+
+      // إزالة القسم من المهام المرتبطة
+      await prisma.task.updateMany({
+        where: { categoryId: id },
+        data: { categoryId: null }
+      });
+
+      await prisma.taskCategory.delete({
+        where: { id }
+      });
+
+      res.json({ success: true, message: 'تم حذف القسم بنجاح' });
+    } catch (error) {
+      console.error('Error deleting category:', error);
+      res.status(500).json({ success: false, error: 'فشل في حذف القسم' });
     }
   }
 };

@@ -102,7 +102,7 @@ class SecurityLogger {
 
       const logFile = path.join(logDir, 'security.log');
       const logLine = `${logEntry.timestamp.toISOString()} [${logEntry.type}] ${JSON.stringify(logEntry)}\n`;
-      
+
       fs.appendFileSync(logFile, logLine);
     } catch (error) {
       console.error('Failed to write security log:', error);
@@ -143,7 +143,7 @@ class SecurityLogger {
 
   clearOldLogs() {
     const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    
+
     for (const [eventType, events] of this.logs.entries()) {
       const filteredEvents = events.filter(event => event.timestamp > oneWeekAgo);
       this.logs.set(eventType, filteredEvents);
@@ -151,11 +151,11 @@ class SecurityLogger {
 
     // Clear old blocked and suspicious IPs (reset after 24 hours)
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    
+
     // Reset blocked IPs older than 24 hours
     this.blockedIPs.clear();
     this.suspiciousIPs.clear();
-    
+
     console.log('🧹 [SECURITY-CLEANUP] Old security logs and IP blocks cleared');
   }
 
@@ -187,25 +187,25 @@ setInterval(() => {
  */
 const ipBlockingMiddleware = (req, res, next) => {
   // Get IP from various sources
-  const ip = req.ip || 
-             req.connection?.remoteAddress || 
-             req.socket?.remoteAddress ||
-             (req.headers['x-forwarded-for'] ? req.headers['x-forwarded-for'].split(',')[0].trim() : null) ||
-             'unknown';
-  
+  const ip = req.ip ||
+    req.connection?.remoteAddress ||
+    req.socket?.remoteAddress ||
+    (req.headers['x-forwarded-for'] ? req.headers['x-forwarded-for'].split(',')[0].trim() : null) ||
+    'unknown';
+
   // Normalize IP address
   const normalizedIP = ip.replace(/^::ffff:/, ''); // Remove IPv6 prefix for IPv4 addresses
-  
+
   // Allow localhost and 127.0.0.1 in development
-  const isLocalhost = normalizedIP === '127.0.0.1' || 
-                      normalizedIP === '::1' || 
-                      normalizedIP === '::ffff:127.0.0.1' ||
-                      normalizedIP.startsWith('127.') ||
-                      normalizedIP === 'localhost' ||
-                      normalizedIP === '::ffff:127.0.0.1' ||
-                      ip === '::1' ||
-                      ip === 'localhost';
-  
+  const isLocalhost = normalizedIP === '127.0.0.1' ||
+    normalizedIP === '::1' ||
+    normalizedIP === '::ffff:127.0.0.1' ||
+    normalizedIP.startsWith('127.') ||
+    normalizedIP === 'localhost' ||
+    normalizedIP === '::ffff:127.0.0.1' ||
+    ip === '::1' ||
+    ip === 'localhost';
+
   // In development, always allow localhost and don't block anything
   if (process.env.NODE_ENV !== 'production') {
     if (isLocalhost) {
@@ -223,7 +223,7 @@ const ipBlockingMiddleware = (req, res, next) => {
     }
     return next();
   }
-  
+
   // In production, check for blocked IPs
   if (securityLogger.isIPBlocked(normalizedIP)) {
     securityLogger.log('blocked_ip_attempt', {
@@ -232,14 +232,14 @@ const ipBlockingMiddleware = (req, res, next) => {
       method: req.method,
       userAgent: req.get('User-Agent')
     });
-    
+
     return res.status(403).json({
       success: false,
       message: 'تم حظر الوصول من هذا العنوان',
       code: 'IP_BLOCKED'
     });
   }
-  
+
   if (securityLogger.isIPSuspicious(normalizedIP)) {
     securityLogger.log('suspicious_ip_access', {
       ip: normalizedIP,
@@ -247,7 +247,7 @@ const ipBlockingMiddleware = (req, res, next) => {
       method: req.method
     });
   }
-  
+
   next();
 };
 
@@ -257,7 +257,7 @@ const ipBlockingMiddleware = (req, res, next) => {
 const enhancedRequestLogging = (req, res, next) => {
   const startTime = Date.now();
   const ip = req.ip || req.connection.remoteAddress;
-  
+
   // Log all requests for security monitoring
   securityLogger.log('request_received', {
     ip,
@@ -271,17 +271,17 @@ const enhancedRequestLogging = (req, res, next) => {
       'x-forwarded-for': req.headers['x-forwarded-for']
     }
   });
-  
+
   // Override res.json to log responses
   const originalJson = res.json;
-  res.json = function(body) {
+  res.json = function (body) {
     const responseTime = Date.now() - startTime;
-    
+
     // Log security-relevant responses
     if (res.statusCode >= 400) {
-      const logType = res.statusCode === 401 ? 'auth_failure' : 
-                     res.statusCode === 403 ? 'access_denied' : 'error_response';
-      
+      const logType = res.statusCode === 401 ? 'auth_failure' :
+        res.statusCode === 403 ? 'access_denied' : 'error_response';
+
       securityLogger.log(logType, {
         ip,
         method: req.method,
@@ -293,10 +293,10 @@ const enhancedRequestLogging = (req, res, next) => {
         errorCode: body?.code
       });
     }
-    
+
     return originalJson.call(this, body);
   };
-  
+
   next();
 };
 const PUBLIC_ROUTES = [
@@ -356,18 +356,21 @@ const PUBLIC_ROUTES = [
   'PUT /api/v1/public/*',
   'DELETE /api/v1/public/*',
   'PATCH /api/v1/public/*',
-  
+
   // Public homepage routes
   'GET /api/v1/homepage/*',
-  
+
   // Public footer settings
   'GET /api/v1/public/footer-settings/*',
-  
+
   // Public storefront settings
   'GET /api/v1/public/storefront-settings/*',
-  
+
   // Public coupons
-  'GET /api/v1/public/coupons/*'
+  'GET /api/v1/public/coupons/*',
+
+  // Debug Routes
+  'GET /api/v1/whatsapp/sessions/debug'
 ];
 
 /**
@@ -401,7 +404,7 @@ const COMPANY_ISOLATED_ROUTES = [
 function isPublicRoute(method, path) {
   return PUBLIC_ROUTES.some(route => {
     const [routeMethod, routePath] = route.split(' ');
-    
+
     if (routeMethod === '*' || routeMethod === method) {
       if (routePath === '*') return true;
       if (routePath.endsWith('*')) {
@@ -409,7 +412,7 @@ function isPublicRoute(method, path) {
       }
       return routePath === path;
     }
-    
+
     return false;
   });
 }
@@ -420,14 +423,14 @@ function isPublicRoute(method, path) {
 function isAdminRoute(method, path) {
   return ADMIN_ROUTES.some(route => {
     const [routeMethod, routePath] = route.split(' ');
-    
+
     if (routeMethod === '*' || routeMethod === method) {
       if (routePath.endsWith('*')) {
         return path.startsWith(routePath.slice(0, -1));
       }
       return routePath === path;
     }
-    
+
     return false;
   });
 }
@@ -467,8 +470,8 @@ const globalAuthentication = async (req, res, next) => {
 
     // التحقق من وجود token
     const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.startsWith('Bearer ') 
-      ? authHeader.substring(7) 
+    const token = authHeader && authHeader.startsWith('Bearer ')
+      ? authHeader.substring(7)
       : null;
 
     if (!token) {
@@ -479,7 +482,7 @@ const globalAuthentication = async (req, res, next) => {
         reason: 'No token provided',
         userAgent: req.get('User-Agent')
       });
-      
+
       return res.status(401).json({
         success: false,
         message: 'مطلوب تسجيل الدخول للوصول لهذا المورد',
@@ -492,9 +495,9 @@ const globalAuthentication = async (req, res, next) => {
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret-key');
     } catch (error) {
-      const logType = error.name === 'TokenExpiredError' ? 'token_expired' : 
-                     error.name === 'JsonWebTokenError' ? 'token_invalid' : 'token_error';
-      
+      const logType = error.name === 'TokenExpiredError' ? 'token_expired' :
+        error.name === 'JsonWebTokenError' ? 'token_invalid' : 'token_error';
+
       securityLogger.log(logType, {
         ip,
         method,
@@ -503,7 +506,7 @@ const globalAuthentication = async (req, res, next) => {
         tokenPrefix: token.substring(0, 10) + '...',
         userAgent: req.get('User-Agent')
       });
-      
+
       return res.status(401).json({
         success: false,
         message: 'رمز المصادقة غير صحيح',
@@ -525,7 +528,7 @@ const globalAuthentication = async (req, res, next) => {
           path,
           companyId: decoded.companyId
         });
-        
+
         return res.status(403).json({
           success: false,
           message: 'ليس لديك صلاحية إدارية للوصول لهذا المورد',
@@ -555,7 +558,7 @@ const globalAuthentication = async (req, res, next) => {
       error: error.message,
       stack: error.stack
     });
-    
+
     return res.status(500).json({
       success: false,
       message: 'خطأ في التحقق من المصادقة',
@@ -586,7 +589,7 @@ const globalCompanyIsolation = async (req, res, next) => {
         userId: req.user?.id,
         reason: 'No company ID in user token'
       });
-      
+
       return res.status(403).json({
         success: false,
         message: 'معرف الشركة مطلوب للوصول لهذا المورد',
@@ -599,7 +602,7 @@ const globalCompanyIsolation = async (req, res, next) => {
 
     // التحقق من محاولة الوصول لشركة أخرى
     const requestedCompanyId = req.params.companyId || req.body.companyId || req.query.companyId;
-    
+
     if (requestedCompanyId && req.user.role !== 'SUPER_ADMIN') {
       if (requestedCompanyId !== req.user.companyId) {
         securityLogger.log('company_violation', {
@@ -613,7 +616,7 @@ const globalCompanyIsolation = async (req, res, next) => {
           userAgent: req.get('User-Agent'),
           severity: 'CRITICAL'
         });
-        
+
         return res.status(403).json({
           success: false,
           message: 'ليس لديك صلاحية للوصول لبيانات هذه الشركة',
@@ -644,7 +647,7 @@ const globalCompanyIsolation = async (req, res, next) => {
       error: error.message,
       stack: error.stack
     });
-    
+
     return res.status(500).json({
       success: false,
       message: 'خطأ في التحقق من صلاحية الوصول للشركة',
@@ -666,12 +669,12 @@ const securityDashboard = (req, res) => {
     }
 
     const securityReport = securityLogger.getSecurityReport();
-    
+
     res.json({
       success: true,
       data: securityReport
     });
-    
+
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -688,12 +691,12 @@ const clearIPBlocks = (req, res) => {
   try {
     // Allow any authenticated user to clear blocks in emergency
     securityLogger.clearAllBlocks();
-    
+
     res.json({
       success: true,
       message: 'All IP blocks have been cleared successfully'
     });
-    
+
   } catch (error) {
     res.status(500).json({
       success: false,

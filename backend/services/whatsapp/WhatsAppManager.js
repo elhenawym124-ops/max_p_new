@@ -189,13 +189,6 @@ function getSessionPath(sessionId) {
 }
 
 /**
- * الحصول على جلسة نشطة
- */
-function getSession(sessionId) {
-    return activeSessions.get(sessionId);
-}
-
-/**
  * إنشاء جلسة WhatsApp جديدة
  * @param {string} sessionId - معرف الجلسة
  * @param {string} companyId - معرف الشركة
@@ -207,35 +200,8 @@ async function createSession(sessionId, companyId, options = {}) {
 
         // التحقق من وجود جلسة نشطة
         if (activeSessions.has(sessionId)) {
-            const existingSession = activeSessions.get(sessionId);
-            // If session exists but is disconnected or socket is closed, remove it
-            if (existingSession.status === 'disconnected' || existingSession.status === 'ended' || (existingSession.sock && existingSession.sock.ws && existingSession.sock.ws.readyState !== 1)) {
-                console.log(`⚠️ Found existing session ${sessionId} but it is ${existingSession.status || 'invalid'}. Cleaning up...`);
-                if (existingSession.sock) {
-                    try { existingSession.sock.end(undefined); } catch (e) { }
-                }
-                activeSessions.delete(sessionId);
-            } else {
-                console.log(`⚠️ Session ${sessionId} already exists and is active, returning existing session`);
-                return existingSession;
-            }
-        }
-
-        // Check session status from DB to handle LOGGED_OUT case
-        const sessionRecord = await prisma.whatsAppSession.findUnique({
-            where: { id: sessionId },
-            select: { status: true }
-        });
-
-        if (sessionRecord?.status === 'LOGGED_OUT') {
-            console.log(`🔄 Session ${sessionId} was logged out. Clearing auth state to generate new QR.`);
-            await prisma.whatsAppSession.update({
-                where: { id: sessionId },
-                data: {
-                    authState: null,
-                    status: 'DISCONNECTED' // Reset status so we don't clear it again next time if it fails
-                }
-            });
+            console.log(`⚠️ Session ${sessionId} already exists, returning existing session`);
+            return activeSessions.get(sessionId);
         }
 
         // تحميل حالة المصادقة من قاعدة البيانات
@@ -318,18 +284,6 @@ async function createSession(sessionId, companyId, options = {}) {
 }
 
 /**
- * إعادة الاتصال بجلسة
- */
-async function reconnectSession(sessionId, companyId) {
-    console.log(`🔄 Reconnecting session ${sessionId}...`);
-    try {
-        await createSession(sessionId, companyId);
-    } catch (error) {
-        console.error(`❌ Failed to reconnect session ${sessionId}:`, error);
-    }
-}
-
-/**
  * معالجة تحديثات الاتصال
  */
 async function handleConnectionUpdate(sessionId, companyId, update, sock) {
@@ -376,13 +330,7 @@ async function handleConnectionUpdate(sessionId, companyId, update, sock) {
         // معالجة حالة الاتصال
         if (connection === 'close') {
             const statusCode = lastDisconnect?.error?.output?.statusCode;
-            let shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-
-            // Handle Conflict (440) - Do not reconnect automatically
-            if (statusCode === 440) {
-                console.warn(`⚠️ Session conflict detected for ${sessionId}. Another device connected.`);
-                shouldReconnect = false;
-            }
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
             console.log(`🔌 Connection closed for session ${sessionId}, status: ${statusCode}, reconnect: ${shouldReconnect}`);
 
@@ -846,13 +794,9 @@ async function updateOrCreateContact(sessionId, remoteJid, msg, sock, options = 
         }
 
         const updateData = {
+            pushName,
             profilePicUrl,
         };
-
-        // Only update pushName if it's an incoming message (to avoid overwriting contact name with own name)
-        if (!isOutgoing && pushName) {
-            updateData.pushName = pushName;
-        }
 
         // Only update chat metadata if it's NOT a background participant update
         if (!isGroupParticipant) {
@@ -869,7 +813,7 @@ async function updateOrCreateContact(sessionId, remoteJid, msg, sock, options = 
             sessionId,
             jid: remoteJid,
             phoneNumber,
-            pushName: isOutgoing ? null : pushName, // Don't use sender name for new contact if outgoing
+            pushName,
             profilePicUrl,
             lastMessageAt: new Date(),
             unreadCount: (!isOutgoing && !isGroupParticipant) ? 1 : 0,
@@ -1045,17 +989,7 @@ async function handleCallUpdate(sessionId, companyId, update) {
  */
 async function reconnectSession(sessionId, companyId) {
     try {
-        console.log(`🔄 Reconnecting session ${sessionId}...`);
-
-        // Clean up existing session
-        const existingSession = activeSessions.get(sessionId);
-        if (existingSession?.sock) {
-            try {
-                existingSession.sock.end(undefined);
-            } catch (err) {
-                console.error(`⚠️ Error closing socket for ${sessionId}:`, err);
-            }
-        }
+        // حذف الجلسة القديمة
         activeSessions.delete(sessionId);
 
         // إنشاء جلسة جديدة
@@ -1411,11 +1345,11 @@ async function restoreAllSessions() {
 
         await initSessionsDirectory();
 
-        // جلب الجلسات النشطة من قاعدة البيانات (كل الجلسات ما عدا المسجل خروجها)
+        // جلب الجلسات النشطة من قاعدة البيانات
         const sessions = await prisma.whatsAppSession.findMany({
             where: {
                 status: {
-                    notIn: ['LOGGED_OUT']
+                    in: ['CONNECTED', 'DISCONNECTED']
                 }
             }
         });
@@ -1557,33 +1491,6 @@ function getSession(sessionId) {
 }
 
 /**
- * التحقق من صحة الجلسة واتصالها
- * @param {string} sessionId - معرف الجلسة
- * @returns {object} - بيانات الجلسة
- * @throws {Error} - إذا كانت الجلسة غير موجودة أو غير متصلة
- */
-function validateSession(sessionId) {
-    const session = getSession(sessionId);
-
-    if (!session) {
-        console.error(`❌ Session not found: ${sessionId}`);
-        throw new Error('Session not found');
-    }
-
-    if (!session.sock) {
-        console.error(`❌ Session socket not initialized for: ${sessionId}`);
-        throw new Error('Session socket not initialized');
-    }
-
-    if (session.status !== 'connected') {
-        console.error(`❌ Session not connected: ${sessionId}, status: ${session.status}`);
-        throw new Error(`Session not connected. Current status: ${session.status}`);
-    }
-
-    return session;
-}
-
-/**
  * الحصول على كل الجلسات النشطة لشركة
  */
 function getCompanySessions(companyId) {
@@ -1673,11 +1580,11 @@ async function restoreAllSessions() {
 
         await initSessionsDirectory();
 
-        // جلب الجلسات النشطة من قاعدة البيانات (كل الجلسات ما عدا المسجل خروجها)
+        // جلب الجلسات النشطة من قاعدة البيانات
         const sessions = await prisma.whatsAppSession.findMany({
             where: {
                 status: {
-                    notIn: ['LOGGED_OUT']
+                    in: ['CONNECTED', 'DISCONNECTED']
                 }
             }
         });
@@ -1867,99 +1774,16 @@ async function revokeGroupInviteCode(sessionId, jid) {
 /**
  * الحصول على بيانات المجموعة (المشاركين، الوصف، الإعدادات)
  */
-/**
- * الحصول على بيانات المجموعة (المشاركين، الوصف، الإعدادات)
- */
-async function getGroupMetadata(sessionId, jid, companyId) {
-    console.log(`🔍 Getting group metadata for ${jid} using session ${sessionId}`);
-    let session = getSession(sessionId);
-
-    // Fallback 1: If session not found or not connected, try to find ANY active session for this company
-    if ((!session || !session.sock || session.status !== 'connected') && companyId) {
-        console.log(`⚠️ Session ${sessionId} not available (Status: ${session?.status}), looking for fallback session for company ${companyId}`);
-        for (const [id, sess] of activeSessions.entries()) {
-            if (sess.companyId === companyId && sess.status === 'connected' && sess.sock && sess.sock.ws && sess.sock.ws.readyState === 1) {
-                console.log(`✅ Found fallback session: ${id}`);
-                session = sess;
-                break;
-            }
-        }
-    }
-
-    // Fallback 2: If still no session, try to get basic info from Database
-    if (!session || !session.sock) {
-        console.log(`⚠️ No active session found. Trying DB fallback for ${jid}`);
-        try {
-            const contact = await prisma.whatsAppContact.findFirst({
-                where: {
-                    jid: jid,
-                    sessionId: sessionId // Try to find for specific session first
-                },
-                select: {
-                    name: true,
-                    profilePicUrl: true
-                }
-            });
-
-            if (contact) {
-                console.log(`✅ Found group info in DB: ${contact.name}`);
-                return {
-                    id: jid,
-                    subject: contact.name || 'Unknown Group',
-                    participants: [], // DB doesn't store participants list usually
-                    creation: Date.now() / 1000,
-                    owner: undefined,
-                    desc: undefined,
-                    isFallback: true
-                };
-            }
-        } catch (dbError) {
-            console.error(`❌ Error fetching group from DB:`, dbError);
-        }
-
-        console.error(`❌ No active session AND no DB data found for metadata fetch. SessionId: ${sessionId}, CompanyId: ${companyId}`);
-        // Return empty metadata instead of throwing to prevent 500 error
-        return {
-            id: jid,
-            subject: 'Unknown Group',
-            participants: [],
-            creation: Date.now() / 1000,
-            owner: undefined,
-            desc: undefined,
-            error: 'No connection and no DB data'
-        };
-    }
+async function getGroupMetadata(sessionId, jid) {
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         const metadata = await session.sock.groupMetadata(jid);
         return metadata;
     } catch (error) {
         console.error('❌ Error getting group metadata:', error);
-
-        // Try DB fallback on error too
-        try {
-            const contact = await prisma.whatsAppContact.findFirst({
-                where: { jid: jid, sessionId: sessionId },
-                select: { name: true }
-            });
-            if (contact) {
-                return {
-                    id: jid,
-                    subject: contact.name || 'Error Loading Group',
-                    participants: [],
-                    error: error.message,
-                    isFallback: true
-                };
-            }
-        } catch (e) { }
-
-        // Return partial data on error
-        return {
-            id: jid,
-            subject: 'Error Loading Group',
-            participants: [],
-            error: error.message
-        };
+        throw error;
     }
 }
 
@@ -2070,16 +1894,14 @@ async function onWhatsApp(sessionId, number) {
  * الحصول على ملف الأعمال
  */
 async function getBusinessProfile(sessionId) {
-    console.log(`🔍 Getting business profile for session ${sessionId}`);
-    const session = validateSession(sessionId);
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         const profile = await session.sock.getBusinessProfile(session.sock.user.id);
-        console.log(`✅ Business profile retrieved for session ${sessionId}`);
         return profile;
     } catch (error) {
-        console.error(`❌ Error getting business profile for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error getting business profile:', error);
         throw error;
     }
 }
@@ -2088,20 +1910,15 @@ async function getBusinessProfile(sessionId) {
  * تعيين ملف الأعمال
  */
 async function setBusinessProfile(sessionId, profileData) {
-    console.log(`🔍 Setting business profile for session ${sessionId}`);
-    const session = validateSession(sessionId);
-
-    if (!profileData || typeof profileData !== 'object') {
-        throw new Error('Invalid profile data');
-    }
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         await session.sock.setBusinessProfile(profileData);
-        console.log(`✅ Business profile set for session ${sessionId}`);
+        console.log('✅ Business profile set');
         return { success: true };
     } catch (error) {
-        console.error(`❌ Error setting business profile for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error setting business profile:', error);
         throw error;
     }
 }
@@ -2110,20 +1927,15 @@ async function setBusinessProfile(sessionId, profileData) {
  * تحديث ملف الأعمال
  */
 async function updateBusinessProfile(sessionId, profileData) {
-    console.log(`🔍 Updating business profile for session ${sessionId}`);
-    const session = validateSession(sessionId);
-
-    if (!profileData || typeof profileData !== 'object') {
-        throw new Error('Invalid profile data');
-    }
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         await session.sock.updateBusinessProfile(profileData);
-        console.log(`✅ Business profile updated for session ${sessionId}`);
+        console.log('✅ Business profile updated');
         return { success: true };
     } catch (error) {
-        console.error(`❌ Error updating business profile for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error updating business profile:', error);
         throw error;
     }
 }
@@ -2132,16 +1944,14 @@ async function updateBusinessProfile(sessionId, profileData) {
  * الحصول على ساعات العمل
  */
 async function getBusinessHours(sessionId) {
-    console.log(`🔍 Getting business hours for session ${sessionId}`);
-    const session = validateSession(sessionId);
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         const hours = await session.sock.getBusinessHours(session.sock.user.id);
-        console.log(`✅ Business hours retrieved for session ${sessionId}`);
         return hours;
     } catch (error) {
-        console.error(`❌ Error getting business hours for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error getting business hours:', error);
         throw error;
     }
 }
@@ -2150,20 +1960,15 @@ async function getBusinessHours(sessionId) {
  * تعيين ساعات العمل
  */
 async function setBusinessHours(sessionId, hours) {
-    console.log(`🔍 Setting business hours for session ${sessionId}`);
-    const session = validateSession(sessionId);
-
-    if (!hours || typeof hours !== 'object') {
-        throw new Error('Invalid business hours data');
-    }
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         await session.sock.setBusinessHours(hours);
-        console.log(`✅ Business hours set for session ${sessionId}`);
+        console.log('✅ Business hours set');
         return { success: true };
     } catch (error) {
-        console.error(`❌ Error setting business hours for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error setting business hours:', error);
         throw error;
     }
 }
@@ -2174,24 +1979,15 @@ async function setBusinessHours(sessionId, hours) {
  * إرسال رسالة بث جماعي
  */
 async function sendBroadcast(sessionId, jids, message) {
-    console.log(`🔍 Sending broadcast to ${jids?.length || 0} recipients for session ${sessionId}`);
-    const session = validateSession(sessionId);
-
-    if (!jids || !Array.isArray(jids) || jids.length === 0) {
-        throw new Error('Invalid jids array');
-    }
-
-    if (!message) {
-        throw new Error('Message is required');
-    }
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         const results = await session.sock.sendBroadcast(jids, message);
-        console.log(`✅ Broadcast sent to ${jids.length} recipients for session ${sessionId}`);
+        console.log(`📢 Broadcast sent to ${jids.length} recipients`);
         return results;
     } catch (error) {
-        console.error(`❌ Error sending broadcast for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error sending broadcast:', error);
         throw error;
     }
 }
@@ -2200,24 +1996,15 @@ async function sendBroadcast(sessionId, jids, message) {
  * إنشاء قائمة بث
  */
 async function createBroadcastList(sessionId, name, jids) {
-    console.log(`🔍 Creating broadcast list "${name}" for session ${sessionId}`);
-    const session = validateSession(sessionId);
-
-    if (!name || typeof name !== 'string' || name.trim().length === 0) {
-        throw new Error('Invalid broadcast list name');
-    }
-
-    if (!jids || !Array.isArray(jids) || jids.length === 0) {
-        throw new Error('Invalid jids array');
-    }
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         const list = await session.sock.createBroadcastList(name, jids);
-        console.log(`✅ Broadcast list "${name}" created for session ${sessionId}`);
+        console.log(`📢 Broadcast list created: ${name}`);
         return list;
     } catch (error) {
-        console.error(`❌ Error creating broadcast list for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error creating broadcast list:', error);
         throw error;
     }
 }
@@ -2226,16 +2013,14 @@ async function createBroadcastList(sessionId, name, jids) {
  * جلب قوائم البث
  */
 async function getBroadcastLists(sessionId) {
-    console.log(`🔍 Getting broadcast lists for session ${sessionId}`);
-    const session = validateSession(sessionId);
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         const lists = await session.sock.getBroadcastLists();
-        console.log(`✅ Retrieved ${lists?.length || 0} broadcast lists for session ${sessionId}`);
         return lists;
     } catch (error) {
-        console.error(`❌ Error getting broadcast lists for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error getting broadcast lists:', error);
         throw error;
     }
 }
@@ -2246,24 +2031,15 @@ async function getBroadcastLists(sessionId) {
  * إضافة علامة للمحادثة
  */
 async function labelChat(sessionId, jid, labelId) {
-    console.log(`🔍 Labeling chat ${jid} with label ${labelId} for session ${sessionId}`);
-    const session = validateSession(sessionId);
-
-    if (!jid || typeof jid !== 'string') {
-        throw new Error('Invalid JID');
-    }
-
-    if (!labelId || typeof labelId !== 'string') {
-        throw new Error('Invalid label ID');
-    }
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         await session.sock.labelChat(jid, labelId);
-        console.log(`✅ Chat ${jid} labeled with ${labelId} for session ${sessionId}`);
+        console.log(`🏷️ Chat labeled: ${jid}`);
         return { success: true };
     } catch (error) {
-        console.error(`❌ Error labeling chat for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error labeling chat:', error);
         throw error;
     }
 }
@@ -2272,16 +2048,14 @@ async function labelChat(sessionId, jid, labelId) {
  * جلب العلامات
  */
 async function getLabels(sessionId) {
-    console.log(`🔍 Getting labels for session ${sessionId}`);
-    const session = validateSession(sessionId);
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         const labels = await session.sock.getLabels();
-        console.log(`✅ Retrieved ${labels?.length || 0} labels for session ${sessionId}`);
         return labels;
     } catch (error) {
-        console.error(`❌ Error getting labels for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error getting labels:', error);
         throw error;
     }
 }
@@ -2290,20 +2064,15 @@ async function getLabels(sessionId) {
  * إنشاء علامة جديدة
  */
 async function createLabel(sessionId, name, color) {
-    console.log(`🔍 Creating label "${name}" for session ${sessionId}`);
-    const session = validateSession(sessionId);
-
-    if (!name || typeof name !== 'string' || name.trim().length === 0) {
-        throw new Error('Invalid label name');
-    }
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         const label = await session.sock.createLabel(name, color);
-        console.log(`✅ Label "${name}" created for session ${sessionId}`);
+        console.log(`🏷️ Label created: ${name}`);
         return label;
     } catch (error) {
-        console.error(`❌ Error creating label for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error creating label:', error);
         throw error;
     }
 }
@@ -2312,20 +2081,15 @@ async function createLabel(sessionId, name, color) {
  * حذف علامة
  */
 async function deleteLabel(sessionId, labelId) {
-    console.log(`🔍 Deleting label ${labelId} for session ${sessionId}`);
-    const session = validateSession(sessionId);
-
-    if (!labelId || typeof labelId !== 'string') {
-        throw new Error('Invalid label ID');
-    }
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         await session.sock.deleteLabel(labelId);
-        console.log(`✅ Label ${labelId} deleted for session ${sessionId}`);
+        console.log(`🏷️ Label deleted: ${labelId}`);
         return { success: true };
     } catch (error) {
-        console.error(`❌ Error deleting label for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error deleting label:', error);
         throw error;
     }
 }
@@ -2336,20 +2100,15 @@ async function deleteLabel(sessionId, labelId) {
  * تمييز رسالة
  */
 async function starMessage(sessionId, key) {
-    console.log(`🔍 Starring message for session ${sessionId}`);
-    const session = validateSession(sessionId);
-
-    if (!key || typeof key !== 'object' || !key.id || !key.remoteJid) {
-        throw new Error('Invalid message key');
-    }
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         await session.sock.starMessage(key);
-        console.log(`✅ Message starred for session ${sessionId}`);
+        console.log('⭐ Message starred');
         return { success: true };
     } catch (error) {
-        console.error(`❌ Error starring message for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error starring message:', error);
         throw error;
     }
 }
@@ -2358,20 +2117,15 @@ async function starMessage(sessionId, key) {
  * إلغاء تمييز رسالة
  */
 async function unstarMessage(sessionId, key) {
-    console.log(`🔍 Unstarring message for session ${sessionId}`);
-    const session = validateSession(sessionId);
-
-    if (!key || typeof key !== 'object' || !key.id || !key.remoteJid) {
-        throw new Error('Invalid message key');
-    }
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         await session.sock.unstarMessage(key);
-        console.log(`✅ Message unstarred for session ${sessionId}`);
+        console.log('⭐ Message unstarred');
         return { success: true };
     } catch (error) {
-        console.error(`❌ Error unstarring message for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error unstarring message:', error);
         throw error;
     }
 }
@@ -2380,20 +2134,14 @@ async function unstarMessage(sessionId, key) {
  * جلب الرسائل المميزة
  */
 async function getStarredMessages(sessionId, jid) {
-    console.log(`🔍 Getting starred messages for ${jid} in session ${sessionId}`);
-    const session = validateSession(sessionId);
-
-    if (!jid || typeof jid !== 'string') {
-        throw new Error('Invalid JID');
-    }
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         const messages = await session.sock.getStarredMessages(jid);
-        console.log(`✅ Retrieved ${messages?.length || 0} starred messages for session ${sessionId}`);
         return messages;
     } catch (error) {
-        console.error(`❌ Error getting starred messages for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error getting starred messages:', error);
         throw error;
     }
 }
@@ -2404,16 +2152,14 @@ async function getStarredMessages(sessionId, jid) {
  * جلب قائمة المحظورين
  */
 async function fetchBlocklist(sessionId) {
-    console.log(`🔍 Fetching blocklist for session ${sessionId}`);
-    const session = validateSession(sessionId);
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         const blocklist = await session.sock.fetchBlocklist();
-        console.log(`✅ Retrieved blocklist with ${blocklist?.length || 0} entries for session ${sessionId}`);
         return blocklist;
     } catch (error) {
-        console.error(`❌ Error fetching blocklist for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error fetching blocklist:', error);
         throw error;
     }
 }
@@ -2422,16 +2168,14 @@ async function fetchBlocklist(sessionId) {
  * جلب إعدادات الخصوصية
  */
 async function fetchPrivacySettings(sessionId) {
-    console.log(`🔍 Fetching privacy settings for session ${sessionId}`);
-    const session = validateSession(sessionId);
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         const settings = await session.sock.fetchPrivacySettings();
-        console.log(`✅ Retrieved privacy settings for session ${sessionId}`);
         return settings;
     } catch (error) {
-        console.error(`❌ Error fetching privacy settings for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error fetching privacy settings:', error);
         throw error;
     }
 }
@@ -2440,20 +2184,15 @@ async function fetchPrivacySettings(sessionId) {
  * تعيين إعدادات الخصوصية
  */
 async function setPrivacy(sessionId, settings) {
-    console.log(`🔍 Setting privacy settings for session ${sessionId}`);
-    const session = validateSession(sessionId);
-
-    if (!settings || typeof settings !== 'object') {
-        throw new Error('Invalid privacy settings');
-    }
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         await session.sock.setPrivacy(settings);
-        console.log(`✅ Privacy settings updated for session ${sessionId}`);
+        console.log('🔒 Privacy settings updated');
         return { success: true };
     } catch (error) {
-        console.error(`❌ Error setting privacy for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error setting privacy:', error);
         throw error;
     }
 }
@@ -2464,16 +2203,14 @@ async function setPrivacy(sessionId, settings) {
  * جلب جميع المجموعات التي يشارك فيها المستخدم
  */
 async function groupFetchAllParticipating(sessionId) {
-    console.log(`🔍 Fetching all participating groups for session ${sessionId}`);
-    const session = validateSession(sessionId);
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         const groups = await session.sock.groupFetchAllParticipating();
-        console.log(`✅ Retrieved ${groups?.length || 0} groups for session ${sessionId}`);
         return groups;
     } catch (error) {
-        console.error(`❌ Error fetching all groups for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error fetching all groups:', error);
         throw error;
     }
 }
@@ -2482,24 +2219,15 @@ async function groupFetchAllParticipating(sessionId) {
  * تفعيل/تعطيل الرسائل المؤقتة في المجموعة
  */
 async function groupToggleEphemeral(sessionId, jid, ephemeral) {
-    console.log(`🔍 Toggling group ephemeral (${ephemeral}) for ${jid} in session ${sessionId}`);
-    const session = validateSession(sessionId);
-
-    if (!jid || typeof jid !== 'string') {
-        throw new Error('Invalid JID');
-    }
-
-    if (typeof ephemeral !== 'boolean') {
-        throw new Error('Ephemeral must be a boolean');
-    }
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         await session.sock.groupToggleEphemeral(jid, ephemeral);
-        console.log(`✅ Group ephemeral ${ephemeral ? 'enabled' : 'disabled'} for ${jid} in session ${sessionId}`);
+        console.log(`⏱️ Group ephemeral ${ephemeral ? 'enabled' : 'disabled'}: ${jid}`);
         return { success: true };
     } catch (error) {
-        console.error(`❌ Error toggling group ephemeral for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error toggling group ephemeral:', error);
         throw error;
     }
 }
@@ -2508,24 +2236,15 @@ async function groupToggleEphemeral(sessionId, jid, ephemeral) {
  * تحديث صورة المجموعة
  */
 async function groupUpdatePicture(sessionId, jid, picture) {
-    console.log(`🔍 Updating group picture for ${jid} in session ${sessionId}`);
-    const session = validateSession(sessionId);
-
-    if (!jid || typeof jid !== 'string') {
-        throw new Error('Invalid JID');
-    }
-
-    if (!picture) {
-        throw new Error('Picture is required');
-    }
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         await session.sock.groupUpdatePicture(jid, picture);
-        console.log(`✅ Group picture updated for ${jid} in session ${sessionId}`);
+        console.log(`🖼️ Group picture updated: ${jid}`);
         return { success: true };
     } catch (error) {
-        console.error(`❌ Error updating group picture for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error updating group picture:', error);
         throw error;
     }
 }
@@ -2534,20 +2253,15 @@ async function groupUpdatePicture(sessionId, jid, picture) {
  * قبول دعوة للمجموعة
  */
 async function groupInviteAccept(sessionId, inviteCode) {
-    console.log(`🔍 Accepting group invite for session ${sessionId}`);
-    const session = validateSession(sessionId);
-
-    if (!inviteCode || typeof inviteCode !== 'string') {
-        throw new Error('Invalid invite code');
-    }
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         const result = await session.sock.groupInviteAccept(inviteCode);
-        console.log(`✅ Group invite accepted for session ${sessionId}`);
+        console.log('✅ Group invite accepted');
         return result;
     } catch (error) {
-        console.error(`❌ Error accepting group invite for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error accepting group invite:', error);
         throw error;
     }
 }
@@ -2556,20 +2270,15 @@ async function groupInviteAccept(sessionId, inviteCode) {
  * رفض دعوة للمجموعة
  */
 async function groupInviteReject(sessionId, inviteCode) {
-    console.log(`🔍 Rejecting group invite for session ${sessionId}`);
-    const session = validateSession(sessionId);
-
-    if (!inviteCode || typeof inviteCode !== 'string') {
-        throw new Error('Invalid invite code');
-    }
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         await session.sock.groupInviteReject(inviteCode);
-        console.log(`✅ Group invite rejected for session ${sessionId}`);
+        console.log('❌ Group invite rejected');
         return { success: true };
     } catch (error) {
-        console.error(`❌ Error rejecting group invite for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error rejecting group invite:', error);
         throw error;
     }
 }
@@ -2578,20 +2287,14 @@ async function groupInviteReject(sessionId, inviteCode) {
  * معلومات عن رابط الدعوة
  */
 async function groupInviteInfo(sessionId, inviteCode) {
-    console.log(`🔍 Getting group invite info for session ${sessionId}`);
-    const session = validateSession(sessionId);
-
-    if (!inviteCode || typeof inviteCode !== 'string') {
-        throw new Error('Invalid invite code');
-    }
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         const info = await session.sock.groupInviteInfo(inviteCode);
-        console.log(`✅ Retrieved group invite info for session ${sessionId}`);
         return info;
     } catch (error) {
-        console.error(`❌ Error getting group invite info for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error getting group invite info:', error);
         throw error;
     }
 }
@@ -2602,20 +2305,14 @@ async function groupInviteInfo(sessionId, inviteCode) {
  * الحصول على حالة مستخدم معين
  */
 async function getStatus(sessionId, jid) {
-    console.log(`🔍 Getting status for ${jid} in session ${sessionId}`);
-    const session = validateSession(sessionId);
-
-    if (!jid || typeof jid !== 'string') {
-        throw new Error('Invalid JID');
-    }
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         const status = await session.sock.getStatus(jid);
-        console.log(`✅ Retrieved status for ${jid} in session ${sessionId}`);
         return status;
     } catch (error) {
-        console.error(`❌ Error getting status for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error getting status:', error);
         throw error;
     }
 }
@@ -2624,20 +2321,15 @@ async function getStatus(sessionId, jid) {
  * تعيين حالة المستخدم
  */
 async function setStatus(sessionId, status) {
-    console.log(`🔍 Setting status for session ${sessionId}`);
-    const session = validateSession(sessionId);
-
-    if (!status || typeof status !== 'string') {
-        throw new Error('Invalid status');
-    }
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         await session.sock.setStatus(status);
-        console.log(`✅ Status set for session ${sessionId}`);
+        console.log('✅ Status set');
         return { success: true };
     } catch (error) {
-        console.error(`❌ Error setting status for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error setting status:', error);
         throw error;
     }
 }
@@ -2648,20 +2340,14 @@ async function setStatus(sessionId, status) {
  * الحصول على معلومات رابط
  */
 async function getUrlInfo(sessionId, url) {
-    console.log(`🔍 Getting URL info for session ${sessionId}`);
-    const session = validateSession(sessionId);
-
-    if (!url || typeof url !== 'string') {
-        throw new Error('Invalid URL');
-    }
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     try {
         const info = await session.sock.getUrlInfo(url);
-        console.log(`✅ Retrieved URL info for session ${sessionId}`);
         return info;
     } catch (error) {
-        console.error(`❌ Error getting URL info for session ${sessionId}:`, error);
-        if (error.data) console.error('Error data:', error.data);
+        console.error('❌ Error getting URL info:', error);
         throw error;
     }
 }
@@ -2739,77 +2425,15 @@ module.exports = {
     getStatus,
     setStatus,
     // URL Info
-    getUrlInfo,
-    disconnectAllSessions
+    getUrlInfo
 };
-
-/**
- * قطع الاتصال بجميع الجلسات (عند إيقاف السيرفر)
- */
-async function disconnectAllSessions() {
-    console.log('🛑 Disconnecting all WhatsApp sessions...');
-    for (const [sessionId, session] of activeSessions) {
-        try {
-            if (session.sock) {
-                session.sock.end(undefined);
-            }
-        } catch (error) {
-            console.error(`❌ Error disconnecting session ${sessionId}:`, error);
-        }
-    }
-    activeSessions.clear();
-}
-
 
 /**
  * الحصول على الملف الشخصي
  */
-async function getProfile(sessionId, companyId) {
-    let session = getSession(sessionId);
-
-    // Fallback 1: If session not found or not connected, try to find ANY active session for this company
-    if ((!session || !session.sock || session.status !== 'connected') && companyId) {
-        console.log(`⚠️ Session ${sessionId} not available for profile fetch, looking for fallback session for company ${companyId}`);
-        for (const [id, sess] of activeSessions.entries()) {
-            if (sess.companyId === companyId && sess.status === 'connected' && sess.sock && sess.sock.ws && sess.sock.ws.readyState === 1) {
-                console.log(`✅ Found fallback session: ${id}`);
-                session = sess;
-                break;
-            }
-        }
-    }
-
-    // Fallback 2: If still no session, try to get basic info from Database
-    if (!session || !session.sock) {
-        console.log(`⚠️ No active session found. Trying DB fallback for profile ${sessionId}`);
-        try {
-            const sessionRecord = await prisma.whatsAppSession.findUnique({
-                where: { id: sessionId },
-                select: { name: true, phoneNumber: true }
-            });
-
-            if (sessionRecord) {
-                console.log(`✅ Found profile info in DB: ${sessionRecord.name}`);
-                return {
-                    name: sessionRecord.name || 'Unknown',
-                    status: 'Offline',
-                    profilePicUrl: null, // DB doesn't store profile pic URL usually
-                    phoneNumber: sessionRecord.phoneNumber,
-                    isFallback: true
-                };
-            }
-        } catch (dbError) {
-            console.error(`❌ Error fetching profile from DB:`, dbError);
-        }
-
-        console.error(`❌ No active session AND no DB data found for profile fetch.`);
-        return {
-            name: 'Unknown User',
-            status: 'Offline',
-            profilePicUrl: null,
-            error: 'No connection and no DB data'
-        };
-    }
+async function getProfile(sessionId) {
+    const session = getSession(sessionId);
+    if (!session) throw new Error('Session not found');
 
     const jid = session.sock.user.id;
     // Clean JID (remove :device@...)
@@ -2831,25 +2455,6 @@ async function getProfile(sessionId, companyId) {
         };
     } catch (error) {
         console.error('❌ Error fetching profile:', error);
-
-        // Try DB fallback on error too
-        try {
-            const sessionRecord = await prisma.whatsAppSession.findUnique({
-                where: { id: sessionId },
-                select: { name: true, phoneNumber: true }
-            });
-            if (sessionRecord) {
-                return {
-                    name: sessionRecord.name || 'Unknown',
-                    status: 'Error',
-                    profilePicUrl: null,
-                    phoneNumber: sessionRecord.phoneNumber,
-                    error: error.message,
-                    isFallback: true
-                };
-            }
-        } catch (e) { }
-
         throw new Error('Failed to fetch profile');
     }
 }

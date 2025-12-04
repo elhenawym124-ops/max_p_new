@@ -107,6 +107,9 @@ import OrderDemo from './pages/OrderDemo';
 import Opportunities from './pages/opportunities/Opportunities';
 import Tasks from './pages/tasks/Tasks';
 import TasksDashboard from './pages/tasks/Dashboard';
+import KanbanBoard from './pages/tasks/KanbanBoard';
+import TaskDetails from './pages/tasks/TaskDetails';
+import TaskNotifications from './pages/tasks/TaskNotifications';
 import AdvancedReports from './pages/reports/AdvancedReports';
 import PosPage from './pages/pos/PosPage';
 
@@ -351,6 +354,9 @@ const AppContent = () => {
             <Route path="/appointments" element={<Layout><Appointments /></Layout>} />
             <Route path="/tasks" element={<Layout><Tasks /></Layout>} />
             <Route path="/tasks/dashboard" element={<Layout><TasksDashboard /></Layout>} />
+            <Route path="/tasks/kanban" element={<Layout><KanbanBoard /></Layout>} />
+            <Route path="/tasks/notifications" element={<Layout><TaskNotifications /></Layout>} />
+            <Route path="/tasks/:id" element={<Layout><TaskDetails /></Layout>} />
             <Route path="/reports" element={<Layout><Reports /></Layout>} />
             <Route path="/analytics" element={<Layout><AdvancedReports /></Layout>} />
             <Route path="/pos" element={<Layout><PosPage /></Layout>} />
