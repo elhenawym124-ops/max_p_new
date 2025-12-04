@@ -61,6 +61,7 @@ router.get('/test', (req, res) => res.json({ message: 'WhatsApp router is workin
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // إنشاء جلسة جديدة
+router.get('/sessions/debug', whatsappController.getDebugSessions);
 router.post('/sessions', verifyToken.authenticateToken, whatsappController.createSession);
 
 // جلب كل الجلسات

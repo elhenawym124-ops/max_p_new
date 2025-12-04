@@ -1,4 +1,5 @@
 const { getSharedPrismaClient, safeQuery } = require('../services/sharedDatabase');
+const { getWooCommerceAutoExportService } = require('../services/wooCommerceAutoExportService');
 const prisma = getSharedPrismaClient();
 
 const createPOSOrder = async (req, res) => {
@@ -173,6 +174,14 @@ const createPOSOrder = async (req, res) => {
 
       return order;
     });
+
+    // 🛒 تصدير تلقائي لـ WooCommerce (في الخلفية)
+    try {
+      const wooExportService = getWooCommerceAutoExportService();
+      wooExportService.exportOrderAsync(result.id);
+    } catch (wooError) {
+      console.log('⚠️ [POS] WooCommerce auto-export skipped:', wooError.message);
+    }
 
     res.json({
       success: true,

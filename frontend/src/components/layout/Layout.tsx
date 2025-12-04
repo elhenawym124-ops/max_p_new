@@ -122,6 +122,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         { to: '/products/reviews', icon: <StarIcon className="h-5 w-5" />, label: t('sidebar.productReviews') },
         { to: '/categories', icon: <TagIcon className="h-5 w-5" />, label: t('sidebar.categories') },
         { to: '/orders', icon: <ArchiveBoxIcon className="h-5 w-5" />, label: t('sidebar.orders') },
+        { to: '/orders/woocommerce-sync', icon: <ArchiveBoxIcon className="h-5 w-5" />, label: 'مزامنة WooCommerce', badge: 'جديد' },
         { to: '/inventory', icon: <ClipboardDocumentListIcon className="h-5 w-5" />, label: t('sidebar.inventory') },
         { to: '/coupons', icon: <TicketIcon className="h-5 w-5" />, label: t('sidebar.coupons') },
         { to: '/posts/ai-tracking', icon: <ChartBarIcon className="h-5 w-5" />, label: 'تتبع تحديد المنتجات' },

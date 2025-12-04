@@ -46,6 +46,7 @@ import ProductNewFinal from './pages/products/ProductNewFinal';
 import ProductView from './pages/products/ProductView';
 import EasyOrdersImport from './pages/products/EasyOrdersImport';
 import WooCommerceImport from './pages/products/WooCommerceImport';
+import WooCommerceSync from './pages/woocommerce/WooCommerceSync';
 import ProductReviewsSimple from './pages/products/ProductReviewsSimple';
 import ProtectedRoute from './components/ProtectedRoute';
 import Categories from './pages/categories/Categories';
@@ -345,6 +346,7 @@ const AppContent = () => {
             <Route path="/orders-enhanced" element={<Layout><OrdersEnhanced /></Layout>} />
             <Route path="/orders/details/:id" element={<Layout><OrderDetails /></Layout>} />
             <Route path="/orders/enhanced/:id" element={<Layout><OrderDetails /></Layout>} />
+            <Route path="/orders/woocommerce-sync" element={<Layout><WooCommerceSync /></Layout>} />
             <Route path="/settings/facebook-oauth" element={<Layout><FacebookOAuth /></Layout>} />
             <Route path="/orders/stats" element={<Layout><OrderStats /></Layout>} />
             <Route path="/order-demo" element={<Layout><OrderDemo /></Layout>} />

@@ -105,6 +105,10 @@ model Company {
   facebookAdTests        FacebookAdTest[] // 🧪 اختبارات A/B للإعلانات
   facebookProductCatalogs FacebookProductCatalog[] // 📦 كتالوجات المنتجات
   facebookDynamicAds     FacebookDynamicAd[] // 🎯 الإعلانات الديناميكية
+  
+  // 🛒 WooCommerce Integration
+  wooCommerceSettings    WooCommerceSettings? // ⚙️ إعدادات WooCommerce
+  wooCommerceSyncLogs    WooCommerceSyncLog[] // 📋 سجل المزامنة
 
   @@map("companies")
 }
@@ -418,6 +422,17 @@ model Order {
   companyId           String
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
+  
+  // 🔗 WooCommerce Integration Fields
+  wooCommerceId       String?       // ID الطلب في WooCommerce
+  wooCommerceOrderKey String?       // Order Key من WooCommerce
+  wooCommerceStatus   String?       // حالة الطلب في WooCommerce
+  wooCommerceDateCreated DateTime?  // تاريخ إنشاء الطلب في WooCommerce
+  wooCommerceUrl      String?       // رابط الطلب في WooCommerce
+  syncedFromWoo       Boolean       @default(false) // هل تم استيراده من WooCommerce
+  syncedToWoo         Boolean       @default(false) // هل تم تصديره لـ WooCommerce
+  lastSyncAt          DateTime?     // آخر وقت مزامنة
+  
   items               OrderItem[]
   company             Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
   conversation        Conversation? @relation(fields: [conversationId], references: [id])
@@ -426,6 +441,7 @@ model Order {
   @@index([companyId], map: "orders_companyId_idx")
   @@index([customerId], map: "orders_customerId_idx")
   @@index([conversationId], map: "orders_conversationId_idx")
+  @@index([wooCommerceId], map: "orders_wooCommerceId_idx")
   @@map("orders")
 }
 
@@ -3767,5 +3783,82 @@ model FacebookAdTestVariant {
   @@index([adId])
   @@index([variantType])
   @@map("facebook_ad_test_variants")
+}
+
+// 🛒 WooCommerce Settings - إعدادات الاتصال بـ WooCommerce
+model WooCommerceSettings {
+  id                String   @id @default(cuid())
+  companyId         String   @unique
+  
+  // Connection Settings
+  storeUrl          String   // رابط المتجر
+  consumerKey       String   @db.Text // Consumer Key
+  consumerSecret    String   @db.Text // Consumer Secret
+  
+  // Sync Settings
+  syncEnabled       Boolean  @default(false) // تفعيل المزامنة التلقائية
+  syncDirection     String   @default("both") // both, import_only, export_only
+  syncInterval      Int      @default(15) // فترة المزامنة بالدقائق
+  
+  // Webhook Settings
+  webhookSecret     String?  @db.Text // سر التحقق من Webhooks
+  webhookEnabled    Boolean  @default(false) // تفعيل Webhooks
+  webhookOrderCreated String? // Webhook ID لطلب جديد
+  webhookOrderUpdated String? // Webhook ID لتحديث طلب
+  
+  // Status Mapping (JSON)
+  statusMapping     String?  @db.Text // ربط حالات الطلبات
+  
+  // Last Sync Info
+  lastSyncAt        DateTime?
+  lastSyncStatus    String?  @default("never") // never, success, failed
+  lastSyncMessage   String?  @db.Text
+  
+  // Metadata
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  @@map("woocommerce_settings")
+}
+
+// 📋 WooCommerce Sync Log - سجل المزامنة
+model WooCommerceSyncLog {
+  id                String   @id @default(cuid())
+  companyId         String
+  
+  // Sync Details
+  syncType          String   // import_orders, export_orders, import_products, webhook
+  syncDirection     String   // from_woo, to_woo
+  status            String   // pending, in_progress, success, failed
+  
+  // Results
+  totalItems        Int      @default(0)
+  successCount      Int      @default(0)
+  failedCount       Int      @default(0)
+  skippedCount      Int      @default(0)
+  
+  // Error Details
+  errorMessage      String?  @db.Text
+  errorDetails      String?  @db.Text // JSON with detailed errors
+  
+  // Timing
+  startedAt         DateTime @default(now())
+  completedAt       DateTime?
+  duration          Int?     // بالثواني
+  
+  // Metadata
+  triggeredBy       String?  // user, webhook, cron
+  metadata          String?  @db.Text // JSON with additional info
+  
+  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  @@index([companyId])
+  @@index([syncType])
+  @@index([status])
+  @@index([startedAt])
+  @@map("woocommerce_sync_logs")
 }
 

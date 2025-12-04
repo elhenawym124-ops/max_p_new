@@ -1,4 +1,5 @@
 const { getSharedPrismaClient, safeQuery } = require('./sharedDatabase');
+const { getWooCommerceAutoExportService } = require('./wooCommerceAutoExportService');
 
 class OrderService {
   constructor() {
@@ -78,6 +79,14 @@ class OrderService {
 
       // تحديث إحصائيات العميل
       await this.updateCustomerStats(customerId, parseFloat(total));
+
+      // 🛒 تصدير تلقائي لـ WooCommerce (في الخلفية)
+      try {
+        const wooExportService = getWooCommerceAutoExportService();
+        wooExportService.exportOrderAsync(order.id);
+      } catch (wooError) {
+        console.log('⚠️ [ORDER-SERVICE] WooCommerce auto-export skipped:', wooError.message);
+      }
 
       //console.log('✅ Order created successfully:', order.orderNumber);
       return orderWithCustomer;

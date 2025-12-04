@@ -3641,4 +3641,182 @@ module.exports = {
     getMessageTemplate
 };
 
+/**
+ * الحصول على جلسات WhatsApp للتصحيح (Debug)
+ */
+async function getDebugSessions(req, res) {
+    try {
+        console.log('🔍 Debugging WhatsApp sessions...');
+
+        // 1. Get all sessions from DB (ignore companyId for debug to see everything)
+        const dbSessions = await prisma.whatsAppSession.findMany({
+            select: {
+                id: true,
+                name: true,
+                status: true,
+                companyId: true
+            }
+        });
+
+        // 2. Get in-memory sessions
+        const memorySessions = WhatsAppManager.getAllSessions();
+
+        // 3. Compare
+        const sessions = dbSessions.map(session => {
+            const memorySession = memorySessions[session.id];
+            const inMemory = !!memorySession;
+
+            return {
+                id: session.id,
+                name: session.name,
+                companyId: session.companyId,
+                dbStatus: session.status,
+                memoryStatus: inMemory ? memorySession.status : 'NOT_IN_MEMORY',
+                socketReady: inMemory ? (memorySession.hasSocket ? 'YES' : 'NO') : 'N/A',
+                isConsistent: inMemory ? (session.status === memorySession.status) : (session.status === 'DISCONNECTED' || session.status === 'LOGGED_OUT')
+            };
+        });
+
+        res.json({
+            success: true,
+            totalDb: dbSessions.length,
+            totalMemory: Object.keys(memorySessions).length,
+            sessions
+        });
+    } catch (error) {
+        console.error('❌ Error in debug sessions:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+}
+
+module.exports = {
+    // Sessions
+    createSession,
+    getSessions,
+    getSession,
+    updateSession,
+    deleteSession,
+    connectSession,
+    disconnectSession,
+
+    // Conversations & Messages
+    getConversations,
+    getMessages,
+    sendMessage,
+    sendMedia,
+    markAsRead,
+    sendButtons,
+    sendList,
+    sendProduct,
+    sendReaction,
+
+    // Groups
+    createGroup,
+    getGroupMetadata,
+    updateGroupSubject,
+    updateGroupDescription,
+    updateGroupSettings,
+    updateGroupParticipants,
+    leaveGroup,
+    getGroupInviteCode,
+    revokeGroupInviteCode,
+
+    // Contacts
+    updateContact,
+    linkCustomer,
+
+    // Quick Replies
+    getQuickReplies,
+    createQuickReply,
+    updateQuickReply,
+    deleteQuickReply,
+    sendQuickReply,
+
+    // Settings
+    getSettings,
+    updateSettings,
+
+    // Stats
+    getStats,
+
+    // Message Management
+    editMessage,
+    deleteMessage,
+    forwardMessage,
+
+    // Chat Management
+    archiveChat,
+    pinChat,
+    muteChat,
+    markChatUnread,
+    clearChat,
+    deleteChat,
+
+    // Migration
+    migrateAuthToDatabase,
+
+    // Privacy & Profile
+    blockContact,
+    unblockContact,
+    checkNumber,
+    updateProfile,
+    getProfile,
+
+    // Business Profile
+    getBusinessProfile,
+    setBusinessProfile,
+    updateBusinessProfile,
+    getBusinessHours,
+    setBusinessHours,
+
+    // Broadcast
+    sendBroadcast,
+    createBroadcastList,
+    getBroadcastLists,
+
+    // Labels
+    labelChat,
+    getLabels,
+    createLabel,
+    deleteLabel,
+
+    // Starred Messages
+    starMessage,
+    unstarMessage,
+    getStarredMessages,
+
+    // Privacy Advanced
+    fetchBlocklist,
+    fetchPrivacySettings,
+    setPrivacy,
+
+    // Advanced Group Features
+    groupFetchAllParticipating,
+    groupToggleEphemeral,
+    groupUpdatePicture,
+    groupInviteAccept,
+    groupInviteReject,
+    groupInviteInfo,
+
+    // Status
+    getStatus,
+    setStatus,
+
+    // URL Info
+    getUrlInfo,
+
+    // Poll & Order
+    sendPoll,
+    sendOrder,
+    sendCatalog,
+    getCatalog,
+    getProducts,
+    getCart,
+
+    // Template Messages
+    sendTemplateMessage,
+    getMessageTemplate,
+    getDebugSessions
+};
+
 

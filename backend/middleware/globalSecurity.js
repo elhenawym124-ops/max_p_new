@@ -370,7 +370,8 @@ const PUBLIC_ROUTES = [
   'GET /api/v1/public/coupons/*',
 
   // Debug Routes
-  'GET /api/v1/whatsapp/sessions/debug'
+  'GET /api/v1/whatsapp/sessions/debug',
+  'GET /api/v1/whatsapp/sessions/*'
 ];
 
 /**

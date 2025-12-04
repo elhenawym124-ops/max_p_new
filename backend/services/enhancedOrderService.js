@@ -1,4 +1,5 @@
 const { getSharedPrismaClient, safeQuery } = require('./sharedDatabase');
+const { getWooCommerceAutoExportService } = require('./wooCommerceAutoExportService');
 
 class EnhancedOrderService {
   constructor() {
@@ -51,6 +52,14 @@ class EnhancedOrderService {
       
       // تسجيل الإحصائيات
       await this.logOrderCreation(order);
+      
+      // 🛒 تصدير تلقائي لـ WooCommerce (في الخلفية)
+      try {
+        const wooExportService = getWooCommerceAutoExportService();
+        wooExportService.exportOrderAsync(order.id);
+      } catch (wooError) {
+        console.log('⚠️ [ENHANCED-ORDER] WooCommerce auto-export skipped:', wooError.message);
+      }
       
       console.log('✅ [ENHANCED-ORDER] تم إنشاء الطلب بنجاح:', order.orderNumber);
       

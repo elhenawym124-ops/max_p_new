@@ -290,6 +290,13 @@ async function handleConnectionUpdate(sessionId, companyId, update, sock) {
     const { connection, lastDisconnect, qr } = update;
     const io = getIO();
 
+    // التحقق من أن التحديث يأتي من الجلسة النشطة الحالية
+    const currentSession = activeSessions.get(sessionId);
+    if (currentSession && currentSession.sock !== sock) {
+        console.log(`⚠️ Ignoring connection update for session ${sessionId} from stale socket`);
+        return;
+    }
+
     try {
         // إرسال QR Code
         if (qr) {
@@ -852,7 +859,7 @@ async function processAIResponse(sessionId, companyId, message, sock) {
         if (!session?.aiEnabled) return;
 
         // استيراد خدمة AI
-        const { WhatsAppAIIntegration } = require('./WhatsAppAIIntegration');
+        const WhatsAppAIIntegration = require('./WhatsAppAIIntegration');
 
         // معالجة الرد
         await WhatsAppAIIntegration.processMessage(sessionId, companyId, message, sock, session);
@@ -1369,24 +1376,7 @@ async function restoreAllSessions() {
     }
 }
 
-module.exports = {
-    createSession,
-    getSession,
-    getCompanySessions,
-    closeSession,
-    deleteSession,
-    archiveChat,
-    pinChat,
-    muteChat,
-    markChatUnread,
-    editMessage,
-    deleteMessage,
-    forwardMessage,
-    sendReaction,
-    sendReaction,
-    clearChat,
-    restoreAllSessions
-};
+
 
 /**
  * أرشفة/ إلغاء أرشفة محادثة
@@ -2352,81 +2342,8 @@ async function getUrlInfo(sessionId, url) {
     }
 }
 
-module.exports = {
-    createSession,
-    getSession,
-    getCompanySessions,
-    closeSession,
-    deleteSession,
-    sendTextMessage,
-    sendMediaMessage,
-    markAsRead,
-    sendTyping,
-    restoreAllSessions,
-    editMessage,
-    deleteMessage,
-    forwardMessage,
-    archiveChat,
-    pinChat,
-    muteChat,
-    markChatUnread,
-    clearChat,
-    sendReaction,
-    initSessionsDirectory,
-    logEvent,
-    updateContact,
-    createGroup,
-    updateGroupParticipants,
-    updateGroupSubject,
-    updateGroupDescription,
-    updateGroupSettings,
-    leaveGroup,
-    getGroupInviteCode,
-    revokeGroupInviteCode,
-    blockContact,
-    unblockContact,
-    updateProfileStatus,
-    updateProfileName,
-    updateProfilePicture,
-    onWhatsApp,
-    getGroupMetadata,
-    getProfile,
-    // Business Profile
-    getBusinessProfile,
-    setBusinessProfile,
-    updateBusinessProfile,
-    getBusinessHours,
-    setBusinessHours,
-    // Broadcast
-    sendBroadcast,
-    createBroadcastList,
-    getBroadcastLists,
-    // Labels
-    labelChat,
-    getLabels,
-    createLabel,
-    deleteLabel,
-    // Starred Messages
-    starMessage,
-    unstarMessage,
-    getStarredMessages,
-    // Privacy
-    fetchBlocklist,
-    fetchPrivacySettings,
-    setPrivacy,
-    // Advanced Group Features
-    groupFetchAllParticipating,
-    groupToggleEphemeral,
-    groupUpdatePicture,
-    groupInviteAccept,
-    groupInviteReject,
-    groupInviteInfo,
-    // Status
-    getStatus,
-    setStatus,
-    // URL Info
-    getUrlInfo
-};
+
+
 
 /**
  * الحصول على الملف الشخصي
@@ -2458,4 +2375,127 @@ async function getProfile(sessionId) {
         throw new Error('Failed to fetch profile');
     }
 }
+
+/**
+ * الحصول على كل الجلسات النشطة (للتصحيح)
+ */
+function getAllSessions() {
+    const sessions = {};
+    for (const [id, session] of activeSessions) {
+        sessions[id] = {
+            status: session.status,
+            hasSocket: !!session.sock,
+            isDeleted: false
+        };
+    }
+    return sessions;
+}
+
+/**
+ * قطع اتصال كل الجلسات (عند إيقاف السيرفر)
+ */
+async function disconnectAllSessions() {
+    console.log('🛑 Disconnecting all WhatsApp sessions...');
+    for (const [sessionId, session] of activeSessions) {
+        try {
+            if (session.sock) {
+                await session.sock.end(new Error('Server shutting down'));
+            }
+        } catch (error) {
+            console.error(`❌ Error disconnecting session ${sessionId}:`, error);
+        }
+    }
+    activeSessions.clear();
+    console.log('✅ All sessions disconnected');
+}
+
+module.exports = {
+    // Core
+    createSession,
+    getSession,
+    deleteSession,
+    closeSession,
+    getAllSessions,
+    disconnectAllSessions,
+
+    // Connection
+    reconnectSession,
+
+    // Messages
+    sendMessage: sendTextMessage,
+    sendMedia: sendMediaMessage,
+    markAsRead,
+    sendReaction,
+    editMessage,
+    deleteMessage,
+    forwardMessage,
+
+    // Chats
+    archiveChat,
+    pinChat,
+    muteChat,
+    markChatUnread,
+    clearChat,
+
+    // Contacts
+    updateContact,
+    blockContact,
+    unblockContact,
+
+    // Groups
+    createGroup,
+    getGroupMetadata,
+    updateGroupSubject,
+    updateGroupDescription,
+    updateGroupSettings,
+    updateGroupParticipants,
+    leaveGroup,
+    getGroupInviteCode,
+    revokeGroupInviteCode,
+    groupFetchAllParticipating,
+    groupToggleEphemeral,
+    groupUpdatePicture,
+    groupInviteAccept,
+    groupInviteReject,
+    groupInviteInfo,
+
+    // Business
+    getBusinessProfile,
+    setBusinessProfile,
+    updateBusinessProfile,
+    getBusinessHours,
+    setBusinessHours,
+    getProfile,
+
+    // Broadcast
+    sendBroadcast,
+    createBroadcastList,
+    getBroadcastLists,
+
+    // Labels
+    labelChat,
+    getLabels,
+    createLabel,
+    deleteLabel,
+
+    // Starred Messages
+    starMessage,
+    unstarMessage,
+    getStarredMessages,
+
+    // Privacy
+    fetchBlocklist,
+    fetchPrivacySettings,
+    setPrivacy,
+
+    // Status
+    getStatus,
+    setStatus,
+
+    // URL Info
+    getUrlInfo,
+
+    // System
+    restoreAllSessions
+};
 

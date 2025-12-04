@@ -269,6 +269,25 @@ async function loadHeavyServices() {
       console.warn(`⚠️ [EXCLUDED-MODELS] aiAgentService not loaded yet - will retry on next service load`);
     }
 
+    // 🛒 WooCommerce Auto Sync (Fallback - كل 15 دقيقة)
+    // ملاحظة: الـ Webhooks هي الطريقة الأساسية، هذا فقط احتياطي
+    try {
+      const { runAutoSyncForAllCompanies } = require('./controller/wooCommerceOrdersController');
+      
+      cron.schedule('*/15 * * * *', async () => {
+        try {
+          console.log(`🛒 [WOOCOMMERCE] Running scheduled auto sync (fallback)...`);
+          await runAutoSyncForAllCompanies();
+        } catch (error) {
+          console.error('❌ [WOOCOMMERCE] Scheduled sync error:', error.message);
+        }
+      });
+      
+      console.log(`✅ WooCommerce Auto Sync Service started (fallback every 15 minutes)`);
+    } catch (error) {
+      console.warn(`⚠️ [WOOCOMMERCE] Auto sync service not available:`, error.message);
+    }
+
     //console.log('✅ [PERFORMANCE] All heavy services loaded successfully!');
 
   } catch (error) {
@@ -464,7 +483,6 @@ app.use("/api/v1/public", (req, res, next) => {
   console.log('🔵 [PUBLIC-ORDERS-MIDDLEWARE] Request:', req.method, req.path);
   next();
 }, getCompanyFromSubdomain, addPublicCORS, publicOrdersRoutes);
-
 // 🏠 Homepage public routes - MUST be before globalSecurity
 app.use("/api/v1/homepage", homepageRoutes); // قوالب الصفحة الرئيسية (public + protected)
 console.log('✅ [SERVER] Public storefront routes registered');
@@ -472,6 +490,8 @@ console.log('✅ [SERVER] Public storefront routes registered');
 // Apply Global Security Middleware to all routes AFTER public routes
 //console.log('🛡️ Applying Global Security Middleware...');
 app.use(globalSecurity);
+
+app.use("/api/v1/whatsapp", whatsappRoutes) // 📱 WhatsApp Integration
 
 // Protected routes (require authentication)
 app.use("/api/v1/reviews", productReviewRoutes); // ⭐ إدارة التقييمات (Protected)
@@ -546,7 +566,7 @@ app.use("/api/v1/messages/", messageFixRoutes)
 app.use("/api/v1/comments/", commentRoutes)
 app.use("/api/v1/user/image-gallery", imageGalleryRoutes) // 🖼️ حافظة الصور
 app.use("/api/v1/user/text-gallery", textGalleryRoutes) // 📝 حافظة النصوص
-app.use("/api/v1/whatsapp", whatsappRoutes) // 📱 WhatsApp Integration
+
 // Homepage routes moved before globalSecurity middleware (line 434)
 
 // ==================== SERVER STARTUP ====================
