@@ -1,5 +1,5 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // Helper function to convert status to uppercase
 const normalizeStatus = (status) => {
@@ -26,7 +26,7 @@ const projectController = {
         });
       }
 
-      const projects = await prisma.project.findMany({
+      const projects = await getSharedPrismaClient().project.findMany({
         where: {
           companyId
         },
@@ -131,7 +131,7 @@ const projectController = {
         });
       }
 
-      const newProject = await prisma.project.create({
+      const newProject = await getSharedPrismaClient().project.create({
         data: {
           companyId,
           name,
@@ -195,7 +195,7 @@ const projectController = {
       const { id } = req.params;
       const companyId = req.user.companyId;
 
-      const project = await prisma.project.findFirst({
+      const project = await getSharedPrismaClient().project.findFirst({
         where: {
           id,
           companyId
@@ -304,7 +304,7 @@ const projectController = {
       } = req.body;
       const companyId = req.user.companyId;
 
-      const updatedProject = await prisma.project.updateMany({
+      const updatedProject = await getSharedPrismaClient().project.updateMany({
         where: {
           id,
           companyId
@@ -333,7 +333,7 @@ const projectController = {
       }
 
       // Get updated project with relations
-      const project = await prisma.project.findFirst({
+      const project = await getSharedPrismaClient().project.findFirst({
         where: { id, companyId },
         include: {
           manager: { select: { name: true } }
@@ -362,7 +362,7 @@ const projectController = {
       const companyId = req.user.companyId;
 
       // Check if project has tasks
-      const tasksCount = await prisma.task.count({
+      const tasksCount = await getSharedPrismaClient().task.count({
         where: {
           projectId: id,
           companyId
@@ -376,7 +376,7 @@ const projectController = {
         });
       }
 
-      const deletedProject = await prisma.project.deleteMany({
+      const deletedProject = await getSharedPrismaClient().project.deleteMany({
         where: {
           id,
           companyId
@@ -410,7 +410,7 @@ const projectController = {
       const { id } = req.params;
       const companyId = req.user.companyId;
 
-      const tasks = await prisma.task.findMany({
+      const tasks = await getSharedPrismaClient().task.findMany({
         where: {
           projectId: id,
           companyId

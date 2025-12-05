@@ -3,7 +3,7 @@ const router = express.Router();
 const EnhancedOrderService = require('../services/enhancedOrderService');
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // Authentication middleware
 const requireAuth = (req, res, next) => {
@@ -192,7 +192,7 @@ router.post('/migrate-from-files', async (req, res) => {
                 const orderData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
 
                 // تحقق من وجود الطلب
-                const existingOrder = await prisma.order.findUnique({
+                const existingOrder = await getSharedPrismaClient().order.findUnique({
                     where: { orderNumber: orderData.orderNumber }
                 });
 
@@ -203,7 +203,7 @@ router.post('/migrate-from-files', async (req, res) => {
                 }
 
                 // إنشاء عميل
-                let customer = await prisma.customer.findFirst({
+                let customer = await getSharedPrismaClient().customer.findFirst({
                     where: {
                         OR: [
                             { firstName: orderData.customerName || 'عميل غير محدد' },
@@ -213,7 +213,7 @@ router.post('/migrate-from-files', async (req, res) => {
                 });
 
                 if (!customer) {
-                    customer = await prisma.customer.create({
+                    customer = await getSharedPrismaClient().customer.create({
                         data: {
                             firstName: orderData.customerName || 'عميل غير محدد',
                             lastName: '',
@@ -225,7 +225,7 @@ router.post('/migrate-from-files', async (req, res) => {
                 }
 
                 // إنشاء الطلب
-                const newOrder = await prisma.order.create({
+                const newOrder = await getSharedPrismaClient().order.create({
                     data: {
                         orderNumber: orderData.orderNumber,
                         customerId: customer.id,
@@ -250,7 +250,7 @@ router.post('/migrate-from-files', async (req, res) => {
                 // إضافة عناصر الطلب
                 if (orderData.items && orderData.items.length > 0) {
                     for (const item of orderData.items) {
-                        await prisma.orderItem.create({
+                        await getSharedPrismaClient().orderItem.create({
                             data: {
                                 orderId: newOrder.id,
                                 productName: item.name || 'منتج غير محدد',
@@ -336,7 +336,7 @@ router.get('/:id', async (req, res) => {
     const enhancedOrderService = new EnhancedOrderService();
     const { id } = req.params;
     
-    const order = await enhancedOrderService.prisma.order.findUnique({
+    const order = await enhancedOrderService.getSharedPrismaClient().order.findUnique({
       where: { id },
       include: {
         customer: true,
@@ -419,7 +419,7 @@ router.patch('/:id/status', async (req, res) => {
     const { id } = req.params;
     const { status, notes } = req.body;
     
-    const updatedOrder = await enhancedOrderService.prisma.order.update({
+    const updatedOrder = await enhancedOrderService.getSharedPrismaClient().order.update({
       where: { id },
       data: {
         status,
@@ -461,7 +461,7 @@ router.patch('/:id/validation', async (req, res) => {
     const { id } = req.params;
     const { validationStatus, notes } = req.body;
     
-    const updatedOrder = await enhancedOrderService.prisma.order.update({
+    const updatedOrder = await enhancedOrderService.getSharedPrismaClient().order.update({
       where: { id },
       data: {
         validationStatus,
@@ -500,7 +500,7 @@ router.delete('/:id', async (req, res) => {
     // FIXED: Add company isolation for security
     // حذف عناصر الطلب أولاً
     // SECURITY WARNING: Ensure companyId filter is included
-      await enhancedOrderService.prisma.orderItem.deleteMany({
+      await enhancedOrderService.getSharedPrismaClient().orderItem.deleteMany({
       where: {
         orderId: id,
         order: {
@@ -510,7 +510,7 @@ router.delete('/:id', async (req, res) => {
     });
     
     // حذف الطلب
-    await enhancedOrderService.prisma.order.delete({
+    await enhancedOrderService.getSharedPrismaClient().order.delete({
       where: { id }
     });
     
@@ -680,3 +680,4 @@ router.get('/:id', async (req, res) => {
 });
 
 module.exports = router;
+

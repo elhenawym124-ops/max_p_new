@@ -4,14 +4,14 @@
  */
 
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 async function moveAllKeysToCentral() {
   try {
     console.log('🔄 [MOVE-ALL-KEYS] Starting to move ALL company keys to central...\n');
 
     // 1. جلب كل المفاتيح من نوع COMPANY (نشطة وغير نشطة)
-    const companyKeys = await prisma.geminiKey.findMany({
+    const companyKeys = await getSharedPrismaClient().geminiKey.findMany({
       where: {
         keyType: 'COMPANY'
       },
@@ -59,7 +59,7 @@ async function moveAllKeysToCentral() {
 
     for (const key of companyKeys) {
       try {
-        await prisma.geminiKey.update({
+        await getSharedPrismaClient().geminiKey.update({
           where: { id: key.id },
           data: {
             keyType: 'CENTRAL',
@@ -83,20 +83,20 @@ async function moveAllKeysToCentral() {
     console.log(`   - Errors: ${errorCount}`);
 
     // 5. التحقق من النتيجة
-    const centralKeysCount = await prisma.geminiKey.count({
+    const centralKeysCount = await getSharedPrismaClient().geminiKey.count({
       where: {
         keyType: 'CENTRAL'
       }
     });
 
-    const activeCentralKeys = await prisma.geminiKey.count({
+    const activeCentralKeys = await getSharedPrismaClient().geminiKey.count({
       where: {
         keyType: 'CENTRAL',
         isActive: true
       }
     });
 
-    const remainingCompanyKeys = await prisma.geminiKey.count({
+    const remainingCompanyKeys = await getSharedPrismaClient().geminiKey.count({
       where: {
         keyType: 'COMPANY'
       }
@@ -119,7 +119,7 @@ async function moveAllKeysToCentral() {
     console.error('❌ [MOVE-ALL-KEYS] Error:', error);
     throw error;
   } finally {
-    await prisma.$disconnect();
+    await getSharedPrismaClient().$disconnect();
   }
 }
 
@@ -133,4 +133,5 @@ moveAllKeysToCentral()
     console.error('\n❌ Script failed:', error);
     process.exit(1);
   });
+
 

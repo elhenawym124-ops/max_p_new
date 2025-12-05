@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { getSharedPrismaClient, healthCheck: dbHealthCheck } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 router.get("/", async (req, res) => {
   const healthCheck = {
@@ -49,3 +49,4 @@ router.get("/", async (req, res) => {
 });
 
 module.exports = router;
+

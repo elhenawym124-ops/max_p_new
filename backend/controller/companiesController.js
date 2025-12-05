@@ -1,5 +1,5 @@
 const { getSharedPrismaClient, initializeSharedDatabase, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const planLimitsService = require('../services/planLimitsService');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
@@ -8,7 +8,7 @@ const bcrypt = require('bcryptjs');
 const getCurrentCompany = async (req, res) => {
     try {
         // Get the first/default company
-        const company = await prisma.company.findFirst();
+        const company = await getSharedPrismaClient().company.findFirst();
 
         if (!company) {
             return res.status(404).json({
@@ -79,7 +79,7 @@ const companyUsageEndpoint = async (req, res) => {
         // Get actual product count from database
         let actualProductCount = 6;
         try {
-            actualProductCount = await prisma.product.count({
+            actualProductCount = await getSharedPrismaClient().product.count({
                 where: { isActive: true }
             });
         } catch (error) {
@@ -165,7 +165,7 @@ const mockEndpoint = async (req, res) => {
         // Get real product count
         let productCount = 6;
         try {
-            productCount = await prisma.product.count({ where: { isActive: true } });
+            productCount = await getSharedPrismaClient().product.count({ where: { isActive: true } });
         } catch (error) {
             //console.log('Using default product count');
         }
@@ -266,8 +266,8 @@ const safeUsageEndpoint = async (req, res) => {
         let orderCount = 0;
 
         try {
-            productCount = await prisma.product.count({ where: { isActive: true } });
-            // orderCount = await prisma.order.count(); // Uncomment when order model exists
+            productCount = await getSharedPrismaClient().product.count({ where: { isActive: true } });
+            // orderCount = await getSharedPrismaClient().order.count(); // Uncomment when order model exists
         } catch (error) {
             //console.log('Could not fetch counts, using defaults');
         }
@@ -441,7 +441,7 @@ const getCompanyInfoEndpoint = async (req, res) => {
         }
 
         // Get company from database
-        const company = await prisma.company.findUnique({
+        const company = await getSharedPrismaClient().company.findUnique({
             where: { id: companyId }
         });
 
@@ -513,7 +513,7 @@ const updateCompanyCurrency = async (req, res) => {
         }
 
         // Get current company
-        const company = await prisma.company.findUnique({
+        const company = await getSharedPrismaClient().company.findUnique({
             where: { id: companyId }
         });
 
@@ -536,7 +536,7 @@ const updateCompanyCurrency = async (req, res) => {
         settings.currency = currency;
 
         // Update company in database
-        const updatedCompany = await prisma.company.update({
+        const updatedCompany = await getSharedPrismaClient().company.update({
             where: { id: companyId },
             data: {
                 settings: JSON.stringify(settings)
@@ -607,7 +607,7 @@ const getAllCompanies = async (req, res) => {
 
         // جلب الشركات مع التصفح
         const [companies, totalCount] = await Promise.all([
-            prisma.company.findMany({
+            getSharedPrismaClient().company.findMany({
                 where,
                 orderBy,
                 skip,
@@ -624,7 +624,7 @@ const getAllCompanies = async (req, res) => {
                     }
                 }
             }),
-            prisma.company.count({ where })
+            getSharedPrismaClient().company.count({ where })
         ]);
 
         // حساب معلومات التصفح
@@ -681,7 +681,7 @@ const getCompanyDetails = async (req, res) => {
             });
         }
 
-        const company = await prisma.company.findUnique({
+        const company = await getSharedPrismaClient().company.findUnique({
             where: { id },
             include: {
                 users: {
@@ -753,7 +753,7 @@ const createNewCompany = async (req, res) => {
         }
 
         // Check if email already exists
-        const existingCompany = await prisma.company.findFirst({
+        const existingCompany = await getSharedPrismaClient().company.findFirst({
             where: { email }
         });
 
@@ -765,7 +765,7 @@ const createNewCompany = async (req, res) => {
         }
 
         // Create new company
-        const newCompany = await prisma.company.create({
+        const newCompany = await getSharedPrismaClient().company.create({
             data: {
                 name,
                 email,
@@ -826,7 +826,7 @@ const updateCompany = async (req, res) => {
         } = req.body;
 
         // Check if company exists
-        const existingCompany = await prisma.company.findUnique({
+        const existingCompany = await getSharedPrismaClient().company.findUnique({
             where: { id }
         });
 
@@ -839,7 +839,7 @@ const updateCompany = async (req, res) => {
 
         // Check if email is being changed and already exists
         if (email && email !== existingCompany.email) {
-            const emailExists = await prisma.company.findFirst({
+            const emailExists = await getSharedPrismaClient().company.findFirst({
                 where: {
                     email,
                     id: { not: id }
@@ -855,7 +855,7 @@ const updateCompany = async (req, res) => {
         }
 
         // Update company
-        const updatedCompany = await prisma.company.update({
+        const updatedCompany = await getSharedPrismaClient().company.update({
             where: { id },
             data: {
                 ...(name && { name }),
@@ -901,7 +901,7 @@ const deleteCompany = async (req, res) => {
         const { id } = req.params;
 
         // Check if company exists
-        const existingCompany = await prisma.company.findUnique({
+        const existingCompany = await getSharedPrismaClient().company.findUnique({
             where: { id },
             include: {
                 _count: {
@@ -938,7 +938,7 @@ const deleteCompany = async (req, res) => {
         }
 
         // Delete company
-        await prisma.company.delete({
+        await getSharedPrismaClient().company.delete({
             where: { id }
         });
 
@@ -1009,7 +1009,7 @@ const getCompanyUsers = async (req, res) => {
 
         // جلب المستخدمين مع التصفح
         const [users, totalCount] = await Promise.all([
-            prisma.user.findMany({
+            getSharedPrismaClient().user.findMany({
                 where,
                 orderBy,
                 skip,
@@ -1028,7 +1028,7 @@ const getCompanyUsers = async (req, res) => {
                     updatedAt: true
                 }
             }),
-            prisma.user.count({ where })
+            getSharedPrismaClient().user.count({ where })
         ]);
 
         // حساب معلومات التصفح
@@ -1108,7 +1108,7 @@ const createnewUserForCompany = async (req, res) => {
         }
 
         // Check if company exists
-        const company = await prisma.company.findUnique({
+        const company = await getSharedPrismaClient().company.findUnique({
             where: { id: companyId }
         });
 
@@ -1120,7 +1120,7 @@ const createnewUserForCompany = async (req, res) => {
         }
 
         // Check if email already exists
-        const existingUser = await prisma.user.findFirst({
+        const existingUser = await getSharedPrismaClient().user.findFirst({
             where: { email: email.toLowerCase() }
         });
 
@@ -1135,7 +1135,7 @@ const createnewUserForCompany = async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 12);
 
         // Create new user
-        const newUser = await prisma.user.create({
+        const newUser = await getSharedPrismaClient().user.create({
             data: {
                 firstName,
                 lastName,
@@ -1190,7 +1190,7 @@ const updateUser = async (req, res) => {
         } = req.body;
 
         // Check if user exists and belongs to company
-        const existingUser = await prisma.user.findFirst({
+        const existingUser = await getSharedPrismaClient().user.findFirst({
             where: {
                 id: userId,
                 companyId: companyId
@@ -1206,7 +1206,7 @@ const updateUser = async (req, res) => {
 
         // Check if email is being changed and already exists
         if (email && email.toLowerCase() !== existingUser.email) {
-            const emailExists = await prisma.user.findFirst({
+            const emailExists = await getSharedPrismaClient().user.findFirst({
                 where: {
                     email: email.toLowerCase(),
                     id: { not: userId }
@@ -1222,7 +1222,7 @@ const updateUser = async (req, res) => {
         }
 
         // Update user
-        const updatedUser = await prisma.user.update({
+        const updatedUser = await getSharedPrismaClient().user.update({
             where: { id: userId },
             data: {
                 ...(firstName && { firstName }),
@@ -1276,7 +1276,7 @@ const updateMyProfile = async (req, res) => {
         console.log(`👤 [UPDATE-PROFILE] User ${userId} updating profile`);
 
         // Check if user exists
-        const existingUser = await prisma.user.findUnique({
+        const existingUser = await getSharedPrismaClient().user.findUnique({
             where: { id: userId }
         });
 
@@ -1288,7 +1288,7 @@ const updateMyProfile = async (req, res) => {
         }
 
         // Update user profile
-        const updatedUser = await prisma.user.update({
+        const updatedUser = await getSharedPrismaClient().user.update({
             where: { id: userId },
             data: {
                 ...(firstName && { firstName }),
@@ -1335,7 +1335,7 @@ const deleteUser = async (req, res) => {
         const { companyId, userId } = req.params;
 
         // Check if user exists and belongs to company
-        const existingUser = await prisma.user.findFirst({
+        const existingUser = await getSharedPrismaClient().user.findFirst({
             where: {
                 id: userId,
                 companyId: companyId
@@ -1351,7 +1351,7 @@ const deleteUser = async (req, res) => {
 
         // Check if user is the only COMPANY_ADMIN
         if (existingUser.role === 'COMPANY_ADMIN') {
-            const adminCount = await prisma.user.count({
+            const adminCount = await getSharedPrismaClient().user.count({
                 where: {
                     companyId: companyId,
                     role: 'COMPANY_ADMIN',
@@ -1368,7 +1368,7 @@ const deleteUser = async (req, res) => {
         }
 
         // Delete user
-        await prisma.user.delete({
+        await getSharedPrismaClient().user.delete({
             where: { id: userId }
         });
 
@@ -1408,7 +1408,7 @@ const createCustomRole = async (req, res) => {
         }
 
         // Check if company exists
-        const company = await prisma.company.findUnique({
+        const company = await getSharedPrismaClient().company.findUnique({
             where: { id: companyId }
         });
 
@@ -1446,7 +1446,7 @@ const createCustomRole = async (req, res) => {
         };
 
         // Update company settings
-        await prisma.company.update({
+        await getSharedPrismaClient().company.update({
             where: { id: companyId },
             data: {
                 settings: JSON.stringify({
@@ -1480,7 +1480,7 @@ const getCompanyRoles = async (req, res) => {
         const { companyId } = req.params;
 
         // Get company
-        const company = await prisma.company.findUnique({
+        const company = await getSharedPrismaClient().company.findUnique({
             where: { id: companyId }
         });
 
@@ -1571,7 +1571,7 @@ const updateCustomRole = async (req, res) => {
         }
 
         // Get company
-        const company = await prisma.company.findUnique({
+        const company = await getSharedPrismaClient().company.findUnique({
             where: { id: companyId }
         });
 
@@ -1603,7 +1603,7 @@ const updateCustomRole = async (req, res) => {
         };
 
         // Update company settings
-        await prisma.company.update({
+        await getSharedPrismaClient().company.update({
             where: { id: companyId },
             data: {
                 settings: JSON.stringify({
@@ -1646,7 +1646,7 @@ const deleteCustomRole = async (req, res) => {
         }
 
         // Get company
-        const company = await prisma.company.findUnique({
+        const company = await getSharedPrismaClient().company.findUnique({
             where: { id: companyId }
         });
 
@@ -1678,7 +1678,7 @@ const deleteCustomRole = async (req, res) => {
         };
 
         // Update company settings
-        await prisma.company.update({
+        await getSharedPrismaClient().company.update({
             where: { id: companyId },
             data: {
                 settings: JSON.stringify({
@@ -1738,7 +1738,7 @@ const sendUserInvitation = async (req, res) => {
         }
 
         // Check if user already exists
-        const existingUser = await prisma.user.findUnique({
+        const existingUser = await getSharedPrismaClient().user.findUnique({
             where: { email }
         });
 
@@ -1750,7 +1750,7 @@ const sendUserInvitation = async (req, res) => {
         }
 
         // Check if invitation already exists
-        const existingInvitation = await prisma.userInvitation.findFirst({
+        const existingInvitation = await getSharedPrismaClient().userInvitation.findFirst({
             where: {
                 email,
                 companyId,
@@ -1786,7 +1786,7 @@ const sendUserInvitation = async (req, res) => {
         expiresAt.setDate(expiresAt.getDate() + 7); // Expires in 7 days
 
         // Create invitation
-        const invitation = await prisma.userInvitation.create({
+        const invitation = await getSharedPrismaClient().userInvitation.create({
             data: {
                 email,
                 firstName,
@@ -1963,7 +1963,7 @@ const getCompanyInvitations = async (req, res) => {
         }
 
         const [invitations, totalCount] = await Promise.all([
-            prisma.userInvitation.findMany({
+            getSharedPrismaClient().userInvitation.findMany({
                 where,
                 include: {
                     inviter: {
@@ -1977,7 +1977,7 @@ const getCompanyInvitations = async (req, res) => {
                 skip: parseInt(skip),
                 take: parseInt(limit)
             }),
-            prisma.userInvitation.count({ where })
+            getSharedPrismaClient().userInvitation.count({ where })
         ]);
 
         const totalPages = Math.ceil(totalCount / limit);
@@ -2010,7 +2010,7 @@ const cancelInvitation = async (req, res) => {
     try {
         const { companyId, invitationId } = req.params;
 
-        const invitation = await prisma.userInvitation.findFirst({
+        const invitation = await getSharedPrismaClient().userInvitation.findFirst({
             where: {
                 id: invitationId,
                 companyId
@@ -2031,7 +2031,7 @@ const cancelInvitation = async (req, res) => {
             });
         }
 
-        await prisma.userInvitation.update({
+        await getSharedPrismaClient().userInvitation.update({
             where: { id: invitationId },
             data: { status: 'CANCELLED' }
         });
@@ -2055,7 +2055,7 @@ const resendInvitation = async (req, res) => {
     try {
         const { companyId, invitationId } = req.params;
 
-        const invitation = await prisma.userInvitation.findFirst({
+        const invitation = await getSharedPrismaClient().userInvitation.findFirst({
             where: {
                 id: invitationId,
                 companyId
@@ -2094,7 +2094,7 @@ const resendInvitation = async (req, res) => {
         const newExpiresAt = new Date();
         newExpiresAt.setDate(newExpiresAt.getDate() + 7);
 
-        await prisma.userInvitation.update({
+        await getSharedPrismaClient().userInvitation.update({
             where: { id: invitationId },
             data: {
                 token: newToken,
@@ -2241,7 +2241,7 @@ const FrontendSpecificSafeEndpoint = async (req, res) => {
         // Get real data
         let productCount = 6;
         try {
-            productCount = await prisma.product.count({ where: { isActive: true } });
+            productCount = await getSharedPrismaClient().product.count({ where: { isActive: true } });
         } catch (error) {
             //console.log('Using default count');
         }
@@ -2361,7 +2361,7 @@ const updateCompanySlug = async (req, res) => {
         }
         
         // Check if slug already exists for another company
-        const existingCompany = await prisma.company.findFirst({
+        const existingCompany = await getSharedPrismaClient().company.findFirst({
             where: {
                 slug: sanitizedSlug,
                 NOT: {
@@ -2378,7 +2378,7 @@ const updateCompanySlug = async (req, res) => {
         }
         
         // Update company slug
-        const updatedCompany = await prisma.company.update({
+        const updatedCompany = await getSharedPrismaClient().company.update({
             where: { id: companyId },
             data: { slug: sanitizedSlug },
             select: {
@@ -2441,7 +2441,7 @@ const getUsersStatistics = async (req, res) => {
         }
 
         // Get all users in the company
-        const users = await prisma.user.findMany({
+        const users = await getSharedPrismaClient().user.findMany({
             where: {
                 companyId: companyId,
                 isActive: true // Only active users
@@ -2469,13 +2469,13 @@ const getUsersStatistics = async (req, res) => {
                 };
 
                 // Count distinct conversations
-                const distinctConversations = await prisma.message.groupBy({
+                const distinctConversations = await getSharedPrismaClient().message.groupBy({
                     by: ['conversationId'],
                     where: messagesWhere
                 });
 
                 // Count total messages
-                const messagesCount = await prisma.message.count({
+                const messagesCount = await getSharedPrismaClient().message.count({
                     where: messagesWhere
                 });
 
@@ -2553,7 +2553,7 @@ const checkSlugAvailability = async (req, res) => {
             whereCondition.NOT = { id: companyId };
         }
         
-        const existingCompany = await prisma.company.findFirst({
+        const existingCompany = await getSharedPrismaClient().company.findFirst({
             where: whereCondition
         });
         
@@ -2589,7 +2589,7 @@ const uploadCompanyLogo = async (req, res) => {
         }
         
         // Verify company exists
-        const company = await prisma.company.findUnique({
+        const company = await getSharedPrismaClient().company.findUnique({
             where: { id: companyId }
         });
         
@@ -2604,7 +2604,7 @@ const uploadCompanyLogo = async (req, res) => {
         const logoUrl = `/uploads/companies/${req.file.filename}`;
         
         // Update company with new logo
-        const updatedCompany = await prisma.company.update({
+        const updatedCompany = await getSharedPrismaClient().company.update({
             where: { id: companyId },
             data: { logo: logoUrl }
         });

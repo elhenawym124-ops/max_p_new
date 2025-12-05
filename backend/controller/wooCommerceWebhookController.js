@@ -1,5 +1,5 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const crypto = require('crypto');
 
 /**
@@ -64,7 +64,7 @@ const handleWooCommerceWebhook = async (req, res) => {
     console.log(`   Topic: ${topic}`);
 
     // جلب إعدادات الشركة
-    const settings = await prisma.wooCommerceSettings.findUnique({
+    const settings = await getSharedPrismaClient().wooCommerceSettings.findUnique({
       where: { companyId }
     });
 
@@ -114,7 +114,7 @@ const handleOrderCreated = async (companyId, orderData, settings) => {
     console.log(`📦 [WEBHOOK] Processing new order: ${orderData.id}`);
 
     // التحقق من وجود الطلب
-    const existingOrder = await prisma.order.findFirst({
+    const existingOrder = await getSharedPrismaClient().order.findFirst({
       where: {
         wooCommerceId: orderData.id.toString(),
         companyId
@@ -131,19 +131,19 @@ const handleOrderCreated = async (companyId, orderData, settings) => {
     const billing = orderData.billing || {};
 
     if (billing.email) {
-      customer = await prisma.customer.findFirst({
+      customer = await getSharedPrismaClient().customer.findFirst({
         where: { email: billing.email, companyId }
       });
     }
 
     if (!customer && billing.phone) {
-      customer = await prisma.customer.findFirst({
+      customer = await getSharedPrismaClient().customer.findFirst({
         where: { phone: billing.phone, companyId }
       });
     }
 
     if (!customer) {
-      customer = await prisma.customer.create({
+      customer = await getSharedPrismaClient().customer.create({
         data: {
           firstName: billing.first_name || 'عميل',
           lastName: billing.last_name || 'WooCommerce',
@@ -157,7 +157,7 @@ const handleOrderCreated = async (companyId, orderData, settings) => {
     }
 
     // إنشاء الطلب
-    const order = await prisma.order.create({
+    const order = await getSharedPrismaClient().order.create({
       data: {
         orderNumber: `WOO-${orderData.id}`,
         customerId: customer.id,
@@ -196,18 +196,18 @@ const handleOrderCreated = async (companyId, orderData, settings) => {
         let product = null;
 
         if (item.sku) {
-          product = await prisma.product.findFirst({
+          product = await getSharedPrismaClient().product.findFirst({
             where: { sku: item.sku, companyId }
           });
         }
 
         if (!product && item.product_id) {
-          product = await prisma.product.findFirst({
+          product = await getSharedPrismaClient().product.findFirst({
             where: { wooCommerceId: item.product_id.toString(), companyId }
           });
         }
 
-        await prisma.orderItem.create({
+        await getSharedPrismaClient().orderItem.create({
           data: {
             orderId: order.id,
             productId: product?.id || null,
@@ -222,7 +222,7 @@ const handleOrderCreated = async (companyId, orderData, settings) => {
     }
 
     // تسجيل في سجل المزامنة
-    await prisma.wooCommerceSyncLog.create({
+    await getSharedPrismaClient().wooCommerceSyncLog.create({
       data: {
         companyId,
         syncType: 'webhook',
@@ -242,7 +242,7 @@ const handleOrderCreated = async (companyId, orderData, settings) => {
     console.error('❌ [WEBHOOK] Error creating order:', error);
     
     // تسجيل الخطأ
-    await prisma.wooCommerceSyncLog.create({
+    await getSharedPrismaClient().wooCommerceSyncLog.create({
       data: {
         companyId,
         syncType: 'webhook',
@@ -267,7 +267,7 @@ const handleOrderUpdated = async (companyId, orderData, settings) => {
   try {
     console.log(`🔄 [WEBHOOK] Processing order update: ${orderData.id}`);
 
-    const existingOrder = await prisma.order.findFirst({
+    const existingOrder = await getSharedPrismaClient().order.findFirst({
       where: {
         wooCommerceId: orderData.id.toString(),
         companyId
@@ -282,7 +282,7 @@ const handleOrderUpdated = async (companyId, orderData, settings) => {
     }
 
     // تحديث الطلب
-    await prisma.order.update({
+    await getSharedPrismaClient().order.update({
       where: { id: existingOrder.id },
       data: {
         status: mapWooStatusToLocal(orderData.status),
@@ -307,7 +307,7 @@ const handleOrderDeleted = async (companyId, orderData) => {
   try {
     console.log(`🗑️ [WEBHOOK] Processing order deletion: ${orderData.id}`);
 
-    const existingOrder = await prisma.order.findFirst({
+    const existingOrder = await getSharedPrismaClient().order.findFirst({
       where: {
         wooCommerceId: orderData.id.toString(),
         companyId
@@ -316,7 +316,7 @@ const handleOrderDeleted = async (companyId, orderData) => {
 
     if (existingOrder) {
       // نحدث الحالة بدل ما نحذف
-      await prisma.order.update({
+      await getSharedPrismaClient().order.update({
         where: { id: existingOrder.id },
         data: {
           status: 'CANCELLED',
@@ -351,7 +351,7 @@ const setupWooCommerceWebhooks = async (req, res) => {
       });
     }
 
-    const settings = await prisma.wooCommerceSettings.findUnique({
+    const settings = await getSharedPrismaClient().wooCommerceSettings.findUnique({
       where: { companyId }
     });
 
@@ -364,7 +364,12 @@ const setupWooCommerceWebhooks = async (req, res) => {
 
     const axios = require('axios');
     const baseURL = settings.storeUrl.replace(/\/$/, '');
-    const webhookUrl = `${process.env.BACKEND_URL || 'https://your-domain.com'}/api/v1/woocommerce/webhook/${companyId}`;
+    
+    // 🔧 الحصول على الـ URL تلقائياً من الـ request
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+    const host = req.headers['x-forwarded-host'] || req.headers.host || req.hostname;
+    const backendUrl = process.env.BACKEND_URL || `${protocol}://${host}`;
+    const webhookUrl = `${backendUrl}/api/v1/woocommerce/webhook/${companyId}`;
 
     const webhooksToCreate = [
       { name: 'Order Created', topic: 'order.created' },
@@ -404,7 +409,7 @@ const setupWooCommerceWebhooks = async (req, res) => {
     }
 
     // تحديث الإعدادات
-    await prisma.wooCommerceSettings.update({
+    await getSharedPrismaClient().wooCommerceSettings.update({
       where: { companyId },
       data: {
         webhookEnabled: true,
@@ -462,3 +467,4 @@ module.exports = {
   setupWooCommerceWebhooks,
   testWebhook
 };
+

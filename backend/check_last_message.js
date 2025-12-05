@@ -1,9 +1,9 @@
 const { getSharedPrismaClient } = require('./services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 async function checkLastMessage() {
     try {
-        const lastMessage = await prisma.whatsAppMessage.findFirst({
+        const lastMessage = await getSharedPrismaClient().whatsAppMessage.findFirst({
             orderBy: { createdAt: 'desc' },
             take: 1
         });
@@ -11,8 +11,9 @@ async function checkLastMessage() {
     } catch (error) {
         console.error('Error:', error);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 checkLastMessage();
+

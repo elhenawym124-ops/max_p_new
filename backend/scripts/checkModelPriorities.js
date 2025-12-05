@@ -5,13 +5,13 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 
 async function checkPriorities(keyId = null) {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     try {
         console.log('\n🔍 فحص أولويات النماذج...\n');
         
         // إذا لم يتم تحديد keyId، نأخذ أول مفتاح مركزي نشط
         if (!keyId) {
-            const centralKey = await prisma.geminiKey.findFirst({
+            const centralKey = await getSharedPrismaClient().geminiKey.findFirst({
                 where: {
                     keyType: 'CENTRAL',
                     isActive: true
@@ -31,7 +31,7 @@ async function checkPriorities(keyId = null) {
         }
         
         // جلب جميع النماذج مرتبة حسب الأولوية
-        const models = await prisma.geminiKeyModel.findMany({
+        const models = await getSharedPrismaClient().geminiKeyModel.findMany({
             where: {
                 keyId: keyId,
                 isEnabled: true
@@ -210,10 +210,11 @@ async function checkPriorities(keyId = null) {
         console.error('❌ خطأ:', error.message);
         console.error(error.stack);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 // السماح بتحديد keyId من سطر الأوامر
 const keyId = process.argv[2] || null;
 checkPriorities(keyId);
+

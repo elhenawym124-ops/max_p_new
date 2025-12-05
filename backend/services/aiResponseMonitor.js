@@ -6,7 +6,7 @@
  */
 
 const { getSharedPrismaClient, safeQuery } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 class AIResponseMonitor {
   constructor() {
@@ -88,7 +88,7 @@ class AIResponseMonitor {
 
       // حفظ الإشعار
       await safeQuery(async () => {
-        return await prisma.$executeRaw`
+        return await getSharedPrismaClient().$executeRaw`
         INSERT INTO ai_notifications (
           id, companyId, type, severity, title, message, 
           metadata, isRead, createdAt
@@ -116,7 +116,7 @@ class AIResponseMonitor {
   async checkNotificationsTableExists() {
     try {
       const result = await safeQuery(async () => {
-        return await prisma.$queryRaw`
+        return await getSharedPrismaClient().$queryRaw`
         SELECT COUNT(*) as count 
         FROM information_schema.tables 
         WHERE table_schema = DATABASE() 
@@ -135,7 +135,7 @@ class AIResponseMonitor {
   async createNotificationsTable() {
     try {
       await safeQuery(async () => {
-        return await prisma.$executeRaw`
+        return await getSharedPrismaClient().$executeRaw`
         CREATE TABLE IF NOT EXISTS ai_notifications (
           id VARCHAR(191) NOT NULL PRIMARY KEY,
           companyId VARCHAR(191) NOT NULL,
@@ -336,7 +336,7 @@ class AIResponseMonitor {
       }
 
       await safeQuery(async () => {
-        return await prisma.$executeRaw`
+        return await getSharedPrismaClient().$executeRaw`
         INSERT INTO ai_failure_logs (
           id, companyId, conversationId, customerId, 
           errorType, errorMessage, context, createdAt
@@ -363,7 +363,7 @@ class AIResponseMonitor {
   async checkFailureLogsTableExists() {
     try {
       const result = await safeQuery(async () => {
-        return await prisma.$queryRaw`
+        return await getSharedPrismaClient().$queryRaw`
         SELECT COUNT(*) as count 
         FROM information_schema.tables 
         WHERE table_schema = DATABASE() 
@@ -382,7 +382,7 @@ class AIResponseMonitor {
   async createFailureLogsTable() {
     try {
       await safeQuery(async () => {
-        return await prisma.$executeRaw`
+        return await getSharedPrismaClient().$executeRaw`
         CREATE TABLE IF NOT EXISTS ai_failure_logs (
           id VARCHAR(191) NOT NULL PRIMARY KEY,
           companyId VARCHAR(191) NOT NULL,
@@ -411,7 +411,7 @@ class AIResponseMonitor {
       const startTime = new Date(Date.now() - timeRange);
 
       const stats = await safeQuery(async () => {
-        return await prisma.$queryRaw`
+        return await getSharedPrismaClient().$queryRaw`
         SELECT 
           errorType,
           COUNT(*) as count,
@@ -425,7 +425,7 @@ class AIResponseMonitor {
       }, 4);
 
       const totalFailures = await safeQuery(async () => {
-        return await prisma.$queryRaw`
+        return await getSharedPrismaClient().$queryRaw`
         SELECT COUNT(*) as total
         FROM ai_failure_logs
         WHERE companyId = ${companyId}
@@ -466,7 +466,7 @@ class AIResponseMonitor {
       params.push(limit);
 
       const notifications = await safeQuery(async () => {
-        return await prisma.$queryRawUnsafe(query, ...params);
+        return await getSharedPrismaClient().$queryRawUnsafe(query, ...params);
       }, 3);
 
       return notifications.map(n => ({
@@ -486,7 +486,7 @@ class AIResponseMonitor {
     try {
       // 🔐 SECURITY: عزل الشركات - التأكد أن الإشعار يخص الشركة
       const result = await safeQuery(async () => {
-        return await prisma.$executeRaw`
+        return await getSharedPrismaClient().$executeRaw`
         UPDATE ai_notifications
         SET isRead = true, readAt = NOW()
         WHERE id = ${notificationId} AND companyId = ${companyId}
@@ -511,7 +511,7 @@ class AIResponseMonitor {
   async markAllNotificationsAsRead(companyId) {
     try {
       await safeQuery(async () => {
-        return await prisma.$executeRaw`
+        return await getSharedPrismaClient().$executeRaw`
         UPDATE ai_notifications
         SET isRead = true, readAt = NOW()
         WHERE companyId = ${companyId} AND isRead = false
@@ -537,7 +537,7 @@ class AIResponseMonitor {
       if (companyId) {
         // 🔐 SECURITY: حذف إشعارات شركة محددة فقط
         result = await safeQuery(async () => {
-          return await prisma.$executeRaw`
+          return await getSharedPrismaClient().$executeRaw`
           DELETE FROM ai_notifications
           WHERE createdAt < ${cutoffDate} 
             AND isRead = true
@@ -548,7 +548,7 @@ class AIResponseMonitor {
       } else {
         // حذف جميع الإشعارات القديمة (للمسؤولين فقط)
         result = await safeQuery(async () => {
-          return await prisma.$executeRaw`
+          return await getSharedPrismaClient().$executeRaw`
           DELETE FROM ai_notifications
           WHERE createdAt < ${cutoffDate} AND isRead = true
           `;
@@ -569,7 +569,7 @@ class AIResponseMonitor {
   async getUnreadCount(companyId) {
     try {
       const result = await safeQuery(async () => {
-        return await prisma.$queryRaw`
+        return await getSharedPrismaClient().$queryRaw`
         SELECT COUNT(*) as count
         FROM ai_notifications
         WHERE companyId = ${companyId} AND isRead = false
@@ -587,3 +587,4 @@ class AIResponseMonitor {
 const aiResponseMonitor = new AIResponseMonitor();
 
 module.exports = aiResponseMonitor;
+

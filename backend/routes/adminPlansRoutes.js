@@ -3,7 +3,7 @@ const { getSharedPrismaClient } = require('../services/sharedDatabase');
 const { authenticateToken, requireSuperAdmin } = require('../middleware/superAdminMiddleware');
 
 const router = express.Router();
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 /**
  * Plans Management APIs for Super Admin
@@ -114,7 +114,7 @@ const DEFAULT_PLANS = {
 router.get('/plans', authenticateToken, requireSuperAdmin, async (req, res) => {
   try {
     // Get custom plan configurations from database (if any)
-    const customPlans = await prisma.planConfiguration.findMany({
+    const customPlans = await getSharedPrismaClient().planConfiguration.findMany({
       where: { isActive: true },
       orderBy: { createdAt: 'desc' }
     });
@@ -140,7 +140,7 @@ router.get('/plans', authenticateToken, requireSuperAdmin, async (req, res) => {
     // Get usage statistics for each plan
     const planStats = await Promise.all(
       plans.map(async (plan) => {
-        const companiesCount = await prisma.company.count({
+        const companiesCount = await getSharedPrismaClient().company.count({
           where: { plan: plan.planType, isActive: true }
         });
 
@@ -204,7 +204,7 @@ router.put('/plans/:planType', authenticateToken, requireSuperAdmin, async (req,
     }
 
     // Update or create plan configuration
-    const planConfig = await prisma.planConfiguration.upsert({
+    const planConfig = await getSharedPrismaClient().planConfiguration.upsert({
       where: { planType },
       update: {
         price: parseFloat(price),
@@ -326,3 +326,4 @@ function getFeatureName(featureKey) {
 }
 
 module.exports = router;
+

@@ -6,15 +6,15 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 
 async function checkAIMaxTokens() {
-  const prisma = getSharedPrismaClient();
+  // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
   
   try {
     console.log('🔄 جاري الاتصال بقاعدة البيانات...');
-    await prisma.$connect();
+    await getSharedPrismaClient().$connect();
     console.log('✅ تم الاتصال بقاعدة البيانات بنجاح\n');
     
     // جلب جميع السجلات
-    const allSettings = await prisma.aiSettings.findMany({
+    const allSettings = await getSharedPrismaClient().aiSettings.findMany({
       select: {
         companyId: true,
         aiMaxTokens: true,
@@ -103,7 +103,7 @@ async function checkAIMaxTokens() {
     }
     process.exit(1);
   } finally {
-    await prisma.$disconnect();
+    await getSharedPrismaClient().$disconnect();
   }
 }
 
@@ -116,4 +116,5 @@ checkAIMaxTokens()
     console.error('❌ فشل السكريبت:', error);
     process.exit(1);
   });
+
 

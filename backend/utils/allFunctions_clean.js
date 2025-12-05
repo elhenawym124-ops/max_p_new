@@ -2,7 +2,7 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 const { securityMonitor } = require('../middleware/securityMonitor');
 const fetch = require('node-fetch');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // Global variables
 const processedMessages = new Map();
@@ -33,7 +33,7 @@ class MessageQueueManager {
 
     try {
       // محاولة قراءة الإعدادات من قاعدة البيانات
-      const aiSettings = await prisma.aiSettings.findUnique({
+      const aiSettings = await getSharedPrismaClient().aiSettings.findUnique({
         where: { companyId },
         select: { queueSettings: true }
       });
@@ -303,7 +303,7 @@ async function getPageToken(pageId) {
 
   // البحث في قاعدة البيانات
   try {
-    const page = await prisma.facebookPage.findUnique({
+    const page = await getSharedPrismaClient().facebookPage.findUnique({
       where: { pageId: pageId }
     });
 
@@ -527,7 +527,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
     }
 
     // التحقق من صحة الشركة المحددة
-    const companyExists = await prisma.company.findUnique({
+    const companyExists = await getSharedPrismaClient().company.findUnique({
       where: { id: targetCompanyId }
     });
 
@@ -550,7 +550,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
 
     //console.log(`✅ [SECURITY] تم التحقق من صحة الشركة: ${companyExists.name} (${targetCompanyId})`);
     //console.log(`🔍 [CUSTOMER-DEBUG] Looking for customer with facebookId: ${senderId} in company: ${targetCompanyId}`);
-    let customer = await prisma.customer.findFirst({
+    let customer = await getSharedPrismaClient().customer.findFirst({
       where: {
         facebookId: senderId,
         companyId: targetCompanyId // 🔐 البحث مع العزل
@@ -559,7 +559,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
 
     // إذا لم نجد العميل في الشركة الحالية، فحص إذا كان موجود في شركة أخرى
     if (!customer) {
-      const existingCustomer = await prisma.customer.findFirst({
+      const existingCustomer = await getSharedPrismaClient().customer.findFirst({
         where: { facebookId: senderId }
       });
 
@@ -567,13 +567,13 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
         //console.log(`⚠️ [CUSTOMER-DEBUG] Customer exists in different company: ${existingCustomer.companyId}, moving to: ${targetCompanyId}`);
 
         // نقل العميل للشركة الصحيحة
-        customer = await prisma.customer.update({
+        customer = await getSharedPrismaClient().customer.update({
           where: { id: existingCustomer.id },
           data: { companyId: targetCompanyId }
         });
 
         // نقل جميع المحادثات للشركة الجديدة
-        await prisma.conversation.updateMany({
+        await getSharedPrismaClient().conversation.updateMany({
           where: { customerId: customer.id },
           data: { companyId: targetCompanyId }
         });
@@ -599,7 +599,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
 
           if (userInfo.first_name !== 'Facebook' || userInfo.last_name !== 'User') {
             // تحديث اسم العميل
-            customer = await prisma.customer.update({
+            customer = await getSharedPrismaClient().customer.update({
               where: { id: customer.id },
               data: {
                 firstName: userInfo.first_name || customer.firstName,
@@ -646,7 +646,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
         }
       }
 
-      customer = await prisma.customer.create({
+      customer = await getSharedPrismaClient().customer.create({
         data: {
           facebookId: senderId,
           firstName: userInfo?.first_name || `عميل فيسبوك`,
@@ -663,7 +663,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
 
     // Find or create conversation (include RESOLVED to maintain continuity)
     //console.log(`🔍 [CONVERSATION-DEBUG] Looking for conversation for customer: ${customer.id}`);
-    let conversation = await prisma.conversation.findFirst({
+    let conversation = await getSharedPrismaClient().conversation.findFirst({
       where: {
         customerId: customer.id,
         status: { in: ['ACTIVE', 'RESOLVED'] }
@@ -679,7 +679,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
 
     // If found a RESOLVED conversation, reactivate it
     if (conversation && conversation.status === 'RESOLVED') {
-      conversation = await prisma.conversation.update({
+      conversation = await getSharedPrismaClient().conversation.update({
         where: { id: conversation.id },
         data: {
           status: 'ACTIVE',
@@ -690,7 +690,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
       //console.log(`🔄 Reactivated conversation: ${conversation.id}`);
     } else if (conversation && conversation.status === 'ACTIVE') {
       // Update existing active conversation
-      conversation = await prisma.conversation.update({
+      conversation = await getSharedPrismaClient().conversation.update({
         where: { id: conversation.id },
         data: {
           lastMessageAt: timestamp,
@@ -701,7 +701,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
     }
 
     if (!conversation) {
-      conversation = await prisma.conversation.create({
+      conversation = await getSharedPrismaClient().conversation.create({
         data: {
           customerId: customer.id,
           companyId: customer.companyId,
@@ -830,7 +830,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
       //console.log('🔧 [VALIDATION] Applied fixes:', validation.fixes);
     }
 
-    const newMessage = await prisma.message.create({
+    const newMessage = await getSharedPrismaClient().message.create({
       data: messageData
     });
 
@@ -885,7 +885,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
       //console.log(`🔍 [REPLY-SEARCH] Searching for original message with Facebook ID: ${replyTo.mid}`);
 
       // البحث في الرسائل السابقة في نفس المحادثة
-      const recentMessages = await prisma.message.findMany({
+      const recentMessages = await getSharedPrismaClient().message.findMany({
         where: {
           conversationId: conversation.id,
           isFromCustomer: false // رسائل من النظام/الذكاء الاصطناعي
@@ -935,7 +935,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
     // Check if AI is enabled for this conversation
     //console.log('🔍 Checking AI status for conversation:', conversation.id);
     try {
-      const conversationRecord = await prisma.conversation.findUnique({
+      const conversationRecord = await getSharedPrismaClient().conversation.findUnique({
         where: { id: conversation.id },
         select: { metadata: true }
       });
@@ -974,7 +974,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
       //console.log('🤖 AI Response:', aiResponse);
 
       // Save AI response to database
-      const aiMessage = await prisma.message.create({
+      const aiMessage = await getSharedPrismaClient().message.create({
         data: {
           content: aiResponse,
           type: 'TEXT',
@@ -1022,10 +1022,10 @@ async function handleMessageDirectly(senderId, messageText, webhookEvent) {
     //console.log(`📨 Direct message from ${senderId}: "${messageText}"`);
 
     const { getSharedPrismaClient } = require('../services/sharedDatabase');
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
     // Find or create customer
-    let customer = await prisma.customer.findFirst({
+    let customer = await getSharedPrismaClient().customer.findFirst({
       where: { facebookId: senderId }
     });
 
@@ -1033,7 +1033,7 @@ async function handleMessageDirectly(senderId, messageText, webhookEvent) {
     let companyId = 'cmd5c0c9y0000ymzdd7wtv7ib'; // Default fallback
     try {
       // Try to get the first company from the database
-      const firstCompany = await prisma.company.findFirst();
+      const firstCompany = await getSharedPrismaClient().company.findFirst();
       if (firstCompany) {
         companyId = firstCompany.id;
       }
@@ -1043,7 +1043,7 @@ async function handleMessageDirectly(senderId, messageText, webhookEvent) {
 
     if (!customer) {
       // Create new customer with a valid company ID
-      customer = await prisma.customer.create({
+      customer = await getSharedPrismaClient().customer.create({
         data: {
           facebookId: senderId,
           firstName: 'Facebook',
@@ -1059,7 +1059,7 @@ async function handleMessageDirectly(senderId, messageText, webhookEvent) {
     }
 
     // Find or create conversation
-    let conversation = await prisma.conversation.findFirst({
+    let conversation = await getSharedPrismaClient().conversation.findFirst({
       where: {
         customerId: customer.id,
         status: 'ACTIVE'
@@ -1070,7 +1070,7 @@ async function handleMessageDirectly(senderId, messageText, webhookEvent) {
     const timestamp = new Date();
 
     if (!conversation) {
-      conversation = await prisma.conversation.create({
+      conversation = await getSharedPrismaClient().conversation.create({
         data: {
           customerId: customer.id,
           companyId: customer.companyId,
@@ -1082,7 +1082,7 @@ async function handleMessageDirectly(senderId, messageText, webhookEvent) {
       //console.log(`💬 New conversation created: ${conversation.id}`);
     } else {
       // Update existing conversation
-      conversation = await prisma.conversation.update({
+      conversation = await getSharedPrismaClient().conversation.update({
         where: { id: conversation.id },
         data: {
           lastMessageAt: timestamp,
@@ -1093,7 +1093,7 @@ async function handleMessageDirectly(senderId, messageText, webhookEvent) {
     }
 
     // Save message to database
-    const newMessage = await prisma.message.create({
+    const newMessage = await getSharedPrismaClient().message.create({
       data: {
         content: messageText,
         type: 'TEXT',
@@ -1114,7 +1114,7 @@ async function handleMessageDirectly(senderId, messageText, webhookEvent) {
 async function handleFacebookMessage(webhookEvent, currentPageId = null) {
   try {
     const { getSharedPrismaClient } = require('../services/sharedDatabase');
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
     const senderId = webhookEvent.sender.id;
     const messageText = webhookEvent.message.text;
@@ -1123,7 +1123,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
     //console.log(`📨 Facebook message from ${senderId}: "${messageText}"`);
 
     // Find or create customer
-    let customer = await prisma.customer.findFirst({
+    let customer = await getSharedPrismaClient().customer.findFirst({
       where: { facebookId: senderId }
     });
 
@@ -1131,7 +1131,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
     let companyId = 'cmd5c0c9y0000ymzdd7wtv7ib'; // Default fallback
     try {
       // Try to get the first company from the database
-      const firstCompany = await prisma.company.findFirst();
+      const firstCompany = await getSharedPrismaClient().company.findFirst();
       if (firstCompany) {
         companyId = firstCompany.id;
       }
@@ -1141,7 +1141,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
 
     if (!customer) {
       // Create new customer with a valid company ID
-      customer = await prisma.customer.create({
+      customer = await getSharedPrismaClient().customer.create({
         data: {
           facebookId: senderId,
           firstName: 'Facebook',
@@ -1157,7 +1157,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
     }
 
     // Find or create conversation
-    let conversation = await prisma.conversation.findFirst({
+    let conversation = await getSharedPrismaClient().conversation.findFirst({
       where: {
         customerId: customer.id,
         status: 'ACTIVE'
@@ -1168,7 +1168,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
     const timestamp = new Date();
 
     if (!conversation) {
-      conversation = await prisma.conversation.create({
+      conversation = await getSharedPrismaClient().conversation.create({
         data: {
           customerId: customer.id,
           companyId: customer.companyId,
@@ -1180,7 +1180,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
       //console.log(`💬 New conversation created: ${conversation.id}`);
     } else {
       // Update existing conversation
-      conversation = await prisma.conversation.update({
+      conversation = await getSharedPrismaClient().conversation.update({
         where: { id: conversation.id },
         data: {
           lastMessageAt: timestamp,
@@ -1206,7 +1206,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
     }
 
     // Save message to database
-    const newMessage = await prisma.message.create({
+    const newMessage = await getSharedPrismaClient().message.create({
       data: {
         content: content,
         type: messageType,
@@ -1359,7 +1359,7 @@ if (aiResponse) {
 
     // إنشاء إشعار للمطورين
     try {
-      await prisma.notification.create({
+      await getSharedPrismaClient().notification.create({
         data: {
           title: 'خطأ في مفتاح API',
           message: `لا يوجد مفتاح API نشط للشركة. العميل ${senderId} أرسل رسالة لكن النظام لم يرد.`,
@@ -1425,7 +1425,7 @@ if (aiResponse) {
     try {
       // فحص حالة نظام الأنماط
       const companyId = 'cme4yvrco002kuftceydlrwdi'; // يمكن تحسينه لاحقاً
-      const systemStatus = await prisma.company.findUnique({
+      const systemStatus = await getSharedPrismaClient().company.findUnique({
         where: { id: companyId },
         select: { settings: true }
       });
@@ -1643,7 +1643,7 @@ if (aiResponse) {
 
           const savedMessages = await Promise.all(
             imageMessages.map(messageData =>
-              prisma.message.create({ data: messageData })
+              getSharedPrismaClient().message.create({ data: messageData })
             )
           );
 
@@ -1703,7 +1703,7 @@ if (aiResponse) {
           // Fallback: حفظ فردي في حالة فشل الدفعة
           for (const messageData of imageMessages) {
             try {
-              const imageMessage = await prisma.message.create({ data: messageData });
+              const imageMessage = await getSharedPrismaClient().message.create({ data: messageData });
               //console.log(`💾 [FALLBACK-SAVE] Saved individual image message: ${imageMessage.id}`);
             } catch (individualError) {
               console.error(`❌ [FALLBACK-SAVE] Failed individual save:`, individualError);
@@ -1730,7 +1730,7 @@ if (aiResponse) {
             // حفظ رسالة المتابعة في قاعدة البيانات
             if (followUpResult.success) {
               try {
-                const followUpMessage = await prisma.message.create({
+                const followUpMessage = await getSharedPrismaClient().message.create({
                   data: {
                     content: smartFollowUpMessage,
                     type: 'TEXT',
@@ -1795,7 +1795,7 @@ if (aiResponse) {
   // Save AI response to database (only if not silent)
   if (!aiResponse.silent) {
     const contentToSave = aiResponse.content || aiResponse.imageAnalysis || responseContent;
-    const aiMessage = await prisma.message.create({
+    const aiMessage = await getSharedPrismaClient().message.create({
       data: {
         content: contentToSave,
         type: 'TEXT',
@@ -1911,7 +1911,7 @@ async function sendFacebookMessage(recipientId, messageContent, messageType = 'T
 
     // 🔧 ENHANCED: Check for preferred page in conversation metadata first
     try {
-      const conversation = await prisma.conversation.findFirst({
+      const conversation = await getSharedPrismaClient().conversation.findFirst({
         where: {
           customer: { facebookId: recipientId },
           channel: 'FACEBOOK'
@@ -1963,7 +1963,7 @@ async function sendFacebookMessage(recipientId, messageContent, messageType = 'T
 
     // ثالثاً: البحث عن الصفحة الافتراضية
     if (!pageData) {
-      const defaultPage = await prisma.facebookPage.findFirst({
+      const defaultPage = await getSharedPrismaClient().facebookPage.findFirst({
         where: { status: 'connected' },
         orderBy: { connectedAt: 'desc' }
       });
@@ -2055,3 +2055,4 @@ async function sendFacebookMessage(recipientId, messageContent, messageType = 'T
 
 
 module.exports = { sendFacebookMessage, handleMessageDirectly, updatePageTokenCache, handleFacebookMessage, getPageTokenFromCache, messageQueueManager }
+

@@ -5,7 +5,7 @@
 
 const { getSharedPrismaClient } = require('./sharedDatabase');
 
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 const COMPANY_ID = 'cmem8ayyr004cufakqkcsyn97'; // شركة التسويق
 
@@ -20,7 +20,7 @@ async function checkAIPersonalitySettings() {
     // 1. فحص SystemPrompt (الأولوية الأعلى)
     console.log('📋 1. فحص SystemPrompt (الأولوية الأعلى):');
     console.log('-'.repeat(80));
-    const systemPrompts = await prisma.systemPrompt.findMany({
+    const systemPrompts = await getSharedPrismaClient().systemPrompt.findMany({
       where: {
         companyId: COMPANY_ID
       },
@@ -53,7 +53,7 @@ async function checkAIPersonalitySettings() {
     // 2. فحص AISettings (الأولوية الثانية)
     console.log('\n📋 2. فحص AISettings (الأولوية الثانية):');
     console.log('-'.repeat(80));
-    const aiSettings = await prisma.aiSettings.findFirst({
+    const aiSettings = await getSharedPrismaClient().aiSettings.findFirst({
       where: { companyId: COMPANY_ID }
     });
 
@@ -84,7 +84,7 @@ async function checkAIPersonalitySettings() {
     // 3. فحص Company table (ملاحظة: Company table لا يحتوي على personalityPrompt في الإصدار الحالي)
     console.log('\n📋 3. فحص Company table:');
     console.log('-'.repeat(80));
-    const company = await prisma.company.findUnique({
+    const company = await getSharedPrismaClient().company.findUnique({
       where: { id: COMPANY_ID },
       select: {
         id: true,
@@ -250,8 +250,9 @@ async function checkAIPersonalitySettings() {
   } catch (error) {
     console.error('❌ خطأ في الفحص:', error);
   } finally {
-    await prisma.$disconnect();
+    await getSharedPrismaClient().$disconnect();
   }
 }
 
 checkAIPersonalitySettings();
+

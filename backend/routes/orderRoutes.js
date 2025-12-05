@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const orderController = require('../controller/orderController');
+const verifyToken = require('../utils/verifyToken');
 
-
-router.get('/', orderController.getAllOrders);
-router.put('/:id/status', orderController.updateOrder);
-router.put('/:id', orderController.getOneOrder);
-
+router.get('/', verifyToken.authenticateToken, orderController.getAllOrders);
+router.put('/:id/status', verifyToken.authenticateToken, orderController.updateOrder);
+router.put('/:id', verifyToken.authenticateToken, orderController.getOneOrder);
+router.delete('/delete-all', verifyToken.authenticateToken, orderController.deleteAllOrders);
 
 
 module.exports = router;

@@ -13,6 +13,10 @@ import {
   FunnelIcon,
   ChartBarIcon,
   ChatBubbleLeftRightIcon,
+  TrashIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ArrowDownTrayIcon,
 } from '@heroicons/react/24/outline';
 
 interface Order {
@@ -63,54 +67,70 @@ const Orders: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // Pagination State
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalOrders, setTotalOrders] = useState(0);
+
+  // Bulk Actions State
+  const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
+  const [bulkProcessing, setBulkProcessing] = useState(false);
+
   const [filters, setFilters] = useState({
     status: '',
     paymentStatus: '',
     search: '',
+    startDate: '',
+    endDate: '',
   });
+
   const { formatPrice } = useCurrency();
   const { formatDate } = useDateFormat();
 
   useEffect(() => {
     fetchOrders();
-  }, [filters]);
+  }, [page, limit, filters]); // Fetch when page, limit, or filters change
 
   const fetchOrders = async () => {
     try {
       setLoading(true);
       const token = localStorage.getItem('accessToken');
-      const apiUrl = import.meta.env.VITE_API_URL || 'https://mokhtarelhenawy.online/api/v1';
+      const apiUrl = import.meta.env['VITE_API_URL'] || 'http://localhost:3007/api/v1';
 
-      // استخدام API الطلبات البسيطة
-      const response = await fetch(`${apiUrl}/orders-new/simple`, {
-        headers : {
-          Authorization : `Bearer ${token}`
+      // Build Query String
+      const queryParams = new URLSearchParams({
+        page: page.toString(),
+        limit: limit.toString(),
+        ...(filters.status && { status: filters.status }),
+        ...(filters.paymentStatus && { paymentStatus: filters.paymentStatus }),
+        ...(filters.search && { search: filters.search }),
+        ...(filters.startDate && { startDate: filters.startDate }),
+        ...(filters.endDate && { endDate: filters.endDate }),
+      });
+
+      const response = await fetch(`${apiUrl}/orders-new/simple?${queryParams.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${token}`
         }
       });
       const data = await response.json();
 
       if (data.success) {
-        let filteredOrders = data.data;
-
-        // تطبيق الفلاتر محلياً
-        if (filters.status) {
-          filteredOrders = filteredOrders.filter((order: Order) => order.status === filters.status);
+        setOrders(data.data);
+        if (data.pagination) {
+          setTotalPages(data.pagination.pages);
+          setTotalOrders(data.pagination.total);
+        } else {
+          setTotalPages(1);
+          setTotalOrders(data.data.length);
         }
-
-        if (filters.paymentStatus) {
-          filteredOrders = filteredOrders.filter((order: Order) => order.paymentStatus === filters.paymentStatus);
-        }
-
-        if (filters.search) {
-          const searchTerm = filters.search.toLowerCase();
-          filteredOrders = filteredOrders.filter((order: Order) =>
-            order.orderNumber.toLowerCase().includes(searchTerm) ||
-            order.customerName.toLowerCase().includes(searchTerm) ||
-            order.customerPhone.includes(searchTerm)
-          );
-        }
-
-        setOrders(filteredOrders);
+        // Clear selection on page change or filter change
+        setSelectedOrders([]);
+      } else {
+        console.error('Failed to fetch orders:', data.message);
       }
     } catch (error) {
       console.error('Error fetching orders:', error);
@@ -119,556 +139,687 @@ const Orders: React.FC = () => {
     }
   };
 
-  const updateOrderStatus = async (orderNumber: string, status: string, notes?: string) => {
-    try {
-      const token = localStorage.getItem('accessToken');
-      const apiUrl = import.meta.env.VITE_API_URL || 'https://mokhtarelhenawy.online/api/v1';
-      
-      let response;
-      let success = false;
-      
-      // Try admin API first
-      try {
-        console.log('👤 Trying admin API for order:', orderNumber);
-        response = await fetch(`${apiUrl}/orders-new/simple/${orderNumber}/status`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({ status, notes }),
-        });
-        
-        if (response.ok) {
-          success = true;
-          console.log('✅ Admin API succeeded');
-        }
-      } catch (adminError) {
-        console.log('❌ Admin API failed:', adminError);
-      }
-      
-      // If admin API failed, try public API for guest orders
-      if (!success || response?.status === 404) {
-        console.log('🛒 Trying public API for guest order:', orderNumber);
-        
-        // Get company info for public API
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json'
-        };
-        
-        // In development, we might need to use companyId instead of subdomain
-        if (window.location.hostname === 'localhost' || window.location.hostname.includes('localhost')) {
-          // For development, try to get companyId from user data
-          try {
-            const userResponse = await fetch(`${apiUrl}/auth/me`, {
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-              }
-            });
-            const userData = await userResponse.json();
-            if (userData.data?.companyId) {
-              headers['X-Company-Id'] = userData.data.companyId;
-            }
-          } catch (e) {
-            console.log('Could not get company ID for development');
-          }
-        } else {
-          // For production, use subdomain
-          const subdomain = window.location.hostname.split('.')[0];
-          if (subdomain) {
-            headers['X-Company-Subdomain'] = subdomain;
-          }
-        }
-        
-        response = await fetch(`${apiUrl}/public/orders/${orderNumber}/status`, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify({ status, notes }),
-        });
-        
-        if (response.ok) {
-          success = true;
-          console.log('✅ Public API succeeded');
-        }
-      }
+  const handleFilterChange = (key: string, value: string) => {
+    setFilters(prev => ({ ...prev, [key]: value }));
+    setPage(1); // Reset to page 1 on filter change
+  };
 
-      const data = await response?.json();
-      if (data?.success) {
-        fetchOrders();
-        if (selectedOrder && selectedOrder.orderNumber === orderNumber) {
-          setSelectedOrder(data.data);
-        }
-        alert('تم تحديث حالة الطلب بنجاح');
-      } else {
-        alert('فشل في تحديث حالة الطلب: ' + data.message);
-      }
-    } catch (error) {
-      console.error('Error updating order status:', error);
-      alert('فشل في تحديث حالة الطلب');
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setPage(newPage);
     }
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return <ClockIcon className="h-5 w-5 text-yellow-500" />;
-      case 'confirmed':
-        return <CheckCircleIcon className="h-5 w-5 text-blue-500" />;
-      case 'processing':
-        return <ClockIcon className="h-5 w-5 text-indigo-500" />;
-      case 'shipped':
-        return <TruckIcon className="h-5 w-5 text-purple-500" />;
-      case 'delivered':
-        return <CheckCircleIcon className="h-5 w-5 text-green-500" />;
-      case 'cancelled':
-        return <XCircleIcon className="h-5 w-5 text-red-500" />;
-      default:
-        return <ClockIcon className="h-5 w-5 text-gray-500" />;
+  // Bulk Selection Logic
+  const toggleOrderSelection = (orderNumber: string) => {
+    setSelectedOrders(prev =>
+      prev.includes(orderNumber)
+        ? prev.filter(id => id !== orderNumber)
+        : [...prev, orderNumber]
+    );
+  };
+
+  const toggleAllSelection = () => {
+    if (orders.every(o => selectedOrders.includes(o.orderNumber))) {
+      setSelectedOrders([]);
+    } else {
+      setSelectedOrders(orders.map(o => o.orderNumber));
+    }
+  };
+
+  // Bulk Actions Implementation
+  const handleBulkStatusUpdate = async (newStatus: string) => {
+    if (!newStatus) return;
+    if (!window.confirm(`هل أنت متأكد من تحديث حالة ${selectedOrders.length} طلب إلى "${getStatusText(newStatus)}"?`)) return;
+
+    try {
+      setBulkProcessing(true);
+      const token = localStorage.getItem('accessToken');
+      const apiUrl = import.meta.env['VITE_API_URL'] || 'http://localhost:3007/api/v1';
+
+      const response = await fetch(`${apiUrl}/orders-new/bulk/status`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ orderIds: selectedOrders, status: newStatus })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert('تم تحديث الطلبات بنجاح');
+        fetchOrders(); // Refresh data
+        setSelectedOrders([]);
+      } else {
+        alert(data.message || 'فشل تحديث الطلبات');
+      }
+    } catch (error) {
+      console.error('Error bulk updating:', error);
+      alert('حدث خطأ أثناء التحديث الجماعي');
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!window.confirm(`تحذير: هل أنت متأكد من حذف ${selectedOrders.length} طلب؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
+
+    try {
+      setBulkProcessing(true);
+      const token = localStorage.getItem('accessToken');
+      const apiUrl = import.meta.env['VITE_API_URL'] || 'http://localhost:3007/api/v1';
+
+      const response = await fetch(`${apiUrl}/orders-new/bulk/delete`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ orderIds: selectedOrders })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert('تم حذف الطلبات بنجاح');
+        fetchOrders();
+        setSelectedOrders([]);
+      } else {
+        alert(data.message || 'فشل حذف الطلبات');
+      }
+    } catch (error) {
+      console.error('Error bulk deleting:', error);
+      alert('حدث خطأ أثناء الحذف الجماعي');
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const apiUrl = import.meta.env['VITE_API_URL'] || 'http://localhost:3007/api/v1';
+
+      // Build Query String from current filters
+      const queryParams = new URLSearchParams({
+        ...(filters.status && { status: filters.status }),
+        ...(filters.paymentStatus && { paymentStatus: filters.paymentStatus }),
+        ...(filters.search && { search: filters.search }),
+        ...(filters.startDate && { startDate: filters.startDate }),
+        ...(filters.endDate && { endDate: filters.endDate }),
+      });
+
+      const response = await fetch(`${apiUrl}/orders-new/export?${queryParams.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) throw new Error('Export failed');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `orders_export_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+    } catch (error) {
+      console.error('Error exporting:', error);
+      alert('فشل تصدير البيانات');
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'confirmed':
-        return 'bg-blue-100 text-blue-800';
-      case 'processing':
-        return 'bg-indigo-100 text-indigo-800';
-      case 'shipped':
-        return 'bg-purple-100 text-purple-800';
-      case 'delivered':
-        return 'bg-green-100 text-green-800';
-      case 'cancelled':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
+      case 'pending': return 'bg-yellow-100 text-yellow-800';
+      case 'confirmed': return 'bg-blue-100 text-blue-800';
+      case 'processing': return 'bg-indigo-100 text-indigo-800';
+      case 'shipped': return 'bg-purple-100 text-purple-800';
+      case 'delivered': return 'bg-green-100 text-green-800';
+      case 'cancelled': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'pending':
-        return 'في الانتظار';
-      case 'confirmed':
-        return 'مؤكد';
-      case 'processing':
-        return 'قيد المعالجة';
-      case 'shipped':
-        return 'تم الشحن';
-      case 'delivered':
-        return 'تم التسليم';
-      case 'cancelled':
-        return 'ملغي';
-      default:
-        return status;
+      case 'pending': return 'قيد الانتظار';
+      case 'confirmed': return 'تم التأكيد';
+      case 'processing': return 'قيد التجهيز';
+      case 'shipped': return 'تم الشحن';
+      case 'delivered': return 'تم التوصيل';
+      case 'cancelled': return 'ملغي';
+      default: return status;
     }
   };
 
   const getPaymentStatusColor = (status: string) => {
     switch (status) {
-      case 'paid':
-        return 'bg-green-100 text-green-800';
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'failed':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
+      case 'paid': return 'text-green-600 bg-green-50';
+      case 'pending': return 'text-yellow-600 bg-yellow-50';
+      case 'failed': return 'text-red-600 bg-red-50';
+      default: return 'text-gray-600 bg-gray-50';
     }
   };
 
   const getPaymentStatusText = (status: string) => {
     switch (status) {
-      case 'paid':
-        return 'مدفوع';
-      case 'pending':
-        return 'في الانتظار';
-      case 'failed':
-        return 'فشل';
-      default:
-        return status;
+      case 'paid': return 'تم الدفع';
+      case 'pending': return 'انتظار الدفع';
+      case 'failed': return 'فشل الدفع';
+      default: return status;
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-      </div>
-    );
-  }
+  // Legacy single actions (kept for modal usage)
+  const handleDeleteAllOrders = async () => { /* Not commonly used now, kept just in case or remove? Keeping for now */
+    if (!window.confirm('هل أنت متأكد من حذف جميع الطلبات؟ هذا الإجراء لا يمكن التراجع عنه.')) return;
+    try {
+      setDeleting(true);
+      const token = localStorage.getItem('accessToken');
+      const apiUrl = import.meta.env['VITE_API_URL'] || 'http://localhost:3007/api/v1';
+      const response = await fetch(`${apiUrl}/orders/delete-all`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (data.success) { fetchOrders(); alert('تم حذف جميع الطلبات بنجاح'); }
+      else { alert(data.message || 'فشل حذف الطلبات'); }
+    } catch (error) { console.error('Error:', error); alert('خطأ أثناء الحذف'); }
+    finally { setDeleting(false); }
+  };
+
+  const handleUpdateStatus = async (orderNumber: string, newStatus: string) => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const apiUrl = import.meta.env['VITE_API_URL'] || 'http://localhost:3007/api/v1';
+      const response = await fetch(`${apiUrl}/orders-new/simple/${orderNumber}/status`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setOrders(orders.map(order =>
+          order.orderNumber === orderNumber ? { ...order, status: newStatus as any } : order
+        ));
+        if (selectedOrder && selectedOrder.orderNumber === orderNumber) {
+          setSelectedOrder({ ...selectedOrder, status: newStatus as any });
+        }
+      } else { alert(data.message || 'فشل تحديث الحالة'); }
+    } catch (error) { console.error('Error:', error); alert('خطأ أثناء التحديث'); }
+  };
+
+  const handleUpdatePaymentStatus = async (orderNumber: string, newStatus: string) => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const apiUrl = import.meta.env['VITE_API_URL'] || 'http://localhost:3007/api/v1';
+      const response = await fetch(`${apiUrl}/orders-new/simple/${orderNumber}/payment-status`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentStatus: newStatus })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setOrders(orders.map(order =>
+          order.orderNumber === orderNumber ? { ...order, paymentStatus: newStatus as any } : order
+        ));
+        if (selectedOrder && selectedOrder.orderNumber === orderNumber) {
+          setSelectedOrder({ ...selectedOrder, paymentStatus: newStatus as any });
+        }
+      } else { alert(data.message || 'فشل تحديث حالة الدفع'); }
+    } catch (error) { console.error('Error:', error); alert('خطأ أثناء تحديث الدفع'); }
+  };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center">
-              <ShoppingBagIcon className="h-8 w-8 text-indigo-600 mr-3" />
-              إدارة الطلبات
-            </h1>
-            <p className="mt-2 text-gray-600">متابعة ومعالجة طلبات العملاء</p>
-          </div>
+    <div className="p-6">
+      <div className="mb-8 flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">الطلبات</h1>
+          <p className="text-gray-600">إدارة ومتابعة طلبات العملاء</p>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <ArrowDownTrayIcon className="w-5 h-5" />
+            <span>تصدير Excel</span>
+          </button>
           <Link
             to="/orders/stats"
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
           >
-            <ChartBarIcon className="h-5 w-5 mr-2" />
-            الإحصائيات
+            <ChartBarIcon className="w-5 h-5" />
+            <span>الإحصائيات</span>
           </Link>
+          <button
+            onClick={handleDeleteAllOrders}
+            disabled={deleting}
+            className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
+          >
+            <TrashIcon className="w-5 h-5" />
+            <span>{deleting ? 'جاري الحذف...' : 'حذف الكل'}</span>
+          </button>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="bg-white shadow rounded-lg p-6 mb-8">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              البحث
-            </label>
-            <div className="relative">
-              <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 absolute left-3 top-3" />
-              <input
-                type="text"
-                value={filters.search}
-                onChange={(e) => setFilters({...filters, search: e.target.value})}
-                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="رقم الطلب أو اسم العميل..."
-              />
-            </div>
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="relative">
+            <MagnifyingGlassIcon className="w-5 h-5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="بحث برقم الطلب أو اسم العميل..."
+              value={filters.search}
+              onChange={(e) => handleFilterChange('search', e.target.value)}
+              className="w-full pr-10 pl-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              حالة الطلب
-            </label>
+          <div className="relative">
+            <FunnelIcon className="w-5 h-5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2" />
             <select
               value={filters.status}
-              onChange={(e) => setFilters({...filters, status: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              onChange={(e) => handleFilterChange('status', e.target.value)}
+              className="w-full pr-10 pl-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white"
             >
-              <option value="">جميع الحالات</option>
-              <option value="pending">في الانتظار</option>
-              <option value="confirmed">مؤكد</option>
-              <option value="processing">قيد المعالجة</option>
+              <option value="">كل الحالات</option>
+              <option value="pending">قيد الانتظار</option>
+              <option value="confirmed">تم التأكيد</option>
+              <option value="processing">قيد التجهيز</option>
               <option value="shipped">تم الشحن</option>
-              <option value="delivered">تم التسليم</option>
+              <option value="delivered">تم التوصيل</option>
               <option value="cancelled">ملغي</option>
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              حالة الدفع
-            </label>
+          <div className="relative">
             <select
               value={filters.paymentStatus}
-              onChange={(e) => setFilters({...filters, paymentStatus: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              onChange={(e) => handleFilterChange('paymentStatus', e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white"
             >
-              <option value="">جميع حالات الدفع</option>
-              <option value="paid">مدفوع</option>
-              <option value="pending">في الانتظار</option>
-              <option value="failed">فشل</option>
+              <option value="">كل حالات الدفع</option>
+              <option value="paid">تم الدفع</option>
+              <option value="pending">انتظار الدفع</option>
+              <option value="failed">فشل الدفع</option>
             </select>
           </div>
 
-          <div className="flex items-end">
-            <button
-              onClick={() => setFilters({ status: '', paymentStatus: '', search: '' })}
-              className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
-            >
-              إعادة تعيين
-            </button>
+          {/* Date Range Filters */}
+          <div>
+            <input
+              type="date"
+              value={filters.startDate}
+              onChange={(e) => handleFilterChange('startDate', e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="من تاريخ"
+            />
+          </div>
+          <div>
+            <input
+              type="date"
+              value={filters.endDate}
+              onChange={(e) => handleFilterChange('endDate', e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="إلى تاريخ"
+            />
           </div>
         </div>
       </div>
 
+      {/* Bulk Toolbar */}
+      {selectedOrders.length > 0 && (
+        <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <CheckCircleIcon className="w-6 h-6 text-blue-600" />
+            <span className="font-medium text-blue-900">تم تحديد {selectedOrders.length} طلب</span>
+          </div>
+          <div className="flex gap-3">
+            <select
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val) {
+                  handleBulkStatusUpdate(val);
+                  e.target.value = ''; // Reset
+                }
+              }}
+              className="px-4 py-2 border border-blue-200 rounded-lg text-sm focus:ring-blue-500 bg-white"
+              disabled={bulkProcessing}
+            >
+              <option value="">تحديث الحالة...</option>
+              <option value="pending">قيد الانتظار</option>
+              <option value="confirmed">تم التأكيد</option>
+              <option value="processing">قيد التجهيز</option>
+              <option value="shipped">تم الشحن</option>
+              <option value="delivered">تم التوصيل</option>
+              <option value="cancelled">ملغي</option>
+            </select>
+            <button
+              onClick={handleBulkDelete}
+              disabled={bulkProcessing}
+              className="px-4 py-2 bg-red-100 text-red-700 rounded-lg text-sm hover:bg-red-200 transition-colors border border-red-200"
+            >
+              {bulkProcessing ? 'جال المعالجة...' : 'حذف المحدد'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Orders Table */}
-      <div className="bg-white shadow rounded-lg overflow-hidden">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+          <table className="w-full text-right">
+            <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  رقم الطلب
+                <th className="px-6 py-4 w-10">
+                  <input
+                    type="checkbox"
+                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    onChange={toggleAllSelection}
+                    checked={orders.length > 0 && orders.every(o => selectedOrders.includes(o.orderNumber))}
+                  />
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  العميل
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  المبلغ الإجمالي
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  حالة الطلب
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  حالة الدفع
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  تاريخ الطلب
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  الإجراءات
-                </th>
+                <th className="px-6 py-4 text-sm font-semibold text-gray-600">رقم الطلب</th>
+                <th className="px-6 py-4 text-sm font-semibold text-gray-600">العميل</th>
+                <th className="px-6 py-4 text-sm font-semibold text-gray-600">المبلغ</th>
+                <th className="px-6 py-4 text-sm font-semibold text-gray-600">الحالة</th>
+                <th className="px-6 py-4 text-sm font-semibold text-gray-600">الدفع</th>
+                <th className="px-6 py-4 text-sm font-semibold text-gray-600">التاريخ</th>
+                <th className="px-6 py-4 text-sm font-semibold text-gray-600">إجراءات</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {orders.map((order) => (
-                <tr key={order.orderNumber} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">
-                      {order.orderNumber}
-                    </div>
-                    {order.trackingNumber && (
-                      <div className="text-xs text-gray-500">
-                        تتبع: {order.trackingNumber}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">
-                      {order.customerName}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {order.customerPhone}
-                    </div>
-                    {order.shippingAddress && (
-                      <div className="text-xs text-gray-400">
-                        {order.shippingAddress.city}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">
-                      {formatPrice(order.total)}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {order.items?.length || 0} منتج
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.status)}`}>
-                      {getStatusIcon(order.status)}
-                      <span className="mr-1">{getStatusText(order.status)}</span>
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPaymentStatusColor(order.paymentStatus)}`}>
-                      {getPaymentStatusText(order.paymentStatus)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {formatDate(order.createdAt)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex space-x-2 space-x-reverse justify-center">
-                      <Link
-                        to={`/orders/details/${order.orderNumber}`}
-                        className="text-indigo-600 hover:text-indigo-900 flex items-center"
-                        title="عرض تفاصيل الطلب"
-                      >
-                        <EyeIcon className="h-4 w-4 mr-1" />
-                        <span className="text-xs">تفاصيل</span>
-                      </Link>
-
-                      <button
-                        onClick={() => {
-                          setSelectedOrder(order);
-                          setShowOrderModal(true);
-                        }}
-                        className="text-gray-600 hover:text-gray-900 flex items-center"
-                        title="عرض سريع"
-                      >
-                        <EyeIcon className="h-4 w-4 mr-1" />
-                        <span className="text-xs">سريع</span>
-                      </button>
-
-                      {order.conversationId && (
-                        <button
-                          onClick={() => {
-                            const url = `/conversations-improved?conversationId=${order.conversationId}`;
-                            console.log('🔗 Opening conversation from orders page:', url);
-                            console.log('📋 Conversation ID:', order.conversationId);
-                            window.open(url, '_blank', 'noopener,noreferrer');
-                          }}
-                          className="text-blue-600 hover:text-blue-900 flex items-center cursor-pointer"
-                          title="عرض المحادثة الأصلية (نافذة جديدة)"
-                        >
-                          <ChatBubbleLeftRightIcon className="h-4 w-4 mr-1" />
-                          <span className="text-xs">محادثة</span>
-                        </button>
-                      )}
-                      {order.status === 'pending' && (
-                        <button
-                          onClick={() => updateOrderStatus(order.orderNumber, 'confirmed', 'تم تأكيد الطلب')}
-                          className="text-green-600 hover:text-green-900 flex items-center"
-                          title="تأكيد الطلب"
-                        >
-                          <CheckCircleIcon className="h-4 w-4 mr-1" />
-                          <span className="text-xs">تأكيد</span>
-                        </button>
-                      )}
-                      {order.status === 'confirmed' && (
-                        <button
-                          onClick={() => updateOrderStatus(order.orderNumber, 'processing', 'بدء معالجة الطلب')}
-                          className="text-indigo-600 hover:text-indigo-900 text-xs px-2 py-1 border border-indigo-600 rounded"
-                        >
-                          معالجة
-                        </button>
-                      )}
-                      {order.status === 'processing' && (
-                        <button
-                          onClick={() => {
-                            const trackingNumber = prompt('رقم التتبع:');
-                            const notes = trackingNumber ? `تم الشحن - رقم التتبع: ${trackingNumber}` : 'تم الشحن';
-                            updateOrderStatus(order.orderNumber, 'shipped', notes);
-                          }}
-                          className="text-purple-600 hover:text-purple-900 text-xs px-2 py-1 border border-purple-600 rounded"
-                        >
-                          شحن
-                        </button>
-                      )}
-                      {order.status === 'shipped' && (
-                        <button
-                          onClick={() => updateOrderStatus(order.orderNumber, 'delivered', 'تم تسليم الطلب بنجاح')}
-                          className="text-green-600 hover:text-green-900 text-xs px-2 py-1 border border-green-600 rounded"
-                        >
-                          تسليم
-                        </button>
-                      )}
+            <tbody className="divide-y divide-gray-100">
+              {loading ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
+                    <div className="flex flex-col items-center justify-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+                      <p>جاري تحميل الطلبات...</p>
                     </div>
                   </td>
                 </tr>
-              ))}
+              ) : orders.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
+                    <div className="flex flex-col items-center justify-center">
+                      <ShoppingBagIcon className="w-12 h-12 text-gray-300 mb-4" />
+                      <p className="text-lg font-medium text-gray-900">لا توجد طلبات</p>
+                      <p className="text-sm text-gray-500 mt-1">لم يتم العثور على طلبات تطابق معايير البحث</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                orders.map((order) => (
+                  <tr key={order.id} className={`hover:bg-gray-50 transition-colors ${selectedOrders.includes(order.orderNumber) ? 'bg-blue-50' : ''}`}>
+                    <td className="px-6 py-4">
+                      <input
+                        type="checkbox"
+                        className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        checked={selectedOrders.includes(order.orderNumber)}
+                        onChange={() => toggleOrderSelection(order.orderNumber)}
+                      />
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="font-medium text-gray-900">#{order.orderNumber}</span>
+                      {order.metadata?.isGuestOrder && (
+                        <span className="mr-2 px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full">زائر</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col">
+                        <span className="text-gray-900 font-medium">{order.customerName || 'غير محدد'}</span>
+                        <span className="text-gray-500 text-sm" dir="ltr">{order.customerPhone}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 font-medium text-gray-900">
+                      {formatPrice(order.total || 0)}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.status)}`}>
+                        {getStatusText(order.status)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPaymentStatusColor(order.paymentStatus)}`}>
+                        {getPaymentStatusText(order.paymentStatus)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-gray-500 text-sm">
+                      {formatDate(order.createdAt)}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setSelectedOrder(order);
+                            setShowOrderModal(true);
+                          }}
+                          className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                          title="عرض التفاصيل"
+                        >
+                          <EyeIcon className="w-5 h-5" />
+                        </button>
+                        <Link
+                          to={`/orders/details/${order.orderNumber}`}
+                          className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                          title="صفحة الطلب"
+                        >
+                          <ShoppingBagIcon className="w-5 h-5" />
+                        </Link>
+                        {order.conversationId && (
+                          <Link
+                            to={`/whatsapp?conversationId=${order.conversationId}`}
+                            className="p-1 text-gray-400 hover:text-green-600 transition-colors"
+                            title="المحادثة"
+                          >
+                            <ChatBubbleLeftRightIcon className="w-5 h-5" />
+                          </Link>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
 
-        {orders.length === 0 && (
-          <div className="text-center py-12">
-            <ShoppingBagIcon className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">لا توجد طلبات</h3>
-            <p className="mt-1 text-sm text-gray-500">لم يتم العثور على طلبات تطابق المعايير المحددة.</p>
+        {/* Pagination Controls */}
+        {!loading && orders.length > 0 && (
+          <div className="bg-gray-50 px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+            <div className="text-sm text-gray-500">
+              عرض {((page - 1) * limit) + 1} إلى {Math.min(page * limit, totalOrders)} من أصل {totalOrders} طلب
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handlePageChange(page - 1)}
+                disabled={page === 1}
+                className="p-2 border border-gray-300 rounded-lg hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRightIcon className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let p = i + 1;
+                  if (totalPages > 5 && page > 3) {
+                    p = page - 2 + i;
+                  }
+                  if (p > totalPages) return null;
+
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => handlePageChange(p)}
+                      className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm font-medium transition-colors ${page === p
+                          ? 'bg-blue-600 text-white'
+                          : 'text-gray-600 hover:bg-gray-100'
+                        }`}
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                onClick={() => handlePageChange(page + 1)}
+                disabled={page === totalPages}
+                className="p-2 border border-gray-300 rounded-lg hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeftIcon className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         )}
       </div>
 
       {/* Order Details Modal */}
       {showOrderModal && selectedOrder && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-            <div className="mt-3">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-medium text-gray-900">
-                  تفاصيل الطلب {selectedOrder.orderNumber}
-                </h3>
-                <button
-                  onClick={() => setShowOrderModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <XCircleIcon className="h-6 w-6" />
-                </button>
-              </div>
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div className="fixed inset-0 transition-opacity" aria-hidden="true">
+              <div className="absolute inset-0 bg-gray-500 opacity-75" onClick={() => setShowOrderModal(false)}></div>
+            </div>
 
-              <div className="space-y-4">
-                {/* Customer Info */}
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-2">معلومات العميل</h4>
-                  <div className="bg-gray-50 p-3 rounded">
-                    <p><strong>الاسم:</strong> {selectedOrder.customerName}</p>
-                    <p><strong>الهاتف:</strong> {selectedOrder.customerPhone}</p>
-                    {selectedOrder.shippingAddress && (
-                      <p><strong>المدينة:</strong> {selectedOrder.shippingAddress.city}</p>
-                    )}
-                  </div>
-                </div>
+            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
 
-                {/* Order Items */}
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-2">المنتجات</h4>
-                  <div className="bg-gray-50 p-3 rounded">
-                    {selectedOrder.items?.map((item, index) => (
-                      <div key={index} className="flex justify-between items-center py-2 border-b border-gray-200 last:border-b-0">
+            <div className="inline-block align-bottom bg-white rounded-lg text-right overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div className="sm:flex sm:items-start">
+                  <div className="mt-3 text-center sm:mt-0 sm:mr-4 sm:text-right w-full">
+                    <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-lg leading-6 font-medium text-gray-900" id="modal-title">
+                        تفاصيل الطلب #{selectedOrder.orderNumber}
+                      </h3>
+                      <button
+                        onClick={() => setShowOrderModal(false)}
+                        className="text-gray-400 hover:text-gray-500"
+                      >
+                        <span className="sr-only">إغلاق</span>
+                        <XCircleIcon className="h-6 w-6" />
+                      </button>
+                    </div>
+
+                    {/* Customer Info */}
+                    <div className="bg-gray-50 p-4 rounded-lg mb-6">
+                      <h4 className="text-sm font-medium text-gray-900 mb-3">معلومات العميل</h4>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
                         <div>
-                          <p className="font-medium">{item.name}</p>
-                          <p className="text-sm text-gray-600">الكمية: {item.quantity}</p>
-                          {item.metadata && (
-                            <div className="text-xs text-gray-500 mt-1">
-                              {item.metadata.color && <span>اللون: {item.metadata.color} </span>}
-                              {item.metadata.size && <span>المقاس: {item.metadata.size}</span>}
-                            </div>
-                          )}
+                          <span className="text-gray-500 block">الاسم</span>
+                          <span className="text-gray-900 font-medium">{selectedOrder.customerName}</span>
                         </div>
-                        <div className="text-left">
-                          <p className="font-medium">{formatPrice(item.total)}</p>
-                          <p className="text-sm text-gray-600">{formatPrice(item.price)}/قطعة</p>
+                        <div>
+                          <span className="text-gray-500 block">رقم الهاتف</span>
+                          <span className="text-gray-900 font-medium" dir="ltr">{selectedOrder.customerPhone}</span>
+                        </div>
+                        <div className="col-span-2">
+                          <span className="text-gray-500 block">العنوان</span>
+                          <span className="text-gray-900 font-medium">
+                            {typeof selectedOrder.shippingAddress === 'string'
+                              ? selectedOrder.shippingAddress
+                              : `${selectedOrder.shippingAddress?.city || ''} - ${selectedOrder.shippingAddress?.country || ''}`}
+                          </span>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
+                    </div>
 
-                {/* Order Summary */}
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-2">ملخص الطلب</h4>
-                  <div className="bg-gray-50 p-3 rounded">
-                    <div className="flex justify-between py-1">
-                      <span>المجموع الفرعي:</span>
-                      <span>{formatPrice(selectedOrder.subtotal)}</span>
-                    </div>
-                    <div className="flex justify-between py-1">
-                      <span>الضريبة:</span>
-                      <span>{formatPrice(selectedOrder.tax || 0)}</span>
-                    </div>
-                    <div className="flex justify-between py-1">
-                      <span>الشحن:</span>
-                      <span>{formatPrice(selectedOrder.shipping)}</span>
-                    </div>
-                    <div className="flex justify-between py-1 font-bold border-t border-gray-300 mt-2 pt-2">
-                      <span>المجموع الإجمالي:</span>
-                      <span>{formatPrice(selectedOrder.total)}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Order Status */}
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-2">حالة الطلب</h4>
-                  <div className="bg-gray-50 p-3 rounded">
-                    <div className="flex justify-between items-center">
-                      <span>الحالة الحالية:</span>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(selectedOrder.status)}`}>
-                        {getStatusIcon(selectedOrder.status)}
-                        <span className="mr-1">{getStatusText(selectedOrder.status)}</span>
-                      </span>
-                    </div>
-                    {selectedOrder.trackingNumber && (
-                      <div className="flex justify-between items-center mt-2">
-                        <span>رقم التتبع:</span>
-                        <span className="font-mono">{selectedOrder.trackingNumber}</span>
+                    {/* Order Items */}
+                    <div className="mb-6">
+                      <h4 className="text-sm font-medium text-gray-900 mb-3">المنتجات</h4>
+                      <div className="border border-gray-200 rounded-lg overflow-hidden">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">المنتج</th>
+                              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">الكمية</th>
+                              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">السعر</th>
+                              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">الإجمالي</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {selectedOrder.items.map((item) => (
+                              <tr key={item.id}>
+                                <td className="px-4 py-2 text-sm text-gray-900">{item.name}</td>
+                                <td className="px-4 py-2 text-sm text-gray-900">{item.quantity}</td>
+                                <td className="px-4 py-2 text-sm text-gray-900">{formatPrice(item.price || 0)}</td>
+                                <td className="px-4 py-2 text-sm text-gray-900">{formatPrice(item.total || 0)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
-                    )}
-                  </div>
-                </div>
+                    </div>
 
-                {selectedOrder.notes && (
-                  <div>
-                    <h4 className="font-medium text-gray-900 mb-2">ملاحظات</h4>
-                    <div className="bg-gray-50 p-3 rounded">
-                      <p>{selectedOrder.notes}</p>
+                    {/* Order Summary */}
+                    <div className="border-t border-gray-200 pt-4">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-gray-600">المجموع الفرعي</span>
+                        <span className="font-medium">{formatPrice(selectedOrder.subtotal || 0)}</span>
+                      </div>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-gray-600">الشحن</span>
+                        <span className="font-medium">{formatPrice(selectedOrder.shipping || 0)}</span>
+                      </div>
+                      <div className="flex justify-between items-center pt-2 border-t border-gray-100">
+                        <span className="text-lg font-bold text-gray-900">الإجمالي</span>
+                        <span className="text-lg font-bold text-blue-600">{formatPrice(selectedOrder.total || 0)}</span>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="mt-6 flex gap-3 border-t border-gray-200 pt-4">
+                      <div className="flex-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">تحديث الحالة</label>
+                        <select
+                          value={selectedOrder.status}
+                          onChange={(e) => handleUpdateStatus(selectedOrder.orderNumber, e.target.value)}
+                          className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        >
+                          <option value="pending">قيد الانتظار</option>
+                          <option value="confirmed">تم التأكيد</option>
+                          <option value="processing">قيد التجهيز</option>
+                          <option value="shipped">تم الشحن</option>
+                          <option value="delivered">تم التوصيل</option>
+                          <option value="cancelled">ملغي</option>
+                        </select>
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">حالة الدفع</label>
+                        <select
+                          value={selectedOrder.paymentStatus}
+                          onChange={(e) => handleUpdatePaymentStatus(selectedOrder.orderNumber, e.target.value)}
+                          className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        >
+                          <option value="pending">انتظار الدفع</option>
+                          <option value="paid">تم الدفع</option>
+                          <option value="failed">فشل الدفع</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
-                )}
+                </div>
               </div>
-
-              <div className="flex justify-end mt-6">
+              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                <Link
+                  to={`/orders/details/${selectedOrder.orderNumber}`}
+                  className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  عرض التفاصيل الكاملة
+                </Link>
                 <button
+                  type="button"
+                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
                   onClick={() => setShowOrderModal(false)}
-                  className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
                 >
                   إغلاق
                 </button>

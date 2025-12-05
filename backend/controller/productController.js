@@ -1,6 +1,6 @@
 // Use shared database service instead of creating new PrismaClient
 const { getSharedPrismaClient, initializeSharedDatabase, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // Create alias for executeWithRetry to match usage
 const withRetry = executeWithRetry;
@@ -18,7 +18,7 @@ const getAllProducts = async (req, res) => {
 
         //console.log('📦 Fetching products for company:', companyId);
 
-        const products = await prisma.product.findMany({
+        const products = await getSharedPrismaClient().product.findMany({
             where: { companyId }, // فلترة بـ companyId
             include: {
                 category: true, // تضمين بيانات الفئة
@@ -77,7 +77,7 @@ const getCategory = async (req, res) => {
         //console.log('🏢 [server] Loading categories for company:', companyId);
 
         const categories = await withRetry(() =>
-            prisma.category.findMany({
+            getSharedPrismaClient().category.findMany({
                 where: { companyId }, // 🔐 فلترة بـ companyId من المستخدم المصادق عليه
                 include: {
                     _count: {
@@ -148,7 +148,7 @@ const createNewCategory = async(req , res)=>{
       .replace(/--+/g, '-');
 
     // Check if category already exists in the same company
-    const existingCategory = await prisma.category.findFirst({
+    const existingCategory = await getSharedPrismaClient().category.findFirst({
       where: {
         name: name.trim(),
         companyId // 🔐 فحص في نفس الشركة فقط
@@ -165,7 +165,7 @@ const createNewCategory = async(req , res)=>{
     //console.log('📦 Creating category for company:', companyId);
 
     // Create new category
-    const newCategory = await prisma.category.create({
+    const newCategory = await getSharedPrismaClient().category.create({
       data: {
         name: name.trim(),
         slug: categorySlug,
@@ -230,7 +230,7 @@ const updateCategory = async(req , res)=>{
     }
 
     // Check if category exists and belongs to the company
-    const existingCategory = await prisma.category.findFirst({
+    const existingCategory = await getSharedPrismaClient().category.findFirst({
       where: {
         id,
         companyId
@@ -252,7 +252,7 @@ const updateCategory = async(req , res)=>{
       .replace(/--+/g, '-');
 
     // Check if name is already taken by another category
-    const duplicateCategory = await prisma.category.findFirst({
+    const duplicateCategory = await getSharedPrismaClient().category.findFirst({
       where: {
         name: name.trim(),
         companyId,
@@ -268,7 +268,7 @@ const updateCategory = async(req , res)=>{
     }
 
     // Update category
-    const updatedCategory = await prisma.category.update({
+    const updatedCategory = await getSharedPrismaClient().category.update({
       where: { id },
       data: {
         name: name.trim(),
@@ -314,7 +314,7 @@ const deleteCategory = async(req , res)=>{
     const { id } = req.params;
 
     // Check if category exists and belongs to the company
-    const existingCategory = await prisma.category.findFirst({
+    const existingCategory = await getSharedPrismaClient().category.findFirst({
       where: {
         id,
         companyId // 🔐 التأكد أن الفئة تنتمي لنفس الشركة
@@ -329,7 +329,7 @@ const deleteCategory = async(req , res)=>{
     }
 
     // Check if category has products
-    const productsCount = await prisma.product.count({
+    const productsCount = await getSharedPrismaClient().product.count({
       where: { categoryId: id }
     });
 
@@ -341,7 +341,7 @@ const deleteCategory = async(req , res)=>{
     }
 
     // Check if category has subcategories
-    const subcategoriesCount = await prisma.category.count({
+    const subcategoriesCount = await getSharedPrismaClient().category.count({
       where: { parentId: id }
     });
 
@@ -353,7 +353,7 @@ const deleteCategory = async(req , res)=>{
     }
 
     // Delete category
-    await prisma.category.delete({
+    await getSharedPrismaClient().category.delete({
       where: { id }
     });
 
@@ -377,7 +377,7 @@ const getSingleProduct = async(req , res)=>{
 
     const { id } = req.params;
 
-    const product = await prisma.product.findUnique({
+    const product = await getSharedPrismaClient().product.findUnique({
       where: { id: id },
       include: {
         variants: {
@@ -516,7 +516,7 @@ const updateSingleProduct = async(req , res)=>{
     // Validate categoryId if provided
     if (updateData.categoryId) {
       try {
-        const categoryExists = await prisma.category.findUnique({
+        const categoryExists = await getSharedPrismaClient().category.findUnique({
           where: { id: updateData.categoryId }
         });
 
@@ -533,7 +533,7 @@ const updateSingleProduct = async(req , res)=>{
     // Validate companyId if provided
     if (updateData.companyId) {
       try {
-        const companyExists = await prisma.company.findUnique({
+        const companyExists = await getSharedPrismaClient().company.findUnique({
           where: { id: updateData.companyId }
         });
 
@@ -549,7 +549,7 @@ const updateSingleProduct = async(req , res)=>{
 
     //console.log(`🔧 [server] Final update data:`, updateData);
 
-    const product = await prisma.product.update({
+    const product = await getSharedPrismaClient().product.update({
       where: { id: id },
       data: updateData
     });
@@ -575,7 +575,7 @@ const deleteSingleProduct = async(req , res)=>{
 
     const { id } = req.params;
 
-    await prisma.product.delete({
+    await getSharedPrismaClient().product.delete({
       where: { id: id }
     });
 
@@ -621,7 +621,7 @@ const createProduct = async(req , res)=>{
     let productSku = sku || null;
     if (productSku) {
       // Ensure SKU is unique within the company
-      let skuExists = await prisma.product.findFirst({
+      let skuExists = await getSharedPrismaClient().product.findFirst({
         where: {
           sku: productSku,
           companyId // فحص SKU ضمن الشركة فقط
@@ -640,7 +640,7 @@ const createProduct = async(req , res)=>{
     // معالجة الفئة - التحقق من وجودها
     let categoryId = null;
     if (category && category.trim() !== '') {
-      const categoryExists = await prisma.category.findFirst({
+      const categoryExists = await getSharedPrismaClient().category.findFirst({
         where: { 
           id: category,
           companyId 
@@ -651,7 +651,7 @@ const createProduct = async(req , res)=>{
       }
     }
 
-    const product = await prisma.product.create({
+    const product = await getSharedPrismaClient().product.create({
       data: {
         name,
         description: description || '',
@@ -709,7 +709,7 @@ const deleteImageFromOneProduct = async(req , res)=>{
     }
 
     // Get current product
-    const product = await prisma.product.findUnique({
+    const product = await getSharedPrismaClient().product.findUnique({
       where: { id: id }
     });
 
@@ -748,7 +748,7 @@ const deleteImageFromOneProduct = async(req , res)=>{
     //console.log(`➖ [IMAGE-DELETE] Removed image. Images count: ${initialCount} → ${finalCount}`);
 
     // Update product in database
-    const updatedProduct = await prisma.product.update({
+    const updatedProduct = await getSharedPrismaClient().product.update({
       where: { id: id },
       data: {
         images: JSON.stringify(currentImages)
@@ -801,7 +801,7 @@ const uploadProductImages = async(req, res) => {
     }
 
     // Verify product exists and belongs to company
-    const product = await prisma.product.findFirst({
+    const product = await getSharedPrismaClient().product.findFirst({
       where: { id, companyId }
     });
 
@@ -825,7 +825,7 @@ const uploadProductImages = async(req, res) => {
     currentImages.push(...newImageUrls);
 
     // Update product
-    await prisma.product.update({
+    await getSharedPrismaClient().product.update({
       where: { id },
       data: {
         images: JSON.stringify(currentImages)
@@ -885,7 +885,7 @@ const addImageToProduct = async(req , res)=>{
     }
 
     // Get current product
-    const product = await prisma.product.findUnique({
+    const product = await getSharedPrismaClient().product.findUnique({
       where: { id: id }
     });
 
@@ -922,7 +922,7 @@ const addImageToProduct = async(req , res)=>{
     //console.log(`➕ [IMAGE-ADD] Added image. Images count: ${currentImages.length - 1} → ${currentImages.length}`);
 
     // Update product in database
-    const updatedProduct = await prisma.product.update({
+    const updatedProduct = await getSharedPrismaClient().product.update({
       where: { id: id },
       data: {
         images: JSON.stringify(currentImages)
@@ -967,7 +967,7 @@ const createProductVariant = async (req, res) => {
     }
 
     // التحقق من أن المنتج ينتمي للشركة
-    const product = await prisma.product.findFirst({
+    const product = await getSharedPrismaClient().product.findFirst({
       where: {
         id,
         companyId
@@ -1016,7 +1016,7 @@ const createProductVariant = async (req, res) => {
     }
 
     // إنشاء الـ variant الجديد
-    const variant = await prisma.productVariant.create({
+    const variant = await getSharedPrismaClient().productVariant.create({
       data: {
         productId: id,
         name,
@@ -1094,7 +1094,7 @@ const addImageToVariantFromBody = async (req, res) => {
     }
 
     // التحقق من أن المنتج ينتمي للشركة
-    const product = await prisma.product.findFirst({
+    const product = await getSharedPrismaClient().product.findFirst({
       where: { id, companyId }
     });
 
@@ -1106,7 +1106,7 @@ const addImageToVariantFromBody = async (req, res) => {
     }
 
     // Get the variant
-    const variant = await prisma.productVariant.findFirst({
+    const variant = await getSharedPrismaClient().productVariant.findFirst({
       where: {
         id: variantId,
         productId: id
@@ -1140,7 +1140,7 @@ const addImageToVariantFromBody = async (req, res) => {
     currentImages.push(imageUrl);
 
     // Update variant in database
-    const updatedVariant = await prisma.productVariant.update({
+    const updatedVariant = await getSharedPrismaClient().productVariant.update({
       where: { id: variantId },
       data: {
         images: JSON.stringify(currentImages)
@@ -1202,7 +1202,7 @@ const addImageToVariant = async (req, res) => {
     }
 
     // التحقق من أن المنتج ينتمي للشركة
-    const product = await prisma.product.findFirst({
+    const product = await getSharedPrismaClient().product.findFirst({
       where: { id, companyId }
     });
 
@@ -1214,7 +1214,7 @@ const addImageToVariant = async (req, res) => {
     }
 
     // Get the variant
-    const variant = await prisma.productVariant.findFirst({
+    const variant = await getSharedPrismaClient().productVariant.findFirst({
       where: {
         id: variantId,
         productId: id
@@ -1248,7 +1248,7 @@ const addImageToVariant = async (req, res) => {
     currentImages.push(imageUrl);
 
     // Update variant in database
-    const updatedVariant = await prisma.productVariant.update({
+    const updatedVariant = await getSharedPrismaClient().productVariant.update({
       where: { id: variantId },
       data: {
         images: JSON.stringify(currentImages)
@@ -1297,7 +1297,7 @@ const deleteImageFromVariant = async (req, res) => {
     }
 
     // التحقق من أن المنتج ينتمي للشركة
-    const product = await prisma.product.findFirst({
+    const product = await getSharedPrismaClient().product.findFirst({
       where: { id, companyId }
     });
 
@@ -1309,7 +1309,7 @@ const deleteImageFromVariant = async (req, res) => {
     }
 
     // Get the variant
-    const variant = await prisma.productVariant.findFirst({
+    const variant = await getSharedPrismaClient().productVariant.findFirst({
       where: {
         id: variantId,
         productId: id
@@ -1343,7 +1343,7 @@ const deleteImageFromVariant = async (req, res) => {
     currentImages.splice(imageIndex, 1);
 
     // Update variant in database
-    await prisma.productVariant.update({
+    await getSharedPrismaClient().productVariant.update({
       where: { id: variantId },
       data: {
         images: JSON.stringify(currentImages)
@@ -1384,7 +1384,7 @@ const updateProductVariant = async (req, res) => {
     }
 
     // التحقق من أن المنتج ينتمي للشركة
-    const product = await prisma.product.findFirst({
+    const product = await getSharedPrismaClient().product.findFirst({
       where: { id, companyId }
     });
 
@@ -1396,7 +1396,7 @@ const updateProductVariant = async (req, res) => {
     }
 
     // التحقق من أن الـ variant موجود
-    const existingVariant = await prisma.productVariant.findFirst({
+    const existingVariant = await getSharedPrismaClient().productVariant.findFirst({
       where: {
         id: variantId,
         productId: id
@@ -1437,7 +1437,7 @@ const updateProductVariant = async (req, res) => {
     }
 
     // تحديث الـ variant
-    const updatedVariant = await prisma.productVariant.update({
+    const updatedVariant = await getSharedPrismaClient().productVariant.update({
       where: { id: variantId },
       data: {
         ...(name !== undefined && { name }),
@@ -1493,7 +1493,7 @@ const deleteProductVariant = async (req, res) => {
     }
 
     // التحقق من أن المنتج ينتمي للشركة
-    const product = await prisma.product.findFirst({
+    const product = await getSharedPrismaClient().product.findFirst({
       where: { id, companyId }
     });
 
@@ -1505,7 +1505,7 @@ const deleteProductVariant = async (req, res) => {
     }
 
     // التحقق من أن الـ variant موجود
-    const existingVariant = await prisma.productVariant.findFirst({
+    const existingVariant = await getSharedPrismaClient().productVariant.findFirst({
       where: {
         id: variantId,
         productId: id
@@ -1520,7 +1520,7 @@ const deleteProductVariant = async (req, res) => {
     }
 
     // حذف الـ variant
-    await prisma.productVariant.delete({
+    await getSharedPrismaClient().productVariant.delete({
       where: { id: variantId }
     });
 
@@ -1552,7 +1552,7 @@ const getProductVariants = async (req, res) => {
     }
 
     // التحقق من أن المنتج ينتمي للشركة
-    const product = await prisma.product.findFirst({
+    const product = await getSharedPrismaClient().product.findFirst({
       where: {
         id,
         companyId
@@ -1567,7 +1567,7 @@ const getProductVariants = async (req, res) => {
     }
 
     // جلب الـ variants
-    const variants = await prisma.productVariant.findMany({
+    const variants = await getSharedPrismaClient().productVariant.findMany({
       where: {
         productId: id
       },

@@ -56,6 +56,8 @@ const productRoutes = require('./routes/productRoutes');
 const posRoutes = require('./routes/pos');
 const easyOrdersRoutes = require('./routes/easyOrdersRoutes');
 const wooCommerceRoutes = require('./routes/wooCommerceRoutes');
+const importJobRoutes = require('./routes/importJobRoutes');
+const orderStatusRoutes = require('./routes/orderStatusRoutes');
 const conversationRoutes = require('./routes/conversationRoutes');
 const customerRoutes = require('./routes/customerRoutes');
 const orderRoutes = require('./routes/orderRoutes');
@@ -273,7 +275,7 @@ async function loadHeavyServices() {
     // ملاحظة: الـ Webhooks هي الطريقة الأساسية، هذا فقط احتياطي
     try {
       const { runAutoSyncForAllCompanies } = require('./controller/wooCommerceOrdersController');
-      
+
       cron.schedule('*/15 * * * *', async () => {
         try {
           console.log(`🛒 [WOOCOMMERCE] Running scheduled auto sync (fallback)...`);
@@ -282,7 +284,7 @@ async function loadHeavyServices() {
           console.error('❌ [WOOCOMMERCE] Scheduled sync error:', error.message);
         }
       });
-      
+
       console.log(`✅ WooCommerce Auto Sync Service started (fallback every 15 minutes)`);
     } catch (error) {
       console.warn(`⚠️ [WOOCOMMERCE] Auto sync service not available:`, error.message);
@@ -383,16 +385,20 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json());
+// زيادة حد الـ payload لدعم استيراد عدد كبير من الطلبات/المنتجات
+app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser()); // ✅ Add cookie parser middleware
 
 // لو بتستقبل form data (application/x-www-form-urlencoded)
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Serve static files from public/uploads
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 // Initialize Socket.IO
 socketService.initialize(server);
+
+// ربط Socket.IO مع Import Job Routes
+importJobRoutes.setSocketIO(socketService.getIO());
 
 // Use shared database retry utility
 const withRetry = executeWithRetry;
@@ -542,6 +548,8 @@ app.use("/api/v1/dev/", demoRoutes)
 app.use("/api/v1/products/", productRoutes)
 app.use("/api/v1/easy-orders/", easyOrdersRoutes)
 app.use("/api/v1/woocommerce/", wooCommerceRoutes)
+app.use("/api/v1/import-jobs/", importJobRoutes)
+app.use("/api/v1/order-status/", orderStatusRoutes)
 app.use("/api/v1/branches/", branchRoutes)
 app.use("/api/v1/shipping-zones/", shippingZoneRoutes)
 app.use("/api/v1/store-settings/", storeSettingsRoutes)
@@ -2757,7 +2765,9 @@ async function startServer() {
     }
   });
 }
-startServer();
+startServer().catch(err => {
+  console.error('❌ Fatal server error:', err);
+});
 
 // Server is already started by startServer() function above
 

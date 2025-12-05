@@ -1,5 +1,5 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // Helper function to convert status to uppercase
 const normalizeStatus = (status) => {
@@ -38,7 +38,7 @@ getAllTasks: async (req, res) => {
     };
 
     // Get tasks with project and user information
-    const tasks = await prisma.task.findMany({
+    const tasks = await getSharedPrismaClient().task.findMany({
       where,
       include: {
         project: {
@@ -148,7 +148,7 @@ getAllTasks: async (req, res) => {
       // التحقق من أن المستخدم المحدد موجود في نفس الشركة
       const finalAssignedTo = assignedTo || createdBy;
       if (finalAssignedTo !== createdBy) {
-        const assignedUser = await prisma.user.findFirst({
+        const assignedUser = await getSharedPrismaClient().user.findFirst({
           where: {
             id: finalAssignedTo,
             companyId: companyId,
@@ -164,7 +164,7 @@ getAllTasks: async (req, res) => {
         }
       }
 
-      const newTask = await prisma.task.create({
+      const newTask = await getSharedPrismaClient().task.create({
         data: {
           companyId,
           projectId: projectId || null,
@@ -249,7 +249,7 @@ getAllTasks: async (req, res) => {
       const { id } = req.params;
       const companyId = req.user.companyId;
 
-      const task = await prisma.task.findFirst({
+      const task = await getSharedPrismaClient().task.findFirst({
         where: {
           id,
           companyId
@@ -342,7 +342,7 @@ getAllTasks: async (req, res) => {
 
       // التحقق من أن المستخدم المحدد موجود في نفس الشركة (إذا تم تحديث assignedTo)
       if (assignedTo) {
-        const assignedUser = await prisma.user.findFirst({
+        const assignedUser = await getSharedPrismaClient().user.findFirst({
           where: {
             id: assignedTo,
             companyId: companyId,
@@ -358,7 +358,7 @@ getAllTasks: async (req, res) => {
         }
       }
 
-      const updatedTask = await prisma.task.updateMany({
+      const updatedTask = await getSharedPrismaClient().task.updateMany({
         where: {
           id,
           companyId
@@ -386,7 +386,7 @@ getAllTasks: async (req, res) => {
       }
 
       // Get updated task with relations
-      const task = await prisma.task.findFirst({
+      const task = await getSharedPrismaClient().task.findFirst({
         where: { id, companyId },
         include: {
           project: { select: { name: true } },
@@ -470,7 +470,7 @@ getAllTasks: async (req, res) => {
         updateData.progress = 100;
       }
 
-      const updatedTask = await prisma.task.updateMany({
+      const updatedTask = await getSharedPrismaClient().task.updateMany({
         where: {
           id,
           companyId
@@ -486,7 +486,7 @@ getAllTasks: async (req, res) => {
       }
 
       // Get updated task with relations
-      const task = await prisma.task.findFirst({
+      const task = await getSharedPrismaClient().task.findFirst({
         where: { id, companyId },
         include: {
           project: { select: { name: true } },
@@ -558,7 +558,7 @@ getAllTasks: async (req, res) => {
       const { id } = req.params;
       const companyId = req.user.companyId;
 
-      const deletedTask = await prisma.task.deleteMany({
+      const deletedTask = await getSharedPrismaClient().task.deleteMany({
         where: {
           id,
           companyId
@@ -610,7 +610,7 @@ getAllTasks: async (req, res) => {
       };
 
       // Get tasks with project and user information
-      const tasks = await prisma.task.findMany({
+      const tasks = await getSharedPrismaClient().task.findMany({
         where,
         include: {
           project: {
@@ -703,7 +703,7 @@ getAllTasks: async (req, res) => {
       };
 
       // Get tasks with project and user information
-      const tasks = await prisma.task.findMany({
+      const tasks = await getSharedPrismaClient().task.findMany({
         where,
         include: {
           project: {
@@ -784,7 +784,7 @@ getAllTasks: async (req, res) => {
       }
 
       // Get all active users in the company
-      const users = await prisma.user.findMany({
+      const users = await getSharedPrismaClient().user.findMany({
         where: {
           companyId: companyId,
           isActive: true
@@ -840,7 +840,7 @@ getAllTasks: async (req, res) => {
       }
 
       // Get all tasks for the company
-      const allTasks = await prisma.task.findMany({
+      const allTasks = await getSharedPrismaClient().task.findMany({
         where: { companyId },
         include: {
           project: { select: { name: true, status: true } }
@@ -893,7 +893,7 @@ getAllTasks: async (req, res) => {
       };
 
       // Get project statistics
-      const allProjects = await prisma.project.findMany({
+      const allProjects = await getSharedPrismaClient().project.findMany({
         where: { companyId },
         include: {
           tasks: true
@@ -914,7 +914,7 @@ getAllTasks: async (req, res) => {
       };
 
       // Get recent activities (last 10 tasks)
-      const recentTasks = await prisma.task.findMany({
+      const recentTasks = await getSharedPrismaClient().task.findMany({
         where: { companyId },
         include: {
           project: { select: { name: true } },
@@ -962,7 +962,7 @@ getAllTasks: async (req, res) => {
       const companyId = req.user.companyId;
       const createdBy = req.user.userId;
 
-      const parentTask = await prisma.task.findFirst({
+      const parentTask = await getSharedPrismaClient().task.findFirst({
         where: { id: parentTaskId, companyId }
       });
 
@@ -970,7 +970,7 @@ getAllTasks: async (req, res) => {
         return res.status(404).json({ success: false, error: 'المهمة الأب غير موجودة' });
       }
 
-      const subtask = await prisma.task.create({
+      const subtask = await getSharedPrismaClient().task.create({
         data: {
           companyId,
           projectId: parentTask.projectId,
@@ -990,7 +990,7 @@ getAllTasks: async (req, res) => {
         }
       });
 
-      await prisma.taskActivity.create({
+      await getSharedPrismaClient().taskActivity.create({
         data: { taskId: parentTaskId, userId: createdBy, action: 'subtask_created', description: `تم إنشاء مهمة فرعية: ${title}`, companyId }
       });
 
@@ -1006,7 +1006,7 @@ getAllTasks: async (req, res) => {
       const { parentTaskId } = req.params;
       const companyId = req.user.companyId;
 
-      const subtasks = await prisma.task.findMany({
+      const subtasks = await getSharedPrismaClient().task.findMany({
         where: { parentTaskId, companyId },
         include: {
           assignedUser: { select: { firstName: true, lastName: true } },
@@ -1031,12 +1031,12 @@ getAllTasks: async (req, res) => {
       const companyId = req.user.companyId;
       const userId = req.user.userId;
 
-      const task = await prisma.task.findFirst({ where: { id: taskId, companyId } });
+      const task = await getSharedPrismaClient().task.findFirst({ where: { id: taskId, companyId } });
       if (!task) {
         return res.status(404).json({ success: false, error: 'المهمة غير موجودة' });
       }
 
-      const comment = await prisma.taskComment.create({
+      const comment = await getSharedPrismaClient().taskComment.create({
         data: {
           taskId, userId, content,
           parentCommentId: parentCommentId || null,
@@ -1049,7 +1049,7 @@ getAllTasks: async (req, res) => {
         }
       });
 
-      await prisma.taskActivity.create({
+      await getSharedPrismaClient().taskActivity.create({
         data: { taskId, userId, action: 'commented', description: 'تم إضافة تعليق', companyId }
       });
 
@@ -1059,7 +1059,7 @@ getAllTasks: async (req, res) => {
           title: 'تم ذكرك في تعليق', message: content.substring(0, 100),
           link: `/tasks/${taskId}`, companyId
         }));
-        await prisma.taskNotification.createMany({ data: notifications });
+        await getSharedPrismaClient().taskNotification.createMany({ data: notifications });
       }
 
       res.json({ success: true, data: comment, message: 'تم إضافة التعليق بنجاح' });
@@ -1074,7 +1074,7 @@ getAllTasks: async (req, res) => {
       const { taskId } = req.params;
       const companyId = req.user.companyId;
 
-      const comments = await prisma.taskComment.findMany({
+      const comments = await getSharedPrismaClient().taskComment.findMany({
         where: { taskId, companyId, parentCommentId: null },
         include: {
           user: { select: { firstName: true, lastName: true, avatar: true } },
@@ -1100,12 +1100,12 @@ getAllTasks: async (req, res) => {
       const companyId = req.user.companyId;
       const userId = req.user.userId;
 
-      const comment = await prisma.taskComment.findFirst({ where: { id: commentId, companyId, userId } });
+      const comment = await getSharedPrismaClient().taskComment.findFirst({ where: { id: commentId, companyId, userId } });
       if (!comment) {
         return res.status(404).json({ success: false, error: 'التعليق غير موجود أو ليس لديك صلاحية تعديله' });
       }
 
-      const updatedComment = await prisma.taskComment.update({
+      const updatedComment = await getSharedPrismaClient().taskComment.update({
         where: { id: commentId },
         data: { content, isEdited: true, editedAt: new Date() },
         include: { user: { select: { firstName: true, lastName: true, avatar: true } } }
@@ -1124,12 +1124,12 @@ getAllTasks: async (req, res) => {
       const companyId = req.user.companyId;
       const userId = req.user.userId;
 
-      const comment = await prisma.taskComment.findFirst({ where: { id: commentId, companyId, userId } });
+      const comment = await getSharedPrismaClient().taskComment.findFirst({ where: { id: commentId, companyId, userId } });
       if (!comment) {
         return res.status(404).json({ success: false, error: 'التعليق غير موجود أو ليس لديك صلاحية حذفه' });
       }
 
-      await prisma.taskComment.delete({ where: { id: commentId } });
+      await getSharedPrismaClient().taskComment.delete({ where: { id: commentId } });
       res.json({ success: true, message: 'تم حذف التعليق بنجاح' });
     } catch (error) {
       console.error('Error deleting comment:', error);
@@ -1146,12 +1146,12 @@ getAllTasks: async (req, res) => {
       const companyId = req.user.companyId;
       const userId = req.user.userId;
 
-      const runningEntry = await prisma.timeEntry.findFirst({ where: { userId, companyId, isRunning: true } });
+      const runningEntry = await getSharedPrismaClient().timeEntry.findFirst({ where: { userId, companyId, isRunning: true } });
       if (runningEntry) {
         return res.status(400).json({ success: false, error: 'يوجد مؤقت يعمل بالفعل. يرجى إيقافه أولاً' });
       }
 
-      const timeEntry = await prisma.timeEntry.create({
+      const timeEntry = await getSharedPrismaClient().timeEntry.create({
         data: {
           taskId, userId, startTime: new Date(),
           description: description || '', isBillable: isBillable || false,
@@ -1173,7 +1173,7 @@ getAllTasks: async (req, res) => {
       const companyId = req.user.companyId;
       const userId = req.user.userId;
 
-      const timeEntry = await prisma.timeEntry.findFirst({ where: { id: entryId, userId, companyId, isRunning: true } });
+      const timeEntry = await getSharedPrismaClient().timeEntry.findFirst({ where: { id: entryId, userId, companyId, isRunning: true } });
       if (!timeEntry) {
         return res.status(404).json({ success: false, error: 'سجل الوقت غير موجود أو متوقف بالفعل' });
       }
@@ -1181,13 +1181,13 @@ getAllTasks: async (req, res) => {
       const endTime = new Date();
       const duration = Math.round((endTime - timeEntry.startTime) / 60000);
 
-      const updatedEntry = await prisma.timeEntry.update({
+      const updatedEntry = await getSharedPrismaClient().timeEntry.update({
         where: { id: entryId },
         data: { endTime, duration, isRunning: false },
         include: { task: { select: { title: true } } }
       });
 
-      await prisma.task.update({
+      await getSharedPrismaClient().task.update({
         where: { id: timeEntry.taskId },
         data: { actualHours: { increment: Math.round(duration / 60) } }
       });
@@ -1208,7 +1208,7 @@ getAllTasks: async (req, res) => {
 
       const calculatedDuration = duration || Math.round((new Date(endTime) - new Date(startTime)) / 60000);
 
-      const timeEntry = await prisma.timeEntry.create({
+      const timeEntry = await getSharedPrismaClient().timeEntry.create({
         data: {
           taskId, userId, startTime: new Date(startTime),
           endTime: endTime ? new Date(endTime) : null,
@@ -1219,7 +1219,7 @@ getAllTasks: async (req, res) => {
         include: { task: { select: { title: true } } }
       });
 
-      await prisma.task.update({
+      await getSharedPrismaClient().task.update({
         where: { id: taskId },
         data: { actualHours: { increment: Math.round(calculatedDuration / 60) } }
       });
@@ -1236,7 +1236,7 @@ getAllTasks: async (req, res) => {
       const { taskId } = req.params;
       const companyId = req.user.companyId;
 
-      const timeEntries = await prisma.timeEntry.findMany({
+      const timeEntries = await getSharedPrismaClient().timeEntry.findMany({
         where: { taskId, companyId },
         include: { user: { select: { firstName: true, lastName: true } } },
         orderBy: { startTime: 'desc' }
@@ -1259,7 +1259,7 @@ getAllTasks: async (req, res) => {
       const companyId = req.user.companyId;
       const userId = req.user.userId;
 
-      const runningEntry = await prisma.timeEntry.findFirst({
+      const runningEntry = await getSharedPrismaClient().timeEntry.findFirst({
         where: { userId, companyId, isRunning: true },
         include: { task: { select: { id: true, title: true } } }
       });
@@ -1278,7 +1278,7 @@ getAllTasks: async (req, res) => {
       const { taskId } = req.params;
       const companyId = req.user.companyId;
 
-      const activities = await prisma.taskActivity.findMany({
+      const activities = await getSharedPrismaClient().taskActivity.findMany({
         where: { taskId, companyId },
         include: { user: { select: { firstName: true, lastName: true, avatar: true } } },
         orderBy: { createdAt: 'desc' },
@@ -1300,7 +1300,7 @@ getAllTasks: async (req, res) => {
       const { userId: watcherUserId } = req.body;
       const companyId = req.user.companyId;
 
-      const watcher = await prisma.taskWatcher.create({
+      const watcher = await getSharedPrismaClient().taskWatcher.create({
         data: { taskId, userId: watcherUserId, companyId },
         include: { user: { select: { firstName: true, lastName: true } } }
       });
@@ -1320,7 +1320,7 @@ getAllTasks: async (req, res) => {
       const { taskId, watcherUserId } = req.params;
       const companyId = req.user.companyId;
 
-      await prisma.taskWatcher.deleteMany({ where: { taskId, userId: watcherUserId, companyId } });
+      await getSharedPrismaClient().taskWatcher.deleteMany({ where: { taskId, userId: watcherUserId, companyId } });
       res.json({ success: true, message: 'تم إزالة المتابع بنجاح' });
     } catch (error) {
       console.error('Error removing watcher:', error);
@@ -1333,7 +1333,7 @@ getAllTasks: async (req, res) => {
       const { taskId } = req.params;
       const companyId = req.user.companyId;
 
-      const watchers = await prisma.taskWatcher.findMany({
+      const watchers = await getSharedPrismaClient().taskWatcher.findMany({
         where: { taskId, companyId },
         include: { user: { select: { id: true, firstName: true, lastName: true, avatar: true } } }
       });
@@ -1356,11 +1356,11 @@ getAllTasks: async (req, res) => {
       const where = { userId, companyId };
       if (unreadOnly === 'true') where.isRead = false;
 
-      const notifications = await prisma.taskNotification.findMany({
+      const notifications = await getSharedPrismaClient().taskNotification.findMany({
         where, orderBy: { createdAt: 'desc' }, take: 50
       });
 
-      const unreadCount = await prisma.taskNotification.count({
+      const unreadCount = await getSharedPrismaClient().taskNotification.count({
         where: { userId, companyId, isRead: false }
       });
 
@@ -1377,7 +1377,7 @@ getAllTasks: async (req, res) => {
       const companyId = req.user.companyId;
       const userId = req.user.userId;
 
-      await prisma.taskNotification.updateMany({
+      await getSharedPrismaClient().taskNotification.updateMany({
         where: { id: notificationId, userId, companyId },
         data: { isRead: true, readAt: new Date() }
       });
@@ -1394,7 +1394,7 @@ getAllTasks: async (req, res) => {
       const companyId = req.user.companyId;
       const userId = req.user.userId;
 
-      await prisma.taskNotification.updateMany({
+      await getSharedPrismaClient().taskNotification.updateMany({
         where: { userId, companyId, isRead: false },
         data: { isRead: true, readAt: new Date() }
       });
@@ -1416,7 +1416,7 @@ getAllTasks: async (req, res) => {
       const where = { companyId, parentTaskId: null };
       if (projectId) where.projectId = projectId;
 
-      const tasks = await prisma.task.findMany({
+      const tasks = await getSharedPrismaClient().task.findMany({
         where,
         include: {
           assignedUser: { select: { firstName: true, lastName: true, avatar: true } },
@@ -1456,14 +1456,14 @@ getAllTasks: async (req, res) => {
       const companyId = req.user.companyId;
       const userId = req.user.userId;
 
-      const task = await prisma.task.findFirst({ where: { id: taskId, companyId } });
+      const task = await getSharedPrismaClient().task.findFirst({ where: { id: taskId, companyId } });
       if (!task) {
         return res.status(404).json({ success: false, error: 'المهمة غير موجودة' });
       }
 
       const oldStatus = task.status;
 
-      const updatedTask = await prisma.task.update({
+      const updatedTask = await getSharedPrismaClient().task.update({
         where: { id: taskId },
         data: {
           status: newStatus,
@@ -1474,7 +1474,7 @@ getAllTasks: async (req, res) => {
       });
 
       if (oldStatus !== newStatus) {
-        await prisma.taskActivity.create({
+        await getSharedPrismaClient().taskActivity.create({
           data: { taskId, userId, action: 'status_changed', field: 'status', oldValue: oldStatus, newValue: newStatus, companyId }
         });
       }
@@ -1493,7 +1493,7 @@ getAllTasks: async (req, res) => {
       const { id } = req.params;
       const companyId = req.user.companyId;
 
-      const task = await prisma.task.findFirst({
+      const task = await getSharedPrismaClient().task.findFirst({
         where: { id, companyId },
         include: {
           project: { select: { id: true, name: true } },
@@ -1562,7 +1562,7 @@ getAllTasks: async (req, res) => {
       const { taskId } = req.params;
       const companyId = req.user.companyId;
 
-      const attachments = await prisma.taskAttachment.findMany({
+      const attachments = await getSharedPrismaClient().taskAttachment.findMany({
         where: { taskId, companyId },
         include: {
           user: { select: { firstName: true, lastName: true } }
@@ -1585,7 +1585,7 @@ getAllTasks: async (req, res) => {
       const companyId = req.user.companyId;
       const userId = req.user.userId;
 
-      const task = await prisma.task.findFirst({
+      const task = await getSharedPrismaClient().task.findFirst({
         where: { id: taskId, companyId }
       });
 
@@ -1593,7 +1593,7 @@ getAllTasks: async (req, res) => {
         return res.status(404).json({ success: false, error: 'المهمة غير موجودة' });
       }
 
-      const attachment = await prisma.taskAttachment.create({
+      const attachment = await getSharedPrismaClient().taskAttachment.create({
         data: {
           taskId,
           userId,
@@ -1610,7 +1610,7 @@ getAllTasks: async (req, res) => {
       });
 
       // تسجيل النشاط
-      await prisma.taskActivity.create({
+      await getSharedPrismaClient().taskActivity.create({
         data: {
           taskId,
           userId,
@@ -1634,7 +1634,7 @@ getAllTasks: async (req, res) => {
       const companyId = req.user.companyId;
       const userId = req.user.userId;
 
-      const attachment = await prisma.taskAttachment.findFirst({
+      const attachment = await getSharedPrismaClient().taskAttachment.findFirst({
         where: { id: attachmentId, companyId }
       });
 
@@ -1647,12 +1647,12 @@ getAllTasks: async (req, res) => {
         return res.status(403).json({ success: false, error: 'لا يمكنك حذف هذا المرفق' });
       }
 
-      await prisma.taskAttachment.delete({
+      await getSharedPrismaClient().taskAttachment.delete({
         where: { id: attachmentId }
       });
 
       // تسجيل النشاط
-      await prisma.taskActivity.create({
+      await getSharedPrismaClient().taskActivity.create({
         data: {
           taskId: attachment.taskId,
           userId,
@@ -1676,7 +1676,7 @@ getAllTasks: async (req, res) => {
     try {
       const companyId = req.user.companyId;
 
-      const categories = await prisma.taskCategory.findMany({
+      const categories = await getSharedPrismaClient().taskCategory.findMany({
         where: { companyId },
         include: {
           _count: {
@@ -1710,7 +1710,7 @@ getAllTasks: async (req, res) => {
       }
 
       // التحقق من عدم وجود قسم بنفس الاسم
-      const existingCategory = await prisma.taskCategory.findFirst({
+      const existingCategory = await getSharedPrismaClient().taskCategory.findFirst({
         where: { companyId, name }
       });
 
@@ -1719,12 +1719,12 @@ getAllTasks: async (req, res) => {
       }
 
       // الحصول على أعلى ترتيب
-      const maxOrder = await prisma.taskCategory.aggregate({
+      const maxOrder = await getSharedPrismaClient().taskCategory.aggregate({
         where: { companyId },
         _max: { order: true }
       });
 
-      const category = await prisma.taskCategory.create({
+      const category = await getSharedPrismaClient().taskCategory.create({
         data: {
           name,
           description: description || null,
@@ -1749,7 +1749,7 @@ getAllTasks: async (req, res) => {
       const { id } = req.params;
       const { name, description, color, icon, isActive, order } = req.body;
 
-      const category = await prisma.taskCategory.findFirst({
+      const category = await getSharedPrismaClient().taskCategory.findFirst({
         where: { id, companyId }
       });
 
@@ -1759,7 +1759,7 @@ getAllTasks: async (req, res) => {
 
       // التحقق من عدم وجود قسم آخر بنفس الاسم
       if (name && name !== category.name) {
-        const existingCategory = await prisma.taskCategory.findFirst({
+        const existingCategory = await getSharedPrismaClient().taskCategory.findFirst({
           where: { companyId, name, id: { not: id } }
         });
         if (existingCategory) {
@@ -1767,7 +1767,7 @@ getAllTasks: async (req, res) => {
         }
       }
 
-      const updatedCategory = await prisma.taskCategory.update({
+      const updatedCategory = await getSharedPrismaClient().taskCategory.update({
         where: { id },
         data: {
           name: name || category.name,
@@ -1792,7 +1792,7 @@ getAllTasks: async (req, res) => {
       const companyId = req.user.companyId;
       const { id } = req.params;
 
-      const category = await prisma.taskCategory.findFirst({
+      const category = await getSharedPrismaClient().taskCategory.findFirst({
         where: { id, companyId },
         include: { _count: { select: { tasks: true } } }
       });
@@ -1802,12 +1802,12 @@ getAllTasks: async (req, res) => {
       }
 
       // إزالة القسم من المهام المرتبطة
-      await prisma.task.updateMany({
+      await getSharedPrismaClient().task.updateMany({
         where: { categoryId: id },
         data: { categoryId: null }
       });
 
-      await prisma.taskCategory.delete({
+      await getSharedPrismaClient().taskCategory.delete({
         where: { id }
       });
 

@@ -8,7 +8,7 @@ const { getSharedPrismaClient } = require('../services/sharedDatabase');
 const MODEL_NAME = 'gemini-2.0-flash-lite';
 
 async function testGemini20FlashLite() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     try {
         console.log('\n🧪 اختبار Gemini 2.0 Flash Lite...\n');
@@ -123,9 +123,10 @@ async function testGemini20FlashLite() {
         console.error('❌ خطأ عام:', error.message);
         console.error(error.stack);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 testGemini20FlashLite();
+
 

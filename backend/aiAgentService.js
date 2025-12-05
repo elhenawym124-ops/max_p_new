@@ -12,7 +12,7 @@ const { DEFAULT_AI_SETTINGS } = require('./services/aiAgent/aiConstants');
 // ✅ استخدام قواعد الاستجابة
 const { buildPromptFromRules, getDefaultRules } = require('./services/aiAgent/responseRulesConfig');
 
-const prisma = getSharedPrismaClient(); // Use shared database connection
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues // Use shared database connection
 
 class AIAgentService {
   constructor() {
@@ -50,14 +50,14 @@ class AIAgentService {
         console.error(`❌ [AI-MODEL] No active model found for company: ${companyId}`);
         // Check if company exists
         try {
-          const company = await this.prisma.company.findUnique({
+          const company = await this.getSharedPrismaClient().company.findUnique({
             where: { id: companyId }
           });
           if (!company) {
             console.error(`❌ [AI-MODEL] Company does not exist in database: ${companyId}`);
           } else {
             // Check for active Gemini keys
-            const geminiKeys = await this.prisma.geminiKey.findMany({
+            const geminiKeys = await this.getSharedPrismaClient().geminiKey.findMany({
               where: { 
                 companyId: companyId,
                 isActive: true
@@ -125,7 +125,7 @@ class AIAgentService {
       // 🔍 فحص حالة الذكاء الاصطناعي للمحادثة
       if (conversationId) {
         try {
-          const conversation = await this.prisma.conversation.findUnique({
+          const conversation = await this.getSharedPrismaClient().conversation.findUnique({
             where: { id: conversationId },
             select: { 
               id: true, 
@@ -181,7 +181,7 @@ class AIAgentService {
                 // ✅ NEW LOGIC: Check if there are any messages from EMPLOYEES in this conversation
                 // A "new" conversation = conversation with NO employee messages
                 // If an employee has replied, the conversation is now under human supervision → AI should not reply
-                const employeeMessageCount = await this.prisma.message.count({
+                const employeeMessageCount = await this.getSharedPrismaClient().message.count({
                   where: {
                     conversationId,
                     isFromCustomer: false, // Not from customer
@@ -193,7 +193,7 @@ class AIAgentService {
                 console.log(`🔍 [REPLY-MODE-DEBUG] Conversation created at: ${conversation.createdAt}`);
                 
                 // Get all messages for debugging
-                const allMessages = await this.prisma.message.findMany({
+                const allMessages = await this.getSharedPrismaClient().message.findMany({
                   where: { conversationId },
                   select: {
                     id: true,
@@ -358,7 +358,7 @@ class AIAgentService {
       if (!finalCompanyId && customerData?.id) {
         try {
           //console.log(`🔄 [AI-PROCESS] Trying to get company ID from customer record`);
-          const customerRecord = await this.prisma.customer.findUnique({
+          const customerRecord = await this.getSharedPrismaClient().customer.findUnique({
             where: { id: customerData.id },
             select: { companyId: true }
           });
@@ -1506,7 +1506,7 @@ ${imageAnalysis}
       //console.log('🔍 Checking for active system prompt...');
 
       try {
-        const activeSystemPrompt = await this.prisma.systemPrompt.findFirst({
+        const activeSystemPrompt = await this.getSharedPrismaClient().systemPrompt.findFirst({
           where: {
             isActive: true,
             companyId: companyId  // إضافة فلترة حسب الشركة للأمان
@@ -1540,7 +1540,7 @@ ${imageAnalysis}
       // 2. Check AI settings table
       //console.log('🔍 Checking AI settings table...');
       try {
-        const aiSettings = await this.prisma.aiSettings.findFirst({
+        const aiSettings = await this.getSharedPrismaClient().aiSettings.findFirst({
           where: { companyId }
         });
 
@@ -1563,7 +1563,7 @@ ${imageAnalysis}
       // 3. Fallback to company table
       //console.log('🔍 Checking company table...');
       try {
-        const company = await this.prisma.company.findUnique({
+        const company = await this.getSharedPrismaClient().company.findUnique({
           where: { id: companyId }
         });
 
@@ -3585,7 +3585,7 @@ ${conversationContext ? `سياق المحادثة السابقة:\n${conversati
     try {
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
 
-      const recentOrder = await this.prisma.order.findFirst({
+      const recentOrder = await this.getSharedPrismaClient().order.findFirst({
         where: {
           customerId: customerId,
           createdAt: {
@@ -4431,7 +4431,7 @@ async extractOrderDetailsFromMemory(conversationMemory, companyId, currentMessag
   let productsInfo = '';
   let defaultProduct = null;
   try {
-    const products = await this.prisma.product.findMany({
+    const products = await this.getSharedPrismaClient().product.findMany({
       where: { companyId: companyId },
       select: {
         name: true,
@@ -5391,7 +5391,7 @@ ${conversationContext}
   async extractProductIdFromRAG(ragItem) {
     try {
       // Search for product in database based on RAG content
-      const products = await this.prisma.product.findMany({
+      const products = await this.getSharedPrismaClient().product.findMany({
         where: {
           OR: [
             { name: { contains: 'كوتشي' } },
@@ -5413,7 +5413,7 @@ ${conversationContext}
    */
   async getProductImagesFromDB(productId) {
     try {
-      const product = await this.prisma.product.findUnique({
+      const product = await this.getSharedPrismaClient().product.findUnique({
         where: { id: productId },
         include: {
           variants: true
@@ -5551,7 +5551,7 @@ ${conversationContext}
       }
 
       // 1. التحقق من إعدادات الشركة (useCentralKeys)
-      const company = await this.prisma.company.findUnique({
+      const company = await this.getSharedPrismaClient().company.findUnique({
         where: { id: targetCompanyId },
         select: { useCentralKeys: true }
       });
@@ -5578,7 +5578,7 @@ ${conversationContext}
       }
 
       // 3. البحث عن المفتاح النشط للشركة المحددة
-      const activeKey = await this.prisma.geminiKey.findFirst({
+      const activeKey = await this.getSharedPrismaClient().geminiKey.findFirst({
         where: {
           isActive: true,
           companyId: targetCompanyId,
@@ -5724,7 +5724,7 @@ ${conversationContext}
         'gemini-3-pro' // ⚠️ معطل - غير متوفر في API (404 Not Found) - تم الاختبار والتأكد
       ];
       
-      const availableModels = await this.prisma.geminiKeyModel.findMany({
+      const availableModels = await this.getSharedPrismaClient().geminiKeyModel.findMany({
         where: {
           keyId: keyId,
           isEnabled: true,
@@ -5815,7 +5815,7 @@ ${conversationContext}
     try {
       //console.log('🔑 [CENTRAL] البحث عن مفتاح مركزي نشط...');
 
-      const centralKey = await this.prisma.geminiKey.findFirst({
+      const centralKey = await this.getSharedPrismaClient().geminiKey.findFirst({
         where: {
           keyType: 'CENTRAL',
           companyId: null,
@@ -5843,7 +5843,7 @@ ${conversationContext}
       //console.log(`⚠️ تحديد النموذج ${modelName} كمستنفد بناءً على خطأ 429...`);
 
       // FIXED: Use Prisma ORM instead of raw SQL
-      const modelRecord = await this.prisma.geminiKeyModel.findMany({
+      const modelRecord = await this.getSharedPrismaClient().geminiKeyModel.findMany({
         where: {
           model: modelName
         }
@@ -5864,7 +5864,7 @@ ${conversationContext}
         };
 
         // FIXED: Use Prisma ORM instead of raw SQL
-        await this.prisma.geminiKeyModel.update({
+        await this.getSharedPrismaClient().geminiKeyModel.update({
           where: {
             id: model.id
           },
@@ -5899,7 +5899,7 @@ ${conversationContext}
       //console.log(`⚠️ تحديد النموذج ${modelId} كمستنفد...`);
 
       // FIXED: Use Prisma ORM instead of raw SQL
-      const modelRecord = await this.prisma.geminiKeyModel.findMany({
+      const modelRecord = await this.getSharedPrismaClient().geminiKeyModel.findMany({
         where: {
           id: modelId
         }
@@ -5918,7 +5918,7 @@ ${conversationContext}
         };
 
         // FIXED: Use Prisma ORM instead of raw SQL
-        await this.prisma.geminiKeyModel.update({
+        await this.getSharedPrismaClient().geminiKeyModel.update({
           where: {
             id: modelId
           },
@@ -5945,7 +5945,7 @@ ${conversationContext}
   async _updateModelUsageLegacy(modelId) {
     try {
       // FIXED: Use Prisma ORM instead of raw SQL
-      const modelRecord = await this.prisma.geminiKeyModel.findMany({
+      const modelRecord = await this.getSharedPrismaClient().geminiKeyModel.findMany({
         where: {
           id: modelId
         }
@@ -6000,7 +6000,7 @@ ${conversationContext}
         };
 
         // FIXED: Use Prisma ORM instead of raw SQL
-        await this.prisma.geminiKeyModel.update({
+        await this.getSharedPrismaClient().geminiKeyModel.update({
           where: {
             id: modelId
           },
@@ -6050,7 +6050,7 @@ ${conversationContext}
       }
 
       // التحقق من إعدادات الشركة
-      const company = await this.prisma.company.findUnique({
+      const company = await this.getSharedPrismaClient().company.findUnique({
         where: { id: targetCompanyId },
         select: { useCentralKeys: true }
       });
@@ -6062,7 +6062,7 @@ ${conversationContext}
       
       if (useCentralKeys) {
         // البحث في المفاتيح المركزية أولاً
-        currentActiveKey = await this.prisma.geminiKey.findFirst({
+        currentActiveKey = await this.getSharedPrismaClient().geminiKey.findFirst({
           where: {
             isActive: true,
             keyType: 'CENTRAL',
@@ -6074,7 +6074,7 @@ ${conversationContext}
       
       if (!currentActiveKey) {
         // البحث في مفاتيح الشركة
-        currentActiveKey = await this.prisma.geminiKey.findFirst({
+        currentActiveKey = await this.getSharedPrismaClient().geminiKey.findFirst({
           where: {
             isActive: true,
             companyId: targetCompanyId,
@@ -6152,7 +6152,7 @@ ${conversationContext}
       //console.log(`🔍 البحث عن نموذج آخر في المفتاح: ${keyId}`);
       
       // FIXED: Use Prisma ORM instead of raw SQL for better security
-      const availableModels = await this.prisma.geminiKeyModel.findMany({
+      const availableModels = await this.getSharedPrismaClient().geminiKeyModel.findMany({
         where: {
           keyId: keyId,
           isEnabled: true
@@ -6192,14 +6192,14 @@ ${conversationContext}
 
         if (currentUsage < maxRequests) {
           // اختبار صحة النموذج
-          const keyRecord = await this.prisma.geminiKey.findUnique({ where: { id: keyId } });
+          const keyRecord = await this.getSharedPrismaClient().geminiKey.findUnique({ where: { id: keyId } });
           const isHealthy = await this.testModelHealth(keyRecord.apiKey, modelRecord.model);
           
           if (isHealthy) {
             //console.log(`✅ نموذج متاح وصحي: ${modelRecord.model}`);
             
             // FIXED: Use Prisma ORM instead of raw SQL
-            await this.prisma.geminiKeyModel.update({
+            await this.getSharedPrismaClient().geminiKeyModel.update({
               where: {
                 id: modelRecord.id
               },
@@ -6247,7 +6247,7 @@ ${conversationContext}
       //console.log(`🏢 البحث عن مفاتيح بديلة للشركة: ${targetCompanyId}`);
 
       // التحقق من إعدادات الشركة
-      const company = await this.prisma.company.findUnique({
+      const company = await this.getSharedPrismaClient().company.findUnique({
         where: { id: targetCompanyId },
         select: { useCentralKeys: true }
       });
@@ -6256,7 +6256,7 @@ ${conversationContext}
 
       // إذا كانت الشركة تستخدم المفاتيح المركزية، ابحث فيها أولاً
       if (useCentralKeys) {
-        const centralKeys = await this.prisma.geminiKey.findMany({
+        const centralKeys = await this.getSharedPrismaClient().geminiKey.findMany({
           where: {
             keyType: 'CENTRAL',
             companyId: null
@@ -6279,7 +6279,7 @@ ${conversationContext}
       }
 
       // الحصول على مفاتيح الشركة المحددة مرتبة حسب الأولوية
-      const allKeys = await this.prisma.geminiKey.findMany({
+      const allKeys = await this.getSharedPrismaClient().geminiKey.findMany({
         where: {
           companyId: targetCompanyId,
           keyType: 'COMPANY'
@@ -6308,7 +6308,7 @@ ${conversationContext}
 
       // Fallback: إذا لم توجد مفاتيح شركة، جرب المفاتيح المركزية
       if (!useCentralKeys) {
-        const centralKeys = await this.prisma.geminiKey.findMany({
+        const centralKeys = await this.getSharedPrismaClient().geminiKey.findMany({
           where: {
             keyType: 'CENTRAL',
             companyId: null
@@ -6343,7 +6343,7 @@ ${conversationContext}
   async findBestModelInKey(keyId) {
     try {
       // FIXED: Use Prisma ORM instead of raw SQL for better security
-      const availableModels = await this.prisma.geminiKeyModel.findMany({
+      const availableModels = await this.getSharedPrismaClient().geminiKeyModel.findMany({
         where: {
           keyId: keyId,
           isEnabled: true
@@ -6360,7 +6360,7 @@ ${conversationContext}
 
         if (currentUsage < maxRequests) {
           // اختبار صحة النموذج
-          const keyRecord = await this.prisma.geminiKey.findUnique({ where: { id: keyId } });
+          const keyRecord = await this.getSharedPrismaClient().geminiKey.findUnique({ where: { id: keyId } });
           const isHealthy = await this.testModelHealth(keyRecord.apiKey, modelRecord.model);
           
           if (isHealthy) {
@@ -6383,7 +6383,7 @@ ${conversationContext}
       console.log(`🔍 [AUTO-ACTIVATE] البحث عن أول مفتاح متاح للتفعيل التلقائي للشركة: ${companyId}`);
 
       // التحقق من إعدادات الشركة
-      const company = await this.prisma.company.findUnique({
+      const company = await this.getSharedPrismaClient().company.findUnique({
         where: { id: companyId },
         select: { useCentralKeys: true }
       });
@@ -6394,7 +6394,7 @@ ${conversationContext}
       // إذا كانت الشركة تستخدم المفاتيح المركزية، ابحث فيها أولاً
       if (useCentralKeys) {
         console.log('🔍 [AUTO-ACTIVATE] البحث في المفاتيح المركزية...');
-        const centralKeys = await this.prisma.geminiKey.findMany({
+        const centralKeys = await this.getSharedPrismaClient().geminiKey.findMany({
           where: {
             keyType: 'CENTRAL',
             companyId: null,
@@ -6410,7 +6410,7 @@ ${conversationContext}
           if (availableModel) {
             console.log(`✅ [AUTO-ACTIVATE] تم العثور على نموذج متاح في المفتاح المركزي: ${key.name}`);
             await this.activateKey(key.id);
-            const keyRecord = await this.prisma.geminiKey.findUnique({ where: { id: key.id } });
+            const keyRecord = await this.getSharedPrismaClient().geminiKey.findUnique({ where: { id: key.id } });
             return {
               apiKey: keyRecord.apiKey,
               model: availableModel.model,
@@ -6424,7 +6424,7 @@ ${conversationContext}
 
       // البحث عن جميع مفاتيح الشركة
       console.log(`🔍 [AUTO-ACTIVATE] البحث عن مفاتيح الشركة...`);
-      const allKeys = await this.prisma.geminiKey.findMany({
+      const allKeys = await this.getSharedPrismaClient().geminiKey.findMany({
         where: {
           companyId: companyId,
           keyType: 'COMPANY'
@@ -6437,7 +6437,7 @@ ${conversationContext}
       if (allKeys.length === 0 && !useCentralKeys) {
         console.log(`⚠️ [AUTO-ACTIVATE] لا توجد مفاتيح شركة، جرب المفاتيح المركزية كبديل...`);
         // Fallback: جرب المفاتيح المركزية - استخدم findBestAvailableModelInActiveKey (أسرع ولا يختبر الصحة)
-        const centralKeys = await this.prisma.geminiKey.findMany({
+        const centralKeys = await this.getSharedPrismaClient().geminiKey.findMany({
           where: {
             keyType: 'CENTRAL',
             companyId: null,
@@ -6516,7 +6516,7 @@ ${conversationContext}
       
       // FIXED: Add company isolation to prevent affecting other companies
       // First get the company ID from the key
-      const keyRecord = await this.prisma.geminiKey.findUnique({
+      const keyRecord = await this.getSharedPrismaClient().geminiKey.findUnique({
         where: { id: keyId },
         select: { companyId: true }
       });
@@ -6527,7 +6527,7 @@ ${conversationContext}
 
       // إلغاء تفعيل جميع المفاتيح للشركة فقط
       // SECURITY WARNING: Ensure companyId filter is included
-      await this.prisma.geminiKey.updateMany({
+      await this.getSharedPrismaClient().geminiKey.updateMany({
         where: {
           companyId: keyRecord.companyId // Company isolation
         },
@@ -6538,7 +6538,7 @@ ${conversationContext}
       });
 
       // تفعيل المفتاح المطلوب
-      await this.prisma.geminiKey.update({
+      await this.getSharedPrismaClient().geminiKey.update({
         where: {
           id: keyId
         },
@@ -6579,7 +6579,7 @@ ${conversationContext}
         };
       }
 
-      const company = await this.prisma.company.findUnique({ where: { id: companyId } });
+      const company = await this.getSharedPrismaClient().company.findUnique({ where: { id: companyId } });
       //console.log(`🏢 [aiAgentService] Using specific company: ${companyId}`);
       if (!company) {
         //console.log('❌ [aiAgentService] No company found');
@@ -6598,7 +6598,7 @@ ${conversationContext}
       //console.log(`🏢 [aiAgentService] Company: ${company.id}`);
 
       // Get AI settings for the company
-      const aiSettings = await this.prisma.aiSettings.findFirst({
+      const aiSettings = await this.getSharedPrismaClient().aiSettings.findFirst({
         where: { companyId: company.id },
         select: {
           id: true,
@@ -6840,7 +6840,7 @@ ${conversationContext}
       //console.log(`📝 [AIAgent] Updating learning data with feedback for conversation: ${conversationId}`);
 
       // البحث عن بيانات التعلم للمحادثة
-      const learningData = await this.learningService.prisma.learningData.findFirst({
+      const learningData = await this.learningService.getSharedPrismaClient().learningData.findFirst({
         where: {
           conversationId: conversationId,
           type: 'conversation'
@@ -6852,7 +6852,7 @@ ${conversationContext}
 
       if (learningData) {
         // تحديث التغذية الراجعة
-        await this.learningService.prisma.learningData.update({
+        await this.learningService.getSharedPrismaClient().learningData.update({
           where: { id: learningData.id },
           data: {
             feedback: JSON.stringify(feedback),
@@ -6881,7 +6881,7 @@ ${conversationContext}
       //console.log(`📊 [AIAgent] Monitoring improvement performance for company: ${companyId}`);
 
       // الحصول على التحسينات النشطة
-      const activeImprovements = await this.learningService.prisma.appliedImprovement.findMany({
+      const activeImprovements = await this.learningService.getSharedPrismaClient().appliedImprovement.findMany({
         where: {
           companyId,
           status: 'active'
@@ -8235,7 +8235,7 @@ ${ragData.filter(item => item.type === 'product' && item.metadata)
       const searchTerms = colorVariants[requestedColor] || [requestedColor];
 
       // البحث في جدول المنتجات والمتغيرات
-      const products = await this.prisma.product.findMany({
+      const products = await this.getSharedPrismaClient().product.findMany({
         where: {
           OR: [
             { name: { contains: searchTerms[0] } },
@@ -8354,19 +8354,19 @@ ${ragData.filter(item => item.type === 'product' && item.metadata)
         throw new Error('Company ID is required for security');
       }
 
-      const company = await this.prisma.company.findUnique({ where: { id: companyId } });
+      const company = await this.getSharedPrismaClient().company.findUnique({ where: { id: companyId } });
       if (!company) {
         throw new Error(`Company ${companyId} not found`);
       }
 
       // Check if AI settings exist
-      let aiSettings = await this.prisma.aiSettings.findUnique({
+      let aiSettings = await this.getSharedPrismaClient().aiSettings.findUnique({
         where: { companyId: company.id }
       });
 
       if (aiSettings) {
         // Update existing settings
-        aiSettings = await this.prisma.aiSettings.update({
+        aiSettings = await this.getSharedPrismaClient().aiSettings.update({
           where: { companyId: company.id },
           data: {
             autoReplyEnabled: settings.isEnabled !== undefined ? settings.isEnabled : aiSettings.autoReplyEnabled,
@@ -8380,7 +8380,7 @@ ${ragData.filter(item => item.type === 'product' && item.metadata)
         });
       } else {
         // Create new settings
-        aiSettings = await this.prisma.aiSettings.create({
+        aiSettings = await this.getSharedPrismaClient().aiSettings.create({
           data: {
             companyId: company.id,
             autoReplyEnabled: settings.isEnabled || false,
@@ -8428,7 +8428,7 @@ ${ragData.filter(item => item.type === 'product' && item.metadata)
         };
       }
 
-      const company = await this.prisma.company.findUnique({ where: { id: companyId } });
+      const company = await this.getSharedPrismaClient().company.findUnique({ where: { id: companyId } });
       if (!company) {
         return {
           isEnabled: false,
@@ -8443,7 +8443,7 @@ ${ragData.filter(item => item.type === 'product' && item.metadata)
         };
       }
 
-      const aiSettings = await this.prisma.aiSettings.findFirst({
+      const aiSettings = await this.getSharedPrismaClient().aiSettings.findFirst({
         where: { companyId: company.id },
         select: {
           id: true,
@@ -8679,3 +8679,4 @@ ${ragData.filter(item => item.type === 'product' && item.metadata)
 }
 
 module.exports = new AIAgentService();
+

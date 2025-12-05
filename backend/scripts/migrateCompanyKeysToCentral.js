@@ -10,7 +10,7 @@
  */
 
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // Helper function to generate ID
 function generateId() {
@@ -23,7 +23,7 @@ async function migrateCompanyKeysToCentral() {
 
         // 1. البحث عن شركة "شركة التسويق"
         console.log('🔍 الخطوة 1: البحث عن شركة "شركة التسويق"...');
-        const company = await prisma.company.findFirst({
+        const company = await getSharedPrismaClient().company.findFirst({
             where: {
                 name: {
                     contains: 'التسويق'
@@ -36,7 +36,7 @@ async function migrateCompanyKeysToCentral() {
             console.error('❌ لم يتم العثور على شركة "شركة التسويق"');
             
             // عرض جميع الشركات
-            const allCompanies = await prisma.company.findMany({
+            const allCompanies = await getSharedPrismaClient().company.findMany({
                 select: {
                     id: true,
                     name: true,
@@ -58,7 +58,7 @@ async function migrateCompanyKeysToCentral() {
 
         // 2. جلب جميع مفاتيح Gemini الخاصة بالشركة
         console.log('🔍 الخطوة 2: جلب مفاتيح Gemini الخاصة بالشركة...');
-        const companyKeys = await prisma.geminiKey.findMany({
+        const companyKeys = await getSharedPrismaClient().geminiKey.findMany({
             where: {
                 companyId: company.id,
                 keyType: 'COMPANY'
@@ -120,7 +120,7 @@ async function migrateCompanyKeysToCentral() {
             try {
                 // حذف النماذج المرتبطة أولاً (سيتم حذفها تلقائياً بسبب CASCADE)
                 // ثم حذف المفتاح
-                await prisma.geminiKey.delete({
+                await getSharedPrismaClient().geminiKey.delete({
                     where: { id: key.id }
                 });
                 deletedCount++;
@@ -163,7 +163,7 @@ async function migrateCompanyKeysToCentral() {
                 const newKeyId = generateId();
                 
                 // إنشاء المفتاح المركزي
-                await prisma.geminiKey.create({
+                await getSharedPrismaClient().geminiKey.create({
                     data: {
                         id: newKeyId,
                         name: keyData.name + ' (مركزي)',
@@ -185,7 +185,7 @@ async function migrateCompanyKeysToCentral() {
 
                 for (const modelInfo of modelsToCreate) {
                     try {
-                        await prisma.geminiKeyModel.create({
+                        await getSharedPrismaClient().geminiKeyModel.create({
                             data: {
                                 id: generateId(),
                                 keyId: newKeyId,
@@ -217,7 +217,7 @@ async function migrateCompanyKeysToCentral() {
 
         // 6. التحقق النهائي
         console.log('🔍 الخطوة 6: التحقق النهائي...');
-        const centralKeys = await prisma.geminiKey.findMany({
+        const centralKeys = await getSharedPrismaClient().geminiKey.findMany({
             where: {
                 keyType: 'CENTRAL',
                 companyId: null
@@ -236,7 +236,7 @@ async function migrateCompanyKeysToCentral() {
         console.error('Stack:', error.stack);
         process.exit(1);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
@@ -254,4 +254,5 @@ if (require.main === module) {
 }
 
 module.exports = { migrateCompanyKeysToCentral };
+
 

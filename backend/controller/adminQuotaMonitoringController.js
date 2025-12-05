@@ -3,7 +3,7 @@
  */
 
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // Get AIAgentService instance
 let aiAgentService = null;
@@ -25,7 +25,7 @@ async function getQuotaSystemStatus(req, res) {
     const modelManager = aiAgentService.getModelManager();
 
     // 1. Get all companies
-    const companies = await prisma.company.findMany({
+    const companies = await getSharedPrismaClient().company.findMany({
       select: {
         id: true,
         name: true
@@ -34,17 +34,17 @@ async function getQuotaSystemStatus(req, res) {
     console.log(`📊 [QUOTA-MONITORING] Found ${companies.length} companies`);
 
     // 2. Get system-wide statistics
-    const totalKeys = await prisma.geminiKey.count({
+    const totalKeys = await getSharedPrismaClient().geminiKey.count({
       where: { isActive: true }
     });
     console.log(`📊 [QUOTA-MONITORING] Total active keys: ${totalKeys}`);
 
-    const totalModels = await prisma.geminiKeyModel.count({
+    const totalModels = await getSharedPrismaClient().geminiKeyModel.count({
       where: { isEnabled: true }
     });
     console.log(`📊 [QUOTA-MONITORING] Total enabled models: ${totalModels}`);
 
-    const excludedModelsCount = await prisma.excludedModel.count({
+    const excludedModelsCount = await getSharedPrismaClient().excludedModel.count({
       where: {
         retryAt: {
           gt: new Date()
@@ -60,14 +60,14 @@ async function getQuotaSystemStatus(req, res) {
     console.log(`📊 [QUOTA-MONITORING] Pre-fetching company settings and models...`);
     
     const companyIds = companies.map(c => c.id);
-    const companySettings = await prisma.company.findMany({
+    const companySettings = await getSharedPrismaClient().company.findMany({
       where: { id: { in: companyIds } },
       select: { id: true, useCentralKeys: true }
     });
     const companySettingsMap = new Map(companySettings.map(c => [c.id, c.useCentralKeys || false]));
 
     // جلب كل النماذج دفعة واحدة
-    const allModels = await prisma.geminiKeyModel.findMany({
+    const allModels = await getSharedPrismaClient().geminiKeyModel.findMany({
       where: {
         model: { in: supportedModels },
         isEnabled: true,
@@ -218,7 +218,7 @@ async function getQuotaSystemStatus(req, res) {
     }
 
     // 5. Get excluded models
-    const excludedModelsData = await prisma.excludedModel.findMany({
+    const excludedModelsData = await getSharedPrismaClient().excludedModel.findMany({
       where: {
         retryAt: {
           gt: new Date()
@@ -234,7 +234,7 @@ async function getQuotaSystemStatus(req, res) {
     const keysMap = new Map();
     
     if (keyIds.length > 0) {
-      const keys = await prisma.geminiKey.findMany({
+      const keys = await getSharedPrismaClient().geminiKey.findMany({
         where: { id: { in: keyIds } },
         select: { id: true, name: true, companyId: true }
       });
@@ -252,7 +252,7 @@ async function getQuotaSystemStatus(req, res) {
     const lastUsedKeyId = modelManager.lastUsedGlobalKeyId;
     let lastUsedKeyInfo = null;
     if (lastUsedKeyId) {
-      const lastUsedKey = await prisma.geminiKey.findUnique({
+      const lastUsedKey = await getSharedPrismaClient().geminiKey.findUnique({
         where: { id: lastUsedKeyId },
         select: {
           id: true,
@@ -360,7 +360,7 @@ async function getCompanyQuotaDetails(req, res) {
     }
 
     // Get excluded models for this company
-    const excludedModelsData = await prisma.excludedModel.findMany({
+    const excludedModelsData = await getSharedPrismaClient().excludedModel.findMany({
       where: {
         companyId: companyId,
         retryAt: {
@@ -378,7 +378,7 @@ async function getCompanyQuotaDetails(req, res) {
         let keyInfo = { name: 'Unknown' };
         if (ex.keyId) {
           try {
-            const key = await prisma.geminiKey.findUnique({
+            const key = await getSharedPrismaClient().geminiKey.findUnique({
               where: { id: ex.keyId },
               select: { name: true }
             });
@@ -433,7 +433,7 @@ async function getRoundRobinStatus(req, res) {
     let lastUsedKeyInfo = null;
 
     if (lastUsedKeyId) {
-      const lastUsedKey = await prisma.geminiKey.findUnique({
+      const lastUsedKey = await getSharedPrismaClient().geminiKey.findUnique({
         where: { id: lastUsedKeyId },
         include: {
           company: {
@@ -456,7 +456,7 @@ async function getRoundRobinStatus(req, res) {
     }
 
     // Get all active keys with their models count
-    const activeKeys = await prisma.geminiKey.findMany({
+    const activeKeys = await getSharedPrismaClient().geminiKey.findMany({
       where: { isActive: true },
       include: {
         company: {
@@ -530,7 +530,7 @@ async function getSystemErrors(req, res) {
 
     // Check for models with high quota usage - BATCH PROCESSING
     const supportedModels = modelManager.getSupportedModels();
-    const companies = await prisma.company.findMany({
+    const companies = await getSharedPrismaClient().company.findMany({
       select: { id: true, name: true }
     });
 
@@ -612,7 +612,7 @@ async function getSystemErrors(req, res) {
     }
 
     // Check excluded models
-    const excludedModelsData = await prisma.excludedModel.findMany({
+    const excludedModelsData = await getSharedPrismaClient().excludedModel.findMany({
       where: {
         retryAt: {
           gt: new Date()
@@ -625,7 +625,7 @@ async function getSystemErrors(req, res) {
     const keysMap = new Map();
     
     if (keyIds.length > 0) {
-      const keys = await prisma.geminiKey.findMany({
+      const keys = await getSharedPrismaClient().geminiKey.findMany({
         where: { id: { in: keyIds } },
         select: { id: true, name: true }
       });
@@ -678,4 +678,5 @@ module.exports = {
   getRoundRobinStatus,
   getSystemErrors
 };
+
 

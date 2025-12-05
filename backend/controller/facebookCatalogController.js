@@ -6,14 +6,14 @@
 
 const FacebookCatalogService = require('../services/facebookCatalogService');
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 /**
  * جلب Access Token للشركة
  */
 async function getCompanyAdsAccessToken(companyId) {
   try {
-    const company = await prisma.company.findUnique({
+    const company = await getSharedPrismaClient().company.findUnique({
       where: { id: companyId },
       select: { 
         facebookAdsAccessToken: true,
@@ -34,7 +34,7 @@ async function getCompanyAdsAccessToken(companyId) {
 async function getCompanyBusinessId(companyId) {
   try {
     // محاولة الحصول من Ad Account
-    const adAccount = await prisma.facebookAdAccount.findFirst({
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: { companyId, isActive: true },
       select: { accountId: true }
     });
@@ -94,7 +94,7 @@ exports.getCatalogs = async (req, res) => {
     // حفظ/تحديث في قاعدة البيانات
     for (const catalogData of result.data) {
       // البحث أولاً عن Catalog موجود
-      const existing = await prisma.facebookProductCatalog.findFirst({
+      const existing = await getSharedPrismaClient().facebookProductCatalog.findFirst({
         where: {
           companyId,
           facebookCatalogId: catalogData.id
@@ -102,7 +102,7 @@ exports.getCatalogs = async (req, res) => {
       });
 
       if (existing) {
-        await prisma.facebookProductCatalog.update({
+        await getSharedPrismaClient().facebookProductCatalog.update({
           where: { id: existing.id },
           data: {
             name: catalogData.name,
@@ -111,7 +111,7 @@ exports.getCatalogs = async (req, res) => {
           }
         });
       } else {
-        await prisma.facebookProductCatalog.create({
+        await getSharedPrismaClient().facebookProductCatalog.create({
           data: {
             companyId,
             name: catalogData.name,
@@ -127,7 +127,7 @@ exports.getCatalogs = async (req, res) => {
     }
 
     // جلب من قاعدة البيانات
-    const savedCatalogs = await prisma.facebookProductCatalog.findMany({
+    const savedCatalogs = await getSharedPrismaClient().facebookProductCatalog.findMany({
       where: { companyId },
       include: {
         products: {
@@ -189,7 +189,7 @@ exports.createCatalog = async (req, res) => {
     }
 
     // حفظ في قاعدة البيانات
-    const catalog = await prisma.facebookProductCatalog.create({
+    const catalog = await getSharedPrismaClient().facebookProductCatalog.create({
       data: {
         companyId,
         adAccountId: adAccountId || null,
@@ -228,7 +228,7 @@ exports.getCatalog = async (req, res) => {
     const { companyId } = req.user;
     const { id } = req.params;
 
-    const catalog = await prisma.facebookProductCatalog.findFirst({
+    const catalog = await getSharedPrismaClient().facebookProductCatalog.findFirst({
       where: {
         id,
         companyId
@@ -262,7 +262,7 @@ exports.getCatalog = async (req, res) => {
 
         if (result.success) {
           // تحديث في قاعدة البيانات
-          await prisma.facebookProductCatalog.update({
+          await getSharedPrismaClient().facebookProductCatalog.update({
             where: { id },
             data: {
               totalProducts: result.data.product_count || 0,
@@ -274,7 +274,7 @@ exports.getCatalog = async (req, res) => {
       }
     }
 
-    const updatedCatalog = await prisma.facebookProductCatalog.findUnique({
+    const updatedCatalog = await getSharedPrismaClient().facebookProductCatalog.findUnique({
       where: { id },
       include: {
         products: {
@@ -310,7 +310,7 @@ exports.deleteCatalog = async (req, res) => {
     const { companyId } = req.user;
     const { id } = req.params;
 
-    const catalog = await prisma.facebookProductCatalog.findFirst({
+    const catalog = await getSharedPrismaClient().facebookProductCatalog.findFirst({
       where: {
         id,
         companyId
@@ -334,7 +334,7 @@ exports.deleteCatalog = async (req, res) => {
     }
 
     // حذف من قاعدة البيانات
-    await prisma.facebookProductCatalog.delete({
+    await getSharedPrismaClient().facebookProductCatalog.delete({
       where: { id }
     });
 
@@ -366,7 +366,7 @@ exports.syncProducts = async (req, res) => {
     const { catalogId } = req.params;
     const { productIds, syncAll = false } = req.body;
 
-    const catalog = await prisma.facebookProductCatalog.findFirst({
+    const catalog = await getSharedPrismaClient().facebookProductCatalog.findFirst({
       where: {
         id: catalogId,
         companyId
@@ -393,7 +393,7 @@ exports.syncProducts = async (req, res) => {
       ? { companyId, isActive: true }
       : { companyId, id: { in: productIds || [] }, isActive: true };
 
-    const products = await prisma.product.findMany({
+    const products = await getSharedPrismaClient().product.findMany({
       where,
       include: {
         category: true,
@@ -414,7 +414,7 @@ exports.syncProducts = async (req, res) => {
     const errors = [];
 
     // تحديث حالة Sync
-    await prisma.facebookProductCatalog.update({
+    await getSharedPrismaClient().facebookProductCatalog.update({
       where: { id: catalogId },
       data: {
         lastSyncStatus: 'IN_PROGRESS',
@@ -447,7 +447,7 @@ exports.syncProducts = async (req, res) => {
 
         if (result.success) {
           // حفظ/تحديث في قاعدة البيانات
-          const existing = await prisma.facebookCatalogProduct.findFirst({
+          const existing = await getSharedPrismaClient().facebookCatalogProduct.findFirst({
             where: {
               catalogId,
               productId: product.id
@@ -455,7 +455,7 @@ exports.syncProducts = async (req, res) => {
           });
 
           if (existing) {
-            await prisma.facebookCatalogProduct.update({
+            await getSharedPrismaClient().facebookCatalogProduct.update({
               where: { id: existing.id },
               data: {
                 facebookProductId: result.productId,
@@ -467,7 +467,7 @@ exports.syncProducts = async (req, res) => {
               }
             });
           } else {
-            await prisma.facebookCatalogProduct.create({
+            await getSharedPrismaClient().facebookCatalogProduct.create({
               data: {
                 catalogId,
                 productId: product.id,
@@ -509,7 +509,7 @@ exports.syncProducts = async (req, res) => {
     }
 
     // تحديث حالة Sync
-    await prisma.facebookProductCatalog.update({
+    await getSharedPrismaClient().facebookProductCatalog.update({
       where: { id: catalogId },
       data: {
         lastSyncStatus: failCount === 0 ? 'SUCCESS' : 'FAILED',
@@ -533,7 +533,7 @@ exports.syncProducts = async (req, res) => {
     
     // تحديث حالة Sync
     try {
-      await prisma.facebookProductCatalog.update({
+      await getSharedPrismaClient().facebookProductCatalog.update({
         where: { id: req.params.catalogId },
         data: {
           lastSyncStatus: 'FAILED'
@@ -559,7 +559,7 @@ exports.getCatalogProducts = async (req, res) => {
     const { catalogId } = req.params;
     const { page = 1, limit = 50 } = req.query;
 
-    const catalog = await prisma.facebookProductCatalog.findFirst({
+    const catalog = await getSharedPrismaClient().facebookProductCatalog.findFirst({
       where: {
         id: catalogId,
         companyId
@@ -573,7 +573,7 @@ exports.getCatalogProducts = async (req, res) => {
       });
     }
 
-    const products = await prisma.facebookCatalogProduct.findMany({
+    const products = await getSharedPrismaClient().facebookCatalogProduct.findMany({
       where: { catalogId },
       include: {
         product: {
@@ -591,7 +591,7 @@ exports.getCatalogProducts = async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
 
-    const total = await prisma.facebookCatalogProduct.count({
+    const total = await getSharedPrismaClient().facebookCatalogProduct.count({
       where: { catalogId }
     });
 
@@ -622,7 +622,7 @@ exports.getProductSets = async (req, res) => {
     const { companyId } = req.user;
     const { catalogId } = req.params;
 
-    const catalog = await prisma.facebookProductCatalog.findFirst({
+    const catalog = await getSharedPrismaClient().facebookProductCatalog.findFirst({
       where: {
         id: catalogId,
         companyId
@@ -683,7 +683,7 @@ exports.createProductSet = async (req, res) => {
       });
     }
 
-    const catalog = await prisma.facebookProductCatalog.findFirst({
+    const catalog = await getSharedPrismaClient().facebookProductCatalog.findFirst({
       where: {
         id: catalogId,
         companyId
@@ -767,7 +767,7 @@ exports.createDynamicAd = async (req, res) => {
     }
 
     // التحقق من Catalog
-    const catalog = await prisma.facebookProductCatalog.findFirst({
+    const catalog = await getSharedPrismaClient().facebookProductCatalog.findFirst({
       where: {
         id: catalogId,
         companyId
@@ -782,7 +782,7 @@ exports.createDynamicAd = async (req, res) => {
     }
 
     // التحقق من AdSet
-    const adSet = await prisma.facebookAdSet.findFirst({
+    const adSet = await getSharedPrismaClient().facebookAdSet.findFirst({
       where: {
         id: adSetId,
         companyId: req.user.companyId
@@ -832,7 +832,7 @@ exports.createDynamicAd = async (req, res) => {
     }
 
     // حفظ في قاعدة البيانات
-    const dynamicAd = await prisma.facebookDynamicAd.create({
+    const dynamicAd = await getSharedPrismaClient().facebookDynamicAd.create({
       data: {
         companyId,
         catalogId,
@@ -867,4 +867,5 @@ exports.createDynamicAd = async (req, res) => {
 };
 
 module.exports = exports;
+
 

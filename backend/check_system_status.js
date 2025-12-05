@@ -1,10 +1,10 @@
 const { getSharedPrismaClient } = require('./services/sharedDatabase');
 
 async function checkSystemStatus() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     try {
         // 1. Check Sessions
-        const sessions = await prisma.whatsAppSession.findMany();
+        const sessions = await getSharedPrismaClient().whatsAppSession.findMany();
         console.log('--- Sessions ---');
         sessions.forEach(s => {
             console.log(`${s.name} (${s.phoneNumber}): ${s.status}`);
@@ -12,7 +12,7 @@ async function checkSystemStatus() {
 
         // 2. Check ANY messages in last 30 mins
         const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
-        const messages = await prisma.whatsAppMessage.findMany({
+        const messages = await getSharedPrismaClient().whatsAppMessage.findMany({
             where: { timestamp: { gt: thirtyMinutesAgo } },
             orderBy: { timestamp: 'desc' },
             take: 10
@@ -32,3 +32,4 @@ async function checkSystemStatus() {
 }
 
 checkSystemStatus();
+

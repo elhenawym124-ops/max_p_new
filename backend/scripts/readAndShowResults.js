@@ -9,10 +9,10 @@ const { ProblemsAnalyzer } = require('./getAndAnalyzeProblems');
 
 async function readAndShowResults() {
   try {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     // جلب آخر 5 محادثات اختبارية
-    const conversations = await prisma.conversation.findMany({
+    const conversations = await getSharedPrismaClient().conversation.findMany({
       where: { channel: 'TEST' },
       include: {
         messages: {
@@ -89,4 +89,5 @@ async function readAndShowResults() {
 }
 
 readAndShowResults();
+
 

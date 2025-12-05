@@ -9,7 +9,7 @@ const { requireAuth } = require('../middleware/auth');
 const ConflictDetectionService = require('../services/conflictDetectionService');
 
 const router = express.Router();
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const conflictDetector = new ConflictDetectionService();
 
 /**
@@ -22,7 +22,7 @@ router.get('/:companyId', async (req, res) => {
     
     //console.log(`📊 [API] Getting priority settings for company: ${companyId}`);
     
-    const aiSettings = await prisma.aiSettings.findFirst({
+    const aiSettings = await getSharedPrismaClient().aiSettings.findFirst({
       where: { companyId }
     });
     
@@ -103,7 +103,7 @@ router.put('/:companyId', async (req, res) => {
     }
     
     // تحديث الإعدادات
-    const updatedSettings = await prisma.aiSettings.update({
+    const updatedSettings = await getSharedPrismaClient().aiSettings.update({
       where: { companyId },
       data: {
         promptPriority: promptPriority || undefined,
@@ -207,14 +207,14 @@ router.get('/:companyId/conflict-reports', async (req, res) => {
       whereClause.resolved = resolved === 'true';
     }
     
-    const reports = await prisma.conflictReports.findMany({
+    const reports = await getSharedPrismaClient().conflictReports.findMany({
       where: whereClause,
       orderBy: { createdAt: 'desc' },
       skip: (parseInt(page) - 1) * parseInt(limit),
       take: parseInt(limit)
     });
     
-    const totalReports = await prisma.conflictReports.count({
+    const totalReports = await getSharedPrismaClient().conflictReports.count({
       where: whereClause
     });
     
@@ -251,7 +251,7 @@ router.put('/:companyId/conflict-reports/:reportId/resolve', async (req, res) =>
     
     //console.log(`✅ [API] Resolving conflict report: ${reportId}`);
     
-    const updatedReport = await prisma.conflictReports.update({
+    const updatedReport = await getSharedPrismaClient().conflictReports.update({
       where: { 
         id: reportId,
         companyId 
@@ -279,3 +279,4 @@ router.put('/:companyId/conflict-reports/:reportId/resolve', async (req, res) =>
 });
 
 module.exports = router;
+

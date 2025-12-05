@@ -12,8 +12,10 @@ const {
 const {
   fetchOrdersFromWooCommerce,
   importOrdersFromWooCommerce,
+  getOrdersCount,
   getLocalOrdersForExport,
   exportOrdersToWooCommerce,
+  getWooCommerceStatuses,
   saveWooCommerceSettings,
   getWooCommerceSettings,
   getSyncLogs,
@@ -55,6 +57,20 @@ router.post('/import-selected', verifyToken.authenticateToken, importSelectedPro
  * @access  Private
  */
 router.post('/orders/fetch', verifyToken.authenticateToken, fetchOrdersFromWooCommerce);
+
+/**
+ * @route   POST /api/v1/woocommerce/orders/count
+ * @desc    جلب عدد الطلبات الكلي من WooCommerce
+ * @access  Private
+ */
+router.post('/orders/count', verifyToken.authenticateToken, getOrdersCount);
+
+/**
+ * @route   GET /api/v1/woocommerce/orders/statuses
+ * @desc    جلب حالات الطلبات من WooCommerce
+ * @access  Private
+ */
+router.get('/orders/statuses', verifyToken.authenticateToken, getWooCommerceStatuses);
 
 /**
  * @route   POST /api/v1/woocommerce/orders/import

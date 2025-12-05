@@ -1,6 +1,6 @@
 // Use shared database service instead of creating new PrismaClient
 const { getSharedPrismaClient, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 /**
  * Shipping Zone Controller
@@ -12,7 +12,7 @@ const getShippingZones = async (req, res) => {
   try {
     const { companyId } = req.user;
 
-    const zones = await prisma.shippingZone.findMany({
+    const zones = await getSharedPrismaClient().shippingZone.findMany({
       where: { companyId },
       orderBy: [
         { isActive: 'desc' },
@@ -43,7 +43,7 @@ const getShippingZoneById = async (req, res) => {
     const { id } = req.params;
     const { companyId } = req.user;
 
-    const zone = await prisma.shippingZone.findFirst({
+    const zone = await getSharedPrismaClient().shippingZone.findFirst({
       where: {
         id,
         companyId
@@ -114,7 +114,7 @@ const createShippingZone = async (req, res) => {
       });
     }
 
-    const zone = await prisma.shippingZone.create({
+    const zone = await getSharedPrismaClient().shippingZone.create({
       data: {
         governorates: governorates, // Prisma will handle JSON conversion
         price: parseFloat(price),
@@ -150,7 +150,7 @@ const updateShippingZone = async (req, res) => {
     const { governorates, price, deliveryTime, isActive } = req.body;
 
     // Check if zone exists and belongs to company
-    const existingZone = await prisma.shippingZone.findFirst({
+    const existingZone = await getSharedPrismaClient().shippingZone.findFirst({
       where: {
         id,
         companyId
@@ -198,7 +198,7 @@ const updateShippingZone = async (req, res) => {
       });
     }
 
-    const zone = await prisma.shippingZone.update({
+    const zone = await getSharedPrismaClient().shippingZone.update({
       where: { id },
       data: {
         governorates: governorates,
@@ -233,7 +233,7 @@ const deleteShippingZone = async (req, res) => {
     const { companyId } = req.user;
 
     // Check if zone exists and belongs to company
-    const existingZone = await prisma.shippingZone.findFirst({
+    const existingZone = await getSharedPrismaClient().shippingZone.findFirst({
       where: {
         id,
         companyId
@@ -250,7 +250,7 @@ const deleteShippingZone = async (req, res) => {
       });
     }
 
-    await prisma.shippingZone.delete({
+    await getSharedPrismaClient().shippingZone.delete({
       where: { id }
     });
 
@@ -277,7 +277,7 @@ const toggleZoneStatus = async (req, res) => {
     const { id } = req.params;
     const { companyId } = req.user;
 
-    const zone = await prisma.shippingZone.findFirst({
+    const zone = await getSharedPrismaClient().shippingZone.findFirst({
       where: {
         id,
         companyId
@@ -294,7 +294,7 @@ const toggleZoneStatus = async (req, res) => {
       });
     }
 
-    const updatedZone = await prisma.shippingZone.update({
+    const updatedZone = await getSharedPrismaClient().shippingZone.update({
       where: { id },
       data: {
         isActive: !zone.isActive
@@ -338,7 +338,7 @@ const findShippingPrice = async (req, res) => {
     const normalizedInput = governorate.trim().toLowerCase();
 
     // Get all active zones for the company
-    const zones = await prisma.shippingZone.findMany({
+    const zones = await getSharedPrismaClient().shippingZone.findMany({
       where: {
         companyId,
         isActive: true
@@ -394,7 +394,7 @@ const getActiveShippingZones = async (req, res) => {
   try {
     const { companyId } = req.user;
 
-    const zones = await prisma.shippingZone.findMany({
+    const zones = await getSharedPrismaClient().shippingZone.findMany({
       where: {
         companyId,
         isActive: true
@@ -431,3 +431,4 @@ module.exports = {
   findShippingPrice,
   getActiveShippingZones
 };
+

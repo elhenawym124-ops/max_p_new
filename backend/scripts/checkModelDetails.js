@@ -5,13 +5,13 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 
 async function checkModelDetails(modelName = 'gemini-2.5-pro', keyId = null) {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     try {
         console.log(`\n🔍 فحص تفاصيل النموذج: ${modelName}\n`);
         
         // إذا لم يتم تحديد keyId، نأخذ أول مفتاح مركزي نشط
         if (!keyId) {
-            const centralKey = await prisma.geminiKey.findFirst({
+            const centralKey = await getSharedPrismaClient().geminiKey.findFirst({
                 where: {
                     keyType: 'CENTRAL',
                     isActive: true
@@ -31,7 +31,7 @@ async function checkModelDetails(modelName = 'gemini-2.5-pro', keyId = null) {
         }
         
         // جلب النموذج
-        const model = await prisma.geminiKeyModel.findFirst({
+        const model = await getSharedPrismaClient().geminiKeyModel.findFirst({
             where: {
                 keyId: keyId,
                 model: modelName,
@@ -149,7 +149,7 @@ async function checkModelDetails(modelName = 'gemini-2.5-pro', keyId = null) {
         console.error('❌ خطأ:', error.message);
         console.error(error.stack);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
@@ -157,4 +157,5 @@ async function checkModelDetails(modelName = 'gemini-2.5-pro', keyId = null) {
 const modelName = process.argv[2] || 'gemini-2.5-pro';
 const keyId = process.argv[3] || null;
 checkModelDetails(modelName, keyId);
+
 

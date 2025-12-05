@@ -3,7 +3,7 @@
  */
 
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 async function fixUsageColumnType() {
     try {
@@ -12,7 +12,7 @@ async function fixUsageColumnType() {
         // التحقق من اسم الجدول الحقيقي أولاً
         console.log('🔍 التحقق من اسم الجدول...');
         
-        const tables = await prisma.$queryRaw`
+        const tables = await getSharedPrismaClient().$queryRaw`
             SHOW TABLES LIKE '%gemini%key%model%'
         `;
         
@@ -28,7 +28,7 @@ async function fixUsageColumnType() {
             const commonNames = ['gemini_key_models', 'geminiKeyModels', 'GeminiKeyModel'];
             for (const name of commonNames) {
                 try {
-                    await prisma.$queryRaw`SELECT 1 FROM ${prisma.$queryRawUnsafe(name)} LIMIT 1`;
+                    await getSharedPrismaClient().$queryRaw`SELECT 1 FROM ${getSharedPrismaClient().$queryRawUnsafe(name)} LIMIT 1`;
                     tableName = name;
                     break;
                 } catch (e) {
@@ -45,7 +45,7 @@ async function fixUsageColumnType() {
         // تغيير نوع العمود من VARCHAR(191) إلى TEXT
         console.log(`🔧 تغيير نوع حقل usage في الجدول: ${tableName}...`);
         
-        await prisma.$executeRawUnsafe(`
+        await getSharedPrismaClient().$executeRawUnsafe(`
             ALTER TABLE \`${tableName}\` 
             MODIFY COLUMN \`usage\` TEXT NOT NULL
         `);
@@ -58,9 +58,10 @@ async function fixUsageColumnType() {
         console.error('❌ خطأ:', error.message);
         console.error('Stack:', error.stack);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 fixUsageColumnType();
+
 

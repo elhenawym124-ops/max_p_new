@@ -3,7 +3,7 @@ const { getSharedPrismaClient } = require('../services/sharedDatabase');
 const { requireAuth } = require('../middleware/auth');
 const router = express.Router();
 
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 /**
  * تشغيل/إيقاف الذكاء الاصطناعي لمحادثة معينة
@@ -26,7 +26,7 @@ router.patch('/conversations/:conversationId/ai-toggle', requireAuth, async (req
     //console.log(`🤖 [AI-TOGGLE] Toggling AI for conversation ${conversationId} to ${aiEnabled} (Company: ${companyId})`);
 
     // التحقق من وجود المحادثة والتأكد من أنها تنتمي للشركة
-    const conversation = await prisma.conversation.findFirst({
+    const conversation = await getSharedPrismaClient().conversation.findFirst({
       where: {
         id: conversationId,
         companyId: companyId
@@ -56,7 +56,7 @@ router.patch('/conversations/:conversationId/ai-toggle', requireAuth, async (req
       aiEnabled: Boolean(aiEnabled)
     };
 
-    const updatedConversation = await prisma.conversation.update({
+    const updatedConversation = await getSharedPrismaClient().conversation.update({
       where: {
         id: conversationId,
         companyId: companyId
@@ -117,7 +117,7 @@ router.get('/conversations/:conversationId/ai-status', requireAuth, async (req, 
       });
     }
 
-    const conversation = await prisma.conversation.findFirst({
+    const conversation = await getSharedPrismaClient().conversation.findFirst({
       where: {
         id: conversationId,
         companyId: companyId
@@ -190,7 +190,7 @@ router.patch('/conversations/bulk-ai-toggle', requireAuth, async (req, res) => {
     //console.log(`🤖 [BULK-AI-TOGGLE] Toggling AI for ${conversationIds.length} conversations to ${aiEnabled} (Company: ${companyId})`);
 
     // الحصول على المحادثات وتحديث metadata لكل منها (فقط للشركة المحددة)
-    const conversations = await prisma.conversation.findMany({
+    const conversations = await getSharedPrismaClient().conversation.findMany({
       where: {
         id: { in: conversationIds },
         companyId: companyId
@@ -207,7 +207,7 @@ router.patch('/conversations/bulk-ai-toggle', requireAuth, async (req, res) => {
           aiEnabled: Boolean(aiEnabled)
         };
 
-        await prisma.conversation.update({
+        await getSharedPrismaClient().conversation.update({
           where: {
             id: conversation.id,
             companyId: companyId
@@ -242,3 +242,4 @@ router.patch('/conversations/bulk-ai-toggle', requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+

@@ -7,11 +7,15 @@ const { getSharedPrismaClient } = require('./sharedDatabase');
 
 class PatternApplicationService {
   constructor() {
-    this.prisma = getSharedPrismaClient(); // Use shared database connection
+    // this.prisma = getSharedPrismaClient(); // ❌ Removed
+  }
+
+  get prisma() {
+    return getSharedPrismaClient();
     this.patternCache = new Map(); // تخزين مؤقت للأنماط المعتمدة
     this.cacheExpiry = 5 * 60 * 1000; // 5 دقائق
     this.lastCacheUpdate = new Map();
-    
+
     //console.log('🎯 [PatternApplication] Service initialized');
   }
 
@@ -122,7 +126,7 @@ class PatternApplicationService {
 
       for (const pattern of wordPatterns) {
         const patternData = pattern.pattern;
-        
+
         // دعم successfulWords (البنية الجديدة)
         if (patternData.successfulWords && Array.isArray(patternData.successfulWords)) {
           // إضافة الكلمات الناجحة إذا لم تكن موجودة
@@ -192,11 +196,11 @@ class PatternApplicationService {
 
       for (const pattern of stylePatterns) {
         const patternData = pattern.pattern;
-        
+
         if (patternData.preferredLength) {
           const currentWordCount = enhancedText.split(' ').length;
           const targetLength = patternData.preferredLength;
-          
+
           // تعديل طول النص حسب النمط المفضل
           if (currentWordCount < targetLength * 0.8) {
             // النص قصير جداً - إضافة تفاصيل
@@ -232,7 +236,7 @@ class PatternApplicationService {
 
       for (const pattern of emotionalPatterns) {
         const patternData = pattern.pattern;
-        
+
         if (patternData.preferredSentiment > 0.5) {
           // تحسين النبرة الإيجابية
           enhancedText = this.enhancePositiveTone(enhancedText);
@@ -513,10 +517,10 @@ class PatternApplicationService {
   async applyAllPatterns(text, companyId, conversationId = null) {
     try {
       //console.log(`🎯 [PatternApplication] Applying patterns for company: ${companyId}`);
-      
+
       // جلب الأنماط المعتمدة
       const patterns = await this.getApprovedPatterns(companyId);
-      
+
       if (patterns.length === 0) {
         //console.log(`⚠️ [PatternApplication] No approved patterns found for company: ${companyId}`);
         return text;
@@ -526,10 +530,10 @@ class PatternApplicationService {
 
       // تطبيق أنماط الكلمات
       enhancedText = await this.applyWordPatterns(enhancedText, patterns);
-      
+
       // تطبيق أنماط الأسلوب
       enhancedText = await this.applyStylePatterns(enhancedText, patterns);
-      
+
       // تطبيق الأنماط العاطفية
       enhancedText = await this.applyEmotionalPatterns(enhancedText, patterns);
 
@@ -595,7 +599,7 @@ class PatternApplicationService {
       'مش موجود': 'غير متاح حالياً',
       'مستحيل': 'صعب حالياً'
     };
-    
+
     const replacement = replacements[failWord] || failWord;
     return text.replace(new RegExp(failWord, 'gi'), replacement);
   }
@@ -611,7 +615,7 @@ class PatternApplicationService {
       'يمكنني تقديم المزيد من التفاصيل',
       'لا تتردد في السؤال'
     ];
-    
+
     const expansion = expansions[Math.floor(Math.random() * expansions.length)];
     return `${text} ${expansion}`;
   }
@@ -622,7 +626,7 @@ class PatternApplicationService {
   condenseText(text, targetLength) {
     const words = text.split(' ');
     if (words.length <= targetLength) return text;
-    
+
     return words.slice(0, targetLength).join(' ') + '...';
   }
 
@@ -636,7 +640,7 @@ class PatternApplicationService {
         text += ' هل يمكنني مساعدتك في شيء آخر؟';
       }
     }
-    
+
     return text;
   }
 
@@ -647,11 +651,11 @@ class PatternApplicationService {
     // إضافة كلمات إيجابية
     const positiveWords = ['ممتاز', 'رائع', 'بالطبع', 'يسعدني'];
     const randomPositive = positiveWords[Math.floor(Math.random() * positiveWords.length)];
-    
+
     if (!text.includes(randomPositive)) {
       return `${randomPositive}! ${text}`;
     }
-    
+
     return text;
   }
 
@@ -699,8 +703,8 @@ class PatternApplicationService {
         if (conversationOutcome) {
           // إذا كانت النتيجة إيجابية (طلب، رضا، إلخ)
           if (conversationOutcome.outcome === 'order_created' ||
-              conversationOutcome.outcome === 'satisfied' ||
-              conversationOutcome.satisfactionScore > 3) {
+            conversationOutcome.outcome === 'satisfied' ||
+            conversationOutcome.satisfactionScore > 3) {
             successCount++;
           }
         } else {

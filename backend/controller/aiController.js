@@ -1,5 +1,5 @@
 const { getSharedPrismaClient, initializeSharedDatabase, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 // AI Agent Integration
 const aiAgentService = require('../services/aiAgentService');
 const ragService = require('../services/ragService');
@@ -100,15 +100,15 @@ const getAIStatistics = async (req, res) => {
             companyId: companyId
         };
 
-        const totalMessages = await prisma.message.count({
+        const totalMessages = await getSharedPrismaClient().message.count({
             where: whereCondition
         });
 
-        const aiInteractions = await prisma.aiInteraction.count({
+        const aiInteractions = await getSharedPrismaClient().aiInteraction.count({
             where: aiWhereCondition
         });
 
-        const humanHandoffs = await prisma.aiInteraction.count({
+        const humanHandoffs = await getSharedPrismaClient().aiInteraction.count({
             where: {
                 ...aiWhereCondition,
                 requiresHumanIntervention: true
@@ -116,7 +116,7 @@ const getAIStatistics = async (req, res) => {
         });
 
         // حساب متوسط وقت الرد
-        const avgResponseTime = await prisma.aiInteraction.aggregate({
+        const avgResponseTime = await getSharedPrismaClient().aiInteraction.aggregate({
             where: aiWhereCondition,
             _avg: {
                 responseTime: true
@@ -124,7 +124,7 @@ const getAIStatistics = async (req, res) => {
         });
 
         // حساب متوسط الثقة
-        const avgConfidence = await prisma.aiInteraction.aggregate({
+        const avgConfidence = await getSharedPrismaClient().aiInteraction.aggregate({
             where: aiWhereCondition,
             _avg: {
                 confidence: true
@@ -132,7 +132,7 @@ const getAIStatistics = async (req, res) => {
         });
 
         // أكثر النوايا شيوعاً
-        const intentCounts = await prisma.aiInteraction.groupBy({
+        const intentCounts = await getSharedPrismaClient().aiInteraction.groupBy({
             by: ['intent'],
             where: aiWhereCondition,
             _count: {
@@ -152,7 +152,7 @@ const getAIStatistics = async (req, res) => {
         }));
 
         // توزيع المشاعر
-        const sentimentCounts = await prisma.aiInteraction.groupBy({
+        const sentimentCounts = await getSharedPrismaClient().aiInteraction.groupBy({
             by: ['sentiment'],
             where: aiWhereCondition,
             _count: {
@@ -198,7 +198,7 @@ const getAIStatistics = async (req, res) => {
 
 const clearConversationMemory = async (req, res) => {
     try {
-        const deletedCount = await prisma.conversationMemory.deleteMany({});
+        const deletedCount = await getSharedPrismaClient().conversationMemory.deleteMany({});
 
         //console.log(`🧹 Cleared ${deletedCount.count} memory records`);
 
@@ -303,7 +303,7 @@ async function createAIManagementTables() {
     //console.log('🔧 Creating AI management tables...');
 
     // Create gemini_keys table
-    await prisma.$executeRaw`
+    await getSharedPrismaClient().$executeRaw`
       CREATE TABLE IF NOT EXISTS \`gemini_keys\` (
         \`id\` VARCHAR(191) NOT NULL,
         \`name\` VARCHAR(191) NOT NULL,
@@ -318,7 +318,7 @@ async function createAIManagementTables() {
     `;
 
     // Create system_prompts table
-    await prisma.$executeRaw`
+    await getSharedPrismaClient().$executeRaw`
       CREATE TABLE IF NOT EXISTS \`system_prompts\` (
         \`id\` VARCHAR(191) NOT NULL,
         \`name\` VARCHAR(191) NOT NULL,
@@ -376,7 +376,7 @@ const getAllGeminiKeys = async (req, res) => {
         }
 
         // 🔒 جلب المفاتيح الخاصة بالشركة فقط
-        const keys = await prisma.$queryRaw`
+        const keys = await getSharedPrismaClient().$queryRaw`
       SELECT * FROM gemini_keys
       WHERE companyId = ${companyId}
       ORDER BY priority ASC
@@ -386,7 +386,7 @@ const getAllGeminiKeys = async (req, res) => {
         const keysWithModels = [];
         for (const key of keys) {
             try {
-                const models = await prisma.$queryRaw`
+                const models = await getSharedPrismaClient().$queryRaw`
           SELECT * FROM \`gemini_key_models\`
           WHERE \`keyId\` = ${key.id}
           ORDER BY \`priority\` ASC
@@ -522,7 +522,7 @@ const addNewGeminKey = async (req, res) => {
 
         // Check if API key already exists
         //console.log('🔍 Checking for duplicate API key...');
-        const existingKey = await prisma.$queryRaw`
+        const existingKey = await getSharedPrismaClient().$queryRaw`
             SELECT id, name FROM gemini_keys WHERE apiKey = ${apiKey} LIMIT 1
         `;
         
@@ -565,7 +565,7 @@ const addNewGeminKey = async (req, res) => {
 
         // 🔒 Get current key count for this company only
         //console.log('📊 Getting key count for company:', companyId);
-        const keyCount = await prisma.$queryRaw`
+        const keyCount = await getSharedPrismaClient().$queryRaw`
       SELECT COUNT(*) as count FROM gemini_keys WHERE companyId = ${companyId}
     `;
         const count = Number(keyCount[0]?.count || 0);
@@ -586,7 +586,7 @@ const addNewGeminKey = async (req, res) => {
         //     isFirstKey
         // });
 
-        await prisma.$executeRaw`
+        await getSharedPrismaClient().$executeRaw`
       INSERT INTO gemini_keys (id, name, apiKey, model, isActive, priority, description, companyId, createdAt, updatedAt, \`usage\`, currentUsage, maxRequestsPerDay)
       VALUES (${keyId}, ${name}, ${apiKey}, 'gemini-2.5-flash', ${isFirstKey}, ${priority}, ${description || defaultDescription}, ${companyId}, NOW(), NOW(), '{"used": 0, "limit": 1000000}', 0, 1500)
     `;
@@ -634,7 +634,7 @@ const addNewGeminKey = async (req, res) => {
             try {
                 //console.log(`📦 Creating model: ${modelInfo.model}`);
                 const defaultLimit = modelInfo.tpm || 250000;
-                await prisma.$executeRaw`
+                await getSharedPrismaClient().$executeRaw`
           INSERT INTO \`gemini_key_models\`
           (\`id\`, \`keyId\`, \`model\`, \`usage\`, \`isEnabled\`, \`priority\`, \`createdAt\`, \`updatedAt\`)
           VALUES
@@ -728,7 +728,7 @@ const toggleGeminiKeyActiveStatus = async (req, res) => {
         //console.log('🔄 [TOGGLE-KEY] Toggling key for company:', companyId, 'Key ID:', id);
 
         // 🔒 البحث عن المفتاح مع التأكد من العزل
-        const key = await prisma.$queryRaw`
+        const key = await getSharedPrismaClient().$queryRaw`
       SELECT * FROM gemini_keys
       WHERE id = ${id} AND companyId = ${companyId}
     `;
@@ -744,7 +744,7 @@ const toggleGeminiKeyActiveStatus = async (req, res) => {
         const newStatus = !currentKey.isActive;
 
         // 🔒 تحديث المفتاح مع العزل
-        await prisma.$executeRaw`
+        await getSharedPrismaClient().$executeRaw`
       UPDATE gemini_keys
       SET isActive = ${newStatus}
       WHERE id = ${id} AND companyId = ${companyId}
@@ -788,7 +788,7 @@ const updateGeminiKeyModel = async (req, res) => {
             });
         }
 
-        const key = await prisma.geminiKey.findUnique({
+        const key = await getSharedPrismaClient().geminiKey.findUnique({
             where: { id }
         });
 
@@ -808,7 +808,7 @@ const updateGeminiKeyModel = async (req, res) => {
             });
         }
 
-        await prisma.geminiKey.update({
+        await getSharedPrismaClient().geminiKey.update({
             where: { id },
             data: {
                 model: model.trim(),
@@ -850,7 +850,7 @@ const deleteGeminiKey = async (req, res) => {
         //console.log('🗑️ [DELETE-KEY] Deleting key for company:', companyId, 'Key ID:', id);
 
         // 🔒 التأكد من أن المفتاح ينتمي للشركة
-        const key = await prisma.$queryRaw`
+        const key = await getSharedPrismaClient().$queryRaw`
       SELECT * FROM gemini_keys
       WHERE id = ${id} AND companyId = ${companyId}
     `;
@@ -863,7 +863,7 @@ const deleteGeminiKey = async (req, res) => {
         }
 
         // 🔒 حذف المفتاح مع العزل
-        await prisma.$executeRaw`
+        await getSharedPrismaClient().$executeRaw`
       DELETE FROM gemini_keys
       WHERE id = ${id} AND companyId = ${companyId}
     `;
@@ -920,7 +920,7 @@ const testGeminiKey2 = async (req, res) => {
         const { id } = req.params;
 
         // Get key with its models
-        const key = await prisma.geminiKey.findUnique({
+        const key = await getSharedPrismaClient().geminiKey.findUnique({
             where: { id },
             include: {
                 models: {
@@ -1162,7 +1162,7 @@ const getAvailableModels = async (req, res) => {
 async function checkTableExists(tableName) {
     try {
         // Use a safer approach to check table existence
-        const result = await prisma.$queryRaw`SELECT COUNT(*) as count FROM information_schema.tables WHERE table_name = ${tableName}`;
+        const result = await getSharedPrismaClient().$queryRaw`SELECT COUNT(*) as count FROM information_schema.tables WHERE table_name = ${tableName}`;
         return result[0]?.count > 0;
     } catch (error) {
         //console.log(`⚠️ Error checking table ${tableName}:`, error.message);
@@ -1186,7 +1186,7 @@ const getAllSystemPrompts = async (req, res) => {
             await createAIManagementTables();
         }
 
-        const prompts = await prisma.systemPrompt.findMany({
+        const prompts = await getSharedPrismaClient().systemPrompt.findMany({
             where: { companyId },  // فلترة حسب الشركة
             orderBy: { createdAt: 'desc' }
         });
@@ -1223,7 +1223,7 @@ const addNewSystemPrompt = async (req, res) => {
             });
         }
 
-        const newPrompt = await prisma.systemPrompt.create({
+        const newPrompt = await getSharedPrismaClient().systemPrompt.create({
             data: {
                 name,
                 content,
@@ -1259,13 +1259,13 @@ const activateSystemPrompt = async (req, res) => {
         const { id } = req.params;
 
         // Deactivate all other prompts for this company only
-        await prisma.systemPrompt.updateMany({
+        await getSharedPrismaClient().systemPrompt.updateMany({
             where: { companyId },  // فقط برومبت هذه الشركة
             data: { isActive: false }
         });
 
         // Activate the selected prompt (with company check)
-        await prisma.systemPrompt.update({
+        await getSharedPrismaClient().systemPrompt.update({
             where: {
                 id,
                 companyId  // التأكد أن البرومبت ينتمي لهذه الشركة
@@ -1311,7 +1311,7 @@ const updateSystemPrompt = async (req, res) => {
             });
         }
 
-        const updatedPrompt = await prisma.systemPrompt.update({
+        const updatedPrompt = await getSharedPrismaClient().systemPrompt.update({
             where: {
                 id,
                 companyId  // التأكد أن البرومبت ينتمي لهذه الشركة
@@ -1350,7 +1350,7 @@ const deleteSystemPrompt = async (req, res) => {
     try {
         const { id } = req.params;
 
-        await prisma.systemPrompt.delete({
+        await getSharedPrismaClient().systemPrompt.delete({
             where: { id }
         });
 
@@ -1385,7 +1385,7 @@ const getMemorySettings = async (req, res) => {
         }
 
         // ✅ FIX: قراءة الإعدادات من AiSettings بدلاً من القيم الثابتة
-        const aiSettings = await prisma.aiSettings.findUnique({
+        const aiSettings = await getSharedPrismaClient().aiSettings.findUnique({
             where: { companyId }
         });
 
@@ -1451,21 +1451,21 @@ const updateMemorySettings = async (req, res) => {
         }
 
         // ✅ FIX: التحقق من وجود السجل أولاً (السجل موجود دائماً من settingsRoutes.js)
-        const existingSettings = await prisma.aiSettings.findUnique({
+        const existingSettings = await getSharedPrismaClient().aiSettings.findUnique({
             where: { companyId }
         });
 
         if (existingSettings) {
             // ✅ تحديث السجل الموجود فقط
             console.log('✅ [MEMORY-SETTINGS] Updating existing settings:', updateData);
-            await prisma.aiSettings.update({
+            await getSharedPrismaClient().aiSettings.update({
                 where: { companyId },
                 data: updateData
             });
             console.log('✅ [MEMORY-SETTINGS] Settings updated successfully');
         } else {
             // ✅ إذا لم يكن موجوداً (حالة نادرة)، استخدم upsert مع جميع الحقول
-            await prisma.aiSettings.create({
+            await getSharedPrismaClient().aiSettings.create({
                 data: {
                     companyId,
                     qualityEvaluationEnabled: true,
@@ -1530,7 +1530,7 @@ const cleanupOldMemory = async (req, res) => {
         }
 
         // ✅ FIX: قراءة retentionDays من AiSettings
-        const aiSettings = await prisma.aiSettings.findUnique({
+        const aiSettings = await getSharedPrismaClient().aiSettings.findUnique({
             where: { companyId },
             select: { memoryRetentionDays: true }
         });
@@ -1589,7 +1589,7 @@ const getResponseRules = async (req, res) => {
             });
         }
 
-        const aiSettings = await prisma.aiSettings.findFirst({
+        const aiSettings = await getSharedPrismaClient().aiSettings.findFirst({
             where: { companyId },
             select: { responseRules: true }
         });
@@ -1642,7 +1642,7 @@ const updateResponseRules = async (req, res) => {
         }
 
         // تحديث أو إنشاء الإعدادات
-        await prisma.aiSettings.upsert({
+        await getSharedPrismaClient().aiSettings.upsert({
             where: { companyId },
             update: {
                 responseRules: JSON.stringify(rules),
@@ -1693,7 +1693,7 @@ const resetResponseRules = async (req, res) => {
 
         const defaultRules = getDefaultRules();
 
-        await prisma.aiSettings.upsert({
+        await getSharedPrismaClient().aiSettings.upsert({
             where: { companyId },
             update: {
                 responseRules: JSON.stringify(defaultRules),

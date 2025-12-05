@@ -7,7 +7,7 @@
 
 const cron = require('node-cron');
 const { getSharedPrismaClient, safeQuery, isInConnectionLimitCooldown, getCooldownInfo } = require('./sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 /**
  * استبدال المتغيرات في الرسالة بالبيانات الفعلية للعميل
@@ -110,7 +110,7 @@ class BroadcastSchedulerService {
 
       // البحث عن الحملات المجدولة التي حان وقت إرسالها
       const scheduledCampaigns = await safeQuery(async () => {
-        return await prisma.broadcastCampaign.findMany({
+        return await getSharedPrismaClient().broadcastCampaign.findMany({
         where: {
           status: 'scheduled',
           scheduledAt: {
@@ -144,7 +144,7 @@ class BroadcastSchedulerService {
           
           // تحديث حالة الحملة إلى failed
           await safeQuery(async () => {
-            return await prisma.broadcastCampaign.update({
+            return await getSharedPrismaClient().broadcastCampaign.update({
               where: { id: campaign.id },
               data: {
                 status: 'failed',
@@ -168,7 +168,7 @@ class BroadcastSchedulerService {
           
           // تحديث حالة الحملة إلى failed
           await safeQuery(async () => {
-            return await prisma.broadcastCampaign.update({
+            return await getSharedPrismaClient().broadcastCampaign.update({
               where: { id: campaign.id },
               data: {
                 status: 'failed',
@@ -194,7 +194,7 @@ class BroadcastSchedulerService {
 
     // تحديث حالة الحملة إلى "sending"
     await safeQuery(async () => {
-      return await prisma.broadcastCampaign.update({
+      return await getSharedPrismaClient().broadcastCampaign.update({
         where: { id: campaign.id },
         data: {
           status: 'sending',
@@ -213,7 +213,7 @@ class BroadcastSchedulerService {
     if (campaign.targetAudience === 'all') {
       console.log('🌐 [BroadcastScheduler] Fetching all active conversations');
       conversations = await safeQuery(async () => {
-        return await prisma.conversation.findMany({
+        return await getSharedPrismaClient().conversation.findMany({
         where: {
           companyId: campaign.companyId,
           status: 'ACTIVE',
@@ -243,7 +243,7 @@ class BroadcastSchedulerService {
     } else {
       // منطق للجمهور المستهدف المخصص
       conversations = await safeQuery(async () => {
-        return await prisma.conversation.findMany({
+        return await getSharedPrismaClient().conversation.findMany({
         where: {
           companyId: campaign.companyId,
           status: 'ACTIVE',
@@ -276,7 +276,7 @@ class BroadcastSchedulerService {
 
     // تحديث عدد المستلمين في الحملة
     await safeQuery(async () => {
-      return await prisma.broadcastCampaign.update({
+      return await getSharedPrismaClient().broadcastCampaign.update({
       where: { id: campaign.id },
       data: {
         recipientCount: conversations.length
@@ -296,7 +296,7 @@ class BroadcastSchedulerService {
 
     if (recipients.length > 0) {
       await safeQuery(async () => {
-        return await prisma.broadcastRecipient.createMany({
+        return await getSharedPrismaClient().broadcastRecipient.createMany({
         data: recipients
         });
       }, 5);
@@ -304,7 +304,7 @@ class BroadcastSchedulerService {
       console.log('⚠️ [BroadcastScheduler] No recipients found for campaign');
       
       await safeQuery(async () => {
-        return await prisma.broadcastCampaign.update({
+        return await getSharedPrismaClient().broadcastCampaign.update({
         where: { id: campaign.id },
         data: {
           status: 'failed',
@@ -345,7 +345,7 @@ class BroadcastSchedulerService {
           failedCount++;
 
           await safeQuery(async () => {
-            return await prisma.broadcastRecipient.updateMany({
+            return await getSharedPrismaClient().broadcastRecipient.updateMany({
             where: {
               campaignId: campaign.id,
               conversationId: conv.id
@@ -377,7 +377,7 @@ class BroadcastSchedulerService {
         // إذا لم يتم العثور على Page ID، استخدم أول صفحة متصلة
         if (!conversationPageId) {
           const defaultPage = await safeQuery(async () => {
-            return await prisma.facebookPage.findFirst({
+            return await getSharedPrismaClient().facebookPage.findFirst({
             where: {
               companyId: campaign.companyId,
               status: 'connected'
@@ -395,7 +395,7 @@ class BroadcastSchedulerService {
             failedCount++;
 
             await safeQuery(async () => {
-              return await prisma.broadcastRecipient.updateMany({
+              return await getSharedPrismaClient().broadcastRecipient.updateMany({
               where: {
                 campaignId: campaign.id,
                 conversationId: conv.id
@@ -421,7 +421,7 @@ class BroadcastSchedulerService {
         
         if (personalizedMessage && personalizedMessage.trim().length > 0) {
           const textMessage = await safeQuery(async () => {
-            return await prisma.message.create({
+            return await getSharedPrismaClient().message.create({
             data: {
               conversationId: conv.id,
               content: personalizedMessage,
@@ -448,7 +448,7 @@ class BroadcastSchedulerService {
         if (campaign.images && Array.isArray(campaign.images) && campaign.images.length > 0) {
           for (const imageUrl of campaign.images) {
             const imageMessage = await safeQuery(async () => {
-              return await prisma.message.create({
+              return await getSharedPrismaClient().message.create({
               data: {
                 conversationId: conv.id,
                 content: imageUrl,
@@ -506,7 +506,7 @@ class BroadcastSchedulerService {
           sentCount++;
 
           await safeQuery(async () => {
-            return await prisma.broadcastRecipient.updateMany({
+            return await getSharedPrismaClient().broadcastRecipient.updateMany({
             where: {
               campaignId: campaign.id,
               conversationId: conv.id
@@ -523,14 +523,14 @@ class BroadcastSchedulerService {
           // حذف الرسائل المحفوظة لأن الإرسال فشل
           for (const msg of savedMessages) {
             await safeQuery(async () => {
-              return await prisma.message.delete({
+              return await getSharedPrismaClient().message.delete({
               where: { id: msg.id }
               });
             }, 4);
           }
 
           await safeQuery(async () => {
-            return await prisma.broadcastRecipient.updateMany({
+            return await getSharedPrismaClient().broadcastRecipient.updateMany({
               where: {
                 campaignId: campaign.id,
                 conversationId: conv.id
@@ -566,7 +566,7 @@ class BroadcastSchedulerService {
         failedCount++;
 
         await safeQuery(async () => {
-          return await prisma.broadcastRecipient.updateMany({
+          return await getSharedPrismaClient().broadcastRecipient.updateMany({
           where: {
             campaignId: campaign.id,
             conversationId: conv.id
@@ -597,7 +597,7 @@ class BroadcastSchedulerService {
 
     // تحديث إحصائيات الحملة
     await safeQuery(async () => {
-      return await prisma.broadcastCampaign.update({
+      return await getSharedPrismaClient().broadcastCampaign.update({
       where: { id: campaign.id },
       data: {
         recipientCount: recipients.length,
@@ -628,3 +628,4 @@ class BroadcastSchedulerService {
 const broadcastScheduler = new BroadcastSchedulerService();
 
 module.exports = broadcastScheduler;
+

@@ -1,7 +1,7 @@
 const { getSharedPrismaClient, safeQuery } = require('./sharedDatabase');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 class RAGService {
   constructor() {
@@ -151,7 +151,7 @@ class RAGService {
         }
 
         products = await safeQuery(async () => {
-          return await prisma.product.findMany({
+          return await getSharedPrismaClient().product.findMany({
             where: whereClause,
             include: {
               category: true,
@@ -332,7 +332,7 @@ class RAGService {
 
   async loadFAQs(companyId = null) {
     // 🔐 في المستقبل، يمكن جلب FAQs من قاعدة البيانات حسب الشركة
-    // const faqs = await prisma.faq.findMany({ where: { companyId } });
+    // const faqs = await getSharedPrismaClient().faq.findMany({ where: { companyId } });
 
     const faqs = [
       {
@@ -370,7 +370,7 @@ class RAGService {
 
   async loadPolicies(companyId = null) {
     // 🔐 في المستقبل، يمكن جلب Policies من قاعدة البيانات حسب الشركة
-    // const policies = await prisma.policy.findMany({ where: { companyId } });
+    // const policies = await getSharedPrismaClient().policy.findMany({ where: { companyId } });
 
     const policies = [
       {
@@ -769,7 +769,7 @@ class RAGService {
   async getCustomerOrders(customerId) {
     try {
       const orders = await safeQuery(async () => {
-        return await prisma.order.findMany({
+        return await getSharedPrismaClient().order.findMany({
           where: { customerId },
           orderBy: { createdAt: 'desc' },
           take: 3,
@@ -1474,3 +1474,4 @@ class ImageHelper {
 module.exports = new RAGService();
 module.exports.RAGService = RAGService;
 module.exports.ImageHelper = ImageHelper;
+

@@ -6,7 +6,7 @@
  */
 
 const { getSharedPrismaClient } = require('../sharedDatabase');
-const prisma = getSharedPrismaClient();
+// // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues // ❌ Removed to prevent early loading issues
 const { initAuthCreds, BufferJSON } = require('@whiskeysockets/baileys');
 
 // Cache للحالة لتقليل استعلامات قاعدة البيانات
@@ -41,7 +41,7 @@ async function useDatabaseAuthState(sessionId) {
             return authStateCache.get(sessionId);
         }
 
-        const session = await prisma.whatsAppSession.findUnique({
+        const session = await getSharedPrismaClient().whatsAppSession.findUnique({
             where: { id: sessionId },
             select: { authState: true }
         });
@@ -78,7 +78,7 @@ async function useDatabaseAuthState(sessionId) {
                     keys: keysData // حفظ بيانات المفاتيح النظيفة
                 };
 
-                await prisma.whatsAppSession.update({
+                await getSharedPrismaClient().whatsAppSession.update({
                     where: { id: sessionId },
                     data: {
                         // استخدام BufferJSON.replacer لحفظ Buffers
@@ -163,4 +163,5 @@ async function useDatabaseAuthState(sessionId) {
 module.exports = {
     useDatabaseAuthState
 };
+
 

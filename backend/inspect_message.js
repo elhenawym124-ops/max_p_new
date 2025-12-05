@@ -1,9 +1,9 @@
 const { getSharedPrismaClient } = require('./services/sharedDatabase');
 
 async function inspectMessage() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     try {
-        const message = await prisma.whatsAppMessage.findFirst({
+        const message = await getSharedPrismaClient().whatsAppMessage.findFirst({
             where: {
                 content: { contains: 'Ffff' }
             }
@@ -22,7 +22,7 @@ async function inspectMessage() {
 
         // Also check contact for this JID
         if (message) {
-            const contact = await prisma.whatsAppContact.findFirst({
+            const contact = await getSharedPrismaClient().whatsAppContact.findFirst({
                 where: {
                     sessionId: message.sessionId,
                     jid: message.remoteJid
@@ -45,3 +45,4 @@ async function inspectMessage() {
 }
 
 inspectMessage();
+

@@ -5,7 +5,7 @@
  */
 
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // القيم الافتراضية الصحيحة لكل نموذج
 const getModelDefaults = (modelName) => {
@@ -53,7 +53,7 @@ async function fixAllIssues() {
         
         try {
             // Prisma يستخدم snake_case للأسماء تلقائياً
-            await prisma.$executeRawUnsafe(`
+            await getSharedPrismaClient().$executeRawUnsafe(`
                 ALTER TABLE gemini_key_models 
                 MODIFY COLUMN \`usage\` TEXT NOT NULL
             `);
@@ -66,7 +66,7 @@ async function fixAllIssues() {
         // الخطوة 2: إصلاح جميع النماذج المقطوعة
         console.log('📝 الخطوة 2: إصلاح النماذج المقطوعة...\n');
         
-        const allModels = await prisma.geminiKeyModel.findMany({
+        const allModels = await getSharedPrismaClient().geminiKeyModel.findMany({
             select: {
                 id: true,
                 model: true,
@@ -100,7 +100,7 @@ async function fixAllIssues() {
                         resetDate: null
                     };
                     
-                    await prisma.geminiKeyModel.update({
+                    await getSharedPrismaClient().geminiKeyModel.update({
                         where: { id: modelRecord.id },
                         data: {
                             usage: JSON.stringify(fixedUsage)
@@ -127,7 +127,7 @@ async function fixAllIssues() {
                         resetDate: null
                     };
                     
-                    await prisma.geminiKeyModel.update({
+                    await getSharedPrismaClient().geminiKeyModel.update({
                         where: { id: modelRecord.id },
                         data: {
                             usage: JSON.stringify(fixedUsage)
@@ -153,10 +153,11 @@ async function fixAllIssues() {
         console.error('❌ خطأ:', error);
         console.error('Stack:', error.stack);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 fixAllIssues();
+
 
 

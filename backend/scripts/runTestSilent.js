@@ -22,9 +22,9 @@ console.log = function(...args) {
 
 async function runTestSilent() {
   try {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
-    const company = await prisma.company.findFirst({
+    const company = await getSharedPrismaClient().company.findFirst({
       where: { isActive: true },
       orderBy: { createdAt: 'asc' }
     });
@@ -82,4 +82,5 @@ async function runTestSilent() {
 }
 
 runTestSilent();
+
 

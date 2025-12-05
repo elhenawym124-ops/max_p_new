@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const { messageQueueManager } = require('./queueRoutes');
 
 // Mock authentication middleware
@@ -36,7 +36,7 @@ router.get('/company', async (req, res) => {
   try {
     const companyId = req.query.companyId || req.user?.companyId || 'cmd5c0c9y0000ymzdd7wtv7ib';
 
-    const company = await prisma.company.findUnique({
+    const company = await getSharedPrismaClient().company.findUnique({
       where: { id: companyId }
     });
 
@@ -87,7 +87,7 @@ router.get('/company', async (req, res) => {
       finalSettings.notifications = defaultSettings.notifications;
     }
 
-    await prisma.$disconnect();
+    await getSharedPrismaClient().$disconnect();
 
     res.json({
       success: true,
@@ -117,7 +117,7 @@ router.put('/company', async (req, res) => {
     //console.log('Updating company settings:', companyId, newSettings);
 
     // Get current company
-    const company = await prisma.company.findUnique({
+    const company = await getSharedPrismaClient().company.findUnique({
       where: { id: companyId }
     });
 
@@ -141,7 +141,7 @@ router.put('/company', async (req, res) => {
     const updatedSettings = { ...currentSettings, ...newSettings };
 
     // Update company
-    const updatedCompany = await prisma.company.update({
+    const updatedCompany = await getSharedPrismaClient().company.update({
       where: { id: companyId },
       data: {
         settings: JSON.stringify(updatedSettings)
@@ -150,7 +150,7 @@ router.put('/company', async (req, res) => {
 
     //console.log('Company settings updated successfully');
 
-    await prisma.$disconnect();
+    await getSharedPrismaClient().$disconnect();
 
     res.json({
       success: true,
@@ -218,7 +218,7 @@ router.get('/ai/max-tokens-check', async (req, res) => {
     }
 
     const companyId = req.user.companyId;
-    const aiSettings = await prisma.aiSettings.findUnique({
+    const aiSettings = await getSharedPrismaClient().aiSettings.findUnique({
       where: { companyId },
       select: {
         companyId: true,
@@ -281,7 +281,7 @@ router.get('/ai', async (req, res) => {
     // أولاً: محاولة قراءة من قاعدة البيانات
     try {
 
-      const aiSettings = await prisma.aiSettings.findUnique({
+      const aiSettings = await getSharedPrismaClient().aiSettings.findUnique({
         where: { companyId },
         select: {
           qualityEvaluationEnabled: true,
@@ -461,7 +461,7 @@ router.put('/ai', async (req, res) => {
 
     // أولاً: محاولة حفظ في قاعدة البيانات
     try {
-      const aiSettings = await prisma.aiSettings.upsert({
+      const aiSettings = await getSharedPrismaClient().aiSettings.upsert({
         where: { companyId },
         update: updateData,
         create: {
@@ -591,7 +591,7 @@ router.get('/queue', async (req, res) => {
 
     // Try to get from database first
     try {
-      const aiSettings = await prisma.aiSettings.findUnique({
+      const aiSettings = await getSharedPrismaClient().aiSettings.findUnique({
         where: { companyId },
         select: {
           companyId: true,
@@ -687,7 +687,7 @@ router.put('/queue', async (req, res) => {
 
     try {
       // Try to save to database
-      const aiSettings = await prisma.aiSettings.upsert({
+      const aiSettings = await getSharedPrismaClient().aiSettings.upsert({
         where: { companyId },
         update: {
           queueSettings: JSON.stringify(queueSettingsData),
@@ -791,7 +791,7 @@ router.get('/recommendation-settings', verifyToken.authenticateToken, async (req
     // محاولة جلب الإعدادات من قاعدة البيانات
     try {
       // البحث في Company.settings JSON field
-      const company = await prisma.company.findUnique({
+      const company = await getSharedPrismaClient().company.findUnique({
         where: { id: companyId },
         select: { settings: true }
       });
@@ -866,7 +866,7 @@ router.post('/recommendation-settings', verifyToken.authenticateToken, async (re
 
     try {
       // جلب الإعدادات الحالية للشركة
-      const company = await prisma.company.findUnique({
+      const company = await getSharedPrismaClient().company.findUnique({
         where: { id: companyId },
         select: { settings: true }
       });
@@ -887,7 +887,7 @@ router.post('/recommendation-settings', verifyToken.authenticateToken, async (re
       };
 
       // حفظ في قاعدة البيانات
-      await prisma.company.update({
+      await getSharedPrismaClient().company.update({
         where: { id: companyId },
         data: {
           settings: JSON.stringify(currentSettings)
@@ -918,3 +918,4 @@ router.post('/recommendation-settings', verifyToken.authenticateToken, async (re
 });
 
 module.exports = router;
+

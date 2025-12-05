@@ -5,7 +5,7 @@ const { getSharedPrismaClient } = require('./services/sharedDatabase');
 const pino = require('pino');
 
 async function debugRestore() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     const sessionId = 'cminq88q1000duf24dqonnhbh'; // 01123087745 (New ID)
 
     try {
@@ -69,3 +69,4 @@ async function debugRestore() {
 }
 
 debugRestore();
+

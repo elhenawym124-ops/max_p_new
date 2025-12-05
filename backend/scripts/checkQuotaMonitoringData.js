@@ -3,14 +3,14 @@
  */
 
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 async function checkData() {
   try {
     console.log('🔍 [QUOTA-CHECK] Checking database for Quota Monitoring data...\n');
 
     // 1. Check active keys
-    const activeKeys = await prisma.geminiKey.findMany({
+    const activeKeys = await getSharedPrismaClient().geminiKey.findMany({
       where: { isActive: true },
       select: {
         id: true,
@@ -34,7 +34,7 @@ async function checkData() {
     console.log('\n');
 
     // 2. Check enabled models
-    const enabledModels = await prisma.geminiKeyModel.findMany({
+    const enabledModels = await getSharedPrismaClient().geminiKeyModel.findMany({
       where: { isEnabled: true },
       select: {
         id: true,
@@ -70,7 +70,7 @@ async function checkData() {
     console.log('\n');
 
     // 3. Check excluded models
-    const excludedModels = await prisma.excludedModel.findMany({
+    const excludedModels = await getSharedPrismaClient().excludedModel.findMany({
       where: {
         retryAt: {
           gt: new Date()
@@ -97,7 +97,7 @@ async function checkData() {
     console.log('\n');
 
     // 4. Check companies
-    const companies = await prisma.company.findMany({
+    const companies = await getSharedPrismaClient().company.findMany({
       select: {
         id: true,
         name: true
@@ -138,7 +138,7 @@ async function checkData() {
     console.error('❌ [QUOTA-CHECK] Error:', error);
     throw error;
   } finally {
-    await prisma.$disconnect();
+    await getSharedPrismaClient().$disconnect();
   }
 }
 
@@ -151,4 +151,5 @@ checkData()
     console.error('\n❌ Script failed:', error);
     process.exit(1);
   });
+
 

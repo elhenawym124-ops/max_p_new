@@ -1,5 +1,5 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // Helper function to generate unique IDs
 function generateId() {
@@ -98,7 +98,7 @@ const getAllGeminiKeys = async (req, res) => {
         }
 
         // Fetch keys with proper filtering
-        let keys = await prisma.geminiKey.findMany({
+        let keys = await getSharedPrismaClient().geminiKey.findMany({
             where: whereClause,
             include: {
                 company: {
@@ -204,7 +204,7 @@ const getAllGeminiKeys = async (req, res) => {
 // Get central keys only
 const getCentralKeys = async (req, res) => {
     try {
-        const keys = await prisma.geminiKey.findMany({
+        const keys = await getSharedPrismaClient().geminiKey.findMany({
             where: {
                 keyType: 'CENTRAL',
                 companyId: null
@@ -248,7 +248,7 @@ const getCompanyKeys = async (req, res) => {
     try {
         const { companyId } = req.params;
 
-        const keys = await prisma.geminiKey.findMany({
+        const keys = await getSharedPrismaClient().geminiKey.findMany({
             where: {
                 keyType: 'COMPANY',
                 companyId: companyId
@@ -329,7 +329,7 @@ const addGeminiKey = async (req, res) => {
         }
 
         // Check if API key already exists
-        const existingKey = await prisma.geminiKey.findUnique({
+        const existingKey = await getSharedPrismaClient().geminiKey.findUnique({
             where: { apiKey }
         });
         
@@ -359,7 +359,7 @@ const addGeminiKey = async (req, res) => {
         try {
             if (validKeyType === 'CENTRAL') {
                 // Count central keys
-                const centralKeyCount = await prisma.geminiKey.count({
+                const centralKeyCount = await getSharedPrismaClient().geminiKey.count({
                     where: { 
                         keyType: 'CENTRAL',
                         companyId: null
@@ -368,7 +368,7 @@ const addGeminiKey = async (req, res) => {
                 priority = centralKeyCount + 1;
             } else {
                 // Count company keys
-                const companyKeyCount = await prisma.geminiKey.count({
+                const companyKeyCount = await getSharedPrismaClient().geminiKey.count({
                     where: { 
                         keyType: 'COMPANY',
                         companyId: companyId
@@ -380,12 +380,12 @@ const addGeminiKey = async (req, res) => {
             // Fallback: use raw query if keyType not available in Prisma Client yet
             console.warn('⚠️ [ADMIN-GEMINI-KEYS] keyType not available in Prisma Client, using fallback');
             if (validKeyType === 'CENTRAL') {
-                const result = await prisma.$queryRaw`
+                const result = await getSharedPrismaClient().$queryRaw`
                     SELECT COUNT(*) as count FROM gemini_keys WHERE companyId IS NULL
                 `;
                 priority = Number(result[0]?.count || 0) + 1;
             } else {
-                const result = await prisma.$queryRaw`
+                const result = await getSharedPrismaClient().$queryRaw`
                     SELECT COUNT(*) as count FROM gemini_keys WHERE companyId = ${companyId}
                 `;
                 priority = Number(result[0]?.count || 0) + 1;
@@ -403,11 +403,11 @@ const addGeminiKey = async (req, res) => {
         const finalCompanyId = validKeyType === 'CENTRAL' ? null : companyId;
         const descValue = description || defaultDescription || '';
         
-        console.log('🔍 [ADMIN-GEMINI-KEYS] Creating key with Prisma...');
+        console.log('🔍 [ADMIN-GEMINI-KEYS] Creating key with getSharedPrismaClient()...');
         let newKey;
         try {
             // Try with keyType first (after Prisma Client regeneration)
-            newKey = await prisma.geminiKey.create({
+            newKey = await getSharedPrismaClient().geminiKey.create({
                 data: {
                     id: keyId,
                     name,
@@ -428,14 +428,14 @@ const addGeminiKey = async (req, res) => {
             // Fallback: use raw query if keyType not available
             console.warn('⚠️ [ADMIN-GEMINI-KEYS] Prisma create with keyType failed, using raw query:', createError.message);
             try {
-                await prisma.$executeRaw`
+                await getSharedPrismaClient().$executeRaw`
                     INSERT INTO gemini_keys 
                     (id, name, apiKey, model, isActive, priority, description, companyId, keyType, \`usage\`, currentUsage, maxRequestsPerDay, createdAt, updatedAt)
                     VALUES 
                     (${keyId}, ${name}, ${apiKey}, 'gemini-2.5-flash', ${isFirstKey}, ${priority}, ${descValue}, ${finalCompanyId || null}, ${validKeyType}, '{"used": 0, "limit": 1000000}', 0, 1500, NOW(), NOW())
                 `;
                 // Fetch the created key
-                newKey = await prisma.geminiKey.findUnique({
+                newKey = await getSharedPrismaClient().geminiKey.findUnique({
                     where: { id: keyId }
                 });
                 console.log('✅ [ADMIN-GEMINI-KEYS] Key created successfully with raw query:', keyId);
@@ -484,7 +484,7 @@ const addGeminiKey = async (req, res) => {
                 // استخدام TPM كـ limit افتراضي للتوافق
                 const defaultLimit = modelInfo.tpm || 250000;
                 
-                await prisma.geminiKeyModel.create({
+                await getSharedPrismaClient().geminiKeyModel.create({
                     data: {
                         id: generateId(),
                         keyId: keyId,
@@ -562,7 +562,7 @@ const toggleGeminiKeyActiveStatus = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const key = await prisma.geminiKey.findUnique({
+        const key = await getSharedPrismaClient().geminiKey.findUnique({
             where: { id }
         });
 
@@ -573,7 +573,7 @@ const toggleGeminiKeyActiveStatus = async (req, res) => {
             });
         }
 
-        const updatedKey = await prisma.geminiKey.update({
+        const updatedKey = await getSharedPrismaClient().geminiKey.update({
             where: { id },
             data: { isActive: !key.isActive }
         });
@@ -611,7 +611,7 @@ const updateGeminiKeyModel = async (req, res) => {
         if (isEnabled !== undefined) updateData.isEnabled = isEnabled;
         if (priority !== undefined) updateData.priority = priority;
 
-        const updatedModel = await prisma.geminiKeyModel.update({
+        const updatedModel = await getSharedPrismaClient().geminiKeyModel.update({
             where: { id: modelId },
             data: updateData
         });
@@ -634,7 +634,7 @@ const deleteGeminiKey = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const key = await prisma.geminiKey.findUnique({
+        const key = await getSharedPrismaClient().geminiKey.findUnique({
             where: { id }
         });
 
@@ -645,7 +645,7 @@ const deleteGeminiKey = async (req, res) => {
             });
         }
 
-        await prisma.geminiKey.delete({
+        await getSharedPrismaClient().geminiKey.delete({
             where: { id }
         });
 
@@ -668,7 +668,7 @@ const testGeminiKey2 = async (req, res) => {
         const { id } = req.params;
 
         // Get key with its models
-        const key = await prisma.geminiKey.findUnique({
+        const key = await getSharedPrismaClient().geminiKey.findUnique({
             where: { id },
             include: {
                 models: {
@@ -777,4 +777,5 @@ module.exports = {
     testGeminiKey2,
     clearModelCaches
 };
+
 

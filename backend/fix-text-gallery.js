@@ -4,14 +4,14 @@
  */
 
 const { getSharedPrismaClient } = require('./services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 async function fixTextGallery() {
   try {
     console.log('🔄 Fixing text_gallery table...');
 
     // Check current columns
-    const tableInfo = await prisma.$queryRaw`
+    const tableInfo = await getSharedPrismaClient().$queryRaw`
       SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT
       FROM INFORMATION_SCHEMA.COLUMNS
       WHERE TABLE_SCHEMA = DATABASE()
@@ -31,7 +31,7 @@ async function fixTextGallery() {
 
     if (!hasImageUrls) {
       console.log('\n➕ Adding imageUrls column...');
-      await prisma.$executeRaw`
+      await getSharedPrismaClient().$executeRaw`
         ALTER TABLE text_gallery 
         ADD COLUMN imageUrls JSON NULL AFTER content
       `;
@@ -40,7 +40,7 @@ async function fixTextGallery() {
 
     if (!hasIsPinned) {
       console.log('\n➕ Adding isPinned column...');
-      await prisma.$executeRaw`
+      await getSharedPrismaClient().$executeRaw`
         ALTER TABLE text_gallery 
         ADD COLUMN isPinned BOOLEAN NOT NULL DEFAULT FALSE AFTER imageUrls
       `;
@@ -49,7 +49,7 @@ async function fixTextGallery() {
 
     // Add index if needed
     try {
-      await prisma.$executeRaw`
+      await getSharedPrismaClient().$executeRaw`
         CREATE INDEX IF NOT EXISTS text_gallery_isPinned_idx ON text_gallery(isPinned)
       `;
       console.log('✅ Index on isPinned created/verified');
@@ -68,7 +68,7 @@ async function fixTextGallery() {
     console.error('❌ Error fixing text_gallery:', error);
     throw error;
   } finally {
-    await prisma.$disconnect();
+    await getSharedPrismaClient().$disconnect();
   }
 }
 
@@ -82,4 +82,5 @@ fixTextGallery()
     console.error('\n❌ Failed:', error);
     process.exit(1);
   });
+
 

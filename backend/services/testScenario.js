@@ -6,7 +6,7 @@
 const { getSharedPrismaClient } = require('./sharedDatabase');
 const aiAgentService = require('../aiAgentService');
 
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 const COMPANY_ID = 'cmem8ayyr004cufakqkcsyn97'; // شركة التسويق
 
@@ -35,12 +35,12 @@ async function testScenario() {
     console.log('='.repeat(80) + '\n');
 
     // إنشاء customer
-    let customer = await prisma.customer.findFirst({
+    let customer = await getSharedPrismaClient().customer.findFirst({
       where: { companyId: COMPANY_ID, firstName: 'أحمد', lastName: 'محمد' }
     });
 
     if (!customer) {
-      customer = await prisma.customer.create({
+      customer = await getSharedPrismaClient().customer.create({
         data: {
           companyId: COMPANY_ID,
           firstName: 'أحمد',
@@ -55,7 +55,7 @@ async function testScenario() {
     }
 
     // إنشاء محادثة
-    const conversation = await prisma.conversation.create({
+    const conversation = await getSharedPrismaClient().conversation.create({
       data: {
         companyId: COMPANY_ID,
         customerId: customer.id,
@@ -96,7 +96,7 @@ async function testScenario() {
       };
 
       // حفظ رسالة المستخدم
-      await prisma.message.create({
+      await getSharedPrismaClient().message.create({
         data: {
           conversationId: conversation.id,
           content: question,
@@ -130,7 +130,7 @@ async function testScenario() {
 
       // حفظ رد AI
       if (responseContent) {
-        await prisma.message.create({
+        await getSharedPrismaClient().message.create({
           data: {
             conversationId: conversation.id,
             content: responseContent,
@@ -164,7 +164,7 @@ async function testScenario() {
       // التحقق من إنشاء الطلب
       if (questionNum === 14) {
         await new Promise(resolve => setTimeout(resolve, 3000)); // انتظار 3 ثواني
-        const order = await prisma.order.findFirst({
+        const order = await getSharedPrismaClient().order.findFirst({
           where: { conversationId: conversation.id, companyId: COMPANY_ID },
           orderBy: { createdAt: 'desc' }
         });
@@ -225,7 +225,7 @@ async function testScenario() {
   } catch (error) {
     console.error('❌ خطأ:', error);
   } finally {
-    await prisma.$disconnect();
+    await getSharedPrismaClient().$disconnect();
   }
 }
 
@@ -314,4 +314,5 @@ function analyzeResponse(question, response, questionNum, error) {
 }
 
 testScenario();
+
 

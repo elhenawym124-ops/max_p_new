@@ -1,6 +1,6 @@
 const { getSharedPrismaClient, safeQuery } = require('../services/sharedDatabase');
 const { getWooCommerceAutoExportService } = require('../services/wooCommerceAutoExportService');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 const createPOSOrder = async (req, res) => {
   try {
@@ -19,7 +19,7 @@ const createPOSOrder = async (req, res) => {
 
     // Fetch real product data to avoid frontend manipulation
     const productIds = cart.map(item => item.id);
-    const dbProducts = await prisma.product.findMany({
+    const dbProducts = await getSharedPrismaClient().product.findMany({
       where: {
         id: { in: productIds },
         companyId: companyId
@@ -71,7 +71,7 @@ const createPOSOrder = async (req, res) => {
     if (!customerId || customerId === 'new') {
       if (customer?.name && customer?.phone) {
         // Create new customer
-        const newCustomer = await prisma.customer.create({
+        const newCustomer = await getSharedPrismaClient().customer.create({
           data: {
             firstName: customer.name.split(' ')[0] || 'عميل',
             lastName: customer.name.split(' ').slice(1).join(' ') || 'كاشير',
@@ -84,7 +84,7 @@ const createPOSOrder = async (req, res) => {
         customerId = newCustomer.id;
       } else {
         // Find or create generic "Walk-in Customer"
-        let walkIn = await prisma.customer.findFirst({
+        let walkIn = await getSharedPrismaClient().customer.findFirst({
           where: { 
             companyId,
             metadata: { contains: '"isWalkIn":true' }
@@ -92,7 +92,7 @@ const createPOSOrder = async (req, res) => {
         });
 
         if (!walkIn) {
-            walkIn = await prisma.customer.create({
+            walkIn = await getSharedPrismaClient().customer.create({
                 data: {
                     firstName: 'عميل',
                     lastName: 'كاشير',
@@ -112,7 +112,7 @@ const createPOSOrder = async (req, res) => {
     const orderNumber = `POS-${dateStr}-${timestamp}`;
 
     // 4. Execute Transaction (Order + Inventory Update)
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await getSharedPrismaClient().$transaction(async (tx) => {
       // A. Create Order
       const order = await tx.order.create({
         data: {
@@ -202,3 +202,4 @@ const createPOSOrder = async (req, res) => {
 module.exports = {
   createPOSOrder
 };
+

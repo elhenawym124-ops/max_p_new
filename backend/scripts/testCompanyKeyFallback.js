@@ -3,14 +3,14 @@
  */
 
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 async function testFallback() {
     try {
         console.log('\n🔍 ========== اختبار Fallback للمفاتيح المركزية ==========\n');
 
         // 1. البحث عن الشركة
-        const company = await prisma.company.findFirst({
+        const company = await getSharedPrismaClient().company.findFirst({
             where: {
                 OR: [
                     { name: { contains: 'التسويق' } },
@@ -30,7 +30,7 @@ async function testFallback() {
 
         // 2. محاكاة المنطق الموجود في getActiveGeminiKey
         console.log('📋 الخطوة 1: البحث عن مفاتيح الشركة...');
-        const companyKeys = await prisma.geminiKey.findMany({
+        const companyKeys = await getSharedPrismaClient().geminiKey.findMany({
             where: {
                 isActive: true,
                 companyId: company.id,
@@ -43,7 +43,7 @@ async function testFallback() {
         if (companyKeys.length === 0) {
             console.log('📋 الخطوة 2: البحث عن المفاتيح المركزية (Fallback)...');
             
-            const centralKeys = await prisma.geminiKey.findMany({
+            const centralKeys = await getSharedPrismaClient().geminiKey.findMany({
                 where: {
                     keyType: 'CENTRAL',
                     companyId: null,
@@ -58,7 +58,7 @@ async function testFallback() {
                 console.log('📋 الخطوة 3: البحث عن نموذج متاح في المفاتيح المركزية...');
                 
                 for (const centralKey of centralKeys) {
-                    const models = await prisma.geminiKeyModel.findMany({
+                    const models = await getSharedPrismaClient().geminiKeyModel.findMany({
                         where: {
                             keyId: centralKey.id,
                             isEnabled: true
@@ -137,9 +137,10 @@ async function testFallback() {
     } catch (error) {
         console.error('❌ خطأ:', error);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 testFallback();
+
 

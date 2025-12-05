@@ -3,13 +3,13 @@
  */
 
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 async function checkModelUsage() {
     try {
         console.log('\n🔍 ========== فحص usage للنماذج ==========\n');
 
-        const centralKey = await prisma.geminiKey.findFirst({
+        const centralKey = await getSharedPrismaClient().geminiKey.findFirst({
             where: {
                 keyType: 'CENTRAL',
                 companyId: null,
@@ -25,7 +25,7 @@ async function checkModelUsage() {
 
         console.log(`🔑 المفتاح: ${centralKey.name}\n`);
 
-        const models = await prisma.geminiKeyModel.findMany({
+        const models = await getSharedPrismaClient().geminiKeyModel.findMany({
             where: {
                 keyId: centralKey.id,
                 isEnabled: true
@@ -116,9 +116,10 @@ async function checkModelUsage() {
     } catch (error) {
         console.error('❌ خطأ:', error);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 checkModelUsage();
+
 

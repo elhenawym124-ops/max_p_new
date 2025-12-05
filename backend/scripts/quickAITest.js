@@ -9,13 +9,13 @@ const aiAgentService = require('../services/aiAgentService');
 
 async function quickTest() {
   try {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     console.log('\n🚀 بدء اختبار سريع للذكاء الاصطناعي...\n');
 
     // 1. البحث عن شركة التسويق
     console.log('🔍 البحث عن شركة "شركة التسويق"...');
-    const company = await prisma.company.findFirst({
+    const company = await getSharedPrismaClient().company.findFirst({
       where: {
         OR: [
           { name: { contains: 'التسويق' } },
@@ -29,7 +29,7 @@ async function quickTest() {
     if (!company) {
       console.log('❌ لم يتم العثور على شركة "شركة التسويق"');
       console.log('\n📋 جلب أول شركة نشطة...\n');
-      const firstCompany = await prisma.company.findFirst({
+      const firstCompany = await getSharedPrismaClient().company.findFirst({
         where: { isActive: true }
       });
       
@@ -46,7 +46,7 @@ async function quickTest() {
 
     // 2. إنشاء أو جلب customer اختبار
     console.log('👤 جلب أو إنشاء عميل اختبار...');
-    let testCustomer = await prisma.customer.findFirst({
+    let testCustomer = await getSharedPrismaClient().customer.findFirst({
       where: {
         companyId: companyId,
         firstName: 'عميل اختبار',
@@ -55,7 +55,7 @@ async function quickTest() {
     });
 
     if (!testCustomer) {
-      testCustomer = await prisma.customer.create({
+      testCustomer = await getSharedPrismaClient().customer.create({
         data: {
           companyId: companyId,
           firstName: 'عميل اختبار',
@@ -71,7 +71,7 @@ async function quickTest() {
 
     // 3. إنشاء محادثة
     console.log('💬 إنشاء محادثة اختبار...');
-    const conversation = await prisma.conversation.create({
+    const conversation = await getSharedPrismaClient().conversation.create({
       data: {
         companyId: companyId,
         customerId: testCustomer.id,
@@ -140,7 +140,7 @@ async function quickTest() {
         const processingTime = Date.now() - startTime;
 
         // حفظ الرسالة والرد
-        await prisma.message.create({
+        await getSharedPrismaClient().message.create({
           data: {
             conversationId: conversation.id,
             content: question.question,
@@ -151,7 +151,7 @@ async function quickTest() {
         });
 
         if (aiResponse && aiResponse.content) {
-          await prisma.message.create({
+          await getSharedPrismaClient().message.create({
             data: {
               conversationId: conversation.id,
               content: aiResponse.content,
@@ -304,4 +304,5 @@ if (require.main === module) {
 }
 
 module.exports = { quickTest };
+
 

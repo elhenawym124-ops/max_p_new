@@ -21,7 +21,7 @@ try {
     sharp = null;
 }
 const { getSharedPrismaClient } = require('../sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const WhatsAppManager = require('./WhatsAppManager');
 
 // مسار حفظ الوسائط
@@ -430,3 +430,4 @@ module.exports = {
     SUPPORTED_TYPES,
     MEDIA_DIR
 };
+

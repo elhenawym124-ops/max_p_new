@@ -1,9 +1,9 @@
 const { getSharedPrismaClient } = require('./services/sharedDatabase');
 
 async function findSession() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     try {
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: {
                 OR: [
                     { phoneNumber: { contains: '01123087745' } },
@@ -23,8 +23,9 @@ async function findSession() {
     } catch (error) {
         console.error('Error finding session:', error);
     } finally {
-        // await prisma.$disconnect();
+        // await getSharedPrismaClient().$disconnect();
     }
 }
 
 findSession();
+

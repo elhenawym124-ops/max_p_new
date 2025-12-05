@@ -37,8 +37,8 @@ class AIQualityEvaluator {
         const { getSharedPrismaClient, safeQuery } = require('./sharedDatabase');
 
         const aiSettings = await safeQuery(async () => {
-          const prisma = getSharedPrismaClient();
-          return await prisma.aiSettings.findUnique({
+          // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
+          return await getSharedPrismaClient().aiSettings.findUnique({
             where: { companyId },
             select: { qualityEvaluationEnabled: true }
           });
@@ -2067,3 +2067,4 @@ Your rating:`;
 }
 
 module.exports = AIQualityEvaluator;
+

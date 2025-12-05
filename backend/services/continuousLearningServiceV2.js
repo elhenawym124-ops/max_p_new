@@ -7,11 +7,15 @@ const { getSharedPrismaClient } = require('./sharedDatabase');
 
 class ContinuousLearningServiceV2 {
   constructor() {
-    this.prisma = getSharedPrismaClient(); // Use shared database connection
+    // this.prisma = getSharedPrismaClient(); // ❌ Removed
+  }
+
+  get prisma() {
+    return getSharedPrismaClient();
     this.isInitialized = false;
     this.learningQueue = [];
     this.processingInterval = null;
-    
+
     //console.log('🧠 [ContinuousLearning] Service V2 initializing...');
     this.initialize();
   }
@@ -64,7 +68,7 @@ class ContinuousLearningServiceV2 {
       });
 
       //console.log(`✅ [ContinuousLearning] Learning data collected: ${learningData.id}`);
-      
+
       // إضافة للقائمة للمعالجة اللاحقة
       this.learningQueue.push(learningData.id);
 
@@ -108,10 +112,10 @@ class ContinuousLearningServiceV2 {
 
       // تحليل أنماط الكلمات الناجحة
       const wordPatterns = await this.analyzeWordPatterns(recentData);
-      
+
       // تحليل أنماط الأسلوب
       const stylePatterns = await this.analyzeStylePatterns(recentData);
-      
+
       // تحليل أنماط التوقيت
       const timingPatterns = await this.analyzeTimingPatterns(recentData);
 
@@ -143,7 +147,7 @@ class ContinuousLearningServiceV2 {
    */
   async analyzeWordPatterns(data) {
     const patterns = [];
-    
+
     try {
       // تجميع الردود حسب النجاح (confidence > 0.8)
       const successfulResponses = data.filter(d => d.confidence > 0.8);
@@ -183,18 +187,18 @@ class ContinuousLearningServiceV2 {
    */
   async analyzeStylePatterns(data) {
     const patterns = [];
-    
+
     try {
       const successfulResponses = data.filter(d => d.confidence > 0.8);
-      
+
       if (successfulResponses.length < 5) return patterns;
 
       // تحليل طول الردود
       const avgLength = successfulResponses.reduce((sum, r) => sum + r.aiResponse.length, 0) / successfulResponses.length;
-      
+
       // تحليل استخدام علامات الترقيم
       const punctuationUsage = this.analyzePunctuation(successfulResponses.map(r => r.aiResponse));
-      
+
       // تحليل بنية الردود
       const responseStructure = this.analyzeResponseStructure(successfulResponses.map(r => r.aiResponse));
 
@@ -222,15 +226,15 @@ class ContinuousLearningServiceV2 {
    */
   async analyzeTimingPatterns(data) {
     const patterns = [];
-    
+
     try {
       const successfulResponses = data.filter(d => d.confidence > 0.8);
-      
+
       if (successfulResponses.length < 5) return patterns;
 
       // تحليل أوقات الاستجابة
       const avgResponseTime = successfulResponses.reduce((sum, r) => sum + r.processingTime, 0) / successfulResponses.length;
-      
+
       // تحليل أوقات اليوم
       const timeDistribution = this.analyzeTimeDistribution(successfulResponses);
 
@@ -305,14 +309,14 @@ class ContinuousLearningServiceV2 {
     this.processingInterval = setInterval(async () => {
       if (this.learningQueue.length > 0) {
         //console.log(`🔄 [ContinuousLearning] Processing ${this.learningQueue.length} queued items`);
-        
+
         // الحصول على الشركات النشطة
         const activeCompanies = await this.getActiveCompanies();
-        
+
         for (const company of activeCompanies) {
           await this.analyzeAndDiscoverPatterns(company.id);
         }
-        
+
         // تنظيف القائمة
         this.learningQueue = [];
       }
@@ -351,25 +355,25 @@ class ContinuousLearningServiceV2 {
   findSignificantWords(successfulWords, unsuccessfulWords) {
     const successfulFreq = {};
     const unsuccessfulFreq = {};
-    
+
     successfulWords.forEach(word => {
       successfulFreq[word] = (successfulFreq[word] || 0) + 1;
     });
-    
+
     unsuccessfulWords.forEach(word => {
       unsuccessfulFreq[word] = (unsuccessfulFreq[word] || 0) + 1;
     });
-    
+
     const significant = [];
     Object.keys(successfulFreq).forEach(word => {
       const successRate = successfulFreq[word] / successfulWords.length;
       const failureRate = (unsuccessfulFreq[word] || 0) / Math.max(unsuccessfulWords.length, 1);
-      
+
       if (successRate > failureRate * 2 && successfulFreq[word] >= 3) {
         significant.push(word);
       }
     });
-    
+
     return significant;
   }
 

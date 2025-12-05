@@ -2,7 +2,7 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const envConfig = require('../config/environment');
 const { getSharedPrismaClient, safeQuery } = require('./sharedDatabase');
-const prisma = getSharedPrismaClient();
+// // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues // ❌ Removed to prevent early loading issues
 
 class SocketService {
   constructor() {
@@ -49,7 +49,7 @@ class SocketService {
 
       // Verify user exists and is active
       const user = await safeQuery(async () => {
-        return await prisma.user.findUnique({
+        return await getSharedPrismaClient().user.findUnique({
           where: { id: decoded.userId },
           include: { company: true }
         });
@@ -81,7 +81,7 @@ class SocketService {
 
       // Note: User authentication happens in authenticateSocket middleware
       // If authentication succeeded, socket.userId, socket.companyId etc. should be set
-      
+
       // Only auto-join if user is authenticated
       if (socket.userId && socket.companyId) {
         // Auto-join user to their company room
@@ -104,6 +104,14 @@ class SocketService {
       // معالج انضمام المستخدم
       socket.on('user_join', (data) => {
         this.handleUserJoin(socket, data);
+      });
+
+      // 🚀 معالج الانضمام لغرفة الشركة (للاستيراد في الخلفية)
+      socket.on('join_company_room', (data) => {
+        if (data.companyId) {
+          socket.join(`company_${data.companyId}`);
+          console.log(`📦 [SOCKET] Socket ${socket.id} joined company room: company_${data.companyId}`);
+        }
       });
 
       // معالج إرسال الرسائل
@@ -220,7 +228,7 @@ class SocketService {
     }
     this.companyRooms.get(companyId).add(socket.id);
 
-    //console.log(`✅ [SOCKET-JOIN] User ${socket.userName} (${userId}) joined company ${companyId} room successfully`);
+    console.log(`✅ [SOCKET-JOIN] User ${socket.userName} (${userId}) joined company ${companyId} room successfully`);
     //console.log(`📊 [SOCKET-JOIN] Company ${companyId} now has ${this.companyRooms.get(companyId).size} connected users`);
 
     // إشعار المستخدمين الآخرين في نفس الشركة فقط
@@ -263,7 +271,7 @@ class SocketService {
 
       // Verify conversation belongs to user's company
       const conversation = await safeQuery(async () => {
-        return await prisma.conversation.findFirst({
+        return await getSharedPrismaClient().conversation.findFirst({
           where: {
             id: conversationId,
             companyId: socket.companyId
@@ -410,7 +418,7 @@ class SocketService {
     try {
       // Verify conversation belongs to user's company
       const conversation = await safeQuery(async () => {
-        return await prisma.conversation.findFirst({
+        return await getSharedPrismaClient().conversation.findFirst({
           where: {
             id: conversationId,
             companyId: socket.companyId
@@ -600,7 +608,7 @@ class SocketService {
     // Get all sockets in the company room
     const companyRoom = this.io.sockets.adapter.rooms.get(`company_${companyId}`);
     const companySocketIds = this.companyRooms.get(companyId);
-    
+
     console.log(`📊 [NEW-CONVERSATION] Company room status:`, {
       companyId,
       roomExists: !!companyRoom,
@@ -611,13 +619,13 @@ class SocketService {
     // Method 1: Send to company room (standard approach)
     this.io.to(`company_${companyId}`).emit('conversation:new', conversation);
     console.log(`📤 [NEW-CONVERSATION] Sent to company_${companyId} room`);
-    
+
     // Log room info for debugging
     console.log(`📊 [NEW-CONVERSATION] Room size: ${companyRoom?.size || 0}, Tracked sockets: ${companySocketIds?.size || 0}`);
 
     // Method 2: Direct delivery - REMOVED to prevent duplicate events
     // (Sockets in room would receive twice: once from room, once from direct)
-    
+
     // Method 3: Broadcast - REMOVED to prevent duplicate events
 
     console.log(`✅ [NEW-CONVERSATION] Event sent successfully via company room`);
@@ -714,3 +722,4 @@ setInterval(() => {
 }, 60 * 60 * 1000);
 
 module.exports = socketService;
+

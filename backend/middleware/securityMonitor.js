@@ -4,7 +4,7 @@
  */
 
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 class SecurityMonitor {
   constructor() {
@@ -61,7 +61,7 @@ class SecurityMonitor {
   async checkAccess(pageId, senderId, companyId) {
     try {
       // فحص صحة الصفحة
-      const page = await prisma.facebookPage.findUnique({
+      const page = await getSharedPrismaClient().facebookPage.findUnique({
         where: { pageId: pageId },
         include: { company: true }
       });
@@ -97,7 +97,7 @@ class SecurityMonitor {
       }
       
       // فحص صحة الشركة
-      const company = await prisma.company.findUnique({
+      const company = await getSharedPrismaClient().company.findUnique({
         where: { id: companyId }
       });
       
@@ -209,3 +209,4 @@ module.exports = {
   securityMonitor,
   securityMiddleware
 };
+

@@ -1,5 +1,5 @@
 const { getSharedPrismaClient, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const axios = require('axios');
 const crypto = require('crypto');
 
@@ -94,6 +94,168 @@ const mapPaymentMethod = (wooPaymentMethod) => {
 // ═══════════════════════════════════════════════════════════════
 
 /**
+ * جلب عدد الطلبات الكلي من WooCommerce
+ * POST /api/v1/woocommerce/orders/count
+ */
+const getOrdersCount = async (req, res) => {
+  try {
+    console.log('🔢 [WOOCOMMERCE] Getting orders count...');
+    
+    const companyId = req.user?.companyId;
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول'
+      });
+    }
+
+    let settings = await getSharedPrismaClient().wooCommerceSettings.findUnique({
+      where: { companyId }
+    });
+
+    const { storeUrl, consumerKey, consumerSecret, status, dateFrom, dateTo } = req.body;
+    
+    if (!settings && (!storeUrl || !consumerKey || !consumerSecret)) {
+      return res.status(400).json({
+        success: false,
+        message: 'إعدادات WooCommerce غير موجودة'
+      });
+    }
+
+    const connectionSettings = settings || { storeUrl, consumerKey, consumerSecret };
+    const wooClient = createWooClient(connectionSettings);
+
+    // جلب صفحة واحدة فقط للحصول على الـ headers
+    const params = { per_page: 1 };
+    if (status && status !== 'any') params.status = status;
+    if (dateFrom) params.after = new Date(dateFrom).toISOString();
+    if (dateTo) params.before = new Date(dateTo).toISOString();
+
+    // WooCommerce API يرجع العدد الكلي في الـ headers
+    const response = await wooClient.get('/orders', params);
+    
+    // محاولة الحصول على العدد من الـ headers أو عد الصفحات
+    let totalCount = 0;
+    
+    // جلب كل الصفحات لحساب العدد الكلي
+    let page = 1;
+    let hasMore = true;
+    while (hasMore) {
+      const pageOrders = await wooClient.get('/orders', { ...params, page, per_page: 100 });
+      if (!Array.isArray(pageOrders) || pageOrders.length === 0) {
+        hasMore = false;
+      } else {
+        totalCount += pageOrders.length;
+        page++;
+        // حد أقصى 1000 صفحة للحساب
+        if (page > 1000) {
+          hasMore = false;
+        }
+      }
+    }
+
+    console.log(`✅ [WOOCOMMERCE] Total orders count: ${totalCount}`);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalOrders: totalCount,
+        estimatedBatches: Math.ceil(totalCount / 100)
+      }
+    });
+  } catch (error) {
+    console.error('❌ [WOOCOMMERCE] Error getting orders count:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في جلب عدد الطلبات'
+    });
+  }
+};
+
+/**
+ * جلب حالات الطلبات من WooCommerce
+ * GET /api/v1/woocommerce/orders/statuses
+ */
+const getWooCommerceStatuses = async (req, res) => {
+  try {
+    console.log('📋 [WOOCOMMERCE] Getting order statuses...');
+    
+    const companyId = req.user?.companyId;
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول'
+      });
+    }
+
+    let settings = await getSharedPrismaClient().wooCommerceSettings.findUnique({
+      where: { companyId }
+    });
+
+    if (!settings) {
+      return res.status(400).json({
+        success: false,
+        message: 'إعدادات WooCommerce غير موجودة'
+      });
+    }
+
+    const wooClient = createWooClient(settings);
+
+    // جلب الحالات من WooCommerce
+    // WooCommerce لديه حالات افتراضية + حالات مخصصة
+    const defaultStatuses = [
+      { slug: 'pending', name: 'معلق', nameEn: 'Pending payment' },
+      { slug: 'processing', name: 'قيد المعالجة', nameEn: 'Processing' },
+      { slug: 'on-hold', name: 'في الانتظار', nameEn: 'On hold' },
+      { slug: 'completed', name: 'مكتمل', nameEn: 'Completed' },
+      { slug: 'cancelled', name: 'ملغي', nameEn: 'Cancelled' },
+      { slug: 'refunded', name: 'مسترد', nameEn: 'Refunded' },
+      { slug: 'failed', name: 'فاشل', nameEn: 'Failed' },
+      { slug: 'trash', name: 'محذوف', nameEn: 'Trash' }
+    ];
+
+    // جلب الطلبات للكشف عن الحالات المخصصة المستخدمة
+    const orders = await wooClient.get('/orders', { per_page: 100 });
+    const customStatuses = new Set();
+    
+    if (Array.isArray(orders)) {
+      orders.forEach(order => {
+        const status = order.status;
+        // إذا كانت الحالة غير موجودة في الافتراضية
+        if (!defaultStatuses.find(s => s.slug === status)) {
+          customStatuses.add(status);
+        }
+      });
+    }
+
+    // تحويل الحالات المخصصة لنفس الصيغة
+    const customStatusesList = Array.from(customStatuses).map(slug => ({
+      slug,
+      name: slug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+      nameEn: slug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+      isCustom: true
+    }));
+
+    console.log(`✅ [WOOCOMMERCE] Found ${defaultStatuses.length} default + ${customStatusesList.length} custom statuses`);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        defaultStatuses,
+        customStatuses: customStatusesList,
+        allStatuses: [...defaultStatuses, ...customStatusesList]
+      }
+    });
+  } catch (error) {
+    console.error('❌ [WOOCOMMERCE] Error getting statuses:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في جلب حالات الطلبات'
+    });
+  }
+};
+
+/**
  * جلب الطلبات من WooCommerce (معاينة)
  * POST /api/v1/woocommerce/orders/fetch
  */
@@ -110,12 +272,18 @@ const fetchOrdersFromWooCommerce = async (req, res) => {
     }
 
     // جلب إعدادات WooCommerce
-    let settings = await prisma.wooCommerceSettings.findUnique({
+    let settings = await getSharedPrismaClient().wooCommerceSettings.findUnique({
       where: { companyId }
     });
 
     // لو مفيش إعدادات محفوظة، استخدم البيانات من الـ request
-    const { storeUrl, consumerKey, consumerSecret, dateFrom, dateTo, status } = req.body;
+    const { 
+      storeUrl, consumerKey, consumerSecret, 
+      dateFrom, dateTo, status,
+      limit, // عدد الطلبات المطلوبة: 10, 50, 100, 'all'
+      page, // رقم الصفحة للـ pagination
+      fetchAll // جلب الكل مع pagination
+    } = req.body;
     
     if (!settings && (!storeUrl || !consumerKey || !consumerSecret)) {
       return res.status(400).json({
@@ -127,9 +295,16 @@ const fetchOrdersFromWooCommerce = async (req, res) => {
     const connectionSettings = settings || { storeUrl, consumerKey, consumerSecret };
     const wooClient = createWooClient(connectionSettings);
 
+    // تحديد عدد الطلبات
+    let perPage = 100;
+    if (limit && limit !== 'all') {
+      perPage = Math.min(parseInt(limit) || 100, 100);
+    }
+
     // بناء الـ params
     const params = {
-      per_page: 100,
+      per_page: perPage,
+      page: page || 1, // دعم رقم الصفحة
       orderby: 'date',
       order: 'desc'
     };
@@ -140,19 +315,29 @@ const fetchOrdersFromWooCommerce = async (req, res) => {
 
     console.log(`📡 [WOOCOMMERCE] Fetching orders with params:`, params);
 
-    const orders = await wooClient.get('/orders', params);
+    let allOrders = [];
 
+    // جلب صفحة واحدة فقط (للدفعات)
+    const orders = await wooClient.get('/orders', params);
+    
     if (!Array.isArray(orders)) {
       return res.status(400).json({
         success: false,
         message: 'تنسيق البيانات غير صحيح من WooCommerce'
       });
     }
+    
+    allOrders = orders;
+    
+    // تطبيق الـ limit
+    if (limit && limit !== 'all' && parseInt(limit) < allOrders.length) {
+      allOrders = allOrders.slice(0, parseInt(limit));
+    }
 
-    console.log(`✅ [WOOCOMMERCE] Found ${orders.length} orders`);
+    console.log(`✅ [WOOCOMMERCE] Found ${allOrders.length} orders`);
 
     // تحويل الطلبات لصيغة موحدة
-    const formattedOrders = orders.map(order => ({
+    const formattedOrders = allOrders.map(order => ({
       wooCommerceId: order.id.toString(),
       orderNumber: order.number || order.id.toString(),
       status: mapWooStatusToLocal(order.status),
@@ -252,7 +437,11 @@ const importOrdersFromWooCommerce = async (req, res) => {
       });
     }
 
-    const { orders } = req.body;
+    const { 
+      orders,
+      importMode, // 'review' أو 'direct' - الإضافة المباشرة أو للمراجعة
+      duplicateAction // 'skip' أو 'update' - تخطي أو تحديث المكرر
+    } = req.body;
 
     if (!orders || !Array.isArray(orders) || orders.length === 0) {
       return res.status(400).json({
@@ -261,8 +450,13 @@ const importOrdersFromWooCommerce = async (req, res) => {
       });
     }
 
+    const isDirect = importMode === 'direct';
+    const shouldUpdate = duplicateAction === 'update';
+
+    console.log(`📦 [WOOCOMMERCE] Import mode: ${isDirect ? 'direct' : 'review'}, Duplicate action: ${shouldUpdate ? 'update' : 'skip'}`);
+
     // إنشاء سجل المزامنة
-    const syncLog = await prisma.wooCommerceSyncLog.create({
+    const syncLog = await getSharedPrismaClient().wooCommerceSyncLog.create({
       data: {
         companyId,
         syncType: 'import_orders',
@@ -276,14 +470,15 @@ const importOrdersFromWooCommerce = async (req, res) => {
     const results = {
       success: [],
       failed: [],
-      skipped: []
+      skipped: [],
+      updated: []
     };
 
     for (const orderData of orders) {
       try {
         // التحقق من وجود الطلب مسبقاً
         if (orderData.wooCommerceId) {
-          const existingOrder = await prisma.order.findFirst({
+          const existingOrder = await getSharedPrismaClient().order.findFirst({
             where: {
               wooCommerceId: orderData.wooCommerceId,
               companyId
@@ -291,12 +486,37 @@ const importOrdersFromWooCommerce = async (req, res) => {
           });
 
           if (existingOrder) {
-            results.skipped.push({
-              order: orderData,
-              reason: 'الطلب موجود بالفعل',
-              existingOrderId: existingOrder.id
-            });
-            continue;
+            if (shouldUpdate) {
+              // تحديث الطلب الموجود
+              const updatedOrder = await getSharedPrismaClient().order.update({
+                where: { id: existingOrder.id },
+                data: {
+                  status: orderData.status || existingOrder.status,
+                  paymentStatus: orderData.paymentStatus || existingOrder.paymentStatus,
+                  wooCommerceStatus: orderData.wooCommerceStatus,
+                  total: orderData.total || existingOrder.total,
+                  subtotal: orderData.subtotal || existingOrder.subtotal,
+                  shipping: orderData.shipping || existingOrder.shipping,
+                  tax: orderData.tax || existingOrder.tax,
+                  discount: orderData.discount || existingOrder.discount,
+                  notes: orderData.notes || existingOrder.notes,
+                  lastSyncAt: new Date()
+                }
+              });
+              results.updated.push({
+                order: orderData,
+                localOrderId: updatedOrder.id
+              });
+              console.log(`🔄 [WOOCOMMERCE] Updated order: ${updatedOrder.orderNumber}`);
+              continue;
+            } else {
+              results.skipped.push({
+                order: orderData,
+                reason: 'الطلب موجود بالفعل',
+                existingOrderId: existingOrder.id
+              });
+              continue;
+            }
           }
         }
 
@@ -304,7 +524,7 @@ const importOrdersFromWooCommerce = async (req, res) => {
         let customer = null;
         
         if (orderData.customerEmail) {
-          customer = await prisma.customer.findFirst({
+          customer = await getSharedPrismaClient().customer.findFirst({
             where: {
               email: orderData.customerEmail,
               companyId
@@ -313,7 +533,7 @@ const importOrdersFromWooCommerce = async (req, res) => {
         }
         
         if (!customer && orderData.customerPhone) {
-          customer = await prisma.customer.findFirst({
+          customer = await getSharedPrismaClient().customer.findFirst({
             where: {
               phone: orderData.customerPhone,
               companyId
@@ -324,7 +544,7 @@ const importOrdersFromWooCommerce = async (req, res) => {
         if (!customer) {
           // إنشاء عميل جديد
           const nameParts = (orderData.customerName || 'عميل WooCommerce').split(' ');
-          customer = await prisma.customer.create({
+          customer = await getSharedPrismaClient().customer.create({
             data: {
               firstName: nameParts[0] || 'عميل',
               lastName: nameParts.slice(1).join(' ') || 'WooCommerce',
@@ -341,7 +561,7 @@ const importOrdersFromWooCommerce = async (req, res) => {
         const orderNumber = `WOO-${orderData.wooCommerceId || Date.now()}`;
 
         // إنشاء الطلب
-        const order = await prisma.order.create({
+        const order = await getSharedPrismaClient().order.create({
           data: {
             orderNumber,
             customerId: customer.id,
@@ -381,18 +601,18 @@ const importOrdersFromWooCommerce = async (req, res) => {
             let product = null;
             
             if (item.productSku) {
-              product = await prisma.product.findFirst({
+              product = await getSharedPrismaClient().product.findFirst({
                 where: { sku: item.productSku, companyId }
               });
             }
             
             if (!product && item.wooCommerceProductId) {
-              product = await prisma.product.findFirst({
+              product = await getSharedPrismaClient().product.findFirst({
                 where: { wooCommerceId: item.wooCommerceProductId, companyId }
               });
             }
 
-            await prisma.orderItem.create({
+            await getSharedPrismaClient().orderItem.create({
               data: {
                 orderId: order.id,
                 productId: product?.id || null,
@@ -418,13 +638,13 @@ const importOrdersFromWooCommerce = async (req, res) => {
     }
 
     // تحديث سجل المزامنة
-    await prisma.wooCommerceSyncLog.update({
+    await getSharedPrismaClient().wooCommerceSyncLog.update({
       where: { id: syncLog.id },
       data: {
         status: 'success',
         successCount: results.success.length,
         failedCount: results.failed.length,
-        skippedCount: results.skipped.length,
+        skippedCount: results.skipped.length + results.updated.length,
         completedAt: new Date(),
         duration: Math.floor((Date.now() - syncLog.startedAt.getTime()) / 1000)
       }
@@ -432,6 +652,7 @@ const importOrdersFromWooCommerce = async (req, res) => {
 
     console.log(`✅ [WOOCOMMERCE] Import completed:`);
     console.log(`   - Success: ${results.success.length}`);
+    console.log(`   - Updated: ${results.updated.length}`);
     console.log(`   - Failed: ${results.failed.length}`);
     console.log(`   - Skipped: ${results.skipped.length}`);
 
@@ -440,6 +661,7 @@ const importOrdersFromWooCommerce = async (req, res) => {
       message: 'تم استيراد الطلبات',
       data: {
         imported: results.success.length,
+        updated: results.updated.length,
         failed: results.failed.length,
         skipped: results.skipped.length,
         details: results
@@ -492,7 +714,7 @@ const getLocalOrdersForExport = async (req, res) => {
       if (dateTo) where.createdAt.lte = new Date(dateTo);
     }
 
-    const orders = await prisma.order.findMany({
+    const orders = await getSharedPrismaClient().order.findMany({
       where,
       include: {
         items: {
@@ -541,7 +763,7 @@ const exportOrdersToWooCommerce = async (req, res) => {
     }
 
     // جلب إعدادات WooCommerce
-    const settings = await prisma.wooCommerceSettings.findUnique({
+    const settings = await getSharedPrismaClient().wooCommerceSettings.findUnique({
       where: { companyId }
     });
 
@@ -564,7 +786,7 @@ const exportOrdersToWooCommerce = async (req, res) => {
     const wooClient = createWooClient(settings);
 
     // إنشاء سجل المزامنة
-    const syncLog = await prisma.wooCommerceSyncLog.create({
+    const syncLog = await getSharedPrismaClient().wooCommerceSyncLog.create({
       data: {
         companyId,
         syncType: 'export_orders',
@@ -582,7 +804,7 @@ const exportOrdersToWooCommerce = async (req, res) => {
     };
 
     // جلب الطلبات
-    const orders = await prisma.order.findMany({
+    const orders = await getSharedPrismaClient().order.findMany({
       where: {
         id: { in: orderIds },
         companyId
@@ -606,7 +828,7 @@ const exportOrdersToWooCommerce = async (req, res) => {
             customer_note: order.notes
           });
 
-          await prisma.order.update({
+          await getSharedPrismaClient().order.update({
             where: { id: order.id },
             data: {
               syncedToWoo: true,
@@ -647,7 +869,7 @@ const exportOrdersToWooCommerce = async (req, res) => {
         const wooOrder = await wooClient.post('/orders', wooOrderData);
 
         // تحديث الطلب المحلي
-        await prisma.order.update({
+        await getSharedPrismaClient().order.update({
           where: { id: order.id },
           data: {
             wooCommerceId: wooOrder.id.toString(),
@@ -675,7 +897,7 @@ const exportOrdersToWooCommerce = async (req, res) => {
     }
 
     // تحديث سجل المزامنة
-    await prisma.wooCommerceSyncLog.update({
+    await getSharedPrismaClient().wooCommerceSyncLog.update({
       where: { id: syncLog.id },
       data: {
         status: results.failed.length === 0 ? 'success' : 'partial',
@@ -776,7 +998,7 @@ const saveWooCommerceSettings = async (req, res) => {
     }
 
     // حفظ أو تحديث الإعدادات
-    const settings = await prisma.wooCommerceSettings.upsert({
+    const settings = await getSharedPrismaClient().wooCommerceSettings.upsert({
       where: { companyId },
       update: {
         storeUrl: storeUrl.replace(/\/$/, ''),
@@ -803,6 +1025,11 @@ const saveWooCommerceSettings = async (req, res) => {
       }
     });
 
+    // 🔧 الحصول على الـ URL تلقائياً من الـ request
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+    const host = req.headers['x-forwarded-host'] || req.headers.host || req.hostname;
+    const backendUrl = process.env.BACKEND_URL || `${protocol}://${host}`;
+
     res.json({
       success: true,
       message: 'تم حفظ الإعدادات بنجاح',
@@ -812,7 +1039,7 @@ const saveWooCommerceSettings = async (req, res) => {
         syncEnabled: settings.syncEnabled,
         syncDirection: settings.syncDirection,
         webhookEnabled: settings.webhookEnabled,
-        webhookUrl: `${process.env.BACKEND_URL || 'https://your-domain.com'}/api/v1/woocommerce/webhook/${companyId}`
+        webhookUrl: `${backendUrl}/api/v1/woocommerce/webhook/${companyId}`
       }
     });
 
@@ -840,7 +1067,7 @@ const getWooCommerceSettings = async (req, res) => {
       });
     }
 
-    const settings = await prisma.wooCommerceSettings.findUnique({
+    const settings = await getSharedPrismaClient().wooCommerceSettings.findUnique({
       where: { companyId }
     });
 
@@ -851,6 +1078,11 @@ const getWooCommerceSettings = async (req, res) => {
         message: 'لا توجد إعدادات محفوظة'
       });
     }
+
+    // 🔧 الحصول على الـ URL تلقائياً من الـ request
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+    const host = req.headers['x-forwarded-host'] || req.headers.host || req.hostname;
+    const backendUrl = process.env.BACKEND_URL || `${protocol}://${host}`;
 
     res.json({
       success: true,
@@ -864,7 +1096,7 @@ const getWooCommerceSettings = async (req, res) => {
         webhookEnabled: settings.webhookEnabled,
         lastSyncAt: settings.lastSyncAt,
         lastSyncStatus: settings.lastSyncStatus,
-        webhookUrl: `${process.env.BACKEND_URL || 'https://your-domain.com'}/api/v1/woocommerce/webhook/${companyId}`
+        webhookUrl: `${backendUrl}/api/v1/woocommerce/webhook/${companyId}`
       }
     });
 
@@ -892,7 +1124,7 @@ const getSyncLogs = async (req, res) => {
       });
     }
 
-    const logs = await prisma.wooCommerceSyncLog.findMany({
+    const logs = await getSharedPrismaClient().wooCommerceSyncLog.findMany({
       where: { companyId },
       orderBy: { startedAt: 'desc' },
       take: 50
@@ -920,7 +1152,7 @@ const runAutoSync = async (companyId) => {
   try {
     console.log(`🔄 [WOOCOMMERCE] Running auto sync for company: ${companyId}`);
     
-    const settings = await prisma.wooCommerceSettings.findUnique({
+    const settings = await getSharedPrismaClient().wooCommerceSettings.findUnique({
       where: { companyId }
     });
 
@@ -953,7 +1185,7 @@ const runAutoSync = async (companyId) => {
 
         for (const wooOrder of wooOrders) {
           // Check if already imported
-          const existing = await prisma.order.findFirst({
+          const existing = await getSharedPrismaClient().order.findFirst({
             where: { 
               companyId,
               wooCommerceId: String(wooOrder.id)
@@ -967,7 +1199,7 @@ const runAutoSync = async (companyId) => {
             const customerEmail = wooOrder.billing?.email || '';
 
             // Find or create customer
-            let customer = await prisma.customer.findFirst({
+            let customer = await getSharedPrismaClient().customer.findFirst({
               where: {
                 companyId,
                 OR: [
@@ -978,7 +1210,7 @@ const runAutoSync = async (companyId) => {
             });
 
             if (!customer) {
-              customer = await prisma.customer.create({
+              customer = await getSharedPrismaClient().customer.create({
                 data: {
                   companyId,
                   name: customerName,
@@ -990,7 +1222,7 @@ const runAutoSync = async (companyId) => {
             }
 
             // Create order
-            await prisma.order.create({
+            await getSharedPrismaClient().order.create({
               data: {
                 companyId,
                 customerId: customer.id,
@@ -1031,7 +1263,7 @@ const runAutoSync = async (companyId) => {
     if (settings.syncDirection === 'both' || settings.syncDirection === 'export_only') {
       try {
         // Get orders not yet exported
-        const ordersToExport = await prisma.order.findMany({
+        const ordersToExport = await getSharedPrismaClient().order.findMany({
           where: {
             companyId,
             syncedToWoo: false,
@@ -1066,7 +1298,7 @@ const runAutoSync = async (companyId) => {
 
             const createdOrder = await wooClient.post('/orders', wooOrderData);
 
-            await prisma.order.update({
+            await getSharedPrismaClient().order.update({
               where: { id: order.id },
               data: {
                 wooCommerceId: String(createdOrder.id),
@@ -1090,7 +1322,7 @@ const runAutoSync = async (companyId) => {
     }
 
     // Update last sync time
-    await prisma.wooCommerceSettings.update({
+    await getSharedPrismaClient().wooCommerceSettings.update({
       where: { companyId },
       data: {
         lastSyncAt: new Date(),
@@ -1100,7 +1332,7 @@ const runAutoSync = async (companyId) => {
     });
 
     // Log the sync
-    await prisma.wooCommerceSyncLog.create({
+    await getSharedPrismaClient().wooCommerceSyncLog.create({
       data: {
         companyId,
         syncType: 'auto_sync',
@@ -1130,7 +1362,7 @@ const runAutoSyncForAllCompanies = async () => {
   try {
     console.log('🔄 [WOOCOMMERCE] Starting auto sync for all companies...');
     
-    const companiesWithAutoSync = await prisma.wooCommerceSettings.findMany({
+    const companiesWithAutoSync = await getSharedPrismaClient().wooCommerceSettings.findMany({
       where: {
         syncEnabled: true,
         isActive: true
@@ -1189,10 +1421,14 @@ module.exports = {
   // Orders Import
   fetchOrdersFromWooCommerce,
   importOrdersFromWooCommerce,
+  getOrdersCount,
   
   // Orders Export
   getLocalOrdersForExport,
   exportOrdersToWooCommerce,
+  
+  // Statuses
+  getWooCommerceStatuses,
   
   // Settings
   saveWooCommerceSettings,
@@ -1204,3 +1440,4 @@ module.exports = {
   runAutoSyncForAllCompanies,
   triggerAutoSync
 };
+

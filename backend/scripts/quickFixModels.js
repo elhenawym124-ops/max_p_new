@@ -3,7 +3,7 @@
  */
 
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 const getModelDefaults = (modelName) => {
     const map = {
@@ -35,14 +35,14 @@ async function quickFix() {
 
         // تغيير نوع الحقل أولاً
         try {
-            await prisma.$executeRawUnsafe(`ALTER TABLE gemini_key_models MODIFY COLUMN \`usage\` TEXT NOT NULL`);
+            await getSharedPrismaClient().$executeRawUnsafe(`ALTER TABLE gemini_key_models MODIFY COLUMN \`usage\` TEXT NOT NULL`);
             console.log('✅ تم تغيير نوع الحقل\n');
         } catch (e) {
             console.log('⚠️ تحذير: ' + e.message.split('\n')[0] + '\n');
         }
 
         // إصلاح النماذج
-        const models = await prisma.geminiKeyModel.findMany();
+        const models = await getSharedPrismaClient().geminiKeyModel.findMany();
         let fixed = 0;
         
         for (const m of models) {
@@ -57,7 +57,7 @@ async function quickFix() {
                     resetDate: null
                 });
                 
-                await prisma.geminiKeyModel.update({
+                await getSharedPrismaClient().geminiKeyModel.update({
                     where: { id: m.id },
                     data: { usage }
                 });
@@ -69,10 +69,11 @@ async function quickFix() {
     } catch (error) {
         console.error('❌ خطأ:', error.message);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 quickFix();
+
 
 

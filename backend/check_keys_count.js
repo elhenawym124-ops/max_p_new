@@ -1,9 +1,9 @@
 const { getSharedPrismaClient } = require('./services/sharedDatabase');
 
 async function checkKeysContent() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     try {
-        const sessions = await prisma.whatsAppSession.findMany();
+        const sessions = await getSharedPrismaClient().whatsAppSession.findMany();
 
         for (const session of sessions) {
             console.log(`\nSession: ${session.name}`);
@@ -27,3 +27,4 @@ async function checkKeysContent() {
 }
 
 checkKeysContent();
+

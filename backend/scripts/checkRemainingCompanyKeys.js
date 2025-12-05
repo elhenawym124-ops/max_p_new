@@ -3,14 +3,14 @@
  */
 
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 async function checkRemainingKeys() {
   try {
     console.log('🔍 [CHECK-KEYS] Checking remaining company keys...\n');
 
     // 1. جلب كل المفاتيح من نوع COMPANY
-    const companyKeys = await prisma.geminiKey.findMany({
+    const companyKeys = await getSharedPrismaClient().geminiKey.findMany({
       where: {
         keyType: 'COMPANY'
       },
@@ -63,7 +63,7 @@ async function checkRemainingKeys() {
     console.log(`   - Inactive: ${inactiveCount}`);
 
     // 4. جلب المفاتيح المركزية للمقارنة
-    const centralKeys = await prisma.geminiKey.findMany({
+    const centralKeys = await getSharedPrismaClient().geminiKey.findMany({
       where: {
         keyType: 'CENTRAL'
       },
@@ -81,7 +81,7 @@ async function checkRemainingKeys() {
     console.error('❌ [CHECK-KEYS] Error:', error);
     throw error;
   } finally {
-    await prisma.$disconnect();
+    await getSharedPrismaClient().$disconnect();
   }
 }
 
@@ -94,4 +94,5 @@ checkRemainingKeys()
     console.error('\n❌ Script failed:', error);
     process.exit(1);
   });
+
 

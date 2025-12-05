@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // فحص حالة صفحات Facebook
 router.get('/facebook-status', async (req, res) => {
@@ -9,7 +9,7 @@ router.get('/facebook-status', async (req, res) => {
     console.log('🔍 Checking Facebook pages status...');
 
     // البحث عن جميع صفحات Facebook
-    const facebookPages = await prisma.facebookPage.findMany({
+    const facebookPages = await getSharedPrismaClient().facebookPage.findMany({
       select: {
         id: true,
         pageId: true,
@@ -95,8 +95,8 @@ router.post('/test-message', async (req, res) => {
     // إذا لم نجد رمز الوصول للصفحة، نحاول العثور على صفحة متصلة
     if (!pageAccessToken) {
       const { getSharedPrismaClient } = require('../services/sharedDatabase');
-      const prisma = getSharedPrismaClient();
-      const defaultPage = await prisma.facebookPage.findFirst({
+      // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
+      const defaultPage = await getSharedPrismaClient().facebookPage.findFirst({
         where: { status: 'connected' },
         orderBy: { connectedAt: 'desc' }
       });
@@ -139,3 +139,4 @@ router.post('/test-message', async (req, res) => {
 });
 
 module.exports = router;
+

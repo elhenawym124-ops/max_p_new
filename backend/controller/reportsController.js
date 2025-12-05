@@ -1,5 +1,5 @@
 const { getSharedPrismaClient, initializeSharedDatabase, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // تقرير المبيعات الشهري
 const getSalesReport = async (req, res) => {
@@ -11,7 +11,7 @@ const getSalesReport = async (req, res) => {
         const end = endDate ? new Date(endDate) : new Date();
 
         // جلب الطلبات في الفترة المحددة
-        const orders = await prisma.order.findMany({
+        const orders = await getSharedPrismaClient().order.findMany({
             where: {
                 companyId,
                 createdAt: {
@@ -79,7 +79,7 @@ const getCustomersReport = async (req, res) => {
         const end = endDate ? new Date(endDate) : new Date();
 
         // جلب العملاء الجدد
-        const customers = await prisma.customer.findMany({
+        const customers = await getSharedPrismaClient().customer.findMany({
             where: {
                 companyId,
                 createdAt: {
@@ -149,7 +149,7 @@ const getConversationsReport = async (req, res) => {
         const start = startDate ? new Date(startDate) : new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
         const end = endDate ? new Date(endDate) : new Date();
 
-        const conversations = await prisma.conversation.findMany({
+        const conversations = await getSharedPrismaClient().conversation.findMany({
             where: {
                 companyId,
                 createdAt: {
@@ -234,7 +234,7 @@ const getProductsReport = async (req, res) => {
         const start = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
         const end = endDate ? new Date(endDate) : new Date();
 
-        const orderItems = await prisma.orderItem.findMany({
+        const orderItems = await getSharedPrismaClient().orderItem.findMany({
             where: {
                 order: {
                     companyId,
@@ -307,7 +307,7 @@ const getPerformanceReport = async (req, res) => {
         const previousStart = new Date(start.getTime() - (end - start));
 
         const [currentConversations, currentOrders, currentCustomers] = await Promise.all([
-            prisma.conversation.findMany({
+            getSharedPrismaClient().conversation.findMany({
                 where: {
                     companyId,
                     createdAt: { gte: start, lte: end }
@@ -320,13 +320,13 @@ const getPerformanceReport = async (req, res) => {
                     }
                 }
             }),
-            prisma.order.findMany({
+            getSharedPrismaClient().order.findMany({
                 where: {
                     companyId,
                     createdAt: { gte: start, lte: end }
                 }
             }),
-            prisma.customer.findMany({
+            getSharedPrismaClient().customer.findMany({
                 where: {
                     companyId,
                     createdAt: { gte: start, lte: end }
@@ -338,13 +338,13 @@ const getPerformanceReport = async (req, res) => {
         ]);
 
         const [previousConversations, previousOrders] = await Promise.all([
-            prisma.conversation.count({
+            getSharedPrismaClient().conversation.count({
                 where: {
                     companyId,
                     createdAt: { gte: previousStart, lt: start }
                 }
             }),
-            prisma.order.findMany({
+            getSharedPrismaClient().order.findMany({
                 where: {
                     companyId,
                     createdAt: { gte: previousStart, lt: start }
@@ -492,20 +492,20 @@ const getReports = async (req, res) => {
         
         // Dashboard stats مع company isolation
         const stats = {
-            totalCustomers: await prisma.customer.count({
+            totalCustomers: await getSharedPrismaClient().customer.count({
                 where: { companyId }
             }),
-            totalConversations: await prisma.conversation.count({
+            totalConversations: await getSharedPrismaClient().conversation.count({
                 where: { companyId }
             }),
-            totalMessages: await prisma.message.count({
+            totalMessages: await getSharedPrismaClient().message.count({
                 where: {
                     conversation: {
                         companyId
                     }
                 }
             }),
-            totalProducts: await prisma.product.count({
+            totalProducts: await getSharedPrismaClient().product.count({
                 where: { companyId }
             })
         };

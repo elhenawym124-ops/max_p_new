@@ -11,7 +11,7 @@ process.chdir(rootPath);
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 const aiAgentService = require('../aiAgentService');
 
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // معلومات الشركة
 const COMPANY_ID = 'cmem8ayyr004cufakqkcsyn97'; // شركة التسويق
@@ -64,7 +64,7 @@ class AIScenarioTester {
       console.log('='.repeat(80) + '\n');
 
       // البحث عن أو إنشاء customer اختبار
-      let testCustomer = await prisma.customer.findFirst({
+      let testCustomer = await getSharedPrismaClient().customer.findFirst({
         where: {
           companyId: this.companyId,
           firstName: 'أحمد',
@@ -73,7 +73,7 @@ class AIScenarioTester {
       });
 
       if (!testCustomer) {
-        testCustomer = await prisma.customer.create({
+        testCustomer = await getSharedPrismaClient().customer.create({
           data: {
             companyId: this.companyId,
             firstName: 'أحمد',
@@ -90,7 +90,7 @@ class AIScenarioTester {
       this.customerId = testCustomer.id;
 
       // إنشاء محادثة جديدة
-      const conversation = await prisma.conversation.create({
+      const conversation = await getSharedPrismaClient().conversation.create({
         data: {
           companyId: this.companyId,
           customerId: testCustomer.id,
@@ -137,7 +137,7 @@ class AIScenarioTester {
       const processingTime = Date.now() - startTime;
 
       // حفظ رسالة المستخدم
-      await prisma.message.create({
+      await getSharedPrismaClient().message.create({
         data: {
           conversationId: this.conversationId,
           content: question,
@@ -166,7 +166,7 @@ class AIScenarioTester {
 
         // حفظ رد AI
         if (responseContent) {
-          await prisma.message.create({
+          await getSharedPrismaClient().message.create({
             data: {
               conversationId: this.conversationId,
               content: responseContent,
@@ -185,7 +185,7 @@ class AIScenarioTester {
 
       // التحقق من إنشاء الطلب (بعد السؤال 14)
       if (questionNumber === 14 && !this.orderCreated) {
-        const order = await prisma.order.findFirst({
+        const order = await getSharedPrismaClient().order.findFirst({
           where: {
             conversationId: this.conversationId,
             companyId: this.companyId
@@ -390,7 +390,7 @@ class AIScenarioTester {
     } catch (error) {
       console.error('❌ خطأ في الاختبار:', error);
     } finally {
-      await prisma.$disconnect();
+      await getSharedPrismaClient().$disconnect();
     }
   }
 }
@@ -402,4 +402,5 @@ if (require.main === module) {
 }
 
 module.exports = AIScenarioTester;
+
 

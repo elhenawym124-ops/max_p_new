@@ -1,5 +1,5 @@
 const { getSharedPrismaClient, initializeSharedDatabase, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const axios = require('axios');
 
 const getConnectedFacebookPages = async (req, res) => {
@@ -18,7 +18,7 @@ const getConnectedFacebookPages = async (req, res) => {
         ////console.log('📡 [FACEBOOK-CONNECTED] Loading pages for company:', companyId);
 
         // 🔒 جلب صفحات Facebook مع العزل
-        const facebookPages = await prisma.facebookPage.findMany({
+        const facebookPages = await getSharedPrismaClient().facebookPage.findMany({
             where: {
                 companyId: companyId
             },
@@ -73,7 +73,7 @@ const getSpecificFacebookPageDetails = async (req, res) => {
         const { pageId } = req.params;
 
         // 🔒 جلب الصفحة مع العزل
-        const facebookPage = await prisma.facebookPage.findFirst({
+        const facebookPage = await getSharedPrismaClient().facebookPage.findFirst({
             where: {
                 pageId: pageId,
                 companyId: companyId
@@ -277,7 +277,7 @@ const connectFacebookPage = async (req, res) => {
 
         try {
             // 🔒 التحقق من أن الصفحة لا تنتمي لشركة أخرى
-            const existingPage = await prisma.facebookPage.findUnique({
+            const existingPage = await getSharedPrismaClient().facebookPage.findUnique({
                 where: { pageId: pageId }
             });
 
@@ -295,7 +295,7 @@ const connectFacebookPage = async (req, res) => {
             if (existingPage && existingPage.companyId === companyId) {
                 // Update existing page for same company (RECONNECTION CASE)
                 isReconnection = existingPage.status === 'disconnected';
-                savedPage = await prisma.facebookPage.update({
+                savedPage = await getSharedPrismaClient().facebookPage.update({
                     where: { pageId: pageId },
                     data: {
                         pageAccessToken: pageAccessToken,
@@ -309,7 +309,7 @@ const connectFacebookPage = async (req, res) => {
                 ////console.log(`📝 [FACEBOOK-CONNECT] ${isReconnection ? 'Reconnected' : 'Updated'} existing page in database`);
             } else {
                 // Create new page for this company
-                savedPage = await prisma.facebookPage.create({
+                savedPage = await getSharedPrismaClient().facebookPage.create({
                     data: {
                         pageId: pageId,
                         pageAccessToken: pageAccessToken,
@@ -411,15 +411,15 @@ const facebookDiagnostics = async (req, res) => {
         ////console.log('🔍 [FACEBOOK-DIAGNOSTICS] Running diagnostics for company:', user.companyId);
 
         // 🔒 جلب إحصائيات معزولة بالشركة
-        const companyCustomers = await prisma.customer.count({
+        const companyCustomers = await getSharedPrismaClient().customer.count({
             where: { companyId: user.companyId }
         });
 
-        const companyConversations = await prisma.conversation.count({
+        const companyConversations = await getSharedPrismaClient().conversation.count({
             where: { companyId: user.companyId }
         });
 
-        const companyMessages = await prisma.message.count({
+        const companyMessages = await getSharedPrismaClient().message.count({
             where: { 
                 conversation: {
                     companyId: user.companyId 
@@ -427,7 +427,7 @@ const facebookDiagnostics = async (req, res) => {
             }
         });
 
-        const companyFacebookPages = await prisma.facebookPage.count({
+        const companyFacebookPages = await getSharedPrismaClient().facebookPage.count({
             where: { companyId: user.companyId }
         });
 
@@ -511,7 +511,7 @@ const disconnectFacebookPage = async (req, res) => {
         ////console.log(`🗑️ [FACEBOOK-DISCONNECT] Disconnecting page ${pageId} for company ${companyId}`);
 
         // 🔒 التحقق من أن الصفحة تنتمي للشركة
-        const existingPage = await prisma.facebookPage.findUnique({
+        const existingPage = await getSharedPrismaClient().facebookPage.findUnique({
             where: { pageId: pageId }
         });
 
@@ -558,7 +558,7 @@ const disconnectFacebookPage = async (req, res) => {
             if (!webhookUnsubscribed) {
                 ////console.log(`🗑️ [FACEBOOK-DISCONNECT] Webhook unsubscription failed - deleting page completely to prevent orphaned subscriptions...`);
 
-                const deletedPage = await prisma.facebookPage.delete({
+                const deletedPage = await getSharedPrismaClient().facebookPage.delete({
                     where: { pageId: pageId }
                 });
 
@@ -583,7 +583,7 @@ const disconnectFacebookPage = async (req, res) => {
             // 3. If webhook unsubscription succeeded, mark as disconnected for potential reconnection
             ////console.log(`💾 [FACEBOOK-DISCONNECT] Webhook unsubscribed successfully - marking page as disconnected...`);
 
-            const updatedPage = await prisma.facebookPage.update({
+            const updatedPage = await getSharedPrismaClient().facebookPage.update({
                 where: { pageId: pageId },
                 data: {
                     status: 'disconnected',
@@ -644,7 +644,7 @@ const updateFacebookPageSettings = async (req, res) => {
         ////console.log(`⚙️ [FACEBOOK-UPDATE] Updating page ${pageId} for company ${companyId}`);
 
         // 🔒 التحقق من أن الصفحة تنتمي للشركة
-        const existingPage = await prisma.facebookPage.findFirst({
+        const existingPage = await getSharedPrismaClient().facebookPage.findFirst({
             where: {
                 pageId: pageId,
                 companyId: companyId
@@ -695,7 +695,7 @@ const getFacebookPageDetails = async (req, res) => {
         ////console.log(`📄 [FACEBOOK-DETAILS] Getting details for page ${pageId}, company ${companyId}`);
 
         // 🔒 جلب تفاصيل الصفحة مع العزل
-        const facebookPage = await prisma.facebookPage.findFirst({
+        const facebookPage = await getSharedPrismaClient().facebookPage.findFirst({
             where: {
                 pageId: pageId,
                 companyId: companyId

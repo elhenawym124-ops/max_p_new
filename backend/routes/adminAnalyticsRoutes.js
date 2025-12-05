@@ -3,7 +3,7 @@ const { getSharedPrismaClient } = require('../services/sharedDatabase');
 const { authenticateToken, requireSuperAdmin } = require('../middleware/superAdminMiddleware');
 
 const router = express.Router();
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 /**
  * Get advanced analytics for Super Admin
@@ -18,24 +18,24 @@ router.get('/growth', authenticateToken, requireSuperAdmin, async (req, res) => 
     startDate.setDate(startDate.getDate() - days);
 
     // Get daily growth data using separate queries (safer approach)
-    const companies = await prisma.company.findMany({
+    const companies = await getSharedPrismaClient().company.findMany({
       where: { createdAt: { gte: startDate } },
       select: { createdAt: true }
     });
 
-    const users = await prisma.user.findMany({
+    const users = await getSharedPrismaClient().user.findMany({
       where: { companyId: req.user?.companyId },
       where: { createdAt: { gte: startDate } },
       select: { createdAt: true }
     });
 
-    const customers = await prisma.customer.findMany({
+    const customers = await getSharedPrismaClient().customer.findMany({
       where: { companyId: req.user?.companyId },
       where: { createdAt: { gte: startDate } },
       select: { createdAt: true }
     });
 
-    const conversations = await prisma.conversation.findMany({
+    const conversations = await getSharedPrismaClient().conversation.findMany({
       where: { companyId: req.user?.companyId },
       where: { createdAt: { gte: startDate } },
       select: { createdAt: true }
@@ -64,11 +64,11 @@ router.get('/growth', authenticateToken, requireSuperAdmin, async (req, res) => 
 
     // Total growth metrics
     const totalMetrics = await Promise.all([
-      prisma.company.count(),
-      prisma.user.count(),
-      prisma.customer.count(),
-      prisma.conversation.count(),
-      prisma.message.count()
+      getSharedPrismaClient().company.count(),
+      getSharedPrismaClient().user.count(),
+      getSharedPrismaClient().customer.count(),
+      getSharedPrismaClient().conversation.count(),
+      getSharedPrismaClient().message.count()
     ]);
 
     // Previous period comparison
@@ -76,19 +76,19 @@ router.get('/growth', authenticateToken, requireSuperAdmin, async (req, res) => 
     previousStartDate.setDate(previousStartDate.getDate() - days);
 
     const previousMetrics = await Promise.all([
-      prisma.company.count({ where: { createdAt: { gte: previousStartDate, lt: startDate } } }),
-      prisma.user.count({ where: { createdAt: { gte: previousStartDate, lt: startDate } } }),
-      prisma.customer.count({ where: { createdAt: { gte: previousStartDate, lt: startDate } } }),
-      prisma.conversation.count({ where: { createdAt: { gte: previousStartDate, lt: startDate } } }),
-      prisma.message.count({ where: { createdAt: { gte: previousStartDate, lt: startDate } } })
+      getSharedPrismaClient().company.count({ where: { createdAt: { gte: previousStartDate, lt: startDate } } }),
+      getSharedPrismaClient().user.count({ where: { createdAt: { gte: previousStartDate, lt: startDate } } }),
+      getSharedPrismaClient().customer.count({ where: { createdAt: { gte: previousStartDate, lt: startDate } } }),
+      getSharedPrismaClient().conversation.count({ where: { createdAt: { gte: previousStartDate, lt: startDate } } }),
+      getSharedPrismaClient().message.count({ where: { createdAt: { gte: previousStartDate, lt: startDate } } })
     ]);
 
     const currentMetrics = await Promise.all([
-      prisma.company.count({ where: { createdAt: { gte: startDate } } }),
-      prisma.user.count({ where: { createdAt: { gte: startDate } } }),
-      prisma.customer.count({ where: { createdAt: { gte: startDate } } }),
-      prisma.conversation.count({ where: { createdAt: { gte: startDate } } }),
-      prisma.message.count({ where: { createdAt: { gte: startDate } } })
+      getSharedPrismaClient().company.count({ where: { createdAt: { gte: startDate } } }),
+      getSharedPrismaClient().user.count({ where: { createdAt: { gte: startDate } } }),
+      getSharedPrismaClient().customer.count({ where: { createdAt: { gte: startDate } } }),
+      getSharedPrismaClient().conversation.count({ where: { createdAt: { gte: startDate } } }),
+      getSharedPrismaClient().message.count({ where: { createdAt: { gte: startDate } } })
     ]);
 
     // Calculate growth percentages
@@ -154,7 +154,7 @@ router.get('/growth', authenticateToken, requireSuperAdmin, async (req, res) => 
 // Company Performance Analytics
 router.get('/company-performance', authenticateToken, requireSuperAdmin, async (req, res) => {
   try {
-    const companies = await prisma.company.findMany({
+    const companies = await getSharedPrismaClient().company.findMany({
       where: { isActive: true },
       include: {
         _count: {
@@ -176,19 +176,19 @@ router.get('/company-performance', authenticateToken, requireSuperAdmin, async (
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
         const recentActivity = await Promise.all([
-          prisma.conversation.count({
+          getSharedPrismaClient().conversation.count({
             where: {
               companyId: company.id,
               createdAt: { gte: thirtyDaysAgo }
             }
           }),
-          prisma.message.count({
+          getSharedPrismaClient().message.count({
             where: {
               conversation: { companyId: company.id },
               createdAt: { gte: thirtyDaysAgo }
             }
           }),
-          prisma.customer.count({
+          getSharedPrismaClient().customer.count({
             where: {
               companyId: company.id,
               createdAt: { gte: thirtyDaysAgo }
@@ -197,7 +197,7 @@ router.get('/company-performance', authenticateToken, requireSuperAdmin, async (
         ]);
 
         // Get total messages for this company
-        const totalMessages = await prisma.message.count({
+        const totalMessages = await getSharedPrismaClient().message.count({
           where: {
             conversation: { companyId: company.id }
           }
@@ -260,7 +260,7 @@ router.get('/revenue', authenticateToken, requireSuperAdmin, async (req, res) =>
     };
 
     // Get companies by plan
-    const companiesByPlan = await prisma.company.groupBy({
+    const companiesByPlan = await getSharedPrismaClient().company.groupBy({
       by: ['plan'],
       _count: {
         plan: true
@@ -336,7 +336,7 @@ router.get('/system-health', authenticateToken, requireSuperAdmin, async (req, r
     // System metrics
     const systemMetrics = await Promise.all([
       // Active companies (had activity in last 7 days)
-      prisma.company.count({
+      getSharedPrismaClient().company.count({
         where: {
           isActive: true,
           conversations: { some: { createdAt: { gte: oneWeekAgo } } }
@@ -344,20 +344,20 @@ router.get('/system-health', authenticateToken, requireSuperAdmin, async (req, r
       }),
 
       // Total active companies
-      prisma.company.count({ where: { isActive: true } }),
+      getSharedPrismaClient().company.count({ where: { isActive: true } }),
 
       // Messages in last 24 hours
-      prisma.message.count({
+      getSharedPrismaClient().message.count({
         where: { createdAt: { gte: oneDayAgo } }
       }),
 
       // Conversations in last 24 hours
-      prisma.conversation.count({
+      getSharedPrismaClient().conversation.count({
         where: { createdAt: { gte: oneDayAgo } }
       }),
 
       // New customers in last 24 hours
-      prisma.customer.count({
+      getSharedPrismaClient().customer.count({
         where: { createdAt: { gte: oneDayAgo } }
       })
     ]);
@@ -417,3 +417,4 @@ router.get('/system-health', authenticateToken, requireSuperAdmin, async (req, r
 });
 
 module.exports = router;
+

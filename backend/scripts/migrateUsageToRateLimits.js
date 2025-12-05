@@ -4,7 +4,7 @@
  */
 
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // Rate Limits الحقيقية من Google AI Studio لكل نموذج
 const modelRateLimits = {
@@ -34,7 +34,7 @@ async function migrateUsageToRateLimits() {
 
         // جلب جميع سجلات GeminiKeyModel
         console.log('🔍 جلب جميع سجلات النماذج...');
-        const allModels = await prisma.geminiKeyModel.findMany();
+        const allModels = await getSharedPrismaClient().geminiKeyModel.findMany();
         console.log(`📊 تم العثور على ${allModels.length} نموذج`);
 
         let updatedCount = 0;
@@ -79,7 +79,7 @@ async function migrateUsageToRateLimits() {
                 };
 
                 // تحديث السجل في قاعدة البيانات
-                await prisma.geminiKeyModel.update({
+                await getSharedPrismaClient().geminiKeyModel.update({
                     where: { id: model.id },
                     data: {
                         usage: JSON.stringify(updatedUsage)
@@ -105,7 +105,7 @@ async function migrateUsageToRateLimits() {
         console.error('\n❌ خطأ عام في Migration:', error);
         throw error;
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
@@ -123,4 +123,5 @@ if (require.main === module) {
 }
 
 module.exports = { migrateUsageToRateLimits };
+
 

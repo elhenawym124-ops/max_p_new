@@ -23,7 +23,7 @@
 const axios = require('axios');
 const FormData = require('form-data');
 const { getSharedPrismaClient } = require('./sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // ═══════════════════════════════════════════════════
 // Campaign Objectives Mapping (v22.0 Simplified)
@@ -3541,4 +3541,5 @@ class FacebookAdsService {
 // Export
 module.exports = FacebookAdsService;
 module.exports.OBJECTIVE_MAPPING = OBJECTIVE_MAPPING;
+
 

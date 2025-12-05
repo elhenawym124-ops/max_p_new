@@ -1,5 +1,5 @@
 const { getSharedPrismaClient, initializeSharedDatabase, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
@@ -7,7 +7,7 @@ const verifyInvitationToken = async (req, res) => {
     try {
         const { token } = req.params;
 
-        const invitation = await prisma.userInvitation.findUnique({
+        const invitation = await getSharedPrismaClient().userInvitation.findUnique({
             where: { token },
             include: {
                 company: {
@@ -39,7 +39,7 @@ const verifyInvitationToken = async (req, res) => {
         }
 
         if (new Date() > invitation.expiresAt) {
-            await prisma.userInvitation.update({
+            await getSharedPrismaClient().userInvitation.update({
                 where: { id: invitation.id },
                 data: { status: 'EXPIRED' }
             });
@@ -89,7 +89,7 @@ const acceptInvitation = async (req, res) => {
             });
         }
 
-        const invitation = await prisma.userInvitation.findUnique({
+        const invitation = await getSharedPrismaClient().userInvitation.findUnique({
             where: { token }
         });
 
@@ -108,7 +108,7 @@ const acceptInvitation = async (req, res) => {
         }
 
         if (new Date() > invitation.expiresAt) {
-            await prisma.userInvitation.update({
+            await getSharedPrismaClient().userInvitation.update({
                 where: { id: invitation.id },
                 data: { status: 'EXPIRED' }
             });
@@ -120,7 +120,7 @@ const acceptInvitation = async (req, res) => {
         }
 
         // Check if user already exists
-        const existingUser = await prisma.user.findUnique({
+        const existingUser = await getSharedPrismaClient().user.findUnique({
             where: { email: invitation.email }
         });
 
@@ -135,7 +135,7 @@ const acceptInvitation = async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 10);
 
         // Create user
-        const user = await prisma.user.create({
+        const user = await getSharedPrismaClient().user.create({
             data: {
                 email: invitation.email,
                 password: hashedPassword,
@@ -150,7 +150,7 @@ const acceptInvitation = async (req, res) => {
         });
 
         // Update invitation status
-        await prisma.userInvitation.update({
+        await getSharedPrismaClient().userInvitation.update({
             where: { id: invitation.id },
             data: {
                 status: 'ACCEPTED',

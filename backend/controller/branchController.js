@@ -1,6 +1,6 @@
 // Use shared database service instead of creating new PrismaClient
 const { getSharedPrismaClient, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 /**
  * Branch Controller
@@ -12,7 +12,7 @@ const getBranches = async (req, res) => {
   try {
     const { companyId } = req.user;
 
-    const branches = await prisma.branch.findMany({
+    const branches = await getSharedPrismaClient().branch.findMany({
       where: { companyId },
       orderBy: [
         { isActive: 'desc' },
@@ -43,7 +43,7 @@ const getBranchById = async (req, res) => {
     const { id } = req.params;
     const { companyId } = req.user;
 
-    const branch = await prisma.branch.findFirst({
+    const branch = await getSharedPrismaClient().branch.findFirst({
       where: {
         id,
         companyId // Company isolation
@@ -94,7 +94,7 @@ const createBranch = async (req, res) => {
       });
     }
 
-    const branch = await prisma.branch.create({
+    const branch = await getSharedPrismaClient().branch.create({
       data: {
         name,
         address: address || null,
@@ -133,7 +133,7 @@ const updateBranch = async (req, res) => {
     const { name, address, city, phone, email, workingHours, isActive } = req.body;
 
     // Check if branch exists and belongs to company
-    const existingBranch = await prisma.branch.findFirst({
+    const existingBranch = await getSharedPrismaClient().branch.findFirst({
       where: {
         id,
         companyId
@@ -161,7 +161,7 @@ const updateBranch = async (req, res) => {
       });
     }
 
-    const branch = await prisma.branch.update({
+    const branch = await getSharedPrismaClient().branch.update({
       where: { id },
       data: {
         name,
@@ -199,7 +199,7 @@ const deleteBranch = async (req, res) => {
     const { companyId } = req.user;
 
     // Check if branch exists and belongs to company
-    const existingBranch = await prisma.branch.findFirst({
+    const existingBranch = await getSharedPrismaClient().branch.findFirst({
       where: {
         id,
         companyId
@@ -216,7 +216,7 @@ const deleteBranch = async (req, res) => {
       });
     }
 
-    await prisma.branch.delete({
+    await getSharedPrismaClient().branch.delete({
       where: { id }
     });
 
@@ -243,7 +243,7 @@ const toggleBranchStatus = async (req, res) => {
     const { id } = req.params;
     const { companyId } = req.user;
 
-    const branch = await prisma.branch.findFirst({
+    const branch = await getSharedPrismaClient().branch.findFirst({
       where: {
         id,
         companyId
@@ -260,7 +260,7 @@ const toggleBranchStatus = async (req, res) => {
       });
     }
 
-    const updatedBranch = await prisma.branch.update({
+    const updatedBranch = await getSharedPrismaClient().branch.update({
       where: { id },
       data: {
         isActive: !branch.isActive
@@ -290,7 +290,7 @@ const getActiveBranches = async (req, res) => {
   try {
     const { companyId } = req.user;
 
-    const branches = await prisma.branch.findMany({
+    const branches = await getSharedPrismaClient().branch.findMany({
       where: {
         companyId,
         isActive: true

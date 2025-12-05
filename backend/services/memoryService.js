@@ -1,6 +1,6 @@
 const { getSharedPrismaClient, safeQuery } = require('./sharedDatabase');
 
-const prisma = getSharedPrismaClient(); // Use shared database connection
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues // Use shared database connection
 
 class MemoryService {
   constructor() {
@@ -33,7 +33,7 @@ class MemoryService {
       
       // حفظ في قاعدة البيانات (ذاكرة طويلة المدى)
       const savedInteraction = await safeQuery(async () => {
-        return await prisma.conversationMemory.create({
+        return await getSharedPrismaClient().conversationMemory.create({
           data: {
             conversationId,
             senderId,
@@ -181,7 +181,7 @@ class MemoryService {
           whereClause.conversationId = conversationId;
         }
         
-        return await prisma.conversationMemory.findMany({
+        return await getSharedPrismaClient().conversationMemory.findMany({
           where: whereClause,
           orderBy: { timestamp: 'desc' },
           take: limit
@@ -258,7 +258,7 @@ class MemoryService {
     try {
       // جلب ملخص تفاعلات العميل مع العزل الأمني
       const interactions = await safeQuery(async () => {
-        return await prisma.conversationMemory.findMany({
+        return await getSharedPrismaClient().conversationMemory.findMany({
         where: {
           senderId,
           companyId // ✅ إضافة companyId للعزل الأمني
@@ -356,7 +356,7 @@ class MemoryService {
 
     try {
       const interactions = await safeQuery(async () => {
-        return await prisma.conversationMemory.findMany({
+        return await getSharedPrismaClient().conversationMemory.findMany({
         where: {
           conversationId,
           senderId,
@@ -464,7 +464,7 @@ class MemoryService {
 
       const deletedMemoryCount = // SECURITY WARNING: Ensure companyId filter is included
       await safeQuery(async () => {
-        return await prisma.conversationMemory.deleteMany({
+        return await getSharedPrismaClient().conversationMemory.deleteMany({
           where: memoryWhere
         });
       }, 5);
@@ -511,10 +511,10 @@ class MemoryService {
 
       // إحصائيات قاعدة البيانات معزولة
       const [totalMemories, totalMessages, totalCustomers, conversationMemoryCount] = await Promise.all([
-        safeQuery(async () => { return await prisma.conversation.count({ where: whereClause }); }, 3),
-        safeQuery(async () => { return await prisma.message.count({ where: companyId ? { conversation: { companyId } } : {} }); }, 3),
-        safeQuery(async () => { return await prisma.customer.count({ where: whereClause }); }, 3),
-        safeQuery(async () => { return await prisma.conversationMemory.count({ where: whereClause }); }, 3)
+        safeQuery(async () => { return await getSharedPrismaClient().conversation.count({ where: whereClause }); }, 3),
+        safeQuery(async () => { return await getSharedPrismaClient().message.count({ where: companyId ? { conversation: { companyId } } : {} }); }, 3),
+        safeQuery(async () => { return await getSharedPrismaClient().customer.count({ where: whereClause }); }, 3),
+        safeQuery(async () => { return await getSharedPrismaClient().conversationMemory.count({ where: whereClause }); }, 3)
       ]);
 
       // إحصائيات الذاكرة قصيرة المدى معزولة
@@ -571,7 +571,7 @@ class MemoryService {
       // مسح ذاكرة المحادثات للعميل مع العزل الأمني
       const deletedMemoryCount = // SECURITY WARNING: Ensure companyId filter is included
       await safeQuery(async () => {
-        return await prisma.conversationMemory.deleteMany({
+        return await getSharedPrismaClient().conversationMemory.deleteMany({
           where: {
             senderId,
             companyId // ✅ إضافة companyId للعزل الأمني
@@ -619,7 +619,7 @@ class MemoryService {
 
       // إذا لم توجد في الذاكرة قصيرة المدى، جلب من قاعدة البيانات مع العزل الأمني
       const memories = await safeQuery(async () => {
-        return await prisma.conversationMemory.findMany({
+        return await getSharedPrismaClient().conversationMemory.findMany({
         where: {
           conversationId,
           senderId,
@@ -678,7 +678,7 @@ class MemoryService {
 
     try {
       const memories = await safeQuery(async () => {
-        return await prisma.conversationMemory.findMany({
+        return await getSharedPrismaClient().conversationMemory.findMany({
         where: {
           conversationId,
           senderId,
@@ -735,7 +735,7 @@ class MemoryService {
 
       // فحص قاعدة البيانات للسجلات بدون companyId صحيح
       const allRecords = await safeQuery(async () => {
-        return await prisma.conversationMemory.findMany({
+        return await getSharedPrismaClient().conversationMemory.findMany({
           select: { companyId: true }
         });
       }, 3);
@@ -797,7 +797,7 @@ class MemoryService {
       // إصلاح السجلات في قاعدة البيانات بدون companyId
       const updatedRecords = // SECURITY WARNING: Ensure companyId filter is included
       await safeQuery(async () => {
-        return await prisma.conversationMemory.updateMany({
+        return await getSharedPrismaClient().conversationMemory.updateMany({
           where: {
             OR: [
               { companyId: null },
@@ -843,3 +843,4 @@ class MemoryService {
 }
 
 module.exports = new MemoryService();
+

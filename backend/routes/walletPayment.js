@@ -7,7 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const { authenticateToken, requireSuperAdmin } = require('../middleware/superAdminMiddleware');
 
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // إعداد multer لرفع الصور
 const storage = multer.diskStorage({
@@ -41,7 +41,7 @@ const upload = multer({
 // جلب أرقام المحافظ النشطة
 router.get('/wallet-numbers', requireAuth, async (req, res) => {
   try {
-    const walletNumbers = await prisma.walletNumber.findMany({
+    const walletNumbers = await getSharedPrismaClient().walletNumber.findMany({
       where: { 
         companyId: req.user?.companyId,
         isActive: true 
@@ -67,7 +67,7 @@ router.get('/invoice/:invoiceId', requireAuth, async (req, res) => {
   try {
     const { invoiceId } = req.params;
 
-    const invoice = await prisma.invoice.findUnique({
+    const invoice = await getSharedPrismaClient().invoice.findUnique({
       where: { id: invoiceId },
       include: {
         company: {
@@ -125,7 +125,7 @@ router.post('/submit-receipt', requireAuth, upload.single('receipt'), async (req
     }
 
     // التحقق من وجود الفاتورة
-    const invoice = await prisma.invoice.findUnique({
+    const invoice = await getSharedPrismaClient().invoice.findUnique({
       where: { id: invoiceId }
     });
 
@@ -144,7 +144,7 @@ router.post('/submit-receipt', requireAuth, upload.single('receipt'), async (req
     }
 
     // التحقق من وجود رقم المحفظة
-    const walletNumber = await prisma.walletNumber.findUnique({
+    const walletNumber = await getSharedPrismaClient().walletNumber.findUnique({
       where: { id: walletNumberId }
     });
 
@@ -156,7 +156,7 @@ router.post('/submit-receipt', requireAuth, upload.single('receipt'), async (req
     }
 
     // حفظ إيصال الدفع
-    const paymentReceipt = await prisma.paymentReceipt.create({
+    const paymentReceipt = await getSharedPrismaClient().paymentReceipt.create({
       data: {
         invoiceId,
         walletNumberId,
@@ -184,7 +184,7 @@ router.post('/submit-receipt', requireAuth, upload.single('receipt'), async (req
 // جلب جميع أرقام المحافظ (للإدارة)
 router.get('/admin/wallet-numbers', authenticateToken, requireSuperAdmin, async (req, res) => {
   try {
-    const walletNumbers = await prisma.walletNumber.findMany({
+    const walletNumbers = await getSharedPrismaClient().walletNumber.findMany({
       orderBy: { createdAt: 'desc' }
     });
 
@@ -206,7 +206,7 @@ router.post('/admin/wallet-numbers', authenticateToken, requireSuperAdmin, async
   try {
     const { name, number, icon, color } = req.body;
 
-    const walletNumber = await prisma.walletNumber.create({
+    const walletNumber = await getSharedPrismaClient().walletNumber.create({
       data: {
         name,
         number,
@@ -236,7 +236,7 @@ router.put('/admin/wallet-numbers/:id', authenticateToken, requireSuperAdmin, as
     const { id } = req.params;
     const { name, number, icon, color, isActive } = req.body;
 
-    const walletNumber = await prisma.walletNumber.update({
+    const walletNumber = await getSharedPrismaClient().walletNumber.update({
       where: { id },
       data: {
         name,
@@ -266,7 +266,7 @@ router.delete('/admin/wallet-numbers/:id', authenticateToken, requireSuperAdmin,
   try {
     const { id } = req.params;
 
-    await prisma.walletNumber.delete({
+    await getSharedPrismaClient().walletNumber.delete({
       where: { id }
     });
 
@@ -289,7 +289,7 @@ router.get('/admin/pending-receipts', authenticateToken, requireSuperAdmin, asyn
     const { page = 1, limit = 10 } = req.query;
     const skip = (page - 1) * limit;
 
-    const receipts = await prisma.paymentReceipt.findMany({
+    const receipts = await getSharedPrismaClient().paymentReceipt.findMany({
       where: { status: 'PENDING' },
       include: {
         invoice: {
@@ -309,7 +309,7 @@ router.get('/admin/pending-receipts', authenticateToken, requireSuperAdmin, asyn
       take: parseInt(limit)
     });
 
-    const total = await prisma.paymentReceipt.count({
+    const total = await getSharedPrismaClient().paymentReceipt.count({
       where: { status: 'PENDING' }
     });
 
@@ -338,7 +338,7 @@ router.post('/admin/review-receipt/:id', authenticateToken, requireSuperAdmin, a
     const { id } = req.params;
     const { action, notes } = req.body; // action: 'approve' or 'reject'
 
-    const receipt = await prisma.paymentReceipt.findUnique({
+    const receipt = await getSharedPrismaClient().paymentReceipt.findUnique({
       where: { id },
       include: { invoice: true }
     });
@@ -360,7 +360,7 @@ router.post('/admin/review-receipt/:id', authenticateToken, requireSuperAdmin, a
     const newStatus = action === 'approve' ? 'APPROVED' : 'REJECTED';
 
     // تحديث حالة الإيصال
-    await prisma.paymentReceipt.update({
+    await getSharedPrismaClient().paymentReceipt.update({
       where: { id },
       data: {
         status: newStatus,
@@ -372,7 +372,7 @@ router.post('/admin/review-receipt/:id', authenticateToken, requireSuperAdmin, a
 
     // إذا تم الموافقة، تحديث حالة الفاتورة
     if (action === 'approve') {
-      await prisma.invoice.update({
+      await getSharedPrismaClient().invoice.update({
         where: { id: receipt.invoiceId },
         data: {
           status: 'PAID',
@@ -381,7 +381,7 @@ router.post('/admin/review-receipt/:id', authenticateToken, requireSuperAdmin, a
       });
 
       // إنشاء سجل دفع
-      await prisma.payment.create({
+      await getSharedPrismaClient().payment.create({
         data: {
           paymentNumber: `PAY-${Date.now()}`,
           invoiceId: receipt.invoiceId,

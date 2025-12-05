@@ -79,8 +79,8 @@ class MultimodalService {
       }
 
       const products = await safeQuery(async () => {
-        const prisma = getSharedPrismaClient();
-        return await prisma.product.findMany({
+        // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
+        return await getSharedPrismaClient().product.findMany({
           where: whereClause,
           include: {
             variants: {
@@ -125,8 +125,8 @@ class MultimodalService {
       }
 
       const products = await safeQuery(async () => {
-        const prisma = getSharedPrismaClient();
-        return await prisma.product.findMany({
+        // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
+        return await getSharedPrismaClient().product.findMany({
           where: whereClause,
           include: {
             variants: {
@@ -1430,3 +1430,4 @@ ${availableProductsText}
 }
 
 module.exports = new MultimodalService();
+

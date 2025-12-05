@@ -1,5 +1,5 @@
 const { getSharedPrismaClient, initializeSharedDatabase, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 const planLimitsService = require('../services/planLimitsService');
 
@@ -8,7 +8,7 @@ const companyDashboardOverview = async (req, res) => {
         const companyId = req.user.companyId;
 
         // Get company info
-        const company = await prisma.company.findUnique({
+        const company = await getSharedPrismaClient().company.findUnique({
             where: { id: companyId },
             include: {
                 _count: {
@@ -78,19 +78,19 @@ const companyDashboardOverview = async (req, res) => {
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
         const recentStats = await Promise.all([
-            prisma.user.count({
+            getSharedPrismaClient().user.count({
                 where: {
                     companyId,
                     createdAt: { gte: sevenDaysAgo }
                 }
             }),
-            prisma.customer.count({
+            getSharedPrismaClient().customer.count({
                 where: {
                     companyId,
                     createdAt: { gte: sevenDaysAgo }
                 }
             }),
-            prisma.conversation.count({
+            getSharedPrismaClient().conversation.count({
                 where: {
                     companyId,
                     createdAt: { gte: sevenDaysAgo }
@@ -136,7 +136,7 @@ const companySettings = async (req, res) => {
     try {
         const companyId = req.user.companyId;
 
-        const company = await prisma.company.findUnique({
+        const company = await getSharedPrismaClient().company.findUnique({
             where: { id: companyId },
             select: {
                 id: true,
@@ -195,7 +195,7 @@ const updateCompanySettings = async (req, res) => {
             settings
         } = req.body;
 
-        const updatedCompany = await prisma.company.update({
+        const updatedCompany = await getSharedPrismaClient().company.update({
             where: { id: companyId },
             data: {
                 ...(name && { name }),
@@ -365,7 +365,7 @@ const updateAIKeysSetting = async (req, res) => {
             });
         }
 
-        const updatedCompany = await prisma.company.update({
+        const updatedCompany = await getSharedPrismaClient().company.update({
             where: { id: companyId },
             data: { useCentralKeys },
             select: {

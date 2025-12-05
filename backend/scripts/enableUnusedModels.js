@@ -16,13 +16,13 @@ const modelsToEnable = [
 ];
 
 async function enableUnusedModels() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     try {
         console.log('\n🔧 تفعيل النماذج غير المستخدمة...\n');
         
         // جلب جميع المفاتيح النشطة
-        const keys = await prisma.geminiKey.findMany({
+        const keys = await getSharedPrismaClient().geminiKey.findMany({
             where: {
                 isActive: true
             }
@@ -38,7 +38,7 @@ async function enableUnusedModels() {
             console.log(`🔑 المفتاح: ${key.name} (ID: ${key.id})`);
             
             for (const modelName of modelsToEnable) {
-                const model = await prisma.geminiKeyModel.findFirst({
+                const model = await getSharedPrismaClient().geminiKeyModel.findFirst({
                     where: {
                         keyId: key.id,
                         model: modelName
@@ -47,7 +47,7 @@ async function enableUnusedModels() {
                 
                 if (model) {
                     if (!model.isEnabled) {
-                        await prisma.geminiKeyModel.update({
+                        await getSharedPrismaClient().geminiKeyModel.update({
                             where: { id: model.id },
                             data: { isEnabled: true }
                         });
@@ -74,13 +74,13 @@ async function enableUnusedModels() {
         // عرض ملخص لكل نموذج
         console.log('\n📋 ملخص لكل نموذج:\n');
         for (const modelName of modelsToEnable) {
-            const count = await prisma.geminiKeyModel.count({
+            const count = await getSharedPrismaClient().geminiKeyModel.count({
                 where: {
                     model: modelName,
                     isEnabled: true
                 }
             });
-            const total = await prisma.geminiKeyModel.count({
+            const total = await getSharedPrismaClient().geminiKeyModel.count({
                 where: {
                     model: modelName
                 }
@@ -94,9 +94,10 @@ async function enableUnusedModels() {
         console.error('❌ خطأ:', error.message);
         console.error(error.stack);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 enableUnusedModels();
+
 

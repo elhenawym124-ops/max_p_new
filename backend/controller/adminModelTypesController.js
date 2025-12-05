@@ -1,5 +1,5 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 /**
  * Get all unique model types with statistics
@@ -10,7 +10,7 @@ const getAllModelTypes = async (req, res) => {
         console.log('🔍 [ADMIN-MODEL-TYPES] getAllModelTypes called');
 
         // Get all models grouped by model name
-        const allModels = await prisma.geminiKeyModel.findMany({
+        const allModels = await getSharedPrismaClient().geminiKeyModel.findMany({
             include: {
                 key: {
                     select: {
@@ -145,7 +145,7 @@ const toggleModelType = async (req, res) => {
         }
 
         // Update all instances of this model type
-        const result = await prisma.geminiKeyModel.updateMany({
+        const result = await getSharedPrismaClient().geminiKeyModel.updateMany({
             where: {
                 model: modelName
             },
@@ -184,7 +184,7 @@ const getModelTypeDetails = async (req, res) => {
         console.log('🔍 [ADMIN-MODEL-TYPES] getModelTypeDetails called');
         const { modelName } = req.params;
 
-        const models = await prisma.geminiKeyModel.findMany({
+        const models = await getSharedPrismaClient().geminiKeyModel.findMany({
             where: {
                 model: modelName
             },
@@ -265,4 +265,5 @@ module.exports = {
     toggleModelType,
     getModelTypeDetails
 };
+
 

@@ -1,11 +1,11 @@
 const { getSharedPrismaClient, initializeSharedDatabase, executeWithRetry } = require('../services/sharedDatabase');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 const getAllCompanies = async (req, res) => {
     try {
-        const companies = await prisma.company.findMany({
+        const companies = await getSharedPrismaClient().company.findMany({
             include: {
                 _count: {
                     select: {
@@ -40,7 +40,7 @@ const getCompanyDetails = async (req, res) => {
     try {
         const { companyId } = req.params;
 
-        const company = await prisma.company.findUnique({
+        const company = await getSharedPrismaClient().company.findUnique({
             where: { id: companyId },
             include: {
                 users: {
@@ -113,7 +113,7 @@ const createNewCompany = async (req, res) => {
         }
 
         // Check if company email already exists
-        const existingCompany = await prisma.company.findUnique({
+        const existingCompany = await getSharedPrismaClient().company.findUnique({
             where: { email }
         });
 
@@ -125,7 +125,7 @@ const createNewCompany = async (req, res) => {
         }
 
         // Check if admin email already exists
-        const existingUser = await prisma.user.findUnique({
+        const existingUser = await getSharedPrismaClient().user.findUnique({
             where: { email: adminEmail }
         });
 
@@ -137,7 +137,7 @@ const createNewCompany = async (req, res) => {
         }
 
         // Create company
-        const company = await prisma.company.create({
+        const company = await getSharedPrismaClient().company.create({
             data: {
                 name,
                 email,
@@ -154,7 +154,7 @@ const createNewCompany = async (req, res) => {
         const hashedPassword = await bcrypt.hash(adminPassword, 12);
 
         // Create admin user
-        const adminUser = await prisma.user.create({
+        const adminUser = await getSharedPrismaClient().user.create({
             data: {
                 email: adminEmail,
                 password: hashedPassword,
@@ -207,7 +207,7 @@ const updateCompany = async (req, res) => {
 
         console.log(req.body);
         // Check if company exists
-        const existingCompany = await prisma.company.findUnique({
+        const existingCompany = await getSharedPrismaClient().company.findUnique({
             where: { id: companyId }
         });
 
@@ -220,7 +220,7 @@ const updateCompany = async (req, res) => {
 
         // Check if email is being changed and already exists
         if (email && email !== existingCompany.email) {
-            const emailExists = await prisma.company.findUnique({
+            const emailExists = await getSharedPrismaClient().company.findUnique({
                 where: { email }
             });
 
@@ -233,7 +233,7 @@ const updateCompany = async (req, res) => {
         }
 
         // Update company
-        const updatedCompany = await prisma.company.update({
+        const updatedCompany = await getSharedPrismaClient().company.update({
             where: { id: companyId },
             data: {
                 ...(name !== undefined && { name }),
@@ -267,7 +267,7 @@ const deleteCompany = async (req, res) => {
         const { companyId } = req.params;
 
         // Check if company exists
-        const existingCompany = await prisma.company.findUnique({
+        const existingCompany = await getSharedPrismaClient().company.findUnique({
             where: { id: companyId }
         });
 
@@ -279,7 +279,7 @@ const deleteCompany = async (req, res) => {
         }
 
         // Check if company has any related data that might prevent deletion
-        const companyData = await prisma.company.findUnique({
+        const companyData = await getSharedPrismaClient().company.findUnique({
             where: { id: companyId },
             include: {
                 _count: {
@@ -297,7 +297,7 @@ const deleteCompany = async (req, res) => {
         console.log(`Company data for deletion:`, companyData);
 
         // Delete company (cascade will handle related records)
-        await prisma.company.delete({
+        await getSharedPrismaClient().company.delete({
             where: { id: companyId }
         });
 
@@ -322,7 +322,7 @@ const getCompanyFacebookPages = async (req, res) => {
         console.log(`Fetching Facebook pages for company ID: ${companyId}`);
 
         // Check if company exists
-        const existingCompany = await prisma.company.findUnique({
+        const existingCompany = await getSharedPrismaClient().company.findUnique({
             where: { id: companyId }
         });
 
@@ -337,7 +337,7 @@ const getCompanyFacebookPages = async (req, res) => {
         console.log(`Company found: ${existingCompany.name}`);
 
         // Get Facebook pages for this company
-        const facebookPages = await prisma.facebookPage.findMany({
+        const facebookPages = await getSharedPrismaClient().facebookPage.findMany({
             where: { companyId: companyId },
             select: {
                 id: true,
@@ -376,7 +376,7 @@ const loginAsCompanyAdmin = async (req, res) => {
         const { companyId } = req.params;
 
         // Check if company exists
-        const existingCompany = await prisma.company.findUnique({
+        const existingCompany = await getSharedPrismaClient().company.findUnique({
             where: { id: companyId }
         });
 
@@ -388,7 +388,7 @@ const loginAsCompanyAdmin = async (req, res) => {
         }
 
         // Find the company admin user
-        const adminUser = await prisma.user.findFirst({
+        const adminUser = await getSharedPrismaClient().user.findFirst({
             where: {
                 companyId: companyId,
                 role: 'COMPANY_ADMIN',

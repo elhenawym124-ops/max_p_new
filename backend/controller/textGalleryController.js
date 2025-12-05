@@ -1,5 +1,5 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 /**
  * 📥 الحصول على جميع النصوص المحفوظة للمستخدم
@@ -25,7 +25,7 @@ const getTextGallery = async (req, res) => {
       });
     }
 
-    const texts = await prisma.textGallery.findMany({
+    const texts = await getSharedPrismaClient().textGallery.findMany({
       where: {
         userId: userId,
         companyId: companyId
@@ -111,7 +111,7 @@ const saveTextToGallery = async (req, res) => {
     }
 
     // حفظ النص الجديد مع الصور
-    const newText = await prisma.textGallery.create({
+    const newText = await getSharedPrismaClient().textGallery.create({
       data: {
         userId: userId,
         companyId: companyId,
@@ -169,7 +169,7 @@ const updateTextInGallery = async (req, res) => {
     }
 
     // التحقق من أن النص يخص المستخدم
-    const text = await prisma.textGallery.findFirst({
+    const text = await getSharedPrismaClient().textGallery.findFirst({
       where: {
         id: textId,
         userId: userId,
@@ -185,7 +185,7 @@ const updateTextInGallery = async (req, res) => {
     }
 
     // تحديث النص
-    const updatedText = await prisma.textGallery.update({
+    const updatedText = await getSharedPrismaClient().textGallery.update({
       where: {
         id: textId
       },
@@ -237,7 +237,7 @@ const deleteTextFromGallery = async (req, res) => {
     }
 
     // التحقق من أن النص يخص المستخدم
-    const text = await prisma.textGallery.findFirst({
+    const text = await getSharedPrismaClient().textGallery.findFirst({
       where: {
         id: textId,
         userId: userId,
@@ -253,7 +253,7 @@ const deleteTextFromGallery = async (req, res) => {
     }
 
     // حذف النص
-    await prisma.textGallery.delete({
+    await getSharedPrismaClient().textGallery.delete({
       where: {
         id: textId
       }
@@ -292,7 +292,7 @@ const togglePinText = async (req, res) => {
     }
 
     // التحقق من أن النص يخص المستخدم (نستخدم select لتجنب مشاكل الحقول المفقودة)
-    const text = await prisma.textGallery.findFirst({
+    const text = await getSharedPrismaClient().textGallery.findFirst({
       where: {
         id: textId,
         userId: userId,
@@ -312,7 +312,7 @@ const togglePinText = async (req, res) => {
     }
 
     // تحديث حالة التثبيت
-    const updatedText = await prisma.textGallery.update({
+    const updatedText = await getSharedPrismaClient().textGallery.update({
       where: {
         id: textId
       },
@@ -349,4 +349,5 @@ module.exports = {
   deleteTextFromGallery,
   togglePinText
 };
+
 

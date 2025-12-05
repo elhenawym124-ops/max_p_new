@@ -7,12 +7,12 @@ const fetch = require('node-fetch');
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 
 const API_BASE = 'http://localhost:3007/api/v1';
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 async function getAuthToken() {
     try {
         // البحث عن مستخدم لشركة "شركة التسويق"
-        const company = await prisma.company.findFirst({
+        const company = await getSharedPrismaClient().company.findFirst({
             where: {
                 OR: [
                     { name: { contains: 'التسويق' } },
@@ -77,7 +77,7 @@ async function testCompanyFallback() {
         }
 
         // 2. البحث عن الشركة
-        const company = await prisma.company.findFirst({
+        const company = await getSharedPrismaClient().company.findFirst({
             where: {
                 OR: [
                     { name: { contains: 'التسويق' } },
@@ -173,9 +173,10 @@ async function testCompanyFallback() {
     } catch (error) {
         console.error('❌ خطأ في الاختبار:', error);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 testCompanyFallback();
+
 

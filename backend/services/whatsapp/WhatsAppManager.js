@@ -16,7 +16,7 @@ const pino = require('pino');
 const path = require('path');
 const fs = require('fs').promises;
 const { getSharedPrismaClient } = require('../sharedDatabase');
-const prisma = getSharedPrismaClient();
+// // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues // ❌ Removed to prevent early loading issues
 const socketService = require('../socketService');
 const getIO = () => socketService.getIO();
 
@@ -309,7 +309,7 @@ async function handleConnectionUpdate(sessionId, companyId, update, sock) {
             }
 
             // تحديث قاعدة البيانات
-            await prisma.whatsAppSession.update({
+            await getSharedPrismaClient().whatsAppSession.update({
                 where: { id: sessionId },
                 data: { status: 'QR_PENDING' }
             });
@@ -348,7 +348,7 @@ async function handleConnectionUpdate(sessionId, companyId, update, sock) {
             }
 
             // تحديث قاعدة البيانات
-            await prisma.whatsAppSession.update({
+            await getSharedPrismaClient().whatsAppSession.update({
                 where: { id: sessionId },
                 data: {
                     status: statusCode === DisconnectReason.loggedOut ? 'LOGGED_OUT' : 'DISCONNECTED',
@@ -392,7 +392,7 @@ async function handleConnectionUpdate(sessionId, companyId, update, sock) {
             }
 
             // تحديث قاعدة البيانات
-            await prisma.whatsAppSession.update({
+            await getSharedPrismaClient().whatsAppSession.update({
                 where: { id: sessionId },
                 data: {
                     status: 'CONNECTED',
@@ -400,6 +400,9 @@ async function handleConnectionUpdate(sessionId, companyId, update, sock) {
                     lastConnectedAt: new Date()
                 }
             });
+
+            // ✅ Sync Profile Automatically
+            syncProfile(sessionId).catch(err => console.error(`Failed to auto-sync profile for ${sessionId}:`, err.message));
 
             // إرسال حدث الاتصال
             io?.to(`company_${companyId}`).emit('whatsapp:connection', {
@@ -446,8 +449,16 @@ async function handleIncomingMessages(sessionId, companyId, m, sock) {
                 // Try to find the phone number JID from participant or senderPn (specific to LIDs)
                 const phoneJid = msg.key.participant || msg.key.senderPn;
 
-                if (phoneJid && phoneJid.includes('@s.whatsapp.net')) {
+                // FIX: Only use participant/senderPn if it's NOT from me.
+                // If it IS from me, participant is likely myself, which we don't want as remoteJid.
+                if (!fromMe && phoneJid && phoneJid.includes('@s.whatsapp.net')) {
                     remoteJid = phoneJid;
+                } else if (fromMe) {
+                    // For outgoing messages, we want to avoid using the LID if possible, 
+                    // but we definitely don't want to use our own JID (participant).
+                    // If we can't resolve the LID to a Phone JID here, we keep the LID 
+                    // (or rely on the fact that sendText already created the message with the correct Phone JID).
+                    console.log(`⚠️ Outgoing message to LID ${remoteJid}. Keeping LID to avoid self-assignment.`);
                 } else {
                     // If we can't find the phone number, skip this message to avoid creating ghost contacts
                     console.log(`⚠️ Skipping message from LID without participant/senderPn: ${remoteJid}`);
@@ -466,11 +477,11 @@ async function handleIncomingMessages(sessionId, companyId, m, sock) {
             const messageContent = await extractMessageContent(msg, sock, sessionId);
             if (!messageContent) continue;
 
-            console.log(`📩 New message in session ${sessionId}: ${messageContent.type} from ${remoteJid}`);
+            // console.log(`📩 New message in session ${sessionId}: ${messageContent.type} from ${remoteJid}`);
 
             // حفظ الرسالة في قاعدة البيانات
             // حفظ الرسالة في قاعدة البيانات
-            const savedMessage = await prisma.whatsAppMessage.upsert({
+            const savedMessage = await getSharedPrismaClient().whatsAppMessage.upsert({
                 where: { messageId },
                 update: {
                     status: 'SENT', // تأكيد الحالة
@@ -516,6 +527,10 @@ async function handleIncomingMessages(sessionId, companyId, m, sock) {
             }
 
             // إرسال الرسالة عبر Socket.IO
+            // console.log(`🔌 [DEBUG] Emitting whatsapp:message:new to company_${companyId}`, {
+            //     sessionId,
+            //     messageId: savedMessage.id
+            // });
             io?.to(`company_${companyId}`).emit('whatsapp:message:new', {
                 sessionId,
                 message: savedMessage,
@@ -526,7 +541,7 @@ async function handleIncomingMessages(sessionId, companyId, m, sock) {
             if (!fromMe) {
                 try {
                     // جلب إعدادات الإشعارات
-                    const settings = await prisma.whatsAppSettings.findUnique({
+                    const settings = await getSharedPrismaClient().whatsAppSettings.findUnique({
                         where: { companyId }
                     });
 
@@ -544,7 +559,7 @@ async function handleIncomingMessages(sessionId, companyId, m, sock) {
 
                     // إنشاء إشعار في قاعدة البيانات إذا كانت الإشعارات مفعلة
                     if (notificationsEnabled) {
-                        await prisma.notification.create({
+                        await getSharedPrismaClient().notification.create({
                             data: {
                                 companyId,
                                 userId: null, // إشعار عام للشركة
@@ -573,12 +588,12 @@ async function handleIncomingMessages(sessionId, companyId, m, sock) {
                         notificationsEnabled
                     });
 
-                    console.log(`🔔 [NOTIFICATION] Sent WhatsApp message notification for company ${companyId}`, {
-                        contactName,
-                        messageType: messageContent.type,
-                        notificationsEnabled,
-                        soundEnabled
-                    });
+                    // console.log(`🔔 [NOTIFICATION] Sent WhatsApp message notification for company ${companyId}`, {
+                    //     contactName,
+                    //     messageType: messageContent.type,
+                    //     notificationsEnabled,
+                    //     soundEnabled
+                    // });
                 } catch (notifError) {
                     console.error('❌ [NOTIFICATION] Error creating WhatsApp message notification:', notifError);
                 }
@@ -790,6 +805,10 @@ async function updateOrCreateContact(sessionId, remoteJid, msg, sock, options = 
                 // تجاهل الخطأ إذا فشل جلب بيانات المجموعة
                 console.log('Failed to fetch group metadata for:', remoteJid);
             }
+        } else if (isOutgoing) {
+            // FIX: If outgoing message, msg.pushName is MY name.
+            // We should NOT use it to update the contact (recipient).
+            pushName = undefined;
         }
 
         // محاولة الحصول على صورة البروفايل
@@ -801,9 +820,13 @@ async function updateOrCreateContact(sessionId, remoteJid, msg, sock, options = 
         }
 
         const updateData = {
-            pushName,
             profilePicUrl,
         };
+
+        // Only update pushName if it's defined (i.e., not outgoing or it's a group)
+        if (pushName) {
+            updateData.pushName = pushName;
+        }
 
         // Only update chat metadata if it's NOT a background participant update
         if (!isGroupParticipant) {
@@ -820,7 +843,7 @@ async function updateOrCreateContact(sessionId, remoteJid, msg, sock, options = 
             sessionId,
             jid: remoteJid,
             phoneNumber,
-            pushName,
+            pushName: pushName || null, // Use null if undefined (outgoing)
             profilePicUrl,
             lastMessageAt: new Date(),
             unreadCount: (!isOutgoing && !isGroupParticipant) ? 1 : 0,
@@ -828,7 +851,7 @@ async function updateOrCreateContact(sessionId, remoteJid, msg, sock, options = 
             isGroup
         };
 
-        const contact = await prisma.whatsAppContact.upsert({
+        const contact = await getSharedPrismaClient().whatsAppContact.upsert({
             where: {
                 sessionId_jid: {
                     sessionId,
@@ -852,7 +875,7 @@ async function updateOrCreateContact(sessionId, remoteJid, msg, sock, options = 
 async function processAIResponse(sessionId, companyId, message, sock) {
     try {
         // جلب إعدادات الجلسة
-        const session = await prisma.whatsAppSession.findUnique({
+        const session = await getSharedPrismaClient().whatsAppSession.findUnique({
             where: { id: sessionId }
         });
 
@@ -889,7 +912,7 @@ async function handleMessageStatusUpdate(sessionId, companyId, updates) {
 
                 const status = statusMap[statusUpdate.status] || 'SENT';
 
-                await prisma.whatsAppMessage.updateMany({
+                await getSharedPrismaClient().whatsAppMessage.updateMany({
                     where: { messageId: key.id },
                     data: { status }
                 });
@@ -921,7 +944,7 @@ async function handleContactsUpdate(sessionId, companyId, updates) {
     for (const update of updates) {
         try {
             if (update.id) {
-                await prisma.whatsAppContact.updateMany({
+                await getSharedPrismaClient().whatsAppContact.updateMany({
                     where: {
                         sessionId,
                         jid: update.id
@@ -1025,7 +1048,7 @@ async function sendTextMessage(sessionId, to, text, options = {}) {
     // إذا تم تمرير userId، قم بتحديث الرسالة
     if (options.userId && result.key.id) {
         try {
-            await prisma.whatsAppMessage.upsert({
+            await getSharedPrismaClient().whatsAppMessage.upsert({
                 where: { messageId: result.key.id },
                 update: { senderId: options.userId },
                 create: {
@@ -1064,7 +1087,7 @@ async function sendMediaMessage(sessionId, to, media, options = {}) {
     // إذا تم تمرير userId، قم بتحديث الرسالة
     if (options.userId && result.key.id) {
         try {
-            await prisma.whatsAppMessage.upsert({
+            await getSharedPrismaClient().whatsAppMessage.upsert({
                 where: { messageId: result.key.id },
                 update: { senderId: options.userId },
                 create: {
@@ -1114,7 +1137,7 @@ async function markAsRead(sessionId, remoteJid, messageKeys) {
     }
 
     // تحديث قاعدة البيانات
-    await prisma.whatsAppContact.updateMany({
+    await getSharedPrismaClient().whatsAppContact.updateMany({
         where: {
             sessionId,
             jid: remoteJid
@@ -1295,7 +1318,7 @@ async function closeSession(sessionId) {
     }
 
     // تحديث قاعدة البيانات
-    await prisma.whatsAppSession.update({
+    await getSharedPrismaClient().whatsAppSession.update({
         where: { id: sessionId },
         data: {
             status: 'DISCONNECTED',
@@ -1319,7 +1342,7 @@ async function deleteSession(sessionId) {
     }
 
     // حذف من قاعدة البيانات
-    await prisma.whatsAppSession.delete({
+    await getSharedPrismaClient().whatsAppSession.delete({
         where: { id: sessionId }
     });
 }
@@ -1329,7 +1352,7 @@ async function deleteSession(sessionId) {
  */
 async function logEvent(sessionId, companyId, eventType, eventData, level = 'info') {
     try {
-        await prisma.whatsAppEventLog.create({
+        await getSharedPrismaClient().whatsAppEventLog.create({
             data: {
                 sessionId,
                 companyId,
@@ -1353,7 +1376,7 @@ async function restoreAllSessions() {
         await initSessionsDirectory();
 
         // جلب الجلسات النشطة من قاعدة البيانات
-        const sessions = await prisma.whatsAppSession.findMany({
+        const sessions = await getSharedPrismaClient().whatsAppSession.findMany({
             where: {
                 status: {
                     in: ['CONNECTED', 'DISCONNECTED']
@@ -1513,7 +1536,7 @@ async function closeSession(sessionId) {
     }
 
     // تحديث قاعدة البيانات
-    await prisma.whatsAppSession.update({
+    await getSharedPrismaClient().whatsAppSession.update({
         where: { id: sessionId },
         data: {
             status: 'DISCONNECTED',
@@ -1537,7 +1560,7 @@ async function deleteSession(sessionId) {
     }
 
     // حذف من قاعدة البيانات
-    await prisma.whatsAppSession.delete({
+    await getSharedPrismaClient().whatsAppSession.delete({
         where: { id: sessionId }
     });
 }
@@ -1547,7 +1570,7 @@ async function deleteSession(sessionId) {
  */
 async function logEvent(sessionId, companyId, eventType, eventData, level = 'info') {
     try {
-        await prisma.whatsAppEventLog.create({
+        await getSharedPrismaClient().whatsAppEventLog.create({
             data: {
                 sessionId,
                 companyId,
@@ -1571,7 +1594,7 @@ async function restoreAllSessions() {
         await initSessionsDirectory();
 
         // جلب الجلسات النشطة من قاعدة البيانات
-        const sessions = await prisma.whatsAppSession.findMany({
+        const sessions = await getSharedPrismaClient().whatsAppSession.findMany({
             where: {
                 status: {
                     in: ['CONNECTED', 'DISCONNECTED']
@@ -2346,34 +2369,88 @@ async function getUrlInfo(sessionId, url) {
 
 
 /**
- * الحصول على الملف الشخصي
+ * مزامنة الملف الشخصي (جلب من واتساب وحفظ في قاعدة البيانات)
  */
-async function getProfile(sessionId) {
+async function syncProfile(sessionId) {
     const session = getSession(sessionId);
-    if (!session) throw new Error('Session not found');
+    if (!session || !session.sock?.user) {
+        console.warn(`⚠️ Cannot sync profile for session ${sessionId}: Session not ready`);
+        return null;
+    }
 
     const jid = session.sock.user.id;
-    // Clean JID (remove :device@...)
     const cleanJid = jid.split(':')[0] + '@s.whatsapp.net';
 
     try {
-        const status = await session.sock.fetchStatus(cleanJid);
-        let profilePicUrl;
+        console.log(`🔄 Syncing profile for session ${sessionId}...`);
+
+        // 1. Get Status
+        let status = '';
+        try {
+            const statusData = await session.sock.fetchStatus(cleanJid);
+            status = statusData?.status || '';
+        } catch (err) {
+            console.warn(`⚠️ Failed to fetch status for ${sessionId}:`, err.message);
+        }
+
+        // 2. Get Profile Picture
+        let profilePicUrl = null;
         try {
             profilePicUrl = await session.sock.profilePictureUrl(cleanJid, 'image');
         } catch (err) {
-            profilePicUrl = null;
+            // It's common to not have a profile pic or fail to fetch it
         }
 
+        // 3. Get Name
+        const name = session.sock.user.name || session.sock.user.notify || '';
+
+        // 4. Update Database
+        await getSharedPrismaClient().whatsAppSession.update({
+            where: { id: sessionId },
+            data: {
+                profileName: name,
+                profileStatus: status,
+                profilePictureUrl: profilePicUrl
+            }
+        });
+
+        console.log(`✅ Profile synced for session ${sessionId}`);
+
         return {
-            name: session.sock.user.name || session.sock.user.notify,
-            status: status?.status || '',
-            profilePicUrl: profilePicUrl
+            name,
+            status,
+            profilePicUrl
         };
     } catch (error) {
-        console.error('❌ Error fetching profile:', error);
-        throw new Error('Failed to fetch profile');
+        console.error('❌ Error syncing profile:', error);
+        throw error;
     }
+}
+
+/**
+ * الحصول على الملف الشخصي (من قاعدة البيانات)
+ */
+async function getProfile(sessionId) {
+    // Try to get from database first
+    const sessionData = await getSharedPrismaClient().whatsAppSession.findUnique({
+        where: { id: sessionId },
+        select: {
+            profileName: true,
+            profileStatus: true,
+            profilePictureUrl: true
+        }
+    });
+
+    if (sessionData && (sessionData.profileName || sessionData.profileStatus)) {
+        return {
+            name: sessionData.profileName,
+            status: sessionData.profileStatus,
+            profilePicUrl: sessionData.profilePictureUrl
+        };
+    }
+
+    // If not in DB, try to sync
+    return await syncProfile(sessionId);
 }
 
 /**
@@ -2429,6 +2506,7 @@ module.exports = {
     editMessage,
     deleteMessage,
     forwardMessage,
+    sendTyping,
 
     // Chats
     archiveChat,
@@ -2466,6 +2544,7 @@ module.exports = {
     getBusinessHours,
     setBusinessHours,
     getProfile,
+    syncProfile,
 
     // Broadcast
     sendBroadcast,
@@ -2498,4 +2577,5 @@ module.exports = {
     // System
     restoreAllSessions
 };
+
 

@@ -1,5 +1,5 @@
 const { getSharedPrismaClient, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const axios = require('axios');
 
 /**
@@ -58,7 +58,7 @@ const importProductFromEasyOrders = async (req, res) => {
 
     // التحقق من وجود المنتج مسبقاً باستخدام easyOrdersId
     if (easyOrdersId) {
-      const existingProduct = await prisma.product.findFirst({
+      const existingProduct = await getSharedPrismaClient().product.findFirst({
         where: {
           easyOrdersId: easyOrdersId,
           companyId
@@ -76,7 +76,7 @@ const importProductFromEasyOrders = async (req, res) => {
 
     // التحقق من وجود SKU مكرر
     if (sku) {
-      const skuExists = await prisma.product.findFirst({
+      const skuExists = await getSharedPrismaClient().product.findFirst({
         where: {
           sku: sku,
           companyId
@@ -95,7 +95,7 @@ const importProductFromEasyOrders = async (req, res) => {
     let categoryId = null;
     if (category && category.trim() !== '') {
       // البحث عن الفئة أو إنشاؤها
-      let categoryRecord = await prisma.category.findFirst({
+      let categoryRecord = await getSharedPrismaClient().category.findFirst({
         where: {
           name: category.trim(),
           companyId
@@ -104,7 +104,7 @@ const importProductFromEasyOrders = async (req, res) => {
 
       if (!categoryRecord) {
         // إنشاء فئة جديدة
-        categoryRecord = await prisma.category.create({
+        categoryRecord = await getSharedPrismaClient().category.create({
           data: {
             name: category.trim(),
             companyId
@@ -136,7 +136,7 @@ const importProductFromEasyOrders = async (req, res) => {
     console.log(`📸 [EASY-ORDERS] Images count: ${processedImages.length}`);
 
     // إنشاء المنتج
-    const product = await prisma.product.create({
+    const product = await getSharedPrismaClient().product.create({
       data: {
         name: name.trim(),
         description: description || '',
@@ -228,7 +228,7 @@ const importProductsBulk = async (req, res) => {
 
         // التحقق من وجود المنتج مسبقاً
         if (easyOrdersId) {
-          const existingProduct = await prisma.product.findFirst({
+          const existingProduct = await getSharedPrismaClient().product.findFirst({
             where: {
               easyOrdersId: easyOrdersId,
               companyId
@@ -248,7 +248,7 @@ const importProductsBulk = async (req, res) => {
         // معالجة الفئة
         let categoryId = null;
         if (productData.category && productData.category.trim() !== '') {
-          let categoryRecord = await prisma.category.findFirst({
+          let categoryRecord = await getSharedPrismaClient().category.findFirst({
             where: {
               name: productData.category.trim(),
               companyId
@@ -256,7 +256,7 @@ const importProductsBulk = async (req, res) => {
           });
 
           if (!categoryRecord) {
-            categoryRecord = await prisma.category.create({
+            categoryRecord = await getSharedPrismaClient().category.create({
               data: {
                 name: productData.category.trim(),
                 companyId
@@ -282,7 +282,7 @@ const importProductsBulk = async (req, res) => {
         }
 
         // إنشاء المنتج
-        const product = await prisma.product.create({
+        const product = await getSharedPrismaClient().product.create({
           data: {
             name: productData.name.trim(),
             description: productData.description || '',
@@ -368,7 +368,7 @@ const syncProductWithEasyOrders = async (req, res) => {
     }
 
     // التحقق من وجود المنتج
-    const existingProduct = await prisma.product.findFirst({
+    const existingProduct = await getSharedPrismaClient().product.findFirst({
       where: {
         id,
         companyId
@@ -408,7 +408,7 @@ const syncProductWithEasyOrders = async (req, res) => {
 
     if (productData.easyOrdersUrl) updateData.easyOrdersUrl = productData.easyOrdersUrl;
 
-    const updatedProduct = await prisma.product.update({
+    const updatedProduct = await getSharedPrismaClient().product.update({
       where: { id },
       data: updateData,
       include: {
@@ -587,7 +587,7 @@ const importSelectedProducts = async (req, res) => {
 
         // التحقق من وجود المنتج مسبقاً
         if (easyOrdersId) {
-          const existingProduct = await prisma.product.findFirst({
+          const existingProduct = await getSharedPrismaClient().product.findFirst({
             where: {
               easyOrdersId: easyOrdersId.toString(),
               companyId
@@ -612,7 +612,7 @@ const importSelectedProducts = async (req, res) => {
           let originalSku = productData.sku;
           
           while (skuExists) {
-            const existingProductBySku = await prisma.product.findFirst({
+            const existingProductBySku = await getSharedPrismaClient().product.findFirst({
               where: {
                 sku: finalSku,
                 companyId
@@ -633,7 +633,7 @@ const importSelectedProducts = async (req, res) => {
         // معالجة الفئة
         let categoryId = null;
         if (productData.category && productData.category.trim() !== '') {
-          let categoryRecord = await prisma.category.findFirst({
+          let categoryRecord = await getSharedPrismaClient().category.findFirst({
             where: {
               name: productData.category.trim(),
               companyId
@@ -641,7 +641,7 @@ const importSelectedProducts = async (req, res) => {
           });
 
           if (!categoryRecord) {
-            categoryRecord = await prisma.category.create({
+            categoryRecord = await getSharedPrismaClient().category.create({
               data: {
                 name: productData.category.trim(),
                 companyId
@@ -668,7 +668,7 @@ const importSelectedProducts = async (req, res) => {
         }
 
         // إنشاء المنتج
-        const product = await prisma.product.create({
+        const product = await getSharedPrismaClient().product.create({
           data: {
             name: productData.name.trim(),
             description: productData.description || '',
@@ -735,3 +735,4 @@ module.exports = {
   fetchProductsFromEasyOrders,
   importSelectedProducts
 };
+

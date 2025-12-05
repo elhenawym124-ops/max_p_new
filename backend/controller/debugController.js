@@ -1,7 +1,7 @@
 const processedMessages = new Map();
 const aiAgentService = require('../services/aiAgentService');
 const { getSharedPrismaClient, initializeSharedDatabase, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const getDebugInfo = async(req, res) => {
   try {
     const queueStats = messageQueueManager.getQueueStats();
@@ -79,15 +79,15 @@ const postResetAiErrors = async(req, res) => {
 const getDebugDataBase = async (req, res) => {
   try {
     const stats = {
-      customers: await prisma.customer.count(),
-      conversations: await prisma.conversation.count(),
-      messages: await prisma.message.count(),
-      products: await prisma.product.count(),
-      facebookPages: await prisma.facebookPage.count(),
-      companies: await prisma.company.count()
+      customers: await getSharedPrismaClient().customer.count(),
+      conversations: await getSharedPrismaClient().conversation.count(),
+      messages: await getSharedPrismaClient().message.count(),
+      products: await getSharedPrismaClient().product.count(),
+      facebookPages: await getSharedPrismaClient().facebookPage.count(),
+      companies: await getSharedPrismaClient().company.count()
     };
 
-    const facebookPages = await prisma.facebookPage.findMany({
+    const facebookPages = await getSharedPrismaClient().facebookPage.findMany({
       select: {
         id: true,
         pageId: true,
@@ -99,7 +99,7 @@ const getDebugDataBase = async (req, res) => {
       }
     });
 
-    const companies = await prisma.company.findMany({
+    const companies = await getSharedPrismaClient().company.findMany({
       select: {
         id: true,
         name: true,

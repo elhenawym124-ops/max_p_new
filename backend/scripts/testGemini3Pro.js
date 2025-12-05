@@ -8,7 +8,7 @@ const { getSharedPrismaClient } = require('../services/sharedDatabase');
 const MODEL_NAME = 'gemini-3-pro-preview';
 
 async function testGemini3Pro() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     try {
         console.log('\n🧪 اختبار Gemini 3 Pro Preview...\n');
@@ -104,8 +104,9 @@ async function testGemini3Pro() {
         console.error('❌ خطأ عام:', error.message);
         console.error(error.stack);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 testGemini3Pro();
+

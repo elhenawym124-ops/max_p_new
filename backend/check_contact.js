@@ -1,9 +1,9 @@
 const { getSharedPrismaClient } = require('./services/sharedDatabase');
 
 async function checkContact() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     try {
-        const contact = await prisma.whatsAppContact.findFirst({
+        const contact = await getSharedPrismaClient().whatsAppContact.findFirst({
             where: {
                 jid: '201112257060@s.whatsapp.net'
             }
@@ -27,3 +27,4 @@ async function checkContact() {
 }
 
 checkContact();
+

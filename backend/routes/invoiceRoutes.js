@@ -3,7 +3,7 @@ const { getSharedPrismaClient } = require('../services/sharedDatabase');
 const { authenticateToken, requireSuperAdmin } = require('../middleware/superAdminMiddleware');
 
 const router = express.Router();
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 /**
  * Generate unique invoice number
@@ -65,7 +65,7 @@ router.get('/', authenticateToken, requireSuperAdmin, async (req, res) => {
 
     // Get invoices with related data
     const [invoices, total] = await Promise.all([
-      prisma.invoice.findMany({
+      getSharedPrismaClient().invoice.findMany({
         where,
         include: {
           company: {
@@ -101,11 +101,11 @@ router.get('/', authenticateToken, requireSuperAdmin, async (req, res) => {
           [sortBy]: sortOrder
         }
       }),
-      prisma.invoice.count({ where })
+      getSharedPrismaClient().invoice.count({ where })
     ]);
 
     // Calculate statistics
-    const stats = await prisma.invoice.groupBy({
+    const stats = await getSharedPrismaClient().invoice.groupBy({
       by: ['status'],
       _count: {
         id: true
@@ -124,7 +124,7 @@ router.get('/', authenticateToken, requireSuperAdmin, async (req, res) => {
     }, {});
 
     // Calculate total revenue
-    const totalRevenue = await prisma.invoice.aggregate({
+    const totalRevenue = await getSharedPrismaClient().invoice.aggregate({
       where: { status: 'PAID' },
       _sum: {
         totalAmount: true
@@ -169,7 +169,7 @@ router.get('/:id', authenticateToken, requireSuperAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const invoice = await prisma.invoice.findUnique({
+    const invoice = await getSharedPrismaClient().invoice.findUnique({
       where: { id },
       include: {
         company: true,
@@ -224,7 +224,7 @@ router.post('/', authenticateToken, requireSuperAdmin, async (req, res) => {
     } = req.body;
 
     // Validate company exists
-    const company = await prisma.company.findUnique({
+    const company = await getSharedPrismaClient().company.findUnique({
       where: { id: companyId }
     });
 
@@ -252,7 +252,7 @@ router.post('/', authenticateToken, requireSuperAdmin, async (req, res) => {
     const totalAmount = subtotal + taxAmount - discountAmount;
 
     // Create invoice with items
-    const invoice = await prisma.invoice.create({
+    const invoice = await getSharedPrismaClient().invoice.create({
       data: {
         invoiceNumber: generateInvoiceNumber(),
         companyId,
@@ -324,7 +324,7 @@ router.put('/:id/status', authenticateToken, requireSuperAdmin, async (req, res)
       updateData.paidDate = new Date();
     }
 
-    const invoice = await prisma.invoice.update({
+    const invoice = await getSharedPrismaClient().invoice.update({
       where: { id },
       data: updateData,
       include: {
@@ -365,7 +365,7 @@ router.post('/:id/send', authenticateToken, requireSuperAdmin, async (req, res) 
   try {
     const { id } = req.params;
 
-    const invoice = await prisma.invoice.findUnique({
+    const invoice = await getSharedPrismaClient().invoice.findUnique({
       where: { id },
       include: {
         company: true,
@@ -381,7 +381,7 @@ router.post('/:id/send', authenticateToken, requireSuperAdmin, async (req, res) 
     }
 
     // Update invoice status to SENT
-    const updatedInvoice = await prisma.invoice.update({
+    const updatedInvoice = await getSharedPrismaClient().invoice.update({
       where: { id },
       data: { status: 'SENT' },
       include: {
@@ -434,14 +434,14 @@ router.get('/stats/overview', authenticateToken, requireSuperAdmin, async (req, 
       totalRevenue,
       recentInvoices
     ] = await Promise.all([
-      prisma.invoice.count(),
-      prisma.invoice.count({ where: { status: 'PAID' } }),
-      prisma.invoice.count({ where: { status: 'OVERDUE' } }),
-      prisma.invoice.aggregate({
+      getSharedPrismaClient().invoice.count(),
+      getSharedPrismaClient().invoice.count({ where: { status: 'PAID' } }),
+      getSharedPrismaClient().invoice.count({ where: { status: 'OVERDUE' } }),
+      getSharedPrismaClient().invoice.aggregate({
         where: { status: 'PAID' },
         _sum: { totalAmount: true }
       }),
-      prisma.invoice.findMany({
+      getSharedPrismaClient().invoice.findMany({
         where: {
           createdAt: { gte: startDate }
         },
@@ -458,7 +458,7 @@ router.get('/stats/overview', authenticateToken, requireSuperAdmin, async (req, 
     ]);
 
     // Calculate monthly revenue trend
-    const monthlyRevenue = await prisma.invoice.groupBy({
+    const monthlyRevenue = await getSharedPrismaClient().invoice.groupBy({
       by: ['issueDate'],
       where: {
         status: 'PAID',
@@ -497,3 +497,4 @@ router.get('/stats/overview', authenticateToken, requireSuperAdmin, async (req, 
 });
 
 module.exports = router;
+

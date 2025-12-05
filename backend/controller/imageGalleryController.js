@@ -1,5 +1,5 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 /**
  * 📥 الحصول على جميع الصور المحفوظة للمستخدم
@@ -25,7 +25,7 @@ const getImageGallery = async (req, res) => {
       });
     }
 
-    const images = await prisma.imageGallery.findMany({
+    const images = await getSharedPrismaClient().imageGallery.findMany({
       where: {
         userId: userId,
         companyId: companyId
@@ -106,7 +106,7 @@ const saveImageToGallery = async (req, res) => {
     }
 
     // التحقق من عدم تكرار نفس الصورة
-    const existingImage = await prisma.imageGallery.findFirst({
+    const existingImage = await getSharedPrismaClient().imageGallery.findFirst({
       where: {
         userId: userId,
         companyId: companyId,
@@ -128,7 +128,7 @@ const saveImageToGallery = async (req, res) => {
     }
 
     // حفظ الصورة الجديدة
-    const newImage = await prisma.imageGallery.create({
+    const newImage = await getSharedPrismaClient().imageGallery.create({
       data: {
         userId: userId,
         companyId: companyId,
@@ -178,7 +178,7 @@ const deleteImageFromGallery = async (req, res) => {
     }
 
     // التحقق من أن الصورة تخص المستخدم
-    const image = await prisma.imageGallery.findFirst({
+    const image = await getSharedPrismaClient().imageGallery.findFirst({
       where: {
         id: imageId,
         userId: userId,
@@ -194,7 +194,7 @@ const deleteImageFromGallery = async (req, res) => {
     }
 
     // حذف الصورة
-    await prisma.imageGallery.delete({
+    await getSharedPrismaClient().imageGallery.delete({
       where: {
         id: imageId
       }
@@ -248,7 +248,7 @@ const uploadAndSaveImage = async (req, res) => {
     const fullUrl = `${req.protocol}://${req.get('host')}${imageUrl}`;
 
     // حفظ الصورة في قاعدة البيانات
-    const newImage = await prisma.imageGallery.create({
+    const newImage = await getSharedPrismaClient().imageGallery.create({
       data: {
         userId: userId,
         companyId: companyId,
@@ -286,3 +286,4 @@ module.exports = {
   deleteImageFromGallery,
   uploadAndSaveImage
 };
+

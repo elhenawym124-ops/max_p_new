@@ -7,11 +7,11 @@ const { getSharedPrismaClient } = require('./sharedDatabase');
 
 async function quickTest() {
   try {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     // البحث عن شركة التسويق
     console.log('🔍 البحث عن شركة التسويق...\n');
-    const company = await prisma.company.findFirst({
+    const company = await getSharedPrismaClient().company.findFirst({
       where: {
         name: {
           contains: 'التسويق'
@@ -24,7 +24,7 @@ async function quickTest() {
       console.log('❌ لم يتم العثور على شركة التسويق');
       console.log('📋 البحث عن أي شركة نشطة...\n');
       
-      const anyCompany = await prisma.company.findFirst({
+      const anyCompany = await getSharedPrismaClient().company.findFirst({
         where: { isActive: true }
       });
       
@@ -98,4 +98,5 @@ async function testQuestion(companyId) {
 
 // تشغيل الاختبار
 quickTest();
+
 

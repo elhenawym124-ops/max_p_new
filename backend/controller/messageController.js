@@ -1,6 +1,6 @@
 const MessageHealthChecker = require('../utils/messageHealthChecker');
 const { getSharedPrismaClient, initializeSharedDatabase, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 const messageCheckHealth = async (req, res) => {
     try {
@@ -40,7 +40,7 @@ const messageFix = async (req, res) => {
         const { id } = req.params;
         //console.log(`🔧 [FIX-MESSAGE] Fixing message: ${id}`);
 
-        const message = await prisma.message.findUnique({
+        const message = await getSharedPrismaClient().message.findUnique({
             where: { id }
         });
 
@@ -68,7 +68,7 @@ const messageFix = async (req, res) => {
                         recovered: true
                     }]);
 
-                    await prisma.message.update({
+                    await getSharedPrismaClient().message.update({
                         where: { id },
                         data: {
                             content: safeUrl,

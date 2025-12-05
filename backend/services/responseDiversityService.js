@@ -7,7 +7,7 @@
  */
 
 const { getSharedPrismaClient } = require('./sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 class ResponseDiversityService {
   constructor() {
@@ -346,4 +346,5 @@ function getResponseDiversityService() {
 
 module.exports = getResponseDiversityService();
 module.exports.ResponseDiversityService = ResponseDiversityService;
+
 

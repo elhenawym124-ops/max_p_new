@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const { authenticateToken , requireSuperAdmin } = require('../utils/verifyToken');
 
 // 📚 Get all prompts from library (للمستخدمين العاديين)
@@ -35,7 +35,7 @@ router.get('/', authenticateToken, async (req, res) => {
       ];
     }
 
-    const prompts = await prisma.promptLibrary.findMany({
+    const prompts = await getSharedPrismaClient().promptLibrary.findMany({
       where,
       orderBy: [
         { isFeatured: 'desc' },
@@ -62,7 +62,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const prompt = await prisma.promptLibrary.findUnique({
+    const prompt = await getSharedPrismaClient().promptLibrary.findUnique({
       where: { id }
     });
 
@@ -74,7 +74,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
     }
 
     // Increment usage count
-    await prisma.promptLibrary.update({
+    await getSharedPrismaClient().promptLibrary.update({
       where: { id },
       data: {
         usageCount: {
@@ -99,7 +99,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
 // 🔧 Get categories list
 router.get('/meta/categories', authenticateToken, async (req, res) => {
   try {
-    const categories = await prisma.promptLibrary.groupBy({
+    const categories = await getSharedPrismaClient().promptLibrary.groupBy({
       by: ['category'],
       where: {
         isActive: true
@@ -140,7 +140,7 @@ router.post('/admin/create', authenticateToken, requireSuperAdmin, async (req, r
       });
     }
 
-    const prompt = await prisma.promptLibrary.create({
+    const prompt = await getSharedPrismaClient().promptLibrary.create({
       data: {
         name,
         nameAr: name, // نفس الاسم
@@ -186,7 +186,7 @@ router.put('/admin/:id', authenticateToken, requireSuperAdmin, async (req, res) 
     }
     if (promptContent !== undefined) updateData.promptContent = promptContent;
 
-    const prompt = await prisma.promptLibrary.update({
+    const prompt = await getSharedPrismaClient().promptLibrary.update({
       where: { id },
       data: updateData
     });
@@ -210,7 +210,7 @@ router.delete('/admin/:id', authenticateToken, requireSuperAdmin, async (req, re
   try {
     const { id } = req.params;
 
-    await prisma.promptLibrary.delete({
+    await getSharedPrismaClient().promptLibrary.delete({
       where: { id }
     });
 
@@ -230,7 +230,7 @@ router.delete('/admin/:id', authenticateToken, requireSuperAdmin, async (req, re
 // 📊 Get all prompts for admin (including inactive)
 router.get('/admin/all', authenticateToken, requireSuperAdmin, async (req, res) => {
   try {
-    const prompts = await prisma.promptLibrary.findMany({
+    const prompts = await getSharedPrismaClient().promptLibrary.findMany({
       orderBy: [
         { isFeatured: 'desc' },
         { sortOrder: 'asc' },
@@ -254,22 +254,22 @@ router.get('/admin/all', authenticateToken, requireSuperAdmin, async (req, res) 
 // 📈 Get prompt statistics (SuperAdmin only)
 router.get('/admin/stats', authenticateToken, requireSuperAdmin, async (req, res) => {
   try {
-    const totalPrompts = await prisma.promptLibrary.count();
-    const activePrompts = await prisma.promptLibrary.count({
+    const totalPrompts = await getSharedPrismaClient().promptLibrary.count();
+    const activePrompts = await getSharedPrismaClient().promptLibrary.count({
       where: { isActive: true }
     });
-    const featuredPrompts = await prisma.promptLibrary.count({
+    const featuredPrompts = await getSharedPrismaClient().promptLibrary.count({
       where: { isFeatured: true }
     });
 
-    const categoryStats = await prisma.promptLibrary.groupBy({
+    const categoryStats = await getSharedPrismaClient().promptLibrary.groupBy({
       by: ['category'],
       _count: {
         category: true
       }
     });
 
-    const topUsed = await prisma.promptLibrary.findMany({
+    const topUsed = await getSharedPrismaClient().promptLibrary.findMany({
       take: 5,
       orderBy: {
         usageCount: 'desc'
@@ -303,3 +303,4 @@ router.get('/admin/stats', authenticateToken, requireSuperAdmin, async (req, res
 });
 
 module.exports = router;
+

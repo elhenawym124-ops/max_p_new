@@ -10,7 +10,7 @@ const { getSharedPrismaClient } = require('../services/sharedDatabase');
  */
 
 // Get shared Prisma client instance (same as conversationController)
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // Middleware to get or create cart_id
 const getCartId = (req, res, next) => {
@@ -66,7 +66,7 @@ router.get('/cart', async (req, res) => {
     console.log('🏢 [GET-CART] Company ID:', company?.id);
     console.log('🛒 [GET-CART] Cart ID:', cartId);
 
-    let cart = await prisma.guestCart.findUnique({
+    let cart = await getSharedPrismaClient().guestCart.findUnique({
       where: { cartId }
     });
     
@@ -77,7 +77,7 @@ router.get('/cart', async (req, res) => {
     }
 
     if (!cart) {
-      cart = await prisma.guestCart.create({
+      cart = await getSharedPrismaClient().guestCart.create({
         data: {
           cartId,
           companyId: company.id,
@@ -115,7 +115,7 @@ router.post('/cart/add', async (req, res) => {
     console.log('🍪 [ADD-TO-CART] Headers x-cart-id:', req.headers['x-cart-id']);
     
     // Verify product exists and belongs to company
-    const product = await prisma.product.findFirst({
+    const product = await getSharedPrismaClient().product.findFirst({
       where: {
         id: productId,
         companyId: company.id,
@@ -155,12 +155,12 @@ router.post('/cart/add', async (req, res) => {
     }
 
     // Get or create cart
-    let cart = await prisma.guestCart.findUnique({
+    let cart = await getSharedPrismaClient().guestCart.findUnique({
       where: { cartId }
     });
 
     if (!cart) {
-      cart = await prisma.guestCart.create({
+      cart = await getSharedPrismaClient().guestCart.create({
         data: {
           cartId,
           companyId: company.id,
@@ -220,7 +220,7 @@ router.post('/cart/add', async (req, res) => {
     // Calculate total
     const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
-    cart = await prisma.guestCart.update({
+    cart = await getSharedPrismaClient().guestCart.update({
       where: { cartId },
       data: { items, total }
     });
@@ -256,13 +256,13 @@ router.put('/cart/update', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Cart ID is required' });
     }
 
-    let cart = await prisma.guestCart.findUnique({
+    let cart = await getSharedPrismaClient().guestCart.findUnique({
       where: { cartId }
     });
 
     if (!cart) {
       // Create empty cart if it doesn't exist
-      cart = await prisma.guestCart.create({
+      cart = await getSharedPrismaClient().guestCart.create({
         data: {
           cartId,
           companyId: company.id,
@@ -287,7 +287,7 @@ router.put('/cart/update', async (req, res) => {
 
       const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
-      cart = await prisma.guestCart.update({
+      cart = await getSharedPrismaClient().guestCart.update({
         where: { cartId },
         data: { items, total }
       });
@@ -311,13 +311,13 @@ router.delete('/cart/remove', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Cart ID is required' });
     }
 
-    let cart = await prisma.guestCart.findUnique({
+    let cart = await getSharedPrismaClient().guestCart.findUnique({
       where: { cartId }
     });
 
     if (!cart) {
       // Create empty cart if it doesn't exist
-      cart = await prisma.guestCart.create({
+      cart = await getSharedPrismaClient().guestCart.create({
         data: {
           cartId,
           companyId: company.id,
@@ -336,7 +336,7 @@ router.delete('/cart/remove', async (req, res) => {
 
     const total = filteredItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
-    cart = await prisma.guestCart.update({
+    cart = await getSharedPrismaClient().guestCart.update({
       where: { cartId },
       data: { items: filteredItems, total }
     });
@@ -359,13 +359,13 @@ router.delete('/cart/clear', async (req, res) => {
     }
 
     // Check if cart exists first
-    const existingCart = await prisma.guestCart.findUnique({
+    const existingCart = await getSharedPrismaClient().guestCart.findUnique({
       where: { cartId }
     });
 
     if (!existingCart) {
       // Create empty cart if it doesn't exist
-      const cart = await prisma.guestCart.create({
+      const cart = await getSharedPrismaClient().guestCart.create({
         data: {
           cartId,
           companyId: company.id,
@@ -378,7 +378,7 @@ router.delete('/cart/clear', async (req, res) => {
     }
 
     // Update existing cart
-    const cart = await prisma.guestCart.update({
+    const cart = await getSharedPrismaClient().guestCart.update({
       where: { cartId },
       data: { items: [], total: 0 }
     });
@@ -405,7 +405,7 @@ router.get('/shipping/calculate', async (req, res) => {
     
     const { city, governorate } = req.query;
     
-    const shippingZones = await prisma.shippingZone.findMany({
+    const shippingZones = await getSharedPrismaClient().shippingZone.findMany({
       where: {
         companyId: company.id,
         isActive: true
@@ -461,7 +461,7 @@ router.get('/shipping/estimate', async (req, res) => {
     
     const { city, governorate } = req.query;
     
-    const shippingZones = await prisma.shippingZone.findMany({
+    const shippingZones = await getSharedPrismaClient().shippingZone.findMany({
       where: {
         companyId: company.id,
         isActive: true
@@ -536,3 +536,4 @@ router.get('/payment-methods', async (req, res) => {
 });
 
 module.exports = router;
+

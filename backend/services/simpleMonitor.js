@@ -150,7 +150,7 @@ class SimpleMonitor {
   async createSilentErrorNotification(errorRecord, context) {
     try {
       const { getSharedPrismaClient, safeQuery } = require('./sharedDatabase');
-      const prisma = getSharedPrismaClient();
+      // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
       // إنشاء إشعار للمطورين
       const notificationData = {
@@ -180,7 +180,7 @@ class SimpleMonitor {
       }
 
       await safeQuery(async () => {
-        return await prisma.notification.create({
+        return await getSharedPrismaClient().notification.create({
           data: notificationData
         });
       }, 5);
@@ -534,3 +534,4 @@ module.exports = {
   QualityMonitor,
   qualityMonitor
 };
+

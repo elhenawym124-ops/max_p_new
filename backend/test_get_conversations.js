@@ -1,6 +1,6 @@
 
 const { getSharedPrismaClient } = require('./services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 async function testGetConversations() {
     try {
@@ -11,7 +11,7 @@ async function testGetConversations() {
         console.log(`🏢 Using company: ${companyId}`);
 
         // 2. Get sessions
-        const sessions = await prisma.whatsAppSession.findMany({
+        const sessions = await getSharedPrismaClient().whatsAppSession.findMany({
             where: { companyId: companyId }
         });
         console.log(`📱 Found ${sessions.length} sessions`);
@@ -24,7 +24,7 @@ async function testGetConversations() {
 
         // 3. Fetch contacts (simulate controller logic)
         console.log('🔍 Fetching contacts...');
-        const contacts = await prisma.whatsAppContact.findMany({
+        const contacts = await getSharedPrismaClient().whatsAppContact.findMany({
             where: { sessionId: { in: sessionIds } },
             take: 5,
             select: { id: true, jid: true, sessionId: true }
@@ -38,7 +38,7 @@ async function testGetConversations() {
             const lastMessagesPromises = jids.map(async (jid) => {
                 try {
                     console.log(`   - Fetching last message for ${jid}...`);
-                    const msg = await prisma.whatsAppMessage.findFirst({
+                    const msg = await getSharedPrismaClient().whatsAppMessage.findFirst({
                         where: {
                             sessionId: { in: sessionIds },
                             remoteJid: jid
@@ -70,8 +70,9 @@ async function testGetConversations() {
     } catch (error) {
         console.error('❌ Test failed:', error);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 testGetConversations();
+

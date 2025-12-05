@@ -1,5 +1,5 @@
 const { getSharedPrismaClient, safeQuery } = require('./sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 /**
  * Shipping Service for AI Agent
@@ -26,7 +26,7 @@ class ShippingService {
 
       // جلب جميع مناطق الشحن النشطة للشركة
       const zones = await safeQuery(async () => {
-        return await prisma.shippingZone.findMany({
+        return await getSharedPrismaClient().shippingZone.findMany({
           where: {
             companyId,
             isActive: true
@@ -88,7 +88,7 @@ class ShippingService {
 
       // جلب جميع المحافظات المتاحة
       const zones = await safeQuery(async () => {
-        return await prisma.shippingZone.findMany({
+        return await getSharedPrismaClient().shippingZone.findMany({
           where: {
             companyId,
             isActive: true
@@ -166,7 +166,7 @@ class ShippingService {
   async getAvailableGovernorates(companyId) {
     try {
       const zones = await safeQuery(async () => {
-        return await prisma.shippingZone.findMany({
+        return await getSharedPrismaClient().shippingZone.findMany({
           where: {
             companyId,
             isActive: true
@@ -260,3 +260,4 @@ class ShippingService {
 }
 
 module.exports = new ShippingService();
+

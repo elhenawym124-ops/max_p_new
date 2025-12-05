@@ -1,9 +1,9 @@
 const { getSharedPrismaClient } = require('./services/sharedDatabase');
 
 async function checkSessionAuth() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     try {
-        const sessions = await prisma.whatsAppSession.findMany();
+        const sessions = await getSharedPrismaClient().whatsAppSession.findMany();
 
         console.log(`Found ${sessions.length} sessions.`);
 
@@ -34,3 +34,4 @@ async function checkSessionAuth() {
 }
 
 checkSessionAuth();
+

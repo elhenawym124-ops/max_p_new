@@ -38,10 +38,10 @@ async function runFullTest() {
   try {
     console.log('🚀 بدء تشغيل الاختبار والتحليل...\n');
     
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     // البحث عن شركة نشطة
-    const company = await prisma.company.findFirst({
+    const company = await getSharedPrismaClient().company.findFirst({
       where: { isActive: true },
       orderBy: { createdAt: 'asc' }
     });
@@ -99,7 +99,7 @@ async function runFullTest() {
     const problemsAnalyzer = new ProblemsAnalyzer();
     
     // جلب آخر محادثة فقط
-    const lastConversation = await prisma.conversation.findFirst({
+    const lastConversation = await getSharedPrismaClient().conversation.findFirst({
       where: {
         companyId: company.id,
         channel: 'TEST',
@@ -188,4 +188,5 @@ async function runFullTest() {
 }
 
 runFullTest();
+
 

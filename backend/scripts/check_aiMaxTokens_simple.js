@@ -5,12 +5,12 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 
 async function main() {
-  const prisma = getSharedPrismaClient();
+  // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
   
   try {
     console.log('🔄 Connecting to database...\n');
     
-    const settings = await prisma.aiSettings.findMany({
+    const settings = await getSharedPrismaClient().aiSettings.findMany({
       select: {
         companyId: true,
         aiMaxTokens: true,
@@ -53,9 +53,10 @@ async function main() {
   } catch (error) {
     console.error('❌ خطأ:', error.message);
   } finally {
-    await prisma.$disconnect();
+    await getSharedPrismaClient().$disconnect();
   }
 }
 
 main();
+
 

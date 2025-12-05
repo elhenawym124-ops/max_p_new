@@ -8,12 +8,12 @@ const COMPANY_ID = 'cmhnzbjl50000ufus81imj8wq';
 
 async function setupAI() {
   try {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     console.log('\n🔧 إعداد الذكاء الاصطناعي لشركة mo-test...\n');
 
     // 1. التحقق من وجود الشركة
-    const company = await prisma.company.findUnique({
+    const company = await getSharedPrismaClient().company.findUnique({
       where: { id: COMPANY_ID }
     });
 
@@ -25,13 +25,13 @@ async function setupAI() {
     console.log(`✅ تم العثور على الشركة: ${company.name}\n`);
 
     // 2. التحقق من وجود AI Settings
-    let aiSettings = await prisma.aiSettings.findUnique({
+    let aiSettings = await getSharedPrismaClient().aiSettings.findUnique({
       where: { companyId: COMPANY_ID }
     });
 
     if (!aiSettings) {
       console.log('📝 إنشاء AI Settings جديدة...');
-      aiSettings = await prisma.aiSettings.create({
+      aiSettings = await getSharedPrismaClient().aiSettings.create({
         data: {
           companyId: COMPANY_ID,
           replyMode: 'all',
@@ -56,7 +56,7 @@ async function setupAI() {
     }
 
     // 3. التحقق من وجود Gemini Keys
-    const geminiKeys = await prisma.geminiKey.findMany({
+    const geminiKeys = await getSharedPrismaClient().geminiKey.findMany({
       where: {
         companyId: COMPANY_ID,
         isActive: true
@@ -105,4 +105,5 @@ async function setupAI() {
 }
 
 setupAI();
+
 

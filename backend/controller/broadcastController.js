@@ -1,5 +1,5 @@
 const { getSharedPrismaClient, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const { sendFacebookMessage } = require('../utils/allFunctions');
 const socketService = require('../services/socketService');
 
@@ -130,7 +130,7 @@ exports.createCampaign = async (req, res) => {
 
     console.log('💾 [CREATE CAMPAIGN] إنشاء الحملة في قاعدة البيانات');
     // إنشاء الحملة
-    const campaign = await prisma.broadcastCampaign.create({
+    const campaign = await getSharedPrismaClient().broadcastCampaign.create({
       data: {
         name,
         message,
@@ -195,7 +195,7 @@ exports.getCampaigns = async (req, res) => {
 
     console.log('🔄 [GET CAMPAIGNS] تنفيذ استعلام قاعدة البيانات');
     const [campaigns, total] = await Promise.all([
-      prisma.broadcastCampaign.findMany({
+      getSharedPrismaClient().broadcastCampaign.findMany({
         where,
         skip,
         take: parseInt(limit),
@@ -210,7 +210,7 @@ exports.getCampaigns = async (req, res) => {
           }
         }
       }),
-      prisma.broadcastCampaign.count({ where })
+      getSharedPrismaClient().broadcastCampaign.count({ where })
     ]);
 
     console.log(`✅ [GET CAMPAIGNS] تم جلب ${campaigns.length} حملة من أصل ${total} حملة`);
@@ -248,7 +248,7 @@ exports.getCampaign = async (req, res) => {
     console.log(`🔍 [GET CAMPAIGN] معرف الشركة: ${companyId}, معرف الحملة: ${campaignId}`);
 
     console.log('🔍 [GET CAMPAIGN] البحث عن الحملة مع التفاصيل');
-    const campaign = await prisma.broadcastCampaign.findFirst({
+    const campaign = await getSharedPrismaClient().broadcastCampaign.findFirst({
       where: {
         id: campaignId,
         companyId
@@ -308,7 +308,7 @@ exports.updateCampaign = async (req, res) => {
 
     console.log('🔍 [UPDATE CAMPAIGN] التحقق من وجود الحملة');
     // التحقق من وجود الحملة
-    const existingCampaign = await prisma.broadcastCampaign.findFirst({
+    const existingCampaign = await getSharedPrismaClient().broadcastCampaign.findFirst({
       where: {
         id: campaignId,
         companyId
@@ -335,7 +335,7 @@ exports.updateCampaign = async (req, res) => {
     }
 
     console.log('🔄 [UPDATE CAMPAIGN] تحديث بيانات الحملة في قاعدة البيانات');
-    const campaign = await prisma.broadcastCampaign.update({
+    const campaign = await getSharedPrismaClient().broadcastCampaign.update({
       where: { id: campaignId },
       data: {
         ...updateData,
@@ -370,7 +370,7 @@ exports.cancelCampaign = async (req, res) => {
     const companyId = req.user.companyId;
     const { campaignId } = req.params;
 
-    const campaign = await prisma.broadcastCampaign.findFirst({
+    const campaign = await getSharedPrismaClient().broadcastCampaign.findFirst({
       where: {
         id: campaignId,
         companyId
@@ -386,13 +386,13 @@ exports.cancelCampaign = async (req, res) => {
 
     // إذا كانت الحملة قيد الإرسال، نوقفها
     if (campaign.status === 'sending') {
-      await prisma.broadcastCampaign.update({
+      await getSharedPrismaClient().broadcastCampaign.update({
         where: { id: campaignId },
         data: { status: 'cancelled' }
       });
     } else {
       // حذف الحملة
-      await prisma.broadcastCampaign.delete({
+      await getSharedPrismaClient().broadcastCampaign.delete({
         where: { id: campaignId }
       });
     }
@@ -423,7 +423,7 @@ exports.pauseCampaign = async (req, res) => {
     console.log(`🔍 [PAUSE CAMPAIGN] معرف الشركة: ${companyId}, معرف الحملة: ${campaignId}`);
 
     console.log('🔍 [PAUSE CAMPAIGN] البحث عن الحملة');
-    const campaign = await prisma.broadcastCampaign.findFirst({
+    const campaign = await getSharedPrismaClient().broadcastCampaign.findFirst({
       where: {
         id: campaignId,
         companyId
@@ -449,7 +449,7 @@ exports.pauseCampaign = async (req, res) => {
     }
 
     console.log('🔄 [PAUSE CAMPAIGN] تحديث حالة الحملة إلى "paused"');
-    const updatedCampaign = await prisma.broadcastCampaign.update({
+    const updatedCampaign = await getSharedPrismaClient().broadcastCampaign.update({
       where: { id: campaignId },
       data: { status: 'paused' }
     });
@@ -484,7 +484,7 @@ exports.resumeCampaign = async (req, res) => {
     console.log(`🔍 [RESUME CAMPAIGN] معرف الشركة: ${companyId}, معرف الحملة: ${campaignId}`);
 
     console.log('🔍 [RESUME CAMPAIGN] البحث عن الحملة');
-    const campaign = await prisma.broadcastCampaign.findFirst({
+    const campaign = await getSharedPrismaClient().broadcastCampaign.findFirst({
       where: {
         id: campaignId,
         companyId
@@ -512,7 +512,7 @@ exports.resumeCampaign = async (req, res) => {
     const newStatus = campaign.scheduledAt ? 'scheduled' : 'sending';
     console.log(`🔄 [RESUME CAMPAIGN] تحديث حالة الحملة إلى "${newStatus}"`);
 
-    const updatedCampaign = await prisma.broadcastCampaign.update({
+    const updatedCampaign = await getSharedPrismaClient().broadcastCampaign.update({
       where: { id: campaignId },
       data: { status: newStatus }
     });
@@ -547,7 +547,7 @@ exports.sendCampaign = async (req, res) => {
     console.log(`📊 [SEND CAMPAIGN] معرف الشركة: ${companyId}, معرف الحملة: ${campaignId}`);
 
     console.log('🔍 [SEND CAMPAIGN] البحث عن الحملة في قاعدة البيانات');
-    const campaign = await prisma.broadcastCampaign.findFirst({
+    const campaign = await getSharedPrismaClient().broadcastCampaign.findFirst({
       where: {
         id: campaignId,
         companyId
@@ -574,7 +574,7 @@ exports.sendCampaign = async (req, res) => {
 
     console.log('🔄 [SEND CAMPAIGN] تحديث حالة الحملة إلى "sending"');
     // تحديث حالة الحملة
-    await prisma.broadcastCampaign.update({
+    await getSharedPrismaClient().broadcastCampaign.update({
       where: { id: campaignId },
       data: {
         status: 'sending',
@@ -592,7 +592,7 @@ exports.sendCampaign = async (req, res) => {
 
     if (campaign.targetAudience === 'all') {
       console.log('🌐 [SEND CAMPAIGN] جلب جميع المحادثات النشطة (آخر رسالة من العميل في آخر 24 ساعة)');
-      conversations = await prisma.conversation.findMany({
+      conversations = await getSharedPrismaClient().conversation.findMany({
         where: {
           companyId,
           status: 'ACTIVE',
@@ -621,7 +621,7 @@ exports.sendCampaign = async (req, res) => {
     } else {
       console.log(`📋 [SEND CAMPAIGN] جلب المحادثات للجمهور المخصص: ${campaign.targetAudience}`);
       // منطق للجمهور المستهدف المخصص
-      conversations = await prisma.conversation.findMany({
+      conversations = await getSharedPrismaClient().conversation.findMany({
         where: {
           companyId,
           status: 'ACTIVE',
@@ -664,7 +664,7 @@ exports.sendCampaign = async (req, res) => {
 
     if (recipients.length > 0) {
       console.log(`💾 [SEND CAMPAIGN] حفظ ${recipients.length} مستلم في قاعدة البيانات`);
-      await prisma.broadcastRecipient.createMany({
+      await getSharedPrismaClient().broadcastRecipient.createMany({
         data: recipients
       });
     } else {
@@ -714,7 +714,7 @@ exports.sendCampaign = async (req, res) => {
           failedCount++;
 
           // Update recipient status
-          await prisma.broadcastRecipient.updateMany({
+          await getSharedPrismaClient().broadcastRecipient.updateMany({
             where: {
               campaignId: campaign.id,
               conversationId: conv.id
@@ -747,7 +747,7 @@ exports.sendCampaign = async (req, res) => {
 
         // إذا لم يتم العثور على Page ID في metadata، استخدم أول صفحة متصلة
         if (!conversationPageId) {
-          const defaultPage = await prisma.facebookPage.findFirst({
+          const defaultPage = await getSharedPrismaClient().facebookPage.findFirst({
             where: {
               companyId: companyId,
               status: 'connected'
@@ -764,7 +764,7 @@ exports.sendCampaign = async (req, res) => {
             console.log(`❌ [SEND CAMPAIGN] لا توجد صفحة Facebook متصلة للعميل ${conv.customer.firstName}`);
             failedCount++;
 
-            await prisma.broadcastRecipient.updateMany({
+            await getSharedPrismaClient().broadcastRecipient.updateMany({
               where: {
                 campaignId: campaign.id,
                 conversationId: conv.id
@@ -789,7 +789,7 @@ exports.sendCampaign = async (req, res) => {
         console.log(`✨ [PERSONALIZATION] Original: "${campaign.message}" => Personalized: "${personalizedMessage}"`);
         
         if (personalizedMessage && personalizedMessage.trim().length > 0) {
-          const textMessage = await prisma.message.create({
+          const textMessage = await getSharedPrismaClient().message.create({
             data: {
               conversationId: conv.id,
               content: personalizedMessage,
@@ -815,7 +815,7 @@ exports.sendCampaign = async (req, res) => {
         if (campaign.images && Array.isArray(campaign.images) && campaign.images.length > 0) {
           // حفظ كل صورة كرسالة منفصلة قبل الإرسال
           for (const imageUrl of campaign.images) {
-            const imageMessage = await prisma.message.create({
+            const imageMessage = await getSharedPrismaClient().message.create({
               data: {
                 conversationId: conv.id,
                 content: imageUrl,
@@ -872,7 +872,7 @@ exports.sendCampaign = async (req, res) => {
           sentCount++;
 
           // Update recipient status to sent
-          await prisma.broadcastRecipient.updateMany({
+          await getSharedPrismaClient().broadcastRecipient.updateMany({
             where: {
               campaignId: campaign.id,
               conversationId: conv.id
@@ -887,7 +887,7 @@ exports.sendCampaign = async (req, res) => {
           if (sendResult.messageId && savedMessages.length > 0) {
             for (const msg of savedMessages) {
               const currentMetadata = JSON.parse(msg.metadata || '{}');
-              await prisma.message.update({
+              await getSharedPrismaClient().message.update({
                 where: { id: msg.id },
                 data: {
                   metadata: JSON.stringify({
@@ -914,13 +914,13 @@ exports.sendCampaign = async (req, res) => {
 
           // ❌ حذف الرسائل المحفوظة لأن الإرسال فشل
           for (const msg of savedMessages) {
-            await prisma.message.delete({
+            await getSharedPrismaClient().message.delete({
               where: { id: msg.id }
             });
           }
 
           // Update recipient status to failed
-          await prisma.broadcastRecipient.updateMany({
+          await getSharedPrismaClient().broadcastRecipient.updateMany({
             where: {
               campaignId: campaign.id,
               conversationId: conv.id
@@ -963,7 +963,7 @@ exports.sendCampaign = async (req, res) => {
         failedCount++;
 
         // Update recipient status to failed
-        await prisma.broadcastRecipient.updateMany({
+        await getSharedPrismaClient().broadcastRecipient.updateMany({
           where: {
             campaignId: campaign.id,
             conversationId: conv.id
@@ -1007,7 +1007,7 @@ exports.sendCampaign = async (req, res) => {
     console.log('🔄 [SEND CAMPAIGN] تحديث إحصائيات الحملة');
     // تحديث عدد المرسل إليهم
     try {
-      await prisma.broadcastCampaign.update({
+      await getSharedPrismaClient().broadcastCampaign.update({
         where: { id: campaignId },
         data: {
           recipientCount: recipients.length,
@@ -1099,22 +1099,22 @@ exports.getAnalytics = async (req, res) => {
       campaignsThisMonth,
       allCampaigns
     ] = await Promise.all([
-      prisma.broadcastCampaign.count({
+      getSharedPrismaClient().broadcastCampaign.count({
         where: { companyId }
       }),
-      prisma.broadcastCampaign.count({
+      getSharedPrismaClient().broadcastCampaign.count({
         where: {
           companyId,
           status: { in: ['sending', 'scheduled'] }
         }
       }),
-      prisma.broadcastCampaign.count({
+      getSharedPrismaClient().broadcastCampaign.count({
         where: {
           companyId,
           createdAt: { gte: startDate }
         }
       }),
-      prisma.broadcastCampaign.findMany({
+      getSharedPrismaClient().broadcastCampaign.findMany({
         where: {
           companyId,
           status: 'sent'
@@ -1182,7 +1182,7 @@ exports.getCampaignAnalytics = async (req, res) => {
     const companyId = req.user.companyId;
     const { campaignId } = req.params;
 
-    const campaign = await prisma.broadcastCampaign.findFirst({
+    const campaign = await getSharedPrismaClient().broadcastCampaign.findFirst({
       where: {
         id: campaignId,
         companyId
@@ -1294,12 +1294,12 @@ exports.createCustomerList = async (req, res) => {
       whereCondition.status = 'ACTIVE';
     }
 
-    const count = await prisma.conversation.count({ where: whereCondition });
+    const count = await getSharedPrismaClient().conversation.count({ where: whereCondition });
     console.log(`📊 [CREATE CUSTOMER LIST] عدد العملاء المطابقين: ${count}`);
 
     // إنشاء القائمة
     console.log('💾 [CREATE CUSTOMER LIST] حفظ القائمة في قاعدة البيانات');
-    const list = await prisma.customerList.create({
+    const list = await getSharedPrismaClient().customerList.create({
       data: {
         name,
         description: description || '',
@@ -1339,7 +1339,7 @@ exports.getCustomerLists = async (req, res) => {
 
     console.log('👥 [GET CUSTOMER LISTS] حساب إجمالي العملاء النشطين');
     // Get total customer count
-    const totalCustomers = await prisma.conversation.count({
+    const totalCustomers = await getSharedPrismaClient().conversation.count({
       where: {
         companyId,
         status: 'ACTIVE'
@@ -1353,7 +1353,7 @@ exports.getCustomerLists = async (req, res) => {
     const last24Hours = new Date();
     last24Hours.setHours(last24Hours.getHours() - 24);
     
-    const activeIn24Hours = await prisma.conversation.count({
+    const activeIn24Hours = await getSharedPrismaClient().conversation.count({
       where: {
         companyId,
         status: 'ACTIVE',
@@ -1371,7 +1371,7 @@ exports.getCustomerLists = async (req, res) => {
     console.log(`📊 [GET CUSTOMER LISTS] العملاء النشطين في آخر 24 ساعة: ${activeIn24Hours}`);
 
     console.log('📋 [GET CUSTOMER LISTS] جلب القوائم المخصصة');
-    const lists = await prisma.customerList.findMany({
+    const lists = await getSharedPrismaClient().customerList.findMany({
       where: { companyId },
       orderBy: {
         createdAt: 'desc'
@@ -1444,7 +1444,7 @@ exports.getCustomersInList = async (req, res) => {
     // حالة خاصة: جميع العملاء
     if (listId === 'all') {
       console.log('🌐 [GET CUSTOMERS IN LIST] جلب جميع العملاء النشطين');
-      const conversations = await prisma.conversation.findMany({
+      const conversations = await getSharedPrismaClient().conversation.findMany({
         where: {
           companyId,
           status: 'ACTIVE'
@@ -1498,7 +1498,7 @@ exports.getCustomersInList = async (req, res) => {
       const last24Hours = new Date();
       last24Hours.setHours(last24Hours.getHours() - 24);
       
-      const conversations = await prisma.conversation.findMany({
+      const conversations = await getSharedPrismaClient().conversation.findMany({
         where: {
           companyId,
           status: 'ACTIVE',
@@ -1556,7 +1556,7 @@ exports.getCustomersInList = async (req, res) => {
 
     console.log(`📋 [GET CUSTOMERS IN LIST] البحث عن القائمة المخصصة: ${listId}`);
     // للقوائم المخصصة
-    const list = await prisma.customerList.findFirst({
+    const list = await getSharedPrismaClient().customerList.findFirst({
       where: {
         id: listId,
         companyId
@@ -1595,7 +1595,7 @@ exports.getCustomersInList = async (req, res) => {
       whereCondition.status = 'ACTIVE';
     }
 
-    const conversations = await prisma.conversation.findMany({
+    const conversations = await getSharedPrismaClient().conversation.findMany({
       where: whereCondition,
       skip,
       take: parseInt(limit),
@@ -1656,14 +1656,14 @@ exports.getSettings = async (req, res) => {
     console.log(`🔍 [GET SETTINGS] معرف الشركة: ${companyId}`);
 
     console.log('🔍 [GET SETTINGS] البحث عن الإعدادات الحالية');
-    let settings = await prisma.broadcastSettings.findUnique({
+    let settings = await getSharedPrismaClient().broadcastSettings.findUnique({
       where: { companyId }
     });
 
     // إنشاء إعدادات افتراضية إذا لم تكن موجودة
     if (!settings) {
       console.log('📝 [GET SETTINGS] لم يتم العثور على إعدادات، إنشاء إعدادات افتراضية');
-      settings = await prisma.broadcastSettings.create({
+      settings = await getSharedPrismaClient().broadcastSettings.create({
         data: {
           companyId,
           defaultSendTime: '10:00',
@@ -1721,14 +1721,14 @@ exports.updateSettings = async (req, res) => {
 
     console.log('🔍 [UPDATE SETTINGS] التحقق من وجود الإعدادات');
     // التحقق من وجود الإعدادات
-    let settings = await prisma.broadcastSettings.findUnique({
+    let settings = await getSharedPrismaClient().broadcastSettings.findUnique({
       where: { companyId }
     });
 
     if (!settings) {
       console.log('📝 [UPDATE SETTINGS] إنشاء إعدادات جديدة');
       // إنشاء إعدادات جديدة
-      settings = await prisma.broadcastSettings.create({
+      settings = await getSharedPrismaClient().broadcastSettings.create({
         data: {
           companyId,
           ...updateData
@@ -1738,7 +1738,7 @@ exports.updateSettings = async (req, res) => {
     } else {
       console.log('🔄 [UPDATE SETTINGS] تحديث الإعدادات الموجودة');
       // تحديث الإعدادات الموجودة
-      settings = await prisma.broadcastSettings.update({
+      settings = await getSharedPrismaClient().broadcastSettings.update({
         where: { companyId },
         data: updateData
       });
@@ -1761,4 +1761,5 @@ exports.updateSettings = async (req, res) => {
     });
   }
 };
+
 

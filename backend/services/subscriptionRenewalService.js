@@ -1,7 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const { getSharedPrismaClient, safeQuery } = require('./sharedDatabase');
 
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 class SubscriptionRenewalService {
   constructor() {
@@ -29,7 +29,7 @@ class SubscriptionRenewalService {
 
       // Find subscriptions due for renewal today
       const subscriptionsDue = await safeQuery(async () => {
-        return await prisma.subscription.findMany({
+        return await getSharedPrismaClient().subscription.findMany({
           where: {
             status: 'ACTIVE',
             autoRenew: true,
@@ -85,7 +85,7 @@ class SubscriptionRenewalService {
 
       // Update subscription
       await safeQuery(async () => {
-        return await prisma.subscription.update({
+        return await getSharedPrismaClient().subscription.update({
           where: { id: subscription.id },
           data: {
             nextBillingDate,
@@ -152,7 +152,7 @@ class SubscriptionRenewalService {
     const totalAmount = subtotal + taxAmount;
 
     const invoice = await safeQuery(async () => {
-      return await prisma.invoice.create({
+      return await getSharedPrismaClient().invoice.create({
         data: {
           invoiceNumber,
           companyId: subscription.companyId,
@@ -254,7 +254,7 @@ class SubscriptionRenewalService {
       
       // Update subscription with failure info
       await safeQuery(async () => {
-        return await prisma.subscription.update({
+        return await getSharedPrismaClient().subscription.update({
           where: { id: subscription.id },
           data: {
             metadata: {
@@ -271,7 +271,7 @@ class SubscriptionRenewalService {
       const failureCount = (subscription.metadata?.renewalFailureCount || 0) + 1;
       if (failureCount >= 3) {
         await safeQuery(async () => {
-          return await prisma.subscription.update({
+          return await getSharedPrismaClient().subscription.update({
             where: { id: subscription.id },
             data: {
               status: 'SUSPENDED',
@@ -377,7 +377,7 @@ class SubscriptionRenewalService {
     try {
       
       const stats = await safeQuery(async () => {
-        return await prisma.subscription.groupBy({
+        return await getSharedPrismaClient().subscription.groupBy({
           by: ['status'],
           where: {
             nextBillingDate: {
@@ -410,3 +410,4 @@ class SubscriptionRenewalService {
 }
 
 module.exports = SubscriptionRenewalService;
+

@@ -1,5 +1,5 @@
 const { getSharedPrismaClient, safeQuery } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // Get all inventory items with filters
 exports.getInventory = async (req, res) => {
@@ -21,7 +21,7 @@ exports.getInventory = async (req, res) => {
     // Filter by low stock
     if (lowStock === 'true') {
       where.available = {
-        lte: prisma.raw('reorder_point')
+        lte: getSharedPrismaClient().raw('reorder_point')
       };
     }
 
@@ -30,7 +30,7 @@ exports.getInventory = async (req, res) => {
       where.available = 0;
     }
 
-    const inventory = await prisma.inventory.findMany({
+    const inventory = await getSharedPrismaClient().inventory.findMany({
       where,
       include: {
         product: {
@@ -75,7 +75,7 @@ exports.getAlerts = async (req, res) => {
     const companyId = req.user.companyId;
 
     // Get low stock items
-    const lowStockItems = await prisma.$queryRaw`
+    const lowStockItems = await getSharedPrismaClient().$queryRaw`
       SELECT 
         i.id,
         i.productId,
@@ -97,7 +97,7 @@ exports.getAlerts = async (req, res) => {
     `;
 
     // Get out of stock items
-    const outOfStockItems = await prisma.$queryRaw`
+    const outOfStockItems = await getSharedPrismaClient().$queryRaw`
       SELECT 
         i.id,
         i.productId,
@@ -140,7 +140,7 @@ exports.updateStock = async (req, res) => {
     const companyId = req.user.companyId;
 
     // Verify warehouse belongs to company
-    const warehouse = await prisma.warehouse.findFirst({
+    const warehouse = await getSharedPrismaClient().warehouse.findFirst({
       where: {
         id: warehouseId,
         companyId: companyId
@@ -155,7 +155,7 @@ exports.updateStock = async (req, res) => {
     }
 
     // Get or create inventory record
-    let inventory = await prisma.inventory.findUnique({
+    let inventory = await getSharedPrismaClient().inventory.findUnique({
       where: {
         productId_warehouseId: {
           productId,
@@ -165,7 +165,7 @@ exports.updateStock = async (req, res) => {
     });
 
     if (!inventory) {
-      inventory = await prisma.inventory.create({
+      inventory = await getSharedPrismaClient().inventory.create({
         data: {
           productId,
           warehouseId,
@@ -189,7 +189,7 @@ exports.updateStock = async (req, res) => {
     }
 
     // Update inventory
-    const updatedInventory = await prisma.inventory.update({
+    const updatedInventory = await getSharedPrismaClient().inventory.update({
       where: { id: inventory.id },
       data: {
         quantity: Math.max(0, newQuantity),
@@ -202,7 +202,7 @@ exports.updateStock = async (req, res) => {
     });
 
     // Create stock movement record
-    await prisma.stockMovement.create({
+    await getSharedPrismaClient().stockMovement.create({
       data: {
         productId,
         warehouseId,
@@ -236,7 +236,7 @@ exports.getProductInventory = async (req, res) => {
     const { productId } = req.params;
     const companyId = req.user.companyId;
 
-    const inventory = await prisma.inventory.findMany({
+    const inventory = await getSharedPrismaClient().inventory.findMany({
       where: {
         productId,
         warehouse: {
@@ -295,7 +295,7 @@ exports.getStockMovements = async (req, res) => {
       if (endDate) where.createdAt.lte = new Date(endDate);
     }
 
-    const movements = await prisma.stockMovement.findMany({
+    const movements = await getSharedPrismaClient().stockMovement.findMany({
       where,
       include: {
         product: {
@@ -329,3 +329,4 @@ exports.getStockMovements = async (req, res) => {
     });
   }
 };
+

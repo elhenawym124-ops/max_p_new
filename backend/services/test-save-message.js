@@ -3,7 +3,7 @@
  */
 
 const { getSharedPrismaClient } = require('./sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 const COMPANY_ID = 'cmem8ayyr004cufakqkcsyn97'; // شركة التسويق
 
@@ -14,7 +14,7 @@ async function testSaveMessage() {
     console.log('='.repeat(60) + '\n');
 
     // البحث عن customer اختبار
-    let testCustomer = await prisma.customer.findFirst({
+    let testCustomer = await getSharedPrismaClient().customer.findFirst({
       where: {
         companyId: COMPANY_ID,
         firstName: 'عميل اختبار',
@@ -23,7 +23,7 @@ async function testSaveMessage() {
     });
 
     if (!testCustomer) {
-      testCustomer = await prisma.customer.create({
+      testCustomer = await getSharedPrismaClient().customer.create({
         data: {
           companyId: COMPANY_ID,
           firstName: 'عميل اختبار',
@@ -38,7 +38,7 @@ async function testSaveMessage() {
     }
 
     // إنشاء محادثة TEST
-    const conversation = await prisma.conversation.create({
+    const conversation = await getSharedPrismaClient().conversation.create({
       data: {
         companyId: COMPANY_ID,
         customerId: testCustomer.id,
@@ -55,7 +55,7 @@ async function testSaveMessage() {
     console.log(`   Customer ID: ${conversation.customerId}\n`);
 
     // حفظ رسالة من المستخدم
-    const userMessage = await prisma.message.create({
+    const userMessage = await getSharedPrismaClient().message.create({
       data: {
         conversationId: conversation.id,
         content: 'رسالة اختبار من المستخدم',
@@ -70,7 +70,7 @@ async function testSaveMessage() {
     console.log(`   Is From Customer: ${userMessage.isFromCustomer}\n`);
 
     // حفظ رسالة من AI
-    const aiMessage = await prisma.message.create({
+    const aiMessage = await getSharedPrismaClient().message.create({
       data: {
         conversationId: conversation.id,
         content: 'رد اختبار من الذكاء الاصطناعي',
@@ -85,7 +85,7 @@ async function testSaveMessage() {
     console.log(`   Is From Customer: ${aiMessage.isFromCustomer}\n`);
 
     // التحقق من الرسائل
-    const messages = await prisma.message.findMany({
+    const messages = await getSharedPrismaClient().message.findMany({
       where: {
         conversationId: conversation.id
       },
@@ -110,9 +110,10 @@ async function testSaveMessage() {
     console.error('❌ خطأ في الاختبار:', error);
     console.error(error.stack);
   } finally {
-    await prisma.$disconnect();
+    await getSharedPrismaClient().$disconnect();
   }
 }
 
 testSaveMessage();
+
 

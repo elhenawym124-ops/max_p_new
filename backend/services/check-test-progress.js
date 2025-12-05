@@ -8,12 +8,12 @@ const COMPANY_ID = 'cmem8ayyr004cufakqkcsyn97'; // شركة التسويق
 
 async function checkProgress() {
   try {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     console.log('\n🔍 فحص تقدم الاختبار...\n');
 
     // البحث عن المحادثات الاختبارية
-    const conversations = await prisma.conversation.findMany({
+    const conversations = await getSharedPrismaClient().conversation.findMany({
       where: {
         companyId: COMPANY_ID,
         channel: 'TEST'
@@ -41,7 +41,7 @@ async function checkProgress() {
 
     for (const conv of conversations) {
       const messageCount = conv._count.messages;
-      const lastMessage = await prisma.message.findFirst({
+      const lastMessage = await getSharedPrismaClient().message.findFirst({
         where: { conversationId: conv.id },
         orderBy: { createdAt: 'desc' },
         select: {
@@ -65,7 +65,7 @@ async function checkProgress() {
     }
 
     // إحصائيات سريعة
-    const totalMessages = await prisma.message.count({
+    const totalMessages = await getSharedPrismaClient().message.count({
       where: {
         conversation: {
           companyId: COMPANY_ID,
@@ -74,7 +74,7 @@ async function checkProgress() {
       }
     });
 
-    const aiMessages = await prisma.message.count({
+    const aiMessages = await getSharedPrismaClient().message.count({
       where: {
         conversation: {
           companyId: COMPANY_ID,
@@ -84,7 +84,7 @@ async function checkProgress() {
       }
     });
 
-    const userMessages = await prisma.message.count({
+    const userMessages = await getSharedPrismaClient().message.count({
       where: {
         conversation: {
           companyId: COMPANY_ID,
@@ -126,4 +126,5 @@ setTimeout(() => {
   console.log('\n⏱️  انتهى وقت المراقبة\n');
   process.exit(0);
 }, 30 * 60 * 1000);
+
 

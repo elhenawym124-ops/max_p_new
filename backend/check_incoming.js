@@ -1,13 +1,13 @@
 const { getSharedPrismaClient } = require('./services/sharedDatabase');
 
 async function checkIncomingMessages() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     try {
         const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
 
         console.log(`🔎 Checking for INCOMING messages created after ${fiveMinutesAgo.toISOString()}`);
 
-        const messages = await prisma.whatsAppMessage.findMany({
+        const messages = await getSharedPrismaClient().whatsAppMessage.findMany({
             where: {
                 timestamp: { gt: fiveMinutesAgo },
                 fromMe: false
@@ -28,7 +28,7 @@ async function checkIncomingMessages() {
         });
 
         // Also check session status
-        const sessions = await prisma.whatsAppSession.findMany();
+        const sessions = await getSharedPrismaClient().whatsAppSession.findMany();
         console.log('\n--- Session Status ---');
         sessions.forEach(s => {
             console.log(`${s.name}: ${s.status}`);
@@ -42,3 +42,4 @@ async function checkIncomingMessages() {
 }
 
 checkIncomingMessages();
+

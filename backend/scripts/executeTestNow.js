@@ -12,10 +12,10 @@ async function executeTest() {
   try {
     console.log('🚀 بدء تشغيل الاختبار...\n');
     
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     // البحث عن شركة نشطة
-    const company = await prisma.company.findFirst({
+    const company = await getSharedPrismaClient().company.findFirst({
       where: { isActive: true },
       orderBy: { createdAt: 'asc' }
     });
@@ -58,4 +58,5 @@ async function executeTest() {
 }
 
 executeTest();
+
 

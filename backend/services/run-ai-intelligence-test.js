@@ -8,7 +8,7 @@ const questionsData = require('./ai-test-questions.json');
 const fs = require('fs');
 const path = require('path');
 const { getSharedPrismaClient } = require('./sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 class AITestRunner {
   constructor(companyId, customerId = null) {
@@ -27,7 +27,7 @@ class AITestRunner {
   async initializeConversation() {
     try {
       // البحث عن أو إنشاء customer
-      let customer = await prisma.customer.findFirst({
+      let customer = await getSharedPrismaClient().customer.findFirst({
         where: {
           companyId: this.companyId,
           firstName: 'عميل اختبار',
@@ -36,7 +36,7 @@ class AITestRunner {
       });
 
       if (!customer) {
-        customer = await prisma.customer.create({
+        customer = await getSharedPrismaClient().customer.create({
           data: {
             companyId: this.companyId,
             firstName: 'عميل اختبار',
@@ -50,7 +50,7 @@ class AITestRunner {
       this.customerId = customer.id;
 
       // إنشاء محادثة جديدة
-      const conversation = await prisma.conversation.create({
+      const conversation = await getSharedPrismaClient().conversation.create({
         data: {
           companyId: this.companyId,
           customerId: customer.id,
@@ -150,7 +150,7 @@ class AITestRunner {
       if (this.dbConversationId) {
         try {
           // حفظ رسالة المستخدم
-          const userMessage = await prisma.message.create({
+          const userMessage = await getSharedPrismaClient().message.create({
             data: {
               conversationId: this.dbConversationId,
               content: question,
@@ -161,7 +161,7 @@ class AITestRunner {
           });
 
           // حفظ رد AI
-          const aiMessage = await prisma.message.create({
+          const aiMessage = await getSharedPrismaClient().message.create({
             data: {
               conversationId: this.dbConversationId,
               content: responseContent,
@@ -172,7 +172,7 @@ class AITestRunner {
           });
 
           // تحديث المحادثة
-          await prisma.conversation.update({
+          await getSharedPrismaClient().conversation.update({
             where: { id: this.dbConversationId },
             data: {
               lastMessageAt: new Date(),
@@ -675,14 +675,14 @@ class AITestRunner {
 // الحصول على companyId من قاعدة البيانات
 async function getCompanyId() {
   try {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     // محاولة الحصول على companyId أو اسم الشركة من arguments
     if (process.argv[2]) {
       const input = process.argv[2];
       
       // محاولة البحث بالـ ID أولاً
-      const companyById = await prisma.company.findUnique({
+      const companyById = await getSharedPrismaClient().company.findUnique({
         where: { id: input }
       });
       
@@ -693,7 +693,7 @@ async function getCompanyId() {
       
       // إذا لم يتم العثور بالـ ID، جرب البحث بالاسم
       console.log(`🔍 البحث عن شركة بالاسم: "${input}"`);
-      const companiesByName = await prisma.company.findMany({
+      const companiesByName = await getSharedPrismaClient().company.findMany({
         where: {
           name: {
             contains: input
@@ -714,7 +714,7 @@ async function getCompanyId() {
 
     // البحث عن "شركة التسويق" بشكل افتراضي
     console.log(`🔍 البحث عن "شركة التسويق"...`);
-    const marketingCompany = await prisma.company.findFirst({
+    const marketingCompany = await getSharedPrismaClient().company.findFirst({
       where: {
         name: {
           contains: 'التسويق'
@@ -730,13 +730,13 @@ async function getCompanyId() {
     }
 
     // محاولة الحصول على الشركة mo-test أولاً
-    let company = await prisma.company.findUnique({
+    let company = await getSharedPrismaClient().company.findUnique({
       where: { id: 'cmhnzbjl50000ufus81imj8wq' }
     });
 
     // إذا لم توجد، احصل على أول شركة نشطة
     if (!company) {
-      company = await prisma.company.findFirst({
+      company = await getSharedPrismaClient().company.findFirst({
         where: { isActive: true },
         orderBy: { createdAt: 'desc' }
       });
@@ -748,7 +748,7 @@ async function getCompanyId() {
     }
 
     // إذا لم توجد شركة نشطة، جرب أي شركة
-    const anyCompany = await prisma.company.findFirst({
+    const anyCompany = await getSharedPrismaClient().company.findFirst({
       orderBy: { createdAt: 'desc' }
     });
 
@@ -807,4 +807,5 @@ if (require.main === module) {
 }
 
 module.exports = AITestRunner;
+
 

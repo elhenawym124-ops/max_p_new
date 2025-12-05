@@ -13,7 +13,7 @@ import {
     Typography,
     CircularProgress
 } from '@mui/material';
-import { PhotoCamera as PhotoCameraIcon } from '@mui/icons-material';
+import { PhotoCamera as PhotoCameraIcon, Sync as SyncIcon } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { apiClient as api } from '../../services/apiClient';
 
@@ -79,6 +79,26 @@ const ProfileDialog: React.FC<ProfileDialogProps> = ({
         }
     };
 
+    const handleSync = async () => {
+        setLoading(true);
+        try {
+            const response = await api.post('/whatsapp/profile/sync', { sessionId });
+            const { profile } = response.data;
+
+            if (profile) {
+                setName(profile.name || '');
+                setStatus(profile.status || '');
+                setPicturePreview(profile.profilePicUrl || null);
+                enqueueSnackbar('تمت مزامنة البيانات من واتساب بنجاح', { variant: 'success' });
+            }
+        } catch (error) {
+            console.error('Error syncing profile:', error);
+            enqueueSnackbar('فشل مزامنة البيانات من واتساب', { variant: 'error' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
             <DialogTitle>تحديث الملف الشخصي</DialogTitle>
@@ -131,6 +151,10 @@ const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 />
             </DialogContent>
             <DialogActions>
+                <Button onClick={handleSync} startIcon={<SyncIcon />} disabled={loading} color="info">
+                    مزامنة من واتساب
+                </Button>
+                <Box flexGrow={1} />
                 <Button onClick={onClose}>إلغاء</Button>
                 <Button onClick={handleSave} variant="contained" disabled={loading}>
                     {loading ? <CircularProgress size={24} /> : 'حفظ'}

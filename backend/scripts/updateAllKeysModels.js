@@ -3,7 +3,7 @@
  */
 
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 function generateId() {
     return 'c' + Math.random().toString(36).substr(2, 28);
@@ -37,7 +37,7 @@ async function updateAllKeysModels() {
 
         // جلب جميع المفاتيح (مركزية وخاصة بالشركات)
         console.log('🔍 جلب جميع مفاتيح Gemini...');
-        const allKeys = await prisma.geminiKey.findMany({
+        const allKeys = await getSharedPrismaClient().geminiKey.findMany({
             include: {
                 models: {
                     orderBy: {
@@ -85,7 +85,7 @@ async function updateAllKeysModels() {
                 console.log(`🔄 تحديث: ${key.name} (${keyTypeLabel}) - ${currentModelsCount} نموذج → 18 نموذج`);
 
                 // حذف النماذج القديمة
-                await prisma.geminiKeyModel.deleteMany({
+                await getSharedPrismaClient().geminiKeyModel.deleteMany({
                     where: {
                         keyId: key.id
                     }
@@ -93,7 +93,7 @@ async function updateAllKeysModels() {
 
                 // إضافة النماذج الجديدة (18 نموذج) - بسرعة أكبر باستخدام Promise.all
                 const modelPromises = availableModels.map(modelInfo => 
-                    prisma.geminiKeyModel.create({
+                    getSharedPrismaClient().geminiKeyModel.create({
                         data: {
                             id: generateId(),
                             keyId: key.id,
@@ -137,7 +137,7 @@ async function updateAllKeysModels() {
         // التحقق النهائي
         console.log('🔍 التحقق النهائي...\n');
         
-        const finalCheck = await prisma.geminiKey.findMany({
+        const finalCheck = await getSharedPrismaClient().geminiKey.findMany({
             include: {
                 models: true,
                 company: {
@@ -172,7 +172,7 @@ async function updateAllKeysModels() {
         console.error('Stack:', error.stack);
         process.exit(1);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
@@ -189,4 +189,5 @@ if (require.main === module) {
 }
 
 module.exports = { updateAllKeysModels };
+
 

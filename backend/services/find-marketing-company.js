@@ -6,12 +6,12 @@ const { getSharedPrismaClient } = require('./sharedDatabase');
 
 async function findCompany() {
   try {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     console.log('\n🔍 البحث عن شركة "شركة التسويق"...\n');
 
     // البحث بالاسم
-    const companies = await prisma.company.findMany({
+    const companies = await getSharedPrismaClient().company.findMany({
       where: {
         OR: [
           { name: { contains: 'التسويق' } },
@@ -33,7 +33,7 @@ async function findCompany() {
       console.log('❌ لم يتم العثور على شركة "شركة التسويق"');
       console.log('\n📋 جميع الشركات الموجودة:\n');
       
-      const allCompanies = await prisma.company.findMany({
+      const allCompanies = await getSharedPrismaClient().company.findMany({
         select: {
           id: true,
           name: true,
@@ -72,7 +72,7 @@ async function findCompany() {
     console.log(`\n✅ سيتم استخدام الشركة: ${company.name} (${company.id})\n`);
 
     // التحقق من AI Settings
-    const aiSettings = await prisma.aiSettings.findUnique({
+    const aiSettings = await getSharedPrismaClient().aiSettings.findUnique({
       where: { companyId: company.id }
     });
 
@@ -85,7 +85,7 @@ async function findCompany() {
     }
 
     // التحقق من Gemini Keys
-    const geminiKeys = await prisma.geminiKey.findMany({
+    const geminiKeys = await getSharedPrismaClient().geminiKey.findMany({
       where: {
         companyId: company.id,
         isActive: true
@@ -112,4 +112,5 @@ async function findCompany() {
 }
 
 findCompany();
+
 

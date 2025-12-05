@@ -1,5 +1,5 @@
 const { getSharedPrismaClient, initializeSharedDatabase, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 const getAllOrders = async(req , res)=>{
       try {
@@ -199,5 +199,41 @@ const getOneOrder = async(req , res)=>{
   }
 }
 
+const deleteAllOrders = async (req, res) => {
+  try {
+    console.log('🗑️ [ORDERS] Delete all orders request received');
+    
+    const companyId = req.user?.companyId;
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+      });
+    }
 
-module.exports = {getAllOrders , updateOrder ,getOneOrder }
+    // حذف جميع الطلبات للشركة
+    const deleteResult = await getSharedPrismaClient().order.deleteMany({
+      where: {
+        companyId: companyId
+      }
+    });
+
+    console.log(`✅ [ORDERS] Deleted ${deleteResult.count} orders for company ${companyId}`);
+
+    res.json({
+      success: true,
+      message: `تم حذف ${deleteResult.count} طلب بنجاح`,
+      deletedCount: deleteResult.count
+    });
+
+  } catch (error) {
+    console.error('❌ [ORDERS] Error deleting all orders:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في حذف الطلبات',
+      error: error.message
+    });
+  }
+};
+
+module.exports = {getAllOrders , updateOrder ,getOneOrder, deleteAllOrders }

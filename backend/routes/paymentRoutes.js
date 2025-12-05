@@ -3,7 +3,7 @@ const { getSharedPrismaClient } = require('../services/sharedDatabase');
 const { authenticateToken, requireSuperAdmin } = require('../middleware/superAdminMiddleware');
 
 const router = express.Router();
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 /**
  * Generate unique payment number
@@ -66,7 +66,7 @@ router.get('/', authenticateToken, requireSuperAdmin, async (req, res) => {
 
     // Get payments with related data
     const [payments, total] = await Promise.all([
-      prisma.payment.findMany({
+      getSharedPrismaClient().payment.findMany({
         where,
         include: {
           company: {
@@ -99,11 +99,11 @@ router.get('/', authenticateToken, requireSuperAdmin, async (req, res) => {
           [sortBy]: sortOrder
         }
       }),
-      prisma.payment.count({ where })
+      getSharedPrismaClient().payment.count({ where })
     ]);
 
     // Calculate statistics
-    const stats = await prisma.payment.groupBy({
+    const stats = await getSharedPrismaClient().payment.groupBy({
       by: ['status'],
       _count: {
         id: true
@@ -158,7 +158,7 @@ router.get('/:id', authenticateToken, requireSuperAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const payment = await prisma.payment.findUnique({
+    const payment = await getSharedPrismaClient().payment.findUnique({
       where: { id },
       include: {
         company: true,
@@ -214,7 +214,7 @@ router.post('/', authenticateToken, requireSuperAdmin, async (req, res) => {
     } = req.body;
 
     // Validate company exists
-    const company = await prisma.company.findUnique({
+    const company = await getSharedPrismaClient().company.findUnique({
       where: { id: companyId }
     });
 
@@ -228,7 +228,7 @@ router.post('/', authenticateToken, requireSuperAdmin, async (req, res) => {
     // Validate invoice if provided
     let invoice = null;
     if (invoiceId) {
-      invoice = await prisma.invoice.findUnique({
+      invoice = await getSharedPrismaClient().invoice.findUnique({
         where: { id: invoiceId }
       });
 
@@ -241,7 +241,7 @@ router.post('/', authenticateToken, requireSuperAdmin, async (req, res) => {
     }
 
     // Create payment
-    const payment = await prisma.payment.create({
+    const payment = await getSharedPrismaClient().payment.create({
       data: {
         paymentNumber: generatePaymentNumber(),
         companyId,
@@ -276,7 +276,7 @@ router.post('/', authenticateToken, requireSuperAdmin, async (req, res) => {
 
     // Update invoice status if payment covers full amount
     if (invoice && amount >= invoice.totalAmount) {
-      await prisma.invoice.update({
+      await getSharedPrismaClient().invoice.update({
         where: { id: invoiceId },
         data: {
           status: 'PAID',
@@ -302,3 +302,4 @@ router.post('/', authenticateToken, requireSuperAdmin, async (req, res) => {
 });
 
 module.exports = router;
+

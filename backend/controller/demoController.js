@@ -1,5 +1,5 @@
 const { getSharedPrismaClient, initializeSharedDatabase, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const createDemoUsers = async(req , res)=>{
       try {
     if (process.env.NODE_ENV === 'production') {
@@ -12,7 +12,7 @@ const createDemoUsers = async(req , res)=>{
     //console.log('🚀 إنشاء المستخدمين التجريبيين...');
 
     // إنشاء شركة تجريبية
-    const company = await prisma.company.upsert({
+    const company = await getSharedPrismaClient().company.upsert({
       where: { email: 'demo@smartchat.com' },
       update: {},
       create: {
@@ -62,7 +62,7 @@ const createDemoUsers = async(req , res)=>{
 
     const createdUsers = [];
     for (const userData of demoUsers) {
-      const user = await prisma.user.upsert({
+      const user = await getSharedPrismaClient().user.upsert({
         where: { email: userData.email },
         update: {
           isActive: true,

@@ -10,7 +10,7 @@
  */
 
 const { getSharedPrismaClient } = require('../sharedDatabase');
-const prisma = getSharedPrismaClient();
+// // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues // ❌ Removed to prevent early loading issues
 const WhatsAppManager = require('./WhatsAppManager');
 const socketService = require('../socketService');
 const getIO = () => socketService.getIO();
@@ -25,6 +25,12 @@ const getIO = () => socketService.getIO();
 async function sendText(sessionId, to, text, options = {}) {
     try {
         const session = WhatsAppManager.getSession(sessionId);
+        console.log(`🔍 [DEBUG] sendText: Retrieving session ${sessionId}`, {
+            exists: !!session,
+            status: session?.status,
+            isConnected: session?.status === 'connected'
+        });
+
         if (!session || session.status !== 'connected') {
             throw new Error('الجلسة غير متصلة');
         }
@@ -66,19 +72,7 @@ async function sendText(sessionId, to, text, options = {}) {
             interactiveData: options.interactiveData ? JSON.stringify(options.interactiveData) : null,
             isAIResponse: options.isAIResponse || false,
             aiConfidence: options.aiConfidence
-        });
-
-        // إرسال عبر Socket.IO
-        const io = getIO();
-        const sessionData = await prisma.whatsAppSession.findUnique({
-            where: { id: sessionId },
-            select: { companyId: true }
-        });
-
-        io?.to(`company_${sessionData?.companyId}`).emit('whatsapp:message:sent', {
-            sessionId,
-            message: savedMessage
-        });
+        }, { companyId: session.companyId });
 
         // تحديث جهة الاتصال
         await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock, { isOutgoing: true });
@@ -124,7 +118,7 @@ async function sendImage(sessionId, to, imageSource, caption = '', options = {})
             mediaType: 'image',
             mediaMimeType: imageSource.mimetype,
             isAIResponse: options.isAIResponse || false
-        });
+        }, { companyId: session.companyId });
 
         // تحديث جهة الاتصال
         await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock, { isOutgoing: true });
@@ -163,7 +157,7 @@ async function sendVideo(sessionId, to, videoSource, caption = '', options = {})
             mediaUrl: videoSource.url,
             mediaType: 'video',
             mediaMimeType: videoSource.mimetype
-        });
+        }, { companyId: session.companyId });
 
         // تحديث جهة الاتصال
         await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock, { isOutgoing: true });
@@ -201,7 +195,7 @@ async function sendAudio(sessionId, to, audioSource, options = {}) {
             mediaUrl: audioSource.url,
             mediaType: 'audio',
             mediaMimeType: audioSource.mimetype
-        });
+        }, { companyId: session.companyId });
 
         // تحديث جهة الاتصال
         await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock, { isOutgoing: true });
@@ -242,7 +236,7 @@ async function sendDocument(sessionId, to, documentSource, options = {}) {
             mediaType: 'document',
             mediaMimeType: documentSource.mimetype,
             mediaFileName: documentSource.fileName
-        });
+        }, { companyId: session.companyId });
 
         // تحديث جهة الاتصال
         await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock, { isOutgoing: true });
@@ -281,7 +275,7 @@ async function sendLocation(sessionId, to, latitude, longitude, options = {}) {
             messageId: result.key.id,
             type: 'LOCATION',
             content: `${latitude},${longitude}`
-        });
+        }, { companyId: session.companyId });
 
         // تحديث جهة الاتصال
         await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock, { isOutgoing: true });
@@ -324,7 +318,7 @@ END:VCARD`;
             messageId: result.key.id,
             type: 'CONTACT',
             content: contact.fullName
-        });
+        }, { companyId: session.companyId });
 
         // تحديث جهة الاتصال
         await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock, { isOutgoing: true });
@@ -414,19 +408,7 @@ async function sendButtons(sessionId, to, text, buttons, options = {}) {
             content: text,
             interactiveData: JSON.stringify({ buttons, footer: options.footer, header: options.header }),
             isAIResponse: options.isAIResponse || false
-        });
-
-        // إرسال عبر Socket.IO
-        const io = getIO();
-        const sessionData = await prisma.whatsAppSession.findUnique({
-            where: { id: sessionId },
-            select: { companyId: true }
-        });
-
-        io?.to(`company_${sessionData?.companyId}`).emit('whatsapp:message:sent', {
-            sessionId,
-            message: savedMessage
-        });
+        }, { companyId: session.companyId });
 
         // تحديث جهة الاتصال
         await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock, { isOutgoing: true });
@@ -486,19 +468,7 @@ async function sendList(sessionId, to, text, buttonText, sections, options = {})
             content: text,
             interactiveData: JSON.stringify({ buttonText, sections, title: options.title, footer: options.footer }),
             isAIResponse: options.isAIResponse || false
-        });
-
-        // إرسال عبر Socket.IO
-        const io = getIO();
-        const sessionData = await prisma.whatsAppSession.findUnique({
-            where: { id: sessionId },
-            select: { companyId: true }
-        });
-
-        io?.to(`company_${sessionData?.companyId}`).emit('whatsapp:message:sent', {
-            sessionId,
-            message: savedMessage
-        });
+        }, { companyId: session.companyId });
 
         // تحديث جهة الاتصال
         await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock, { isOutgoing: true });
@@ -556,19 +526,9 @@ async function sendProduct(sessionId, to, product, options = {}) {
             mediaUrl: product.imageUrl,
             interactiveData: JSON.stringify({ product, buttons: options.buttons }),
             isAIResponse: options.isAIResponse || false
-        });
+        }, { companyId: session.companyId });
 
-        // إرسال عبر Socket.IO
-        const io = getIO();
-        const sessionData = await prisma.whatsAppSession.findUnique({
-            where: { id: sessionId },
-            select: { companyId: true }
-        });
 
-        io?.to(`company_${sessionData?.companyId}`).emit('whatsapp:message:sent', {
-            sessionId,
-            message: savedMessage
-        });
 
         // تحديث جهة الاتصال
         await WhatsAppManager.updateContact(sessionId, jid, { pushName: undefined }, session.sock, { isOutgoing: true });
@@ -586,7 +546,7 @@ async function sendProduct(sessionId, to, product, options = {}) {
 async function sendQuickReply(sessionId, to, quickReplyId, variables = {}) {
     try {
         // جلب الرد السريع
-        const quickReply = await prisma.whatsAppQuickReply.findUnique({
+        const quickReply = await getSharedPrismaClient().whatsAppQuickReply.findUnique({
             where: { id: quickReplyId }
         });
 
@@ -604,7 +564,7 @@ async function sendQuickReply(sessionId, to, quickReplyId, variables = {}) {
         const result = await sendText(sessionId, to, content);
 
         // تحديث إحصائيات الرد السريع
-        await prisma.whatsAppQuickReply.update({
+        await getSharedPrismaClient().whatsAppQuickReply.update({
             where: { id: quickReplyId },
             data: {
                 usageCount: { increment: 1 },
@@ -638,14 +598,14 @@ async function getMessages(sessionId, remoteJid, options = {}) {
             where.timestamp = { gt: new Date(after) };
         }
 
-        const messages = await prisma.whatsAppMessage.findMany({
+        const messages = await getSharedPrismaClient().whatsAppMessage.findMany({
             where,
             orderBy: { timestamp: 'desc' },
             skip: (page - 1) * limit,
             take: limit
         });
 
-        const total = await prisma.whatsAppMessage.count({ where });
+        const total = await getSharedPrismaClient().whatsAppMessage.count({ where });
 
         return {
             messages: messages.reverse(),
@@ -685,7 +645,7 @@ async function deleteMessage(sessionId, remoteJid, messageId, forEveryone = fals
         }
 
         // حذف من قاعدة البيانات
-        await prisma.whatsAppMessage.deleteMany({
+        await getSharedPrismaClient().whatsAppMessage.deleteMany({
             where: { messageId }
         });
 
@@ -709,7 +669,7 @@ async function markAsRead(sessionId, remoteJid) {
         const jid = formatJid(remoteJid);
 
         // جلب آخر رسالة غير مقروءة
-        const lastMessage = await prisma.whatsAppMessage.findFirst({
+        const lastMessage = await getSharedPrismaClient().whatsAppMessage.findFirst({
             where: {
                 sessionId,
                 remoteJid: jid,
@@ -750,7 +710,7 @@ async function markAsRead(sessionId, remoteJid) {
         }
 
         // تحديث قاعدة البيانات
-        await prisma.whatsAppMessage.updateMany({
+        await getSharedPrismaClient().whatsAppMessage.updateMany({
             where: {
                 sessionId,
                 remoteJid: jid,
@@ -759,7 +719,7 @@ async function markAsRead(sessionId, remoteJid) {
             data: { status: 'READ' }
         });
 
-        await prisma.whatsAppContact.updateMany({
+        await getSharedPrismaClient().whatsAppContact.updateMany({
             where: {
                 sessionId,
                 jid
@@ -777,9 +737,27 @@ async function markAsRead(sessionId, remoteJid) {
 /**
  * حفظ رسالة صادرة
  */
-async function saveOutgoingMessage(sessionId, remoteJid, data) {
-    return await prisma.whatsAppMessage.create({
-        data: {
+async function saveOutgoingMessage(sessionId, remoteJid, data, options = {}) {
+    const savedMessage = await getSharedPrismaClient().whatsAppMessage.upsert({
+        where: { messageId: data.messageId },
+        update: {
+            sessionId,
+            remoteJid,
+            fromMe: true,
+            messageType: data.type,
+            content: data.content,
+            mediaUrl: data.mediaUrl,
+            mediaType: data.mediaType,
+            mediaMimeType: data.mediaMimeType,
+            mediaFileName: data.mediaFileName,
+            quotedMessageId: data.quotedMessageId,
+            interactiveData: data.interactiveData,
+            status: 'SENT',
+            timestamp: new Date(),
+            isAIResponse: data.isAIResponse || false,
+            aiConfidence: data.aiConfidence
+        },
+        create: {
             sessionId,
             remoteJid,
             messageId: data.messageId,
@@ -798,6 +776,35 @@ async function saveOutgoingMessage(sessionId, remoteJid, data) {
             aiConfidence: data.aiConfidence
         }
     });
+
+    // Emit socket event
+    try {
+        const io = getIO();
+        let companyId = options.companyId;
+
+        if (!companyId) {
+            const session = await getSharedPrismaClient().whatsAppSession.findUnique({
+                where: { id: sessionId },
+                select: { companyId: true }
+            });
+            companyId = session?.companyId;
+        }
+
+        if (companyId) {
+            console.log(`🔌 [DEBUG] Emitting whatsapp:message:sent to company_${companyId}`, {
+                sessionId,
+                messageId: savedMessage.id
+            });
+            io?.to(`company_${companyId}`).emit('whatsapp:message:sent', {
+                sessionId,
+                message: savedMessage
+            });
+        }
+    } catch (e) {
+        console.error('Error emitting socket event:', e);
+    }
+
+    return savedMessage;
 }
 
 /**
@@ -858,7 +865,7 @@ async function sendPoll(sessionId, to, pollData, options = {}) {
             content: pollData.name,
             interactiveData: JSON.stringify(pollData),
             isAIResponse: options.isAIResponse || false
-        });
+        }, { companyId: session.companyId });
 
         return savedMessage;
     } catch (error) {
@@ -893,7 +900,7 @@ async function sendOrder(sessionId, to, orderData, options = {}) {
             content: `طلب: ${orderData.orderId || ''}`,
             interactiveData: JSON.stringify(orderData),
             isAIResponse: options.isAIResponse || false
-        });
+        }, { companyId: session.companyId });
 
         return savedMessage;
     } catch (error) {
@@ -926,7 +933,7 @@ async function sendCatalog(sessionId, to, catalogData, options = {}) {
             content: 'كتالوج المنتجات',
             interactiveData: JSON.stringify(catalogData),
             isAIResponse: options.isAIResponse || false
-        });
+        }, { companyId: session.companyId });
 
         return savedMessage;
     } catch (error) {
@@ -1018,7 +1025,7 @@ async function sendTemplateMessage(sessionId, to, templateId, parameters = {}, o
             content: `Template: ${templateId}`,
             interactiveData: JSON.stringify({ templateId, parameters }),
             isAIResponse: options.isAIResponse || false
-        });
+        }, { companyId: session.companyId });
 
         return savedMessage;
     } catch (error) {
@@ -1073,3 +1080,5 @@ module.exports = {
     sendTemplateMessage,
     getMessageTemplate
 };
+
+

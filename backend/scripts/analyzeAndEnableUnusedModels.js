@@ -98,7 +98,7 @@ const unusedModels = [
 ];
 
 async function analyzeAndEnable() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     try {
         console.log('\n📊 تحليل النماذج غير المستخدمة\n');
@@ -139,7 +139,7 @@ async function analyzeAndEnable() {
         console.log('\n🔧 تفعيل النماذج القابلة للتفعيل...\n');
         
         // جلب جميع المفاتيح النشطة
-        const keys = await prisma.geminiKey.findMany({
+        const keys = await getSharedPrismaClient().geminiKey.findMany({
             where: {
                 isActive: true
             }
@@ -153,7 +153,7 @@ async function analyzeAndEnable() {
             console.log(`🔑 المفتاح: ${key.name} (ID: ${key.id})`);
             
             for (const modelInfo of canEnable) {
-                const model = await prisma.geminiKeyModel.findFirst({
+                const model = await getSharedPrismaClient().geminiKeyModel.findFirst({
                     where: {
                         keyId: key.id,
                         model: modelInfo.model
@@ -162,7 +162,7 @@ async function analyzeAndEnable() {
                 
                 if (model) {
                     if (!model.isEnabled) {
-                        await prisma.geminiKeyModel.update({
+                        await getSharedPrismaClient().geminiKeyModel.update({
                             where: { id: model.id },
                             data: { isEnabled: true }
                         });
@@ -205,9 +205,10 @@ async function analyzeAndEnable() {
         console.error('❌ خطأ:', error.message);
         console.error(error.stack);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 analyzeAndEnable();
+
 

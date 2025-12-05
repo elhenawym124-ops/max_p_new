@@ -1,6 +1,6 @@
 const { securityMonitor } = require('../middleware/securityMonitor');
 const { getSharedPrismaClient, initializeSharedDatabase, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const getSecurityStats = async(req, res) => {
   try {
     const report = securityMonitor.getDailySecurityReport();

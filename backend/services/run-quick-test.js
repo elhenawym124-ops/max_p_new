@@ -8,10 +8,10 @@ const { getSharedPrismaClient } = require('./sharedDatabase');
 
 async function quickTest() {
   try {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     // الحصول على الشركة mo-test
-    const company = await prisma.company.findFirst({
+    const company = await getSharedPrismaClient().company.findFirst({
       where: {
         OR: [
           { name: { contains: 'mo-test' } },
@@ -86,4 +86,5 @@ async function quickTest() {
 }
 
 quickTest();
+
 

@@ -6,13 +6,13 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 
 async function testGemini3Pro() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     try {
         console.log('\n🧪 اختبار gemini-3-pro...\n');
 
         // الحصول على مفتاح مركزي
-        const key = await prisma.geminiKey.findFirst({
+        const key = await getSharedPrismaClient().geminiKey.findFirst({
             where: { keyType: 'CENTRAL', isActive: true },
             orderBy: { priority: 'asc' }
         });
@@ -42,9 +42,10 @@ async function testGemini3Pro() {
             console.error('⚠️ النموذج غير متوفر (404) - يجب إبقاؤه معطلاً\n');
         }
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 testGemini3Pro();
+
 

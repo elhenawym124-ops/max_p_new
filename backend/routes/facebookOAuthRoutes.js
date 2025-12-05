@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // Import authentication middleware
 const { requireAuth } = require('../middleware/auth');
@@ -184,7 +184,7 @@ router.get('/callback', async (req, res) => {
       return res.redirect(`${redirectTarget}?error=state_expired`);
     }
 
-    const company = await prisma.company.findUnique({
+    const company = await getSharedPrismaClient().company.findUnique({
       where: { id: companyId }
     });
 
@@ -223,7 +223,7 @@ router.get('/callback', async (req, res) => {
       ? { facebookPixelAccessToken: userAccessToken }
       : { facebookUserAccessToken: userAccessToken };
     
-    await prisma.company.update({
+    await getSharedPrismaClient().company.update({
       where: { id: companyId },
       data: updateData
     });
@@ -232,7 +232,7 @@ router.get('/callback', async (req, res) => {
       console.log('✅ [PIXELS] Saved pixel access token to company');
       
       // ✅ التحقق من أن Token تم حفظه بشكل صحيح
-      const savedCompany = await prisma.company.findUnique({
+      const savedCompany = await getSharedPrismaClient().company.findUnique({
         where: { id: companyId },
         select: { facebookPixelAccessToken: true }
       });
@@ -312,7 +312,7 @@ router.get('/callback', async (req, res) => {
 
     // 🚀 جلب كل الصفحات الموجودة مرة واحدة (بدلاً من استعلام لكل صفحة)
     const pageIds = allPages.map(p => p.id);
-    const existingPagesInDB = await prisma.facebookPage.findMany({
+    const existingPagesInDB = await getSharedPrismaClient().facebookPage.findMany({
       where: {
         pageId: { in: pageIds }
       },
@@ -360,7 +360,7 @@ router.get('/callback', async (req, res) => {
         if (existingPageInDB && existingPageInDB.companyId === companyId) {
           // تحديث فقط إذا تغير التوكن (توفير database writes)
           if (existingPageInDB.pageAccessToken !== page.access_token) {
-            savedPage = await prisma.facebookPage.update({
+            savedPage = await getSharedPrismaClient().facebookPage.update({
               where: { pageId: page.id },
               data: {
                 pageAccessToken: page.access_token,
@@ -379,7 +379,7 @@ router.get('/callback', async (req, res) => {
         } 
         // ➕ إذا كانت الصفحة غير مربوطة أو مربوطة بدون companyId، اربطها
         else {
-          savedPage = await prisma.facebookPage.upsert({
+          savedPage = await getSharedPrismaClient().facebookPage.upsert({
             where: { pageId: page.id },
             update: {
               pageAccessToken: page.access_token,
@@ -453,7 +453,7 @@ router.get('/callback', async (req, res) => {
       
       // 💾 حفظ جميع الصفحات المتخطاة دفعة واحدة (batch insert)
       try {
-        await prisma.skippedFacebookPage.createMany({
+        await getSharedPrismaClient().skippedFacebookPage.createMany({
           data: skippedPages.map(sp => ({
             pageId: sp.pageId,
             pageName: sp.pageName,
@@ -553,7 +553,7 @@ router.post('/test-subscription', requireAuth, async (req, res) => {
     }
 
     // Get page from database
-    const page = await prisma.facebookPage.findFirst({
+    const page = await getSharedPrismaClient().facebookPage.findFirst({
       where: {
         pageId: pageId,
         companyId: companyId
@@ -624,7 +624,7 @@ router.get('/status', requireAuth, async (req, res) => {
       });
     }
 
-    const connectedPages = await prisma.facebookPage.findMany({
+    const connectedPages = await getSharedPrismaClient().facebookPage.findMany({
       where: {
         companyId: companyId,
         status: 'connected'
@@ -695,7 +695,7 @@ router.delete('/disconnect', requireAuth, async (req, res) => {
       });
     }
 
-    const result = await prisma.facebookPage.updateMany({
+    const result = await getSharedPrismaClient().facebookPage.updateMany({
       where: {
         id: { in: pageIds },
         companyId: companyId
@@ -747,7 +747,7 @@ router.get('/skipped-pages', requireAuth, async (req, res) => {
     }
 
     // جلب الصفحات المتخطاة الغير محلولة
-    const skippedPages = await prisma.skippedFacebookPage.findMany({
+    const skippedPages = await getSharedPrismaClient().skippedFacebookPage.findMany({
       where: {
         attemptedCompanyId: companyId,
         isResolved: false
@@ -801,7 +801,7 @@ router.post('/resolve-skipped', requireAuth, async (req, res) => {
 
     if (pageIds && Array.isArray(pageIds) && pageIds.length > 0) {
       // Mark specific pages as resolved
-      const result = await prisma.skippedFacebookPage.updateMany({
+      const result = await getSharedPrismaClient().skippedFacebookPage.updateMany({
         where: {
           id: { in: pageIds },
           attemptedCompanyId: companyId
@@ -814,7 +814,7 @@ router.post('/resolve-skipped', requireAuth, async (req, res) => {
       resolvedCount = result.count;
     } else {
       // Mark all skipped pages for this company as resolved
-      const result = await prisma.skippedFacebookPage.updateMany({
+      const result = await getSharedPrismaClient().skippedFacebookPage.updateMany({
         where: {
           attemptedCompanyId: companyId,
           isResolved: false
@@ -857,7 +857,7 @@ router.get('/debug', requireAuth, async (req, res) => {
       });
     }
 
-    const allPages = await prisma.facebookPage.findMany({
+    const allPages = await getSharedPrismaClient().facebookPage.findMany({
       where: {
         company: {
           id: companyId
@@ -869,7 +869,7 @@ router.get('/debug', requireAuth, async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
 
-    const connectedPages = await prisma.facebookPage.findMany({
+    const connectedPages = await getSharedPrismaClient().facebookPage.findMany({
       where: {
         company: {
           id: companyId
@@ -1029,7 +1029,7 @@ router.get('/pixel-callback', async (req, res) => {
       return res.redirect(`${redirectBaseUrl}/advertising/facebook-pixel?error=state_expired`);
     }
 
-    const company = await prisma.company.findUnique({
+    const company = await getSharedPrismaClient().company.findUnique({
       where: { id: companyId }
     });
 
@@ -1056,7 +1056,7 @@ router.get('/pixel-callback', async (req, res) => {
     console.log('✅ [PIXELS] Got user access token for Pixels');
 
     // 💾 حفظ Pixel Access Token في Company (منفصل عن facebookUserAccessToken)
-    await prisma.company.update({
+    await getSharedPrismaClient().company.update({
       where: { id: companyId },
       data: { facebookPixelAccessToken: pixelAccessToken }
     });
@@ -1085,7 +1085,7 @@ const handlePixelTokenError = async (error, companyId) => {
     
     // حذف Pixel Token فقط (لا نمس facebookUserAccessToken)
     try {
-      await prisma.company.update({
+      await getSharedPrismaClient().company.update({
         where: { id: companyId },
         data: { facebookPixelAccessToken: null }
       });
@@ -1127,7 +1127,7 @@ router.get('/pixels', requireAuth, async (req, res) => {
     console.log('🎯 [PIXELS] Fetching pixels for company:', companyId);
 
     // Get company with Facebook Pixel Access Token (منفصل عن Pages Token)
-    const company = await prisma.company.findUnique({
+    const company = await getSharedPrismaClient().company.findUnique({
       where: { id: companyId },
       select: { facebookPixelAccessToken: true }
     });
@@ -1197,7 +1197,7 @@ router.get('/pixels', requireAuth, async (req, res) => {
         
         // إذا كانت الصلاحيات المطلوبة مفقودة، احذف Token واطلب إعادة الربط
         console.warn('⚠️ [PIXELS] Clearing token due to missing permissions. User needs to re-authorize.');
-        await prisma.company.update({
+        await getSharedPrismaClient().company.update({
           where: { id: companyId },
           data: { facebookPixelAccessToken: null }
         });
@@ -1307,7 +1307,7 @@ router.get('/pixels', requireAuth, async (req, res) => {
       console.warn('⚠️ [PIXELS] Clearing token to allow re-authentication with correct account');
       
       // حذف Token القديم للسماح بإعادة الربط بحساب آخر
-      await prisma.company.update({
+      await getSharedPrismaClient().company.update({
         where: { id: companyId },
         data: { facebookPixelAccessToken: null }
       });
@@ -1381,7 +1381,7 @@ router.get('/pixels', requireAuth, async (req, res) => {
       console.warn('⚠️ [PIXELS] Clearing token due to missing permissions. User needs to re-authorize.');
       
       // حذف Token وطلب إعادة الربط
-      await prisma.company.update({
+      await getSharedPrismaClient().company.update({
         where: { id: companyId },
         data: { facebookPixelAccessToken: null }
       });
@@ -1468,7 +1468,7 @@ router.post('/generate-pixel-token', requireAuth, async (req, res) => {
     console.log('🔑 [TOKEN] Generating access token for pixel:', pixelId);
 
     // Get Facebook page access token
-    const pages = await prisma.facebookPage.findMany({
+    const pages = await getSharedPrismaClient().facebookPage.findMany({
       where: {
         companyId: companyId,
         status: 'connected'

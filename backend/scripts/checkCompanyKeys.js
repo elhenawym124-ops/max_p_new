@@ -3,14 +3,14 @@
  */
 
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 async function checkCompanyKeys() {
     try {
         console.log('\n🔍 ========== فحص وضع مفاتيح "شركة التسويق" ==========\n');
 
         // 1. البحث عن الشركة
-        const companies = await prisma.company.findMany({
+        const companies = await getSharedPrismaClient().company.findMany({
             where: {
                 OR: [
                     { name: { contains: 'التسويق' } },
@@ -40,7 +40,7 @@ async function checkCompanyKeys() {
             console.log('');
 
             // 2. فحص مفاتيح الشركة
-            const companyKeys = await prisma.geminiKey.findMany({
+            const companyKeys = await getSharedPrismaClient().geminiKey.findMany({
                 where: {
                     companyId: company.id,
                     keyType: 'COMPANY'
@@ -65,7 +65,7 @@ async function checkCompanyKeys() {
             console.log('');
 
             // 3. فحص المفاتيح المركزية
-            const centralKeys = await prisma.geminiKey.findMany({
+            const centralKeys = await getSharedPrismaClient().geminiKey.findMany({
                 where: {
                     keyType: 'CENTRAL',
                     isActive: true
@@ -88,7 +88,7 @@ async function checkCompanyKeys() {
                 console.log('');
                 
                 // فحص جميع المفاتيح المركزية (حتى غير النشطة)
-                const allCentralKeys = await prisma.geminiKey.findMany({
+                const allCentralKeys = await getSharedPrismaClient().geminiKey.findMany({
                     where: {
                         keyType: 'CENTRAL'
                     },
@@ -113,7 +113,7 @@ async function checkCompanyKeys() {
             // 4. التحقق من النماذج المتاحة في المفاتيح المركزية
             if (centralKeys.length > 0) {
                 for (const centralKey of centralKeys) {
-                    const availableModels = await prisma.geminiKeyModel.findMany({
+                    const availableModels = await getSharedPrismaClient().geminiKeyModel.findMany({
                         where: {
                             keyId: centralKey.id,
                             isEnabled: true
@@ -149,9 +149,10 @@ async function checkCompanyKeys() {
     } catch (error) {
         console.error('❌ خطأ في الفحص:', error);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 checkCompanyKeys();
+
 

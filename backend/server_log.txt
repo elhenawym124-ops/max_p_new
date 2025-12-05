@@ -1,0 +1,72 @@
+
+> chat-backend@1.0.0 start
+> node server.js
+
+[dotenv@17.2.0] injecting env (44) from .env (tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`)
+🌍 [BACKEND-ENV] Environment Detection: {
+  environment: 'development',
+  frontendUrl: 'http://localhost:3008',
+  backendUrl: 'http://localhost:3007',
+  apiBaseUrl: 'http://localhost:3007/api/v1',
+  corsOrigins: [Function: corsOrigins]
+}
+⚠️ Sharp not available - image compression disabled
+🔧 [SharedDB] Creating stable PrismaClient...
+✅ [SharedDB] Stable PrismaClient created
+✅ [QUALITY-MONITOR] Quality Monitor Service initialized (Singleton)
+🚀 [BROADCAST CONTROLLER] تم تحميل وحدة تحكم البرودكاست بنجاح
+✅ [IMPORT-ROUTES] Socket.IO connected
+🛍️ [SERVER] Registering public storefront routes...
+✅ [SERVER] Public storefront routes registered
+🔧 [SERVER] Attempting database initialization...
+🔧 [SharedDB] Starting database initialization...
+🔄 [SharedDB] Connection attempt 1/3...
+🔧 [SharedDB] Creating stable PrismaClient...
+✅ [AI-MONITOR] Socket service connected
+🔄 [AI-CACHE] Pre-loading AI settings for 29 companies...
+🔄 [SharedDB] Waiting for existing connection attempt...
+🔄 [SharedDB] Waiting for existing connection attempt...
+🔄 [SharedDB] Waiting for existing connection attempt...
+🔄 [SharedDB] Waiting for existing connection attempt...
+🔄 [SharedDB] Waiting for existing connection attempt...
+🔄 [SharedDB] Waiting for existing connection attempt...
+🔄 [SharedDB] Waiting for existing connection attempt...
+🔄 [SharedDB] Waiting for existing connection attempt...
+🔄 [SharedDB] Waiting for existing connection attempt...
+🔄 [SharedDB] Waiting for existing connection attempt...
+✅ [SharedDB] Database connection established and verified
+✅ [AI-CACHE] Loaded AI settings for company cmfor9i0l0010ufn0q87x5340: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cmhhs2wlt07irjuczh697clps: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cmem8ayyr004cufakqkcsyn97: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cmgz2gs6100s7ju4lnrg9j3pp: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cmhdhqfj3004yjuib3kf54fol: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cmfc8738k007qjuu6qm4xtn30: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cmggkcull008yjuye0y0n2k37: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cmggk747a0077juyenygk79lt: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cmggjt2a0004ijuyeimvow0zr: ENABLED
+✅ [AI-CACHE] Loaded AI settings for company cmimgt3f20000ufq40f18zzrh: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cmimgv8v60000ufjwzpm0tn0g: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cmimh5opj0000ufc4wves99fn: DISABLED
+✅ [SharedDB] Database test successful
+✅ [SERVER] Database initialized successfully
+2025-12-05 03:28:47 [[31merror[39m]: Uncaught Exception {
+  "error": "listen EADDRINUSE: address already in use :::3007",
+  "stack": "Error: listen EADDRINUSE: address already in use :::3007\n    at Server.setupListenHandle [as _listen2] (node:net:1937:16)\n    at listenInCluster (node:net:1994:12)\n    at Server.listen (node:net:2099:7)\n    at startServer (C:\\Users\\38asfasf\\Downloads\\max_p_new\\backend\\server.js:2728:10)",
+  "type": "uncaughtException"
+}
+✅ [AI-CACHE] Loaded AI settings for company cmimhaaq80000uf94upujaz23: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cme8zve740006ufbcre9qzue4: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cmfpthoqo0000ufp0vdfsytps: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cmekj0vn20000ufy8tu0g6fm3: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cmfcapufs00bnjuu6esowir9g: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cmggjt282004gjuye28l3s0th: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cme8oj1fo000cufdcg2fquia9: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cmgs2qw7a01ngju8zebkaylki: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cmh7kwnk00000vafc32y3c1on: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cmhhrbnv406kujuczhuwiv10l: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company test-company-id: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cmhnzbjl50000ufus81imj8wq: ENABLED
+✅ [AI-CACHE] Loaded AI settings for company cmgz0hkqh014ajutm39gwzzmt: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cme8ondkz0000uf6s5gy28i17: DISABLED
+✅ [AI-CACHE] Loaded AI settings for company cmgf4xdyj0006juavtq2f0sf9: ENABLED
+✅ [AI-CACHE] Loaded AI settings for company cmgj92byv003djutl34dkh6ab: DISABLED

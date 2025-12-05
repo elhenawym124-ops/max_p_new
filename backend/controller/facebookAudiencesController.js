@@ -6,14 +6,14 @@
 
 const FacebookAudiencesService = require('../services/facebookAudiencesService');
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 /**
  * جلب Access Token للشركة
  */
 async function getCompanyAdsAccessToken(companyId) {
   try {
-    const company = await prisma.company.findUnique({
+    const company = await getSharedPrismaClient().company.findUnique({
       where: { id: companyId },
       select: { 
         facebookAdsAccessToken: true,
@@ -49,7 +49,7 @@ const getCustomAudiences = async (req, res) => {
     }
 
     // جلب Audiences من قاعدة البيانات
-    const audiences = await prisma.facebookCustomAudience.findMany({
+    const audiences = await getSharedPrismaClient().facebookCustomAudience.findMany({
       where: { companyId },
       include: {
         adAccount: true,
@@ -128,7 +128,7 @@ const createCustomAudience = async (req, res) => {
     }
 
     // جلب Ad Account
-    const adAccount = await prisma.facebookAdAccount.findFirst({
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: {
         companyId,
         ...(adAccountId && { accountId: adAccountId }),
@@ -212,7 +212,7 @@ const createCustomAudience = async (req, res) => {
     }
 
     // حفظ Audience في قاعدة البيانات
-    const audience = await prisma.facebookCustomAudience.create({
+    const audience = await getSharedPrismaClient().facebookCustomAudience.create({
       data: {
         companyId,
         adAccountId: adAccount.id,
@@ -234,7 +234,7 @@ const createCustomAudience = async (req, res) => {
     // جلب Audience Size
     const sizeResult = await audiencesService.getAudienceSize(facebookResult.audienceId);
     if (sizeResult.success) {
-      await prisma.facebookCustomAudience.update({
+      await getSharedPrismaClient().facebookCustomAudience.update({
         where: { id: audience.id },
         data: { audienceSize: sizeResult.size }
       });
@@ -263,7 +263,7 @@ const getCustomAudience = async (req, res) => {
     const { id } = req.params;
     const companyId = req.user?.companyId;
 
-    const audience = await prisma.facebookCustomAudience.findFirst({
+    const audience = await getSharedPrismaClient().facebookCustomAudience.findFirst({
       where: { id, companyId },
       include: {
         adAccount: true,
@@ -300,7 +300,7 @@ const deleteCustomAudience = async (req, res) => {
     const { id } = req.params;
     const companyId = req.user?.companyId;
 
-    const audience = await prisma.facebookCustomAudience.findFirst({
+    const audience = await getSharedPrismaClient().facebookCustomAudience.findFirst({
       where: { id, companyId }
     });
 
@@ -321,7 +321,7 @@ const deleteCustomAudience = async (req, res) => {
     }
 
     // حذف من قاعدة البيانات
-    await prisma.facebookCustomAudience.delete({
+    await getSharedPrismaClient().facebookCustomAudience.delete({
       where: { id }
     });
 
@@ -358,7 +358,7 @@ const getLookalikeAudiences = async (req, res) => {
       });
     }
 
-    const audiences = await prisma.facebookLookalikeAudience.findMany({
+    const audiences = await getSharedPrismaClient().facebookLookalikeAudience.findMany({
       where: { companyId },
       include: {
         adAccount: true,
@@ -418,7 +418,7 @@ const createLookalikeAudience = async (req, res) => {
     }
 
     // التحقق من Source Audience
-    const sourceAudience = await prisma.facebookCustomAudience.findFirst({
+    const sourceAudience = await getSharedPrismaClient().facebookCustomAudience.findFirst({
       where: {
         id: sourceAudienceId,
         companyId
@@ -442,7 +442,7 @@ const createLookalikeAudience = async (req, res) => {
     }
 
     // جلب Ad Account
-    const adAccount = await prisma.facebookAdAccount.findFirst({
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: {
         companyId,
         ...(adAccountId && { accountId: adAccountId }),
@@ -478,7 +478,7 @@ const createLookalikeAudience = async (req, res) => {
     }
 
     // حفظ Lookalike Audience في قاعدة البيانات
-    const lookalikeAudience = await prisma.facebookLookalikeAudience.create({
+    const lookalikeAudience = await getSharedPrismaClient().facebookLookalikeAudience.create({
       data: {
         companyId,
         adAccountId: adAccount.id,
@@ -496,7 +496,7 @@ const createLookalikeAudience = async (req, res) => {
     // جلب Audience Size
     const sizeResult = await audiencesService.getAudienceSize(facebookResult.audienceId);
     if (sizeResult.success) {
-      await prisma.facebookLookalikeAudience.update({
+      await getSharedPrismaClient().facebookLookalikeAudience.update({
         where: { id: lookalikeAudience.id },
         data: { audienceSize: sizeResult.size }
       });
@@ -524,4 +524,5 @@ module.exports = {
   getLookalikeAudiences,
   createLookalikeAudience
 };
+
 

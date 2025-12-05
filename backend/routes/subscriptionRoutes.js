@@ -3,7 +3,7 @@ const { getSharedPrismaClient } = require('../services/sharedDatabase');
 const { authenticateToken, requireSuperAdmin } = require('../middleware/superAdminMiddleware');
 
 const router = express.Router();
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 /**
  * @route GET /api/v1/admin/subscriptions
@@ -46,7 +46,7 @@ router.get('/', authenticateToken, requireSuperAdmin, async (req, res) => {
 
     // Get subscriptions with company details
     const [subscriptions, total] = await Promise.all([
-      prisma.subscription.findMany({
+      getSharedPrismaClient().subscription.findMany({
         where,
         include: {
           company: {
@@ -87,11 +87,11 @@ router.get('/', authenticateToken, requireSuperAdmin, async (req, res) => {
           [sortBy]: sortOrder
         }
       }),
-      prisma.subscription.count({ where })
+      getSharedPrismaClient().subscription.count({ where })
     ]);
 
     // Calculate statistics
-    const stats = await prisma.subscription.groupBy({
+    const stats = await getSharedPrismaClient().subscription.groupBy({
       by: ['status'],
       _count: {
         id: true
@@ -104,7 +104,7 @@ router.get('/', authenticateToken, requireSuperAdmin, async (req, res) => {
     }, {});
 
     // Calculate revenue
-    const revenueStats = await prisma.subscription.aggregate({
+    const revenueStats = await getSharedPrismaClient().subscription.aggregate({
       where: { status: 'ACTIVE' },
       _sum: {
         price: true
@@ -149,7 +149,7 @@ router.get('/:id', authenticateToken, requireSuperAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const subscription = await prisma.subscription.findUnique({
+    const subscription = await getSharedPrismaClient().subscription.findUnique({
       where: { id },
       include: {
         company: true,
@@ -208,7 +208,7 @@ router.post('/', authenticateToken, requireSuperAdmin, async (req, res) => {
     } = req.body;
 
     // Validate company exists
-    const company = await prisma.company.findUnique({
+    const company = await getSharedPrismaClient().company.findUnique({
       where: { id: companyId }
     });
 
@@ -232,7 +232,7 @@ router.post('/', authenticateToken, requireSuperAdmin, async (req, res) => {
     }
 
     // Create subscription
-    const subscription = await prisma.subscription.create({
+    const subscription = await getSharedPrismaClient().subscription.create({
       data: {
         companyId,
         planType,
@@ -257,7 +257,7 @@ router.post('/', authenticateToken, requireSuperAdmin, async (req, res) => {
     });
 
     // Update company plan
-    await prisma.company.update({
+    await getSharedPrismaClient().company.update({
       where: { id: companyId },
       data: { plan: planType }
     });
@@ -296,7 +296,7 @@ router.put('/:id', authenticateToken, requireSuperAdmin, async (req, res) => {
     } = req.body;
 
     // Check if subscription exists
-    const existingSubscription = await prisma.subscription.findUnique({
+    const existingSubscription = await getSharedPrismaClient().subscription.findUnique({
       where: { id },
       include: { company: true }
     });
@@ -314,7 +314,7 @@ router.put('/:id', authenticateToken, requireSuperAdmin, async (req, res) => {
     if (planType && planType !== existingSubscription.planType) {
       updateData.planType = planType;
       // Update company plan as well
-      await prisma.company.update({
+      await getSharedPrismaClient().company.update({
         where: { id: existingSubscription.companyId },
         data: { plan: planType }
       });
@@ -327,7 +327,7 @@ router.put('/:id', authenticateToken, requireSuperAdmin, async (req, res) => {
     if (status) updateData.status = status;
 
     // Update subscription
-    const subscription = await prisma.subscription.update({
+    const subscription = await getSharedPrismaClient().subscription.update({
       where: { id },
       data: updateData,
       include: {
@@ -372,7 +372,7 @@ router.post('/:id/renew', authenticateToken, requireSuperAdmin, async (req, res)
       immediate = false
     } = req.body;
 
-    const subscription = await prisma.subscription.findUnique({
+    const subscription = await getSharedPrismaClient().subscription.findUnique({
       where: { id },
       include: {
         company: {
@@ -432,7 +432,7 @@ router.post('/:id/renew', authenticateToken, requireSuperAdmin, async (req, res)
     const finalNextBillingDate = calculateNextDate(nextBillingDate, billingCycle);
 
     // Update subscription
-    const updatedSubscription = await prisma.subscription.update({
+    const updatedSubscription = await getSharedPrismaClient().subscription.update({
       where: { id },
       data: {
         status: 'ACTIVE',
@@ -455,7 +455,7 @@ router.post('/:id/renew', authenticateToken, requireSuperAdmin, async (req, res)
     const taxAmount = subtotal * 0.14;
     const totalAmount = subtotal + taxAmount;
 
-    const invoice = await prisma.invoice.create({
+    const invoice = await getSharedPrismaClient().invoice.create({
       data: {
         invoiceNumber,
         companyId: subscription.companyId,
@@ -516,7 +516,7 @@ router.post('/:id/cancel', authenticateToken, requireSuperAdmin, async (req, res
     const { id } = req.params;
     const { reason, immediate = false } = req.body;
 
-    const subscription = await prisma.subscription.findUnique({
+    const subscription = await getSharedPrismaClient().subscription.findUnique({
       where: { id },
       include: { company: true }
     });
@@ -547,7 +547,7 @@ router.post('/:id/cancel', authenticateToken, requireSuperAdmin, async (req, res
       updateData.endDate = new Date();
     }
 
-    const updatedSubscription = await prisma.subscription.update({
+    const updatedSubscription = await getSharedPrismaClient().subscription.update({
       where: { id },
       data: updateData,
       include: {
@@ -587,7 +587,7 @@ router.post('/:id/renew', authenticateToken, requireSuperAdmin, async (req, res)
     const { id } = req.params;
     const { billingCycle } = req.body;
 
-    const subscription = await prisma.subscription.findUnique({
+    const subscription = await getSharedPrismaClient().subscription.findUnique({
       where: { id },
       include: { company: true }
     });
@@ -610,7 +610,7 @@ router.post('/:id/renew', authenticateToken, requireSuperAdmin, async (req, res)
     }
 
     // Update subscription
-    const updatedSubscription = await prisma.subscription.update({
+    const updatedSubscription = await getSharedPrismaClient().subscription.update({
       where: { id },
       data: {
         status: 'ACTIVE',
@@ -647,3 +647,4 @@ router.post('/:id/renew', authenticateToken, requireSuperAdmin, async (req, res)
 });
 
 module.exports = router;
+

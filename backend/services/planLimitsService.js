@@ -46,8 +46,8 @@ class PlanLimitsService {
    */
   async getCurrentUsage(companyId) {
     try {
-      const prisma = getSharedPrismaClient();
-      const company = await prisma.company.findUnique({
+      // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
+      const company = await getSharedPrismaClient().company.findUnique({
         where: { id: companyId },
         include: {
           _count: {
@@ -248,3 +248,4 @@ class PlanLimitsService {
 }
 
 module.exports = new PlanLimitsService();
+

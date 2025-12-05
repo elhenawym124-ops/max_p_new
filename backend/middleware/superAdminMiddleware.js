@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // Authenticate token middleware
 const authenticateToken = async (req, res, next) => {
@@ -19,7 +19,7 @@ const authenticateToken = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
     // Get user from database
-    const user = await prisma.user.findUnique({
+    const user = await getSharedPrismaClient().user.findUnique({
       where: { id: decoded.userId },
       include: {
         company: true
@@ -66,3 +66,4 @@ module.exports = {
   authenticateToken,
   requireSuperAdmin
 };
+

@@ -306,6 +306,9 @@ router.post('/check-number', verifyToken.authenticateToken, whatsappController.c
 // 👤 الملف الشخصي
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// مزامنة الملف الشخصي
+router.post('/profile/sync', verifyToken.authenticateToken, whatsappController.syncProfile);
+
 // جلب الملف الشخصي
 router.get('/profile', verifyToken.authenticateToken, whatsappController.getProfile);
 

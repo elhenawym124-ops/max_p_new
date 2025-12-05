@@ -6,12 +6,12 @@ const { getSharedPrismaClient } = require('./sharedDatabase');
 
 async function findCompany(companyName) {
   try {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     console.log(`\n🔍 البحث عن الشركة: "${companyName}"\n`);
     
     // البحث بالاسم
-    const companies = await prisma.company.findMany({
+    const companies = await getSharedPrismaClient().company.findMany({
       where: {
         name: {
           contains: companyName,
@@ -33,7 +33,7 @@ async function findCompany(companyName) {
       console.log(`❌ لم يتم العثور على شركة بالاسم: "${companyName}"`);
       console.log(`\n📋 قائمة جميع الشركات المتاحة:`);
       
-      const allCompanies = await prisma.company.findMany({
+      const allCompanies = await getSharedPrismaClient().company.findMany({
         select: {
           id: true,
           name: true,
@@ -95,4 +95,5 @@ if (require.main === module) {
 }
 
 module.exports = findCompany;
+
 

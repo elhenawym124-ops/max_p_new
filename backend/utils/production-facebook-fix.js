@@ -13,7 +13,7 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 const axios = require('axios');
 
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 /**
  * PRODUCTION: Enhanced Facebook recipient validation with strict enforcement
@@ -46,7 +46,7 @@ async function validateFacebookRecipientStrict(recipientId, pageId, accessToken)
     }
 
     // 3. Check conversation and 24-hour window - STRICT MODE
-    const conversation = await prisma.conversation.findFirst({
+    const conversation = await getSharedPrismaClient().conversation.findFirst({
       where: {
         customer: {
           facebookId: recipientId

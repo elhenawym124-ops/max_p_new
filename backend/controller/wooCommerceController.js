@@ -1,5 +1,5 @@
 const { getSharedPrismaClient, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const axios = require('axios');
 
 /**
@@ -20,15 +20,28 @@ const fetchProductsFromWooCommerce = async (req, res) => {
 
     const { storeUrl, consumerKey, consumerSecret } = req.body;
 
-    if (!storeUrl || !consumerKey || !consumerSecret) {
+    // جلب إعدادات WooCommerce المحفوظة إذا لم يتم إرسال المفاتيح
+    let settings = null;
+    if (!consumerKey || consumerKey === 'from_settings') {
+      settings = await getSharedPrismaClient().wooCommerceSettings.findUnique({
+        where: { companyId }
+      });
+    }
+
+    // استخدام الإعدادات المحفوظة أو المرسلة
+    const finalStoreUrl = storeUrl || settings?.storeUrl;
+    const finalConsumerKey = (consumerKey && consumerKey !== 'from_settings') ? consumerKey : settings?.consumerKey;
+    const finalConsumerSecret = (consumerSecret && consumerSecret !== 'from_settings') ? consumerSecret : settings?.consumerSecret;
+
+    if (!finalStoreUrl || !finalConsumerKey || !finalConsumerSecret) {
       return res.status(400).json({
         success: false,
-        message: 'رابط المتجر ومفاتيح API مطلوبة'
+        message: 'رابط المتجر ومفاتيح API مطلوبة. يرجى إعداد بيانات الاتصال أولاً.'
       });
     }
 
     // تنظيف الرابط
-    let cleanUrl = storeUrl.trim();
+    let cleanUrl = finalStoreUrl.trim();
     if (!cleanUrl.startsWith('http')) {
       cleanUrl = 'https://' + cleanUrl;
     }
@@ -43,8 +56,8 @@ const fetchProductsFromWooCommerce = async (req, res) => {
       
       // WooCommerce يستخدم Basic Auth
       const auth = {
-        username: consumerKey.trim(),
-        password: consumerSecret.trim()
+        username: finalConsumerKey.trim(),
+        password: finalConsumerSecret.trim()
       };
 
       console.log(`📡 [WOOCOMMERCE] Fetching from: ${apiUrl}`);
@@ -193,7 +206,7 @@ const importSelectedProducts = async (req, res) => {
 
         // التحقق من وجود المنتج مسبقاً
         if (wooCommerceId) {
-          const existingProduct = await prisma.product.findFirst({
+          const existingProduct = await getSharedPrismaClient().product.findFirst({
             where: {
               wooCommerceId: wooCommerceId.toString(),
               companyId
@@ -213,7 +226,7 @@ const importSelectedProducts = async (req, res) => {
         // معالجة الفئة
         let categoryId = null;
         if (productData.category && productData.category.trim() !== '') {
-          let categoryRecord = await prisma.category.findFirst({
+          let categoryRecord = await getSharedPrismaClient().category.findFirst({
             where: {
               name: productData.category.trim(),
               companyId
@@ -221,7 +234,7 @@ const importSelectedProducts = async (req, res) => {
           });
 
           if (!categoryRecord) {
-            categoryRecord = await prisma.category.create({
+            categoryRecord = await getSharedPrismaClient().category.create({
               data: {
                 name: productData.category.trim(),
                 companyId
@@ -248,7 +261,7 @@ const importSelectedProducts = async (req, res) => {
         }
 
         // إنشاء المنتج
-        const product = await prisma.product.create({
+        const product = await getSharedPrismaClient().product.create({
           data: {
             name: productData.name.trim(),
             description: productData.description || '',
@@ -312,3 +325,4 @@ module.exports = {
   fetchProductsFromWooCommerce,
   importSelectedProducts
 };
+

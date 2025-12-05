@@ -34,8 +34,8 @@ router.post('/test-send', async (req, res) => {
     // إذا لم نجد رمز الوصول للصفحة، نحاول العثور على صفحة متصلة
     if (!pageAccessToken) {
       const { getSharedPrismaClient } = require('../services/sharedDatabase');
-      const prisma = getSharedPrismaClient();
-      const defaultPage = await prisma.facebookPage.findFirst({
+      // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
+      const defaultPage = await getSharedPrismaClient().facebookPage.findFirst({
         where: { status: 'connected' },
         orderBy: { connectedAt: 'desc' }
       });
@@ -111,3 +111,4 @@ router.post('/test-webhook', async (req, res) => {
 });
 
 module.exports = router;
+

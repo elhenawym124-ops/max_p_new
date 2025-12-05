@@ -61,7 +61,7 @@ const BroadcastDialog: React.FC<BroadcastDialogProps> = ({
                 contact.pushName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 contact.phoneNumber?.includes(searchQuery))
         )
-        .filter((contact, index, self) => 
+        .filter((contact, index, self) =>
             index === self.findIndex(c => c.jid === contact.jid) // Remove duplicates by jid
         );
 
@@ -90,7 +90,7 @@ const BroadcastDialog: React.FC<BroadcastDialogProps> = ({
         try {
             await api.post('/whatsapp/broadcast/send', {
                 sessionId,
-                contacts: selectedContacts,
+                jids: selectedContacts,
                 message: message
             });
             enqueueSnackbar(`تم إرسال الرسالة إلى ${selectedContacts.length} جهة اتصال`, { variant: 'success' });

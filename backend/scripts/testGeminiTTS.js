@@ -8,7 +8,7 @@ const { getSharedPrismaClient } = require('../services/sharedDatabase');
 const MODEL_NAME = 'gemini-2.5-flash-tts';
 
 async function testGeminiTTS() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     try {
         console.log('\n🧪 اختبار Gemini 2.5 Flash TTS...\n');
@@ -131,9 +131,10 @@ async function testGeminiTTS() {
         console.error('❌ خطأ عام:', error.message);
         console.error(error.stack);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 testGeminiTTS();
+
 

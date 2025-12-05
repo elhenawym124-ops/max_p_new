@@ -1,13 +1,13 @@
 const { getSharedPrismaClient } = require('./services/sharedDatabase');
 
 async function checkRecentMessages() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     try {
         const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
 
         console.log(`🔎 Checking for ANY messages created after ${tenMinutesAgo.toISOString()}`);
 
-        const messages = await prisma.whatsAppMessage.findMany({
+        const messages = await getSharedPrismaClient().whatsAppMessage.findMany({
             where: {
                 timestamp: { gt: tenMinutesAgo }
             },
@@ -30,3 +30,4 @@ async function checkRecentMessages() {
 }
 
 checkRecentMessages();
+

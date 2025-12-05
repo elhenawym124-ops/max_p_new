@@ -1,5 +1,5 @@
 const { getSharedPrismaClient, initializeSharedDatabase, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -29,7 +29,7 @@ const register = async (req, res) => {
     }
 
     // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
+    const existingUser = await getSharedPrismaClient().user.findUnique({
       where: { email }
     });
 
@@ -44,7 +44,7 @@ const register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Create company first
-    const company = await prisma.company.create({
+    const company = await getSharedPrismaClient().company.create({
       data: {
         name: companyName,
         email: email,
@@ -66,7 +66,7 @@ const register = async (req, res) => {
     }
 
     // Create user
-    const user = await prisma.user.create({
+    const user = await getSharedPrismaClient().user.create({
       data: {
         email,
         password: hashedPassword,
@@ -161,7 +161,7 @@ const login = async (req, res) => {
     
     // Find user with company - wrap in retry logic for connection issues
     const user = await executeWithRetry(async () => {
-      return await prisma.user.findUnique({
+      return await getSharedPrismaClient().user.findUnique({
         where: { email: email.toLowerCase() },
         include: {
           company: {
@@ -249,7 +249,7 @@ const login = async (req, res) => {
     );
 
     // Update last login
-    await prisma.user.update({
+    await getSharedPrismaClient().user.update({
       where: { id: user.id },
       data: { lastLoginAt: new Date() }
     });
@@ -309,7 +309,7 @@ const me = async (req, res) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
 
     // Get user with company
-    const user = await prisma.user.findUnique({
+    const user = await getSharedPrismaClient().user.findUnique({
       where: { id: decoded.userId },
       include: {
         company: {
@@ -373,7 +373,7 @@ const forgotPassword = async (req, res) => {
 
     // Find user
     console.log('🔍 [FORGOT-PASSWORD] Searching for user...');
-    const user = await prisma.user.findUnique({
+    const user = await getSharedPrismaClient().user.findUnique({
       where: { email: email.toLowerCase() },
       include: {
         company: {
@@ -389,7 +389,7 @@ const forgotPassword = async (req, res) => {
       console.log('⚠️ [FORGOT-PASSWORD] User not found in users table');
       console.log('🔍 [FORGOT-PASSWORD] Checking for pending invitation...');
       
-      const invitation = await prisma.userInvitation.findFirst({
+      const invitation = await getSharedPrismaClient().userInvitation.findFirst({
         where: {
           email: email.toLowerCase(),
           status: 'PENDING'
@@ -423,7 +423,7 @@ const forgotPassword = async (req, res) => {
 
     // Save reset token to database
     console.log('💾 [FORGOT-PASSWORD] Saving token to database...');
-    await prisma.user.update({
+    await getSharedPrismaClient().user.update({
       where: { id: user.id },
       data: {
         resetPasswordToken: resetTokenHash,
@@ -607,7 +607,7 @@ const resetPassword = async (req, res) => {
     console.log('🔑 [RESET-PASSWORD] Token hash:', resetTokenHash);
 
     // Find user with valid reset token
-    const user = await prisma.user.findFirst({
+    const user = await getSharedPrismaClient().user.findFirst({
       where: {
         resetPasswordToken: resetTokenHash,
         resetPasswordExpires: {
@@ -620,7 +620,7 @@ const resetPassword = async (req, res) => {
       console.log('⚠️ [RESET-PASSWORD] Invalid or expired token');
       
       // Check if token exists but expired
-      const expiredUser = await prisma.user.findFirst({
+      const expiredUser = await getSharedPrismaClient().user.findFirst({
         where: {
           resetPasswordToken: resetTokenHash
         }
@@ -647,7 +647,7 @@ const resetPassword = async (req, res) => {
     const hashedPassword = await bcrypt.hash(passwordToUse, 10);
 
     // Update password and clear reset token
-    await prisma.user.update({
+    await getSharedPrismaClient().user.update({
       where: { id: user.id },
       data: {
         password: hashedPassword,

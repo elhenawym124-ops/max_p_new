@@ -11,13 +11,13 @@ const { AIAnalyzerAndFixer } = require('./analyzeAndFixAITest');
 const { ProblemsAnalyzer } = require('./getAndAnalyzeProblems');
 
 async function runTest() {
-  const prisma = getSharedPrismaClient();
+  // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
   
   try {
     console.log('🚀 بدء الاختبار...\n');
     
     // جلب شركة
-    const company = await prisma.company.findFirst({
+    const company = await getSharedPrismaClient().company.findFirst({
       where: { isActive: true }
     });
     
@@ -63,7 +63,7 @@ async function runTest() {
     // تحليل المشاكل
     console.log('\n🔍 تحليل المشاكل...\n');
     
-    const lastConv = await prisma.conversation.findFirst({
+    const lastConv = await getSharedPrismaClient().conversation.findFirst({
       where: {
         companyId: company.id,
         channel: 'TEST',
@@ -120,4 +120,5 @@ async function runTest() {
 
 // تشغيل
 runTest();
+
 

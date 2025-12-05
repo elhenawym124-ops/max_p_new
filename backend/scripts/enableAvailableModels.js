@@ -14,13 +14,13 @@ const modelsToEnable = [
 ];
 
 async function enableModels() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     try {
         console.log('\n🔧 تفعيل النماذج المتوفرة...\n');
         
         // جلب جميع المفاتيح
-        const keys = await prisma.geminiKey.findMany({
+        const keys = await getSharedPrismaClient().geminiKey.findMany({
             where: {
                 isActive: true
             }
@@ -34,7 +34,7 @@ async function enableModels() {
             console.log(`🔑 المفتاح: ${key.name} (ID: ${key.id})`);
             
             for (const modelName of modelsToEnable) {
-                const model = await prisma.geminiKeyModel.findFirst({
+                const model = await getSharedPrismaClient().geminiKeyModel.findFirst({
                     where: {
                         keyId: key.id,
                         model: modelName
@@ -43,7 +43,7 @@ async function enableModels() {
                 
                 if (model) {
                     if (!model.isEnabled) {
-                        await prisma.geminiKeyModel.update({
+                        await getSharedPrismaClient().geminiKeyModel.update({
                             where: { id: model.id },
                             data: { isEnabled: true }
                         });
@@ -64,7 +64,7 @@ async function enableModels() {
         // عرض ملخص
         console.log('📊 ملخص النماذج المفعلة:');
         for (const modelName of modelsToEnable) {
-            const count = await prisma.geminiKeyModel.count({
+            const count = await getSharedPrismaClient().geminiKeyModel.count({
                 where: {
                     model: modelName,
                     isEnabled: true
@@ -77,9 +77,10 @@ async function enableModels() {
         console.error('❌ خطأ:', error.message);
         console.error(error.stack);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 enableModels();
+
 

@@ -7,7 +7,7 @@
 const axios = require('axios');
 const crypto = require('crypto');
 const { getSharedPrismaClient } = require('./sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 class FacebookAudiencesService {
   constructor(accessToken, adAccountId = null) {
@@ -483,4 +483,5 @@ class FacebookAudiencesService {
 }
 
 module.exports = FacebookAudiencesService;
+
 

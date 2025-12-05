@@ -6,14 +6,14 @@
 
 const FacebookAdTestService = require('../services/facebookAdTestService');
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 /**
  * جلب Access Token للشركة
  */
 async function getCompanyAdsAccessToken(companyId) {
   try {
-    const company = await prisma.company.findUnique({
+    const company = await getSharedPrismaClient().company.findUnique({
       where: { id: companyId },
       select: { 
         facebookAdsAccessToken: true,
@@ -33,7 +33,7 @@ async function getCompanyAdsAccessToken(companyId) {
  */
 async function getOrCreateAdAccount(companyId) {
   try {
-    const adAccount = await prisma.facebookAdAccount.findFirst({
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: {
         companyId,
         isActive: true
@@ -66,7 +66,7 @@ exports.getTests = async (req, res) => {
     if (status) where.status = status;
     if (testType) where.testType = testType;
 
-    const tests = await prisma.facebookAdTest.findMany({
+    const tests = await getSharedPrismaClient().facebookAdTest.findMany({
       where,
       include: {
         campaign: {
@@ -123,7 +123,7 @@ exports.getTest = async (req, res) => {
     const { companyId } = req.user;
     const { id } = req.params;
 
-    const test = await prisma.facebookAdTest.findFirst({
+    const test = await getSharedPrismaClient().facebookAdTest.findFirst({
       where: {
         id,
         companyId
@@ -205,7 +205,7 @@ exports.createTest = async (req, res) => {
 
     // التحقق من Campaign
     if (campaignId) {
-      const campaign = await prisma.facebookCampaign.findFirst({
+      const campaign = await getSharedPrismaClient().facebookCampaign.findFirst({
         where: {
           id: campaignId,
           companyId
@@ -223,7 +223,7 @@ exports.createTest = async (req, res) => {
     const testService = new FacebookAdTestService(accessToken, adAccount.accountId);
 
     // إنشاء Test في قاعدة البيانات
-    const test = await prisma.facebookAdTest.create({
+    const test = await getSharedPrismaClient().facebookAdTest.create({
       data: {
         companyId,
         name,
@@ -265,7 +265,7 @@ exports.updateTest = async (req, res) => {
     const { id } = req.params;
     const updateData = req.body;
 
-    const test = await prisma.facebookAdTest.findFirst({
+    const test = await getSharedPrismaClient().facebookAdTest.findFirst({
       where: {
         id,
         companyId
@@ -294,7 +294,7 @@ exports.updateTest = async (req, res) => {
       updateData.variants = JSON.stringify(updateData.variants);
     }
 
-    const updatedTest = await prisma.facebookAdTest.update({
+    const updatedTest = await getSharedPrismaClient().facebookAdTest.update({
       where: { id },
       data: updateData,
       include: {
@@ -325,7 +325,7 @@ exports.deleteTest = async (req, res) => {
     const { companyId } = req.user;
     const { id } = req.params;
 
-    const test = await prisma.facebookAdTest.findFirst({
+    const test = await getSharedPrismaClient().facebookAdTest.findFirst({
       where: {
         id,
         companyId
@@ -351,7 +351,7 @@ exports.deleteTest = async (req, res) => {
     }
 
     // حذف Test (Cascade سيحذف Variants)
-    await prisma.facebookAdTest.delete({
+    await getSharedPrismaClient().facebookAdTest.delete({
       where: { id }
     });
 
@@ -377,7 +377,7 @@ exports.startTest = async (req, res) => {
     const { companyId } = req.user;
     const { id } = req.params;
 
-    const test = await prisma.facebookAdTest.findFirst({
+    const test = await getSharedPrismaClient().facebookAdTest.findFirst({
       where: {
         id,
         companyId
@@ -441,7 +441,7 @@ exports.startTest = async (req, res) => {
     }
 
     // تحديث حالة Test
-    const updatedTest = await prisma.facebookAdTest.update({
+    const updatedTest = await getSharedPrismaClient().facebookAdTest.update({
       where: { id },
       data: {
         status: 'RUNNING',
@@ -475,7 +475,7 @@ exports.pauseTest = async (req, res) => {
     const { companyId } = req.user;
     const { id } = req.params;
 
-    const test = await prisma.facebookAdTest.findFirst({
+    const test = await getSharedPrismaClient().facebookAdTest.findFirst({
       where: {
         id,
         companyId
@@ -518,7 +518,7 @@ exports.pauseTest = async (req, res) => {
     }
 
     // تحديث حالة Test
-    const updatedTest = await prisma.facebookAdTest.update({
+    const updatedTest = await getSharedPrismaClient().facebookAdTest.update({
       where: { id },
       data: {
         status: 'PAUSED'
@@ -551,7 +551,7 @@ exports.analyzeTest = async (req, res) => {
     const { companyId } = req.user;
     const { id } = req.params;
 
-    const test = await prisma.facebookAdTest.findFirst({
+    const test = await getSharedPrismaClient().facebookAdTest.findFirst({
       where: {
         id,
         companyId
@@ -610,7 +610,7 @@ exports.analyzeTest = async (req, res) => {
       
       // تحديث Variants
       for (const variant of test.variantsList) {
-        await prisma.facebookAdTestVariant.update({
+        await getSharedPrismaClient().facebookAdTestVariant.update({
           where: { id: variant.id },
           data: {
             isWinner: variant.id === winnerVariant.id,
@@ -629,7 +629,7 @@ exports.analyzeTest = async (req, res) => {
       }
     }
 
-    const updatedTest = await prisma.facebookAdTest.update({
+    const updatedTest = await getSharedPrismaClient().facebookAdTest.update({
       where: { id },
       data: updateData,
       include: {
@@ -663,7 +663,7 @@ exports.promoteWinner = async (req, res) => {
     const { companyId } = req.user;
     const { id } = req.params;
 
-    const test = await prisma.facebookAdTest.findFirst({
+    const test = await getSharedPrismaClient().facebookAdTest.findFirst({
       where: {
         id,
         companyId
@@ -716,7 +716,7 @@ exports.promoteWinner = async (req, res) => {
     }
 
     // تحديث حالة Test
-    const updatedTest = await prisma.facebookAdTest.update({
+    const updatedTest = await getSharedPrismaClient().facebookAdTest.update({
       where: { id },
       data: {
         status: 'COMPLETED',
@@ -751,7 +751,7 @@ exports.getTestResults = async (req, res) => {
     const { companyId } = req.user;
     const { id } = req.params;
 
-    const test = await prisma.facebookAdTest.findFirst({
+    const test = await getSharedPrismaClient().facebookAdTest.findFirst({
       where: {
         id,
         companyId
@@ -789,4 +789,5 @@ exports.getTestResults = async (req, res) => {
 };
 
 module.exports = exports;
+
 

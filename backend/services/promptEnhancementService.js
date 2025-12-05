@@ -156,8 +156,8 @@ class PromptEnhancementService {
       const { getSharedPrismaClient, safeQuery } = require('./sharedDatabase');
 
       const aiSettings = await safeQuery(async () => {
-        const prisma = getSharedPrismaClient();
-        return await prisma.aiSettings.findFirst({
+        // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
+        return await getSharedPrismaClient().aiSettings.findFirst({
           where: { companyId }
         });
       }, 3);
@@ -553,3 +553,4 @@ class PromptEnhancementService {
 }
 
 module.exports = PromptEnhancementService;
+

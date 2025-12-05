@@ -5,7 +5,7 @@
 
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 const fs = require('fs');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const { Prisma } = require('@prisma/client');
 const {
     WhatsAppManager,
@@ -32,12 +32,12 @@ async function createSession(req, res) {
         }
 
         // التحقق من عدد الجلسات
-        const settings = await prisma.whatsAppSettings.findUnique({
+        const settings = await getSharedPrismaClient().whatsAppSettings.findUnique({
             where: { companyId }
         });
 
         const maxSessions = settings?.maxSessions || 3;
-        const currentSessions = await prisma.whatsAppSession.count({
+        const currentSessions = await getSharedPrismaClient().whatsAppSession.count({
             where: { companyId }
         });
 
@@ -48,7 +48,7 @@ async function createSession(req, res) {
         }
 
         // إنشاء الجلسة في قاعدة البيانات
-        const session = await prisma.whatsAppSession.create({
+        const session = await getSharedPrismaClient().whatsAppSession.create({
             data: {
                 companyId,
                 name,
@@ -80,7 +80,7 @@ async function getSessions(req, res) {
     try {
         const { companyId } = req.user;
 
-        const sessions = await prisma.whatsAppSession.findMany({
+        const sessions = await getSharedPrismaClient().whatsAppSession.findMany({
             where: { companyId },
             orderBy: { createdAt: 'desc' },
             include: {
@@ -119,7 +119,7 @@ async function getSession(req, res) {
         const { companyId } = req.user;
         const { id } = req.params;
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id, companyId },
             include: {
                 _count: {
@@ -171,7 +171,7 @@ async function updateSession(req, res) {
         } = req.body;
 
         // التحقق من الملكية
-        const existingSession = await prisma.whatsAppSession.findFirst({
+        const existingSession = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id, companyId }
         });
 
@@ -181,13 +181,13 @@ async function updateSession(req, res) {
 
         // إذا تم تعيينها كافتراضية، إلغاء الافتراضية من الجلسات الأخرى
         if (isDefault) {
-            await prisma.whatsAppSession.updateMany({
+            await getSharedPrismaClient().whatsAppSession.updateMany({
                 where: { companyId, isDefault: true },
                 data: { isDefault: false }
             });
         }
 
-        const session = await prisma.whatsAppSession.update({
+        const session = await getSharedPrismaClient().whatsAppSession.update({
             where: { id },
             data: {
                 name,
@@ -219,7 +219,7 @@ async function deleteSession(req, res) {
         const { id } = req.params;
 
         // التحقق من الملكية
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id, companyId }
         });
 
@@ -247,7 +247,7 @@ async function connectSession(req, res) {
         const { id } = req.params;
 
         // التحقق من الملكية
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id, companyId }
         });
 
@@ -275,7 +275,7 @@ async function disconnectSession(req, res) {
         const { id } = req.params;
 
         // التحقق من الملكية
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id, companyId }
         });
 
@@ -309,7 +309,7 @@ async function getConversations(req, res) {
         // تحسين: استخدام Promise.all لجلب الجلسات والعدد الكلي إذا أمكن، لكن هنا نحتاج الجلسات أولاً لبناء الاستعلام
         const sessionIds = (sessionId && sessionId !== 'all')
             ? [sessionId]
-            : (await prisma.whatsAppSession.findMany({
+            : (await getSharedPrismaClient().whatsAppSession.findMany({
                 where: { companyId },
                 select: { id: true }
             })).map(s => s.id);
@@ -333,7 +333,7 @@ async function getConversations(req, res) {
 
         // تحسين: تشغيل استعلام المحادثات والعدد الكلي بشكل متزامن
         const [contacts, total] = await Promise.all([
-            prisma.whatsAppContact.findMany({
+            getSharedPrismaClient().whatsAppContact.findMany({
                 where,
                 orderBy: [
                     { isPinned: 'desc' },
@@ -364,39 +364,51 @@ async function getConversations(req, res) {
                     }
                 }
             }),
-            prisma.whatsAppContact.count({ where })
+            getSharedPrismaClient().whatsAppContact.count({ where })
         ]);
 
-        // جلب آخر رسالة لكل محادثة
-        // استخدام raw query لأن distinct مع orderBy غير مدعوم في MySQL
+        // جلب آخر رسالة لكل محادثة (Optimized Batch Query)
         let lastMessages = [];
         if (contacts.length > 0) {
             const jids = contacts.map(c => c.jid);
-            // جلب آخر رسالة لكل jid بشكل منفصل
-            const lastMessagesPromises = jids.map(async (jid) => {
-                try {
-                    const msg = await prisma.whatsAppMessage.findFirst({
-                        where: {
-                            sessionId: { in: sessionIds },
-                            remoteJid: jid
-                        },
-                        orderBy: { timestamp: 'desc' },
-                        select: {
-                            remoteJid: true,
-                            content: true,
-                            messageType: true,
-                            fromMe: true,
-                            timestamp: true,
-                            status: true
-                        }
-                    });
-                    return msg;
-                } catch (err) {
-                    console.error(`❌ Error fetching last message for JID ${jid}:`, err);
-                    return null;
+
+            // 1. Get the latest timestamp for each JID
+            // This is much faster than fetching full messages
+            const latestMessageStats = await getSharedPrismaClient().whatsAppMessage.groupBy({
+                by: ['remoteJid'],
+                where: {
+                    sessionId: { in: sessionIds },
+                    remoteJid: { in: jids }
+                },
+                _max: {
+                    timestamp: true
                 }
             });
-            lastMessages = (await Promise.all(lastMessagesPromises)).filter(Boolean);
+
+            // 2. Build a filter to get the actual messages
+            // We match (remoteJid + timestamp) to get the specific message
+            // Note: In rare cases of exact same timestamp, we might get duplicates, but we handle that below
+            const conditions = latestMessageStats.map(stat => ({
+                remoteJid: stat.remoteJid,
+                timestamp: stat._max.timestamp
+            })).filter(c => c.timestamp); // Ensure timestamp exists
+
+            if (conditions.length > 0) {
+                lastMessages = await getSharedPrismaClient().whatsAppMessage.findMany({
+                    where: {
+                        sessionId: { in: sessionIds },
+                        OR: conditions
+                    },
+                    select: {
+                        remoteJid: true,
+                        content: true,
+                        messageType: true,
+                        fromMe: true,
+                        timestamp: true,
+                        status: true
+                    }
+                });
+            }
         }
 
         const lastMessagesMap = new Map(lastMessages.map(m => [m.remoteJid, m]));
@@ -438,7 +450,7 @@ async function getMessages(req, res) {
         }
 
         // التحقق من الملكية
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -472,7 +484,7 @@ async function sendMessage(req, res) {
         }
 
         // التحقق من الملكية
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -487,7 +499,7 @@ async function sendMessage(req, res) {
         res.json({ success: true, message });
     } catch (error) {
         console.error('❌ Error sending message:', error);
-        res.status(500).json({ error: 'حدث خطأ أثناء إرسال الرسالة' });
+        res.status(500).json({ error: error.message || 'حدث خطأ أثناء إرسال الرسالة' });
     }
 }
 
@@ -505,7 +517,7 @@ async function sendMedia(req, res) {
         }
 
         // التحقق من الملكية
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -554,7 +566,7 @@ async function markAsRead(req, res) {
         }
 
         // التحقق من الملكية
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -589,7 +601,7 @@ async function sendButtons(req, res) {
         }
 
         // التحقق من الملكية
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -630,7 +642,7 @@ async function sendList(req, res) {
         }
 
         // التحقق من الملكية
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -668,7 +680,7 @@ async function sendProduct(req, res) {
         }
 
         // التحقق من الملكية
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -704,7 +716,7 @@ async function sendReaction(req, res) {
         }
 
         // التحقق من الملكية
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -740,7 +752,7 @@ async function editMessage(req, res) {
         }
 
         // التحقق من الملكية
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -771,7 +783,7 @@ async function deleteMessage(req, res) {
         }
 
         // التحقق من الملكية
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -802,7 +814,7 @@ async function forwardMessage(req, res) {
         }
 
         // التحقق من الملكية
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -832,7 +844,7 @@ async function archiveChat(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -843,7 +855,7 @@ async function archiveChat(req, res) {
         await WhatsAppManager.archiveChat(sessionId, jid, archive);
 
         // Update local DB
-        await prisma.whatsAppContact.updateMany({
+        await getSharedPrismaClient().whatsAppContact.updateMany({
             where: { sessionId, jid },
             data: { isArchived: archive }
         });
@@ -868,7 +880,7 @@ async function pinChat(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -879,7 +891,7 @@ async function pinChat(req, res) {
         await WhatsAppManager.pinChat(sessionId, jid, pin);
 
         // Update local DB
-        await prisma.whatsAppContact.updateMany({
+        await getSharedPrismaClient().whatsAppContact.updateMany({
             where: { sessionId, jid },
             data: { isPinned: pin }
         });
@@ -904,7 +916,7 @@ async function muteChat(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -915,7 +927,7 @@ async function muteChat(req, res) {
         await WhatsAppManager.muteChat(sessionId, jid, mute);
 
         // Update local DB
-        await prisma.whatsAppContact.updateMany({
+        await getSharedPrismaClient().whatsAppContact.updateMany({
             where: { sessionId, jid },
             data: { isMuted: mute }
         });
@@ -940,7 +952,7 @@ async function markChatUnread(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -952,7 +964,7 @@ async function markChatUnread(req, res) {
 
         // Update local DB if needed (optional, as unread count comes from messages usually)
         if (unread) {
-            await prisma.whatsAppContact.updateMany({
+            await getSharedPrismaClient().whatsAppContact.updateMany({
                 where: { sessionId, jid },
                 data: { unreadCount: { increment: 1 } } // Artificial increment
             });
@@ -978,7 +990,7 @@ async function deleteChat(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -1004,11 +1016,11 @@ async function deleteChat(req, res) {
         }
 
         // Delete from DB
-        await prisma.whatsAppMessage.deleteMany({
+        await getSharedPrismaClient().whatsAppMessage.deleteMany({
             where: { sessionId, remoteJid: jid }
         });
 
-        await prisma.whatsAppContact.deleteMany({
+        await getSharedPrismaClient().whatsAppContact.deleteMany({
             where: { sessionId, jid }
         });
 
@@ -1034,7 +1046,7 @@ async function updateContact(req, res) {
         const { name, category, tags, notes, customerId, isArchived, isPinned, isMuted } = req.body;
 
         // التحقق من الملكية
-        const contact = await prisma.whatsAppContact.findFirst({
+        const contact = await getSharedPrismaClient().whatsAppContact.findFirst({
             where: { id },
             include: {
                 session: { select: { companyId: true } }
@@ -1045,7 +1057,7 @@ async function updateContact(req, res) {
             return res.status(404).json({ error: 'جهة الاتصال غير موجودة' });
         }
 
-        const updatedContact = await prisma.whatsAppContact.update({
+        const updatedContact = await getSharedPrismaClient().whatsAppContact.update({
             where: { id },
             data: {
                 name,
@@ -1077,7 +1089,7 @@ async function linkCustomer(req, res) {
         const { customerId } = req.body;
 
         // التحقق من الملكية
-        const contact = await prisma.whatsAppContact.findFirst({
+        const contact = await getSharedPrismaClient().whatsAppContact.findFirst({
             where: { id },
             include: {
                 session: { select: { companyId: true } }
@@ -1089,7 +1101,7 @@ async function linkCustomer(req, res) {
         }
 
         // التحقق من العميل
-        const customer = await prisma.customer.findFirst({
+        const customer = await getSharedPrismaClient().customer.findFirst({
             where: { id: customerId, companyId }
         });
 
@@ -1097,7 +1109,7 @@ async function linkCustomer(req, res) {
             return res.status(404).json({ error: 'العميل غير موجود' });
         }
 
-        const updatedContact = await prisma.whatsAppContact.update({
+        const updatedContact = await getSharedPrismaClient().whatsAppContact.update({
             where: { id },
             data: { customerId },
             include: { customer: true }
@@ -1126,7 +1138,7 @@ async function getQuickReplies(req, res) {
         const where = { companyId, isActive: true };
         if (category) where.category = category;
 
-        const quickReplies = await prisma.whatsAppQuickReply.findMany({
+        const quickReplies = await getSharedPrismaClient().whatsAppQuickReply.findMany({
             where,
             orderBy: [
                 { sortOrder: 'asc' },
@@ -1154,7 +1166,7 @@ async function createQuickReply(req, res) {
             return res.status(400).json({ error: 'العنوان والمحتوى مطلوبان' });
         }
 
-        const quickReply = await prisma.whatsAppQuickReply.create({
+        const quickReply = await getSharedPrismaClient().whatsAppQuickReply.create({
             data: {
                 companyId,
                 title,
@@ -1185,7 +1197,7 @@ async function updateQuickReply(req, res) {
         const { title, shortcut, content, category, variables, mediaUrl, mediaType, isActive, sortOrder } = req.body;
 
         // التحقق من الملكية
-        const existing = await prisma.whatsAppQuickReply.findFirst({
+        const existing = await getSharedPrismaClient().whatsAppQuickReply.findFirst({
             where: { id, companyId }
         });
 
@@ -1193,7 +1205,7 @@ async function updateQuickReply(req, res) {
             return res.status(404).json({ error: 'الرد السريع غير موجود' });
         }
 
-        const quickReply = await prisma.whatsAppQuickReply.update({
+        const quickReply = await getSharedPrismaClient().whatsAppQuickReply.update({
             where: { id },
             data: {
                 title,
@@ -1225,7 +1237,7 @@ async function deleteQuickReply(req, res) {
         const { id } = req.params;
 
         // التحقق من الملكية
-        const existing = await prisma.whatsAppQuickReply.findFirst({
+        const existing = await getSharedPrismaClient().whatsAppQuickReply.findFirst({
             where: { id, companyId }
         });
 
@@ -1233,7 +1245,7 @@ async function deleteQuickReply(req, res) {
             return res.status(404).json({ error: 'الرد السريع غير موجود' });
         }
 
-        await prisma.whatsAppQuickReply.delete({ where: { id } });
+        await getSharedPrismaClient().whatsAppQuickReply.delete({ where: { id } });
 
         res.json({ success: true, message: 'تم حذف الرد السريع' });
     } catch (error) {
@@ -1253,7 +1265,7 @@ async function sendQuickReply(req, res) {
         const { sessionId, to, variables } = req.body;
 
         // التحقق من الملكية
-        const quickReply = await prisma.whatsAppQuickReply.findFirst({
+        const quickReply = await getSharedPrismaClient().whatsAppQuickReply.findFirst({
             where: { id, companyId }
         });
 
@@ -1261,7 +1273,7 @@ async function sendQuickReply(req, res) {
             return res.status(404).json({ error: 'الرد السريع غير موجود' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -1290,13 +1302,13 @@ async function getSettings(req, res) {
     try {
         const { companyId } = req.user;
 
-        let settings = await prisma.whatsAppSettings.findUnique({
+        let settings = await getSharedPrismaClient().whatsAppSettings.findUnique({
             where: { companyId }
         });
 
         // إنشاء إعدادات افتراضية إذا لم تكن موجودة
         if (!settings) {
-            settings = await prisma.whatsAppSettings.create({
+            settings = await getSharedPrismaClient().whatsAppSettings.create({
                 data: { companyId }
             });
         }
@@ -1330,7 +1342,7 @@ async function updateSettings(req, res) {
             autoArchiveDays
         } = req.body;
 
-        const settings = await prisma.whatsAppSettings.upsert({
+        const settings = await getSharedPrismaClient().whatsAppSettings.upsert({
             where: { companyId },
             update: {
                 isEnabled,
@@ -1391,20 +1403,20 @@ async function getStats(req, res) {
         // جلب معرفات الجلسات
         const sessionIds = sessionId
             ? [sessionId]
-            : (await prisma.whatsAppSession.findMany({
+            : (await getSharedPrismaClient().whatsAppSession.findMany({
                 where: { companyId },
                 select: { id: true }
             })).map(s => s.id);
 
         // إحصائيات الرسائل
-        const totalMessages = await prisma.whatsAppMessage.count({
+        const totalMessages = await getSharedPrismaClient().whatsAppMessage.count({
             where: {
                 sessionId: { in: sessionIds },
                 timestamp: { gte: startDate }
             }
         });
 
-        const sentMessages = await prisma.whatsAppMessage.count({
+        const sentMessages = await getSharedPrismaClient().whatsAppMessage.count({
             where: {
                 sessionId: { in: sessionIds },
                 fromMe: true,
@@ -1414,7 +1426,7 @@ async function getStats(req, res) {
 
         const receivedMessages = totalMessages - sentMessages;
 
-        const aiResponses = await prisma.whatsAppMessage.count({
+        const aiResponses = await getSharedPrismaClient().whatsAppMessage.count({
             where: {
                 sessionId: { in: sessionIds },
                 isAIResponse: true,
@@ -1423,11 +1435,11 @@ async function getStats(req, res) {
         });
 
         // إحصائيات المحادثات
-        const totalConversations = await prisma.whatsAppContact.count({
+        const totalConversations = await getSharedPrismaClient().whatsAppContact.count({
             where: { sessionId: { in: sessionIds } }
         });
 
-        const activeConversations = await prisma.whatsAppContact.count({
+        const activeConversations = await getSharedPrismaClient().whatsAppContact.count({
             where: {
                 sessionId: { in: sessionIds },
                 lastMessageAt: { gte: startDate }
@@ -1438,14 +1450,14 @@ async function getStats(req, res) {
         let dailyStats = [];
 
         if (sessionIds.length > 0) {
-            dailyStats = await prisma.$queryRaw`
+            dailyStats = await getSharedPrismaClient().$queryRaw`
                 SELECT 
                     DATE(timestamp) as date,
                     COUNT(*) as total,
                     SUM(CASE WHEN fromMe = true THEN 1 ELSE 0 END) as sent,
                     SUM(CASE WHEN fromMe = false THEN 1 ELSE 0 END) as received
                 FROM whatsapp_messages
-                WHERE sessionId IN (${Prisma.join(sessionIds)})
+                WHERE sessionId IN (${getSharedPrismaClient().join(sessionIds)})
                 AND timestamp >= ${startDate}
                 GROUP BY DATE(timestamp)
                 ORDER BY date
@@ -1498,7 +1510,7 @@ async function editMessage(req, res) {
         }
 
         // التحقق من الملكية
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -1529,7 +1541,7 @@ async function deleteMessage(req, res) {
         }
 
         // التحقق من الملكية
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -1560,7 +1572,7 @@ async function forwardMessage(req, res) {
         }
 
         // التحقق من الملكية
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -1590,7 +1602,7 @@ async function archiveChat(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -1601,7 +1613,7 @@ async function archiveChat(req, res) {
         await WhatsAppManager.archiveChat(sessionId, jid, archive);
 
         // Update local DB
-        await prisma.whatsAppContact.updateMany({
+        await getSharedPrismaClient().whatsAppContact.updateMany({
             where: { sessionId, jid },
             data: { isArchived: archive }
         });
@@ -1626,7 +1638,7 @@ async function pinChat(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -1637,7 +1649,7 @@ async function pinChat(req, res) {
         await WhatsAppManager.pinChat(sessionId, jid, pin);
 
         // Update local DB
-        await prisma.whatsAppContact.updateMany({
+        await getSharedPrismaClient().whatsAppContact.updateMany({
             where: { sessionId, jid },
             data: { isPinned: pin }
         });
@@ -1662,7 +1674,7 @@ async function muteChat(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -1673,7 +1685,7 @@ async function muteChat(req, res) {
         await WhatsAppManager.muteChat(sessionId, jid, mute);
 
         // Update local DB
-        await prisma.whatsAppContact.updateMany({
+        await getSharedPrismaClient().whatsAppContact.updateMany({
             where: { sessionId, jid },
             data: { isMuted: mute }
         });
@@ -1698,7 +1710,7 @@ async function markChatUnread(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -1710,7 +1722,7 @@ async function markChatUnread(req, res) {
 
         // Update local DB if needed (optional, as unread count comes from messages usually)
         if (unread) {
-            await prisma.whatsAppContact.updateMany({
+            await getSharedPrismaClient().whatsAppContact.updateMany({
                 where: { sessionId, jid },
                 data: { unreadCount: { increment: 1 } } // Artificial increment
             });
@@ -1736,7 +1748,7 @@ async function clearChat(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -1751,7 +1763,7 @@ async function clearChat(req, res) {
         }
 
         // Delete messages from local DB
-        await prisma.whatsAppMessage.deleteMany({
+        await getSharedPrismaClient().whatsAppMessage.deleteMany({
             where: { sessionId, remoteJid: jid }
         });
 
@@ -1775,7 +1787,7 @@ async function deleteChat(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -1801,11 +1813,11 @@ async function deleteChat(req, res) {
         }
 
         // Delete from DB
-        await prisma.whatsAppMessage.deleteMany({
+        await getSharedPrismaClient().whatsAppMessage.deleteMany({
             where: { sessionId, remoteJid: jid }
         });
 
-        await prisma.whatsAppContact.deleteMany({
+        await getSharedPrismaClient().whatsAppContact.deleteMany({
             where: { sessionId, jid }
         });
 
@@ -1897,7 +1909,7 @@ async function migrateAuthToDatabase(req, res) {
             }
 
             // Save to database
-            await prisma.whatsAppSession.update({
+            await getSharedPrismaClient().whatsAppSession.update({
                 where: { id: sessionId },
                 data: {
                     authState: JSON.stringify(authState),
@@ -1910,7 +1922,7 @@ async function migrateAuthToDatabase(req, res) {
 
         if (sessionId) {
             // Migrate single session
-            const session = await prisma.whatsAppSession.findFirst({
+            const session = await getSharedPrismaClient().whatsAppSession.findFirst({
                 where: { id: sessionId, companyId }
             });
 
@@ -1922,7 +1934,7 @@ async function migrateAuthToDatabase(req, res) {
             res.json(result);
         } else {
             // Migrate all sessions
-            const sessions = await prisma.whatsAppSession.findMany({
+            const sessions = await getSharedPrismaClient().whatsAppSession.findMany({
                 where: { companyId },
                 select: { id: true, name: true }
             });
@@ -1971,7 +1983,7 @@ async function createGroup(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
         if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
 
         const group = await WhatsAppManager.createGroup(sessionId, subject, participants);
@@ -1996,7 +2008,7 @@ async function getGroupMetadata(req, res) {
             return res.status(400).json({ error: 'Session ID is required' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
         if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
 
         const metadata = await WhatsAppManager.getGroupMetadata(sessionId, jid);
@@ -2021,7 +2033,7 @@ async function updateGroupParticipants(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
 
         if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
 
@@ -2047,7 +2059,7 @@ async function updateGroupSubject(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
         if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
 
         await WhatsAppManager.updateGroupSubject(sessionId, jid, subject);
@@ -2072,7 +2084,7 @@ async function updateGroupDescription(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
         if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
 
         await WhatsAppManager.updateGroupDescription(sessionId, jid, description);
@@ -2097,7 +2109,7 @@ async function updateGroupSettings(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
         if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
 
         await WhatsAppManager.updateGroupSettings(sessionId, jid, settings);
@@ -2122,7 +2134,7 @@ async function leaveGroup(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
         if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
 
         await WhatsAppManager.leaveGroup(sessionId, jid);
@@ -2147,7 +2159,7 @@ async function getGroupInviteCode(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
         if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
 
         const code = await WhatsAppManager.getGroupInviteCode(sessionId, jid);
@@ -2172,7 +2184,7 @@ async function revokeGroupInviteCode(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
         if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
 
         const code = await WhatsAppManager.revokeGroupInviteCode(sessionId, jid);
@@ -2200,7 +2212,7 @@ async function blockContact(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
         if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
 
         await WhatsAppManager.blockContact(sessionId, jid);
@@ -2224,7 +2236,7 @@ async function unblockContact(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
         if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
 
         await WhatsAppManager.unblockContact(sessionId, jid);
@@ -2248,7 +2260,7 @@ async function checkNumber(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
         if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
 
         const result = await WhatsAppManager.onWhatsApp(sessionId, number);
@@ -2276,7 +2288,7 @@ async function getProfile(req, res) {
             return res.status(400).json({ error: 'Session ID is required' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
         if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
 
         const profile = await WhatsAppManager.getProfile(sessionId, companyId);
@@ -2284,6 +2296,34 @@ async function getProfile(req, res) {
     } catch (error) {
         console.error('❌ Error fetching profile:', error);
         res.status(500).json({ error: 'حدث خطأ أثناء جلب الملف الشخصي' });
+    }
+}
+
+/**
+ * مزامنة الملف الشخصي يدوياً
+ * POST /api/whatsapp/profile/sync
+ */
+async function syncProfile(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId } = req.body;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'Session ID is required' });
+        }
+
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
+
+        const profile = await WhatsAppManager.syncProfile(sessionId);
+        if (!profile) {
+            return res.status(400).json({ error: 'تعذر مزامنة الملف الشخصي (قد تكون الجلسة غير متصلة)' });
+        }
+
+        res.json({ success: true, profile });
+    } catch (error) {
+        console.error('❌ Error syncing profile:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء مزامنة الملف الشخصي' });
     }
 }
 
@@ -2300,7 +2340,7 @@ async function updateProfile(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({ where: { id: sessionId, companyId } });
         if (!session) return res.status(404).json({ error: 'الجلسة غير موجودة' });
 
         if (name) await WhatsAppManager.updateProfileName(sessionId, name);
@@ -2350,7 +2390,7 @@ async function createGroup(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2380,7 +2420,7 @@ async function getGroupMetadata(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2410,7 +2450,7 @@ async function updateGroupSubject(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2440,7 +2480,7 @@ async function updateGroupDescription(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2470,7 +2510,7 @@ async function updateGroupSettings(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2500,7 +2540,7 @@ async function updateGroupParticipants(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2530,7 +2570,7 @@ async function leaveGroup(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2560,7 +2600,7 @@ async function getGroupInviteCode(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2590,7 +2630,7 @@ async function revokeGroupInviteCode(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2617,7 +2657,7 @@ async function getBusinessProfile(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2642,7 +2682,7 @@ async function setBusinessProfile(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2667,7 +2707,7 @@ async function updateBusinessProfile(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2692,7 +2732,7 @@ async function getBusinessHours(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2717,7 +2757,7 @@ async function setBusinessHours(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2744,7 +2784,7 @@ async function sendBroadcast(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2769,7 +2809,7 @@ async function createBroadcastList(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2794,7 +2834,7 @@ async function getBroadcastLists(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2821,7 +2861,7 @@ async function labelChat(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2846,7 +2886,7 @@ async function getLabels(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2871,7 +2911,7 @@ async function createLabel(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2896,7 +2936,7 @@ async function deleteLabel(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2923,7 +2963,7 @@ async function starMessage(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2948,7 +2988,7 @@ async function unstarMessage(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -2973,7 +3013,7 @@ async function getStarredMessages(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3000,7 +3040,7 @@ async function fetchBlocklist(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3025,7 +3065,7 @@ async function fetchPrivacySettings(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3050,7 +3090,7 @@ async function setPrivacy(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3077,7 +3117,7 @@ async function groupFetchAllParticipating(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3102,7 +3142,7 @@ async function groupToggleEphemeral(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3127,7 +3167,7 @@ async function groupUpdatePicture(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3152,7 +3192,7 @@ async function groupInviteAccept(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3177,7 +3217,7 @@ async function groupInviteReject(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3202,7 +3242,7 @@ async function groupInviteInfo(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3229,7 +3269,7 @@ async function getStatus(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3254,7 +3294,7 @@ async function setStatus(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3281,7 +3321,7 @@ async function getUrlInfo(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3308,7 +3348,7 @@ async function sendPoll(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3333,7 +3373,7 @@ async function sendOrder(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3358,7 +3398,7 @@ async function sendCatalog(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3383,7 +3423,7 @@ async function getCatalog(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3408,7 +3448,7 @@ async function getProducts(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3433,7 +3473,7 @@ async function getCart(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3460,7 +3500,7 @@ async function sendTemplateMessage(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3485,7 +3525,7 @@ async function getMessageTemplate(req, res) {
             return res.status(400).json({ error: 'البيانات غير مكتملة' });
         }
 
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { id: sessionId, companyId }
         });
 
@@ -3649,7 +3689,7 @@ async function getDebugSessions(req, res) {
         console.log('🔍 Debugging WhatsApp sessions...');
 
         // 1. Get all sessions from DB (ignore companyId for debug to see everything)
-        const dbSessions = await prisma.whatsAppSession.findMany({
+        const dbSessions = await getSharedPrismaClient().whatsAppSession.findMany({
             select: {
                 id: true,
                 name: true,
@@ -3761,6 +3801,7 @@ module.exports = {
     checkNumber,
     updateProfile,
     getProfile,
+    syncProfile,
 
     // Business Profile
     getBusinessProfile,
@@ -3818,5 +3859,6 @@ module.exports = {
     getMessageTemplate,
     getDebugSessions
 };
+
 
 

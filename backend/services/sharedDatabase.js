@@ -43,18 +43,18 @@ const MAX_RETRY_ATTEMPTS = 2; // ✅ Reduced retries
  */
 function createStablePrismaClient() {
   console.log('🔧 [SharedDB] Creating stable PrismaClient...');
-  
+
   const databaseUrl = process.env.DATABASE_URL;
   const urlWithParams = new URL(databaseUrl);
-  
+
   // ⚡ PERFORMANCE FOCUS: Increased limits to prevent queue buildup
   urlWithParams.searchParams.set('connection_limit', '25');       // ⚡ INCREASED: 25 connections (was 10) to match concurrent queries
   urlWithParams.searchParams.set('pool_timeout', '30');           // ✅ 30 seconds
-  urlWithParams.searchParams.set('connect_timeout', '10');        // ✅ 10 seconds
+  urlWithParams.searchParams.set('connect_timeout', '30');        // ✅ 30 seconds (Increased from 10)
   urlWithParams.searchParams.set('socket_timeout', '30');         // ✅ 30 seconds
   urlWithParams.searchParams.set('statement_timeout', '15000');   // ⚡ REDUCED: 15 seconds (was 20) to fail fast on slow queries
   urlWithParams.searchParams.set('pgbouncer', 'true');            // ✅ Enable pooling
-  
+
   const client = new PrismaClient({
     datasources: {
       db: {
@@ -64,7 +64,7 @@ function createStablePrismaClient() {
     log: ['error'], // ✅ Only errors
     errorFormat: 'minimal'
   });
-  
+
   // Track queries
   client.$on('query', () => {
     queryCount++;
@@ -72,7 +72,7 @@ function createStablePrismaClient() {
     connectionManager.lastSuccessfulQuery = Date.now();
     connectionManager.connectionRetryCount = 0; // Reset on successful query
   });
-  
+
   return client;
 }
 
@@ -85,7 +85,7 @@ async function guaranteeConnection() {
     try {
       await Promise.race([
         sharedPrismaInstance.$queryRaw`SELECT 1 as quick_check`,
-        new Promise((_, reject) => 
+        new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Quick check timeout')), 1000)
         )
       ]);
@@ -95,24 +95,24 @@ async function guaranteeConnection() {
       isInitialized = false;
     }
   }
-  
+
   // Prevent multiple simultaneous connection attempts
   if (connectionManager.isConnecting && connectionManager.connectionPromise) {
     console.log('🔄 [SharedDB] Waiting for existing connection attempt...');
     return await connectionManager.connectionPromise;
   }
-  
+
   connectionManager.isConnecting = true;
   connectionManager.lastConnectionAttempt = Date.now();
   connectionManager.connectionRetryCount++;
-  
+
   const connectionPromise = (async () => {
     const maxConnectionRetries = 3;
-    
+
     for (let attempt = 1; attempt <= maxConnectionRetries; attempt++) {
       try {
         console.log(`🔄 [SharedDB] Connection attempt ${attempt}/${maxConnectionRetries}...`);
-        
+
         // Clean up any existing instance
         if (sharedPrismaInstance) {
           try {
@@ -122,43 +122,43 @@ async function guaranteeConnection() {
           }
           sharedPrismaInstance = null;
         }
-        
+
         // Create new instance
         sharedPrismaInstance = createStablePrismaClient();
-        
+
         // Connect with timeout
         await Promise.race([
           sharedPrismaInstance.$connect(),
-          new Promise((_, reject) => 
+          new Promise((_, reject) =>
             setTimeout(() => reject(new Error('Connection timeout')), CONNECTION_TIMEOUT)
           )
         ]);
-        
+
         // Verify connection with simple query
         await Promise.race([
           sharedPrismaInstance.$queryRaw`SELECT 1 as connection_verify`,
-          new Promise((_, reject) => 
+          new Promise((_, reject) =>
             setTimeout(() => reject(new Error('Verification timeout')), 5000)
           )
         ]);
-        
+
         isInitialized = true;
         connectionManager.lastSuccessfulQuery = Date.now();
         connectionManager.connectionRetryCount = 0;
-        
+
         console.log('✅ [SharedDB] Database connection established and verified');
         return true;
-        
+
       } catch (error) {
         console.error(`❌ [SharedDB] Connection attempt ${attempt} failed:`, error.message);
-        
+
         if (attempt < maxConnectionRetries) {
           const backoffDelay = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
           console.log(`⏳ [SharedDB] Retrying connection in ${backoffDelay}ms...`);
           await new Promise(resolve => setTimeout(resolve, backoffDelay));
           continue;
         }
-        
+
         // All retries failed
         isInitialized = false;
         sharedPrismaInstance = null;
@@ -166,9 +166,9 @@ async function guaranteeConnection() {
       }
     }
   })();
-  
+
   connectionManager.connectionPromise = connectionPromise;
-  
+
   try {
     const result = await connectionPromise;
     return result;
@@ -184,42 +184,42 @@ async function guaranteeConnection() {
 async function executeQuerySafely(operation, operationName = 'unknown') {
   // Ensure we have a valid connection before executing
   await guaranteeConnection();
-  
+
   if (!isInitialized || !sharedPrismaInstance) {
     throw new Error('No database connection available');
   }
-  
+
   let lastError;
-  
+
   // ⚡ NEW: Add query timeout (10 seconds max per query)
   const QUERY_TIMEOUT = 10000; // 10 seconds
-  
+
   for (let attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
     try {
       // ⚡ NEW: Execute query with timeout
       const result = await Promise.race([
         operation(),
-        new Promise((_, reject) => 
+        new Promise((_, reject) =>
           setTimeout(() => reject(new Error(`Query timeout after ${QUERY_TIMEOUT}ms`)), QUERY_TIMEOUT)
         )
       ]);
-      
+
       if (attempt > 1) {
         console.log(`✅ [SharedDB] Query "${operationName}" succeeded on attempt ${attempt}`);
       }
-      
+
       return result;
-      
+
     } catch (error) {
       lastError = error;
-      
+
       // ⚡ NEW: Log slow queries
       if (error.message.includes('timeout')) {
         console.warn(`⏰ [SharedDB] Query "${operationName}" timed out after ${QUERY_TIMEOUT}ms`);
       }
-      
+
       // Check if this is a connection error
-      const isConnectionError = 
+      const isConnectionError =
         error.message.includes('Engine is not yet connected') ||
         error.message.includes('not yet connected') ||
         error.message.includes('Response from the Engine was empty') ||
@@ -229,32 +229,32 @@ async function executeQuerySafely(operation, operationName = 'unknown') {
         error.code === 'P1001' ||
         error.code === 'P1008' ||
         error.code === 'P1017';
-      
+
       if (isConnectionError && attempt < MAX_RETRY_ATTEMPTS) {
         // Reset connection state
         isInitialized = false;
-        
+
         // Wait before retry with exponential backoff
         const delay = Math.min(500 * Math.pow(2, attempt - 1), 5000);
         console.log(`🔄 [SharedDB] Connection error in "${operationName}", retry ${attempt + 1}/${MAX_RETRY_ATTEMPTS} in ${delay}ms`);
-        
+
         await new Promise(resolve => setTimeout(resolve, delay));
-        
+
         // Try to reestablish connection before next attempt
         try {
           await guaranteeConnection();
         } catch (connectionError) {
           console.error(`❌ [SharedDB] Reconnection failed:`, connectionError.message);
         }
-        
+
         continue;
       }
-      
+
       // Non-retryable error or max retries reached
       break;
     }
   }
-  
+
   // If we get here, all retries failed
   console.error(`❌ [SharedDB] All retries failed for "${operationName}":`, lastError.message);
   throw lastError;
@@ -276,15 +276,15 @@ async function executeWithQueue(operation, priority = 0) {
       processQueue(); // Process any queued items
     }
   }
-  
+
   return new Promise((resolve, reject) => {
     // Extract operation name for logging
     const operationName = operation.name || 'anonymous';
-    
+
     const wrappedOperation = async () => {
       return await executeQuerySafely(operation, operationName);
     };
-    
+
     const queueItem = {
       operation: wrappedOperation,
       priority,
@@ -292,16 +292,16 @@ async function executeWithQueue(operation, priority = 0) {
       reject,
       timestamp: Date.now()
     };
-    
+
     queryQueue.push(queueItem);
-    
+
     // Sort by priority (higher first)
     queryQueue.sort((a, b) => b.priority - a.priority);
-    
+
     // ⚡ WARNING: Log if queue is getting large (reduced threshold)
     if (queryQueue.length > 50) {
       console.warn(`⚠️ [SharedDB] Query queue is large: ${queryQueue.length} queries waiting, ${activeQueries} active`);
-      
+
       // ⚡ NEW: Log oldest query in queue
       if (queryQueue.length > 0) {
         const oldestQuery = queryQueue[0];
@@ -311,7 +311,7 @@ async function executeWithQueue(operation, priority = 0) {
         }
       }
     }
-    
+
     processQueue();
   });
 }
@@ -323,26 +323,26 @@ async function processQueue() {
   if (isProcessingQueue) return;
   if (queryQueue.length === 0) return;
   if (activeQueries >= MAX_CONCURRENT_QUERIES) return;
-  
+
   isProcessingQueue = true;
-  
+
   // ⚡ OPTIMIZATION: Process multiple items in parallel
   const itemsToProcess = Math.min(
-    queryQueue.length, 
+    queryQueue.length,
     MAX_CONCURRENT_QUERIES - activeQueries
   );
-  
+
   const items = [];
   for (let i = 0; i < itemsToProcess; i++) {
     const item = queryQueue.shift();
     if (!item) break;
     items.push(item);
   }
-  
+
   // Process all items in parallel
   items.forEach(item => {
     activeQueries++;
-    
+
     item.operation()
       .then(item.resolve)
       .catch(item.reject)
@@ -352,9 +352,9 @@ async function processQueue() {
         setImmediate(() => processQueue());
       });
   });
-  
+
   isProcessingQueue = false;
-  
+
   // ⚡ NEW: If queue is still large, schedule another processing round
   if (queryQueue.length > 0 && activeQueries < MAX_CONCURRENT_QUERIES) {
     setImmediate(() => processQueue());
@@ -368,22 +368,22 @@ function startHealthMonitoring() {
   if (connectionManager.healthCheckInterval) {
     clearInterval(connectionManager.healthCheckInterval);
   }
-  
+
   connectionManager.healthCheckInterval = setInterval(async () => {
     if (!sharedPrismaInstance || connectionManager.isConnecting) {
       return;
     }
-    
+
     // Don't check if there was recent activity
     const timeSinceLastSuccess = Date.now() - connectionManager.lastSuccessfulQuery;
     if (timeSinceLastSuccess < 15000) { // 15 seconds
       return;
     }
-    
+
     try {
       await Promise.race([
         sharedPrismaInstance.$queryRaw`SELECT 1 as health_check`,
-        new Promise((_, reject) => 
+        new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Health check timeout')), 5000)
         )
       ]);
@@ -403,7 +403,7 @@ function getSharedPrismaClient() {
     console.log('✅ [SharedDB] Stable PrismaClient created');
     startHealthMonitoring();
   }
-  
+
   return sharedPrismaInstance;
 }
 
@@ -412,14 +412,14 @@ function getSharedPrismaClient() {
  */
 function isInConnectionLimitCooldown() {
   if (!connectionLimitReached) return false;
-  
+
   if (connectionLimitResetTime && Date.now() > connectionLimitResetTime) {
     connectionLimitReached = false;
     connectionLimitResetTime = null;
     console.log('✅ [SharedDB] Cooldown period ended');
     return false;
   }
-  
+
   return true;
 }
 
@@ -454,29 +454,29 @@ async function executeWithRetry(operation, maxRetries = 5, initialDelay = 2000) 
       }
 
       const result = await operation();
-      
+
       if (attempt > 1) {
         console.log(`✅ [SharedDB] Query succeeded on attempt ${attempt}`);
       }
-      
+
       return result;
-      
+
     } catch (error) {
       lastError = error;
 
       // Detect connection limit error
-      const isConnectionLimitError = 
+      const isConnectionLimitError =
         error.message.includes('max_connections_per_hour') ||
         error.message.includes('ERROR 42000 (1226)') ||
         (error.code === 1226);
-      
+
       if (isConnectionLimitError) {
         setConnectionLimitReached();
         throw new Error(`Database connection limit exceeded. 1-hour cooldown activated.`);
       }
 
       // Other retryable errors
-      const isRetryable = 
+      const isRetryable =
         error.message.includes('Connection') ||
         error.message.includes('timeout') ||
         error.message.includes('Engine is not yet connected') ||
@@ -492,7 +492,7 @@ async function executeWithRetry(operation, maxRetries = 5, initialDelay = 2000) 
         const backoff = Math.min(delay * Math.pow(2, attempt - 1), 30000);
         const jitter = Math.random() * 1000;
         delay = backoff + jitter;
-        
+
         console.log(`⚠️ [SharedDB] Connection error, retry ${attempt + 1}/${maxRetries} in ${Math.round(delay)}ms`);
         continue;
       }
@@ -513,20 +513,20 @@ async function executeWithRetry(operation, maxRetries = 5, initialDelay = 2000) 
 async function initializeSharedDatabase() {
   try {
     console.log('🔧 [SharedDB] Starting database initialization...');
-    
-    const prisma = getSharedPrismaClient();
-    
+
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
+
     // Use the new guaranteed connection approach
     await guaranteeConnection();
-    
+
     // Test query
     await executeWithQueue(async () => {
-      await prisma.$queryRaw`SELECT 1 as test`;
+      await getSharedPrismaClient().$queryRaw`SELECT 1 as test`;
       console.log('✅ [SharedDB] Database test successful');
     }, 10);
-    
+
     return true;
-    
+
   } catch (error) {
     console.error('❌ [SharedDB] Initialization failed:', error.message);
     throw error;
@@ -546,8 +546,8 @@ async function safeQuery(operation, priority = 0) {
 async function healthCheck() {
   try {
     if (!sharedPrismaInstance) {
-      return { 
-        status: 'disconnected', 
+      return {
+        status: 'disconnected',
         error: 'No instance',
         connectionLimitStatus: connectionLimitReached ? 'cooldown' : 'normal'
       };
@@ -575,7 +575,7 @@ async function healthCheck() {
       activeQueries,
       connectionLimitStatus: 'normal'
     };
-    
+
   } catch (error) {
     return {
       status: error.message.includes('cooldown') ? 'cooldown' : 'error',
@@ -615,7 +615,7 @@ async function closeSharedDatabase() {
     clearInterval(connectionManager.healthCheckInterval);
     connectionManager.healthCheckInterval = null;
   }
-  
+
   if (sharedPrismaInstance) {
     try {
       // Wait for queue to clear
@@ -623,13 +623,13 @@ async function closeSharedDatabase() {
       while (queryQueue.length > 0 && Date.now() < timeout) {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
-      
+
       await sharedPrismaInstance.$disconnect();
       console.log('✅ [SharedDB] Database closed gracefully');
-      
+
       sharedPrismaInstance = null;
       isInitialized = false;
-      
+
     } catch (error) {
       console.error('❌ [SharedDB] Error closing database:', error);
     }
@@ -662,10 +662,10 @@ module.exports = {
     if (!connectionLimitReached) {
       return { inCooldown: false, remainingMinutes: 0, endsAt: null };
     }
-    
+
     const remainingMs = connectionLimitResetTime - Date.now();
     const remainingMinutes = Math.ceil(remainingMs / 1000 / 60);
-    
+
     return {
       inCooldown: true,
       remainingMinutes: Math.max(0, remainingMinutes),
@@ -673,3 +673,4 @@ module.exports = {
     };
   }
 };
+

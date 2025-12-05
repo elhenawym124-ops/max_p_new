@@ -1,13 +1,13 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 async function checkMarketingCompany() {
   try {
     console.log('🔍 البحث عن شركة "شركة التسويق"...\n');
 
     // البحث عن الشركة بالاسم
-    const company = await prisma.company.findFirst({
+    const company = await getSharedPrismaClient().company.findFirst({
       where: {
         name: {
           contains: 'التسويق'
@@ -56,7 +56,7 @@ async function checkMarketingCompany() {
     // جلب المنتجات
     console.log('\n\n📦 المنتجات:');
     console.log('=====================================');
-    const products = await prisma.product.findMany({
+    const products = await getSharedPrismaClient().product.findMany({
       where: {
         companyId: company.id,
         isActive: true
@@ -104,7 +104,7 @@ async function checkMarketingCompany() {
     // جلب الفروع
     console.log('\n\n🏪 الفروع:');
     console.log('=====================================');
-    const branches = await prisma.branch.findMany({
+    const branches = await getSharedPrismaClient().branch.findMany({
       where: {
         companyId: company.id
       },
@@ -131,7 +131,7 @@ async function checkMarketingCompany() {
     // جلب مناطق الشحن
     console.log('\n\n🚚 مناطق الشحن:');
     console.log('=====================================');
-    const shippingZones = await prisma.shippingZone.findMany({
+    const shippingZones = await getSharedPrismaClient().shippingZone.findMany({
       where: {
         companyId: company.id
       },
@@ -167,10 +167,11 @@ async function checkMarketingCompany() {
   } catch (error) {
     console.error('❌ خطأ في جلب المعلومات:', error);
   } finally {
-    await prisma.$disconnect();
+    await getSharedPrismaClient().$disconnect();
   }
 }
 
 // تشغيل السكريبت
 checkMarketingCompany();
+
 

@@ -1,9 +1,9 @@
 const { getSharedPrismaClient } = require('./services/sharedDatabase');
 
 async function checkEventLog() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     try {
-        const logs = await prisma.whatsAppEventLog.findMany({
+        const logs = await getSharedPrismaClient().whatsAppEventLog.findMany({
             where: {
                 eventType: 'debug_incoming_msg'
             },
@@ -26,3 +26,4 @@ async function checkEventLog() {
 }
 
 checkEventLog();
+

@@ -11,11 +11,11 @@ const intentAnalyzer = require('./aiAgent/intentAnalyzer');
 // Note: modelManager is now loaded lazily via getModelManager()
 // Note: imageExtractor has been merged into imageProcessor
 
-const prisma = getSharedPrismaClient(); // Use shared database connection
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues // Use shared database connection
 
 class AIAgentService {
   constructor() {
-    this.prisma = prisma;
+    // this.prisma = prisma; // ❌ Removed
     this.ragService = null;
     this.isInitialized = false;
     this.learningService = new ContinuousLearningServiceV2();
@@ -24,7 +24,7 @@ class AIAgentService {
     this.promptEnhancement = new PromptEnhancementService(); // خدمة تحسين الـ prompts
     this.responseOptimizer = new ResponseOptimizer(); // محسن الردود
     this.errorHandler = new AIErrorHandler(); // نظام معالجة أخطاء الذكاء الاصطناعي
-    
+
     // ✅ Message Processor - Lazy initialization
     this._messageProcessor = null;
     // ✅ Context Manager - Lazy initialization
@@ -42,7 +42,11 @@ class AIAgentService {
     // ✅ Learning Monitor - Lazy initialization
     this._learningMonitor = null;
   }
-  
+
+  get prisma() {
+    return getSharedPrismaClient();
+  }
+
   /**
    * Get message processor instance (lazy initialization)
    */
@@ -165,12 +169,12 @@ class AIAgentService {
     const messageProcessor = this.getMessageProcessor();
     return messageProcessor.processCustomerMessage(messageData);
   }
-  
+
   /**
    * معالجة الصور مع الـ AI بدون استخدام الذاكرة لضمان الاستقلالية
    * ✅ Delegation to messageProcessor for better code organization
    */
-  async processImageWithAI(imageAnalysis, messageData, intent = 'general_inquiry', productMatch ) {
+  async processImageWithAI(imageAnalysis, messageData, intent = 'general_inquiry', productMatch) {
     return this.getMessageProcessor().processImageWithAI(imageAnalysis, messageData, intent, productMatch);
   }
 
@@ -205,7 +209,7 @@ class AIAgentService {
   buildPrompt(customerMessage, companyPrompts, conversationMemory, ragData, customerData, messageData) {
     return this.getResponseGenerator().buildPrompt(customerMessage, companyPrompts, conversationMemory, ragData, customerData, messageData);
   }
-  
+
   /**
    * Get company prompts and settings
    * ✅ Delegation to settingsManager for better code organization
@@ -242,7 +246,7 @@ class AIAgentService {
    * Generate AI response using Gemini API with Pattern Enhancement
    * ✅ Delegation to responseGenerator for better code organization
    */
-  async generateAIResponse(prompt, conversationMemory , useRAG , providedGeminiConfig , companyId , conversationId, messageContext) {
+  async generateAIResponse(prompt, conversationMemory, useRAG, providedGeminiConfig, companyId, conversationId, messageContext) {
     return this.getResponseGenerator().generateAIResponse(prompt, conversationMemory, useRAG, providedGeminiConfig, companyId, conversationId, messageContext);
   }
 
@@ -421,7 +425,7 @@ class AIAgentService {
    * Detect if customer is confirming an order using AI only (Pure AI Version)
    * ✅ Delegation to orderProcessor for better code organization
    */
-  async detectOrderConfirmation(message, conversationMemory, customerId, companyId ) {
+  async detectOrderConfirmation(message, conversationMemory, customerId, companyId) {
     try {
       // استخدام orderProcessor module
       const result = await this.getOrderProcessor().detectOrderConfirmation(
@@ -438,7 +442,7 @@ class AIAgentService {
           companyId,
           message
         );
-        
+
         return {
           isConfirming: true,
           orderDetails: orderDetails,
@@ -877,3 +881,4 @@ class AIAgentService {
 }
 
 module.exports = new AIAgentService();
+

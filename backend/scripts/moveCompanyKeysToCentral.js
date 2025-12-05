@@ -4,14 +4,14 @@
  */
 
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 async function moveKeysToCentral() {
   try {
     console.log('🔄 [MOVE-KEYS] Starting to move company keys to central...\n');
 
     // 1. جلب كل المفاتيح من نوع COMPANY
-    const companyKeys = await prisma.geminiKey.findMany({
+    const companyKeys = await getSharedPrismaClient().geminiKey.findMany({
       where: {
         keyType: 'COMPANY',
         isActive: true
@@ -47,7 +47,7 @@ async function moveKeysToCentral() {
 
     for (const key of companyKeys) {
       try {
-        await prisma.geminiKey.update({
+        await getSharedPrismaClient().geminiKey.update({
           where: { id: key.id },
           data: {
             keyType: 'CENTRAL',
@@ -70,14 +70,14 @@ async function moveKeysToCentral() {
     console.log(`   - Errors: ${errorCount}`);
 
     // 5. التحقق من النتيجة
-    const centralKeysCount = await prisma.geminiKey.count({
+    const centralKeysCount = await getSharedPrismaClient().geminiKey.count({
       where: {
         keyType: 'CENTRAL',
         isActive: true
       }
     });
 
-    const remainingCompanyKeys = await prisma.geminiKey.count({
+    const remainingCompanyKeys = await getSharedPrismaClient().geminiKey.count({
       where: {
         keyType: 'COMPANY',
         isActive: true
@@ -100,7 +100,7 @@ async function moveKeysToCentral() {
     console.error('❌ [MOVE-KEYS] Error:', error);
     throw error;
   } finally {
-    await prisma.$disconnect();
+    await getSharedPrismaClient().$disconnect();
   }
 }
 
@@ -114,4 +114,5 @@ moveKeysToCentral()
     console.error('\n❌ Script failed:', error);
     process.exit(1);
   });
+
 

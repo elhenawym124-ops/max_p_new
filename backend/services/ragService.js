@@ -1,7 +1,7 @@
 const { getSharedPrismaClient, safeQuery } = require('./sharedDatabase');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 class RAGService {
   constructor() {
@@ -151,7 +151,7 @@ class RAGService {
         }
 
         products = await safeQuery(async () => {
-          return await prisma.product.findMany({
+          return await getSharedPrismaClient().product.findMany({
             where: whereClause,
             include: {
               category: true,
@@ -333,7 +333,7 @@ class RAGService {
 
   async loadFAQs(companyId = null) {
     // 🔐 في المستقبل، يمكن جلب FAQs من قاعدة البيانات حسب الشركة
-    // const faqs = await prisma.faq.findMany({ where: { companyId } });
+    // const faqs = await getSharedPrismaClient().faq.findMany({ where: { companyId } });
 
     const faqs = [
       {
@@ -371,7 +371,7 @@ class RAGService {
 
   async loadPolicies(companyId = null) {
     // 🔐 في المستقبل، يمكن جلب Policies من قاعدة البيانات حسب الشركة
-    // const policies = await prisma.policy.findMany({ where: { companyId } });
+    // const policies = await getSharedPrismaClient().policy.findMany({ where: { companyId } });
 
     const policies = [
       {
@@ -776,7 +776,7 @@ class RAGService {
   async getCustomerOrders(customerId) {
     try {
       const orders = await safeQuery(async () => {
-        return await prisma.order.findMany({
+        return await getSharedPrismaClient().order.findMany({
           where: { customerId },
           orderBy: { createdAt: 'desc' },
           take: 3,
@@ -1501,7 +1501,7 @@ ${contextText ? `المحادثة السابقة:\n${contextText}\n` : ''}
 
     try {
       const categories = await safeQuery(async () => {
-        return await prisma.category.findMany({
+        return await getSharedPrismaClient().category.findMany({
           where: {
             companyId: companyId,
             isActive: true
@@ -1744,7 +1744,7 @@ ${categoriesList}
         console.log('🔍 [CATEGORY-PRODUCTS] جاري البحث في قاعدة البيانات...');
         
         const allProducts = await safeQuery(async () => {
-          return await prisma.product.findMany({
+          return await getSharedPrismaClient().product.findMany({
             where: {
               companyId: companyId,
               isActive: true
@@ -1774,7 +1774,7 @@ ${categoriesList}
       // البحث عن الـ category بالاسم
       console.log(`🔍 [CATEGORY-PRODUCTS] البحث عن التصنيف "${categoryName}" في قاعدة البيانات...`);
       const category = await safeQuery(async () => {
-        return await prisma.category.findFirst({
+        return await getSharedPrismaClient().category.findFirst({
           where: {
             companyId: companyId,
             name: categoryName,
@@ -1794,7 +1794,7 @@ ${categoriesList}
       // جلب المنتجات من هذا التصنيف
       console.log(`🔍 [CATEGORY-PRODUCTS] جاري جلب المنتجات من التصنيف...`);
       const products = await safeQuery(async () => {
-        return await prisma.product.findMany({
+        return await getSharedPrismaClient().product.findMany({
           where: {
             companyId: companyId,
             categoryId: category.id,
@@ -1975,3 +1975,4 @@ class ImageHelper {
 module.exports = new RAGService();
 module.exports.RAGService = RAGService;
 module.exports.ImageHelper = ImageHelper;
+

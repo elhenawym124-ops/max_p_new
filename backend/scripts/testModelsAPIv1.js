@@ -63,13 +63,13 @@ async function testModel(apiKey, modelName, apiVersion = 'v1') {
 }
 
 async function testAllModels() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     try {
         console.log('\n🧪 اختبار جميع النماذج مع v1 API (الافتراضي)...\n');
         
         // جلب أول مفتاح مركزي نشط
-        const centralKey = await prisma.geminiKey.findFirst({
+        const centralKey = await getSharedPrismaClient().geminiKey.findFirst({
             where: {
                 keyType: 'CENTRAL',
                 isActive: true
@@ -166,11 +166,13 @@ async function testAllModels() {
         console.error('❌ خطأ عام:', error.message);
         console.error(error.stack);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 testAllModels();
+
+
 
 
 

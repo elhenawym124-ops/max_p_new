@@ -9,12 +9,12 @@ const path = require('path');
 
 async function collectMarketingCompanyProducts() {
   try {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     console.log('\n🔍 البحث عن شركة "شركة التسويق"...\n');
 
     // البحث عن شركة التسويق
-    const companies = await prisma.company.findMany({
+    const companies = await getSharedPrismaClient().company.findMany({
       where: {
         OR: [
           { name: { contains: 'التسويق' } },
@@ -39,7 +39,7 @@ async function collectMarketingCompanyProducts() {
       console.log('❌ لم يتم العثور على شركة "شركة التسويق"');
       console.log('\n📋 جميع الشركات الموجودة:\n');
       
-      const allCompanies = await prisma.company.findMany({
+      const allCompanies = await getSharedPrismaClient().company.findMany({
         select: {
           id: true,
           name: true,
@@ -68,7 +68,7 @@ async function collectMarketingCompanyProducts() {
     // جلب جميع المنتجات
     console.log('📦 جلب منتجات الشركة...\n');
     
-    const products = await prisma.product.findMany({
+    const products = await getSharedPrismaClient().product.findMany({
       where: {
         companyId: company.id
       },
@@ -99,7 +99,7 @@ async function collectMarketingCompanyProducts() {
     console.log(`✅ تم جلب ${products.length} منتج\n`);
 
     // جلب الفئات
-    const categories = await prisma.category.findMany({
+    const categories = await getSharedPrismaClient().category.findMany({
       where: {
         companyId: company.id
       },
@@ -313,4 +313,5 @@ if (require.main === module) {
 }
 
 module.exports = { collectMarketingCompanyProducts };
+
 

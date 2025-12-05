@@ -1,14 +1,14 @@
 const { getSharedPrismaClient } = require('./services/sharedDatabase');
 
 async function checkCorrectJid() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     const sessionId = 'cminpms7r002eufvkd4kvfoin';
     const correctJid = '201112257060@s.whatsapp.net'; // Egypt code + number
 
     try {
         console.log(`🔎 Checking for messages with JID: ${correctJid}`);
 
-        const messages = await prisma.whatsAppMessage.findMany({
+        const messages = await getSharedPrismaClient().whatsAppMessage.findMany({
             where: {
                 sessionId: sessionId,
                 remoteJid: { contains: '1112257060' } // Search by partial number
@@ -22,7 +22,7 @@ async function checkCorrectJid() {
         });
 
         // Also check if there's a contact for the correct JID
-        const contact = await prisma.whatsAppContact.findFirst({
+        const contact = await getSharedPrismaClient().whatsAppContact.findFirst({
             where: {
                 sessionId: sessionId,
                 jid: { contains: '1112257060' }
@@ -43,3 +43,4 @@ async function checkCorrectJid() {
 }
 
 checkCorrectJid();
+

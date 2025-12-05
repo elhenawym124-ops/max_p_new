@@ -1,5 +1,5 @@
 const { getSharedPrismaClient } = require('./services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const path = require('path');
 const fs = require('fs');
@@ -10,7 +10,7 @@ async function debugSession() {
         console.log('🔍 Starting Connection Debugger...');
 
         // 1. Find the session
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: { name: '0004' }
         });
 
@@ -61,8 +61,9 @@ async function debugSession() {
     } catch (error) {
         console.error('❌ Error during debug:', error);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 debugSession();
+

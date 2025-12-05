@@ -5,13 +5,13 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 
 async function resetModelRPD(modelName = null, keyId = null, resetAll = false) {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     try {
         console.log('\n🔄 إعادة تعيين RPD للنماذج...\n');
         
         // إذا لم يتم تحديد keyId، نأخذ أول مفتاح مركزي نشط
         if (!keyId && !resetAll) {
-            const centralKey = await prisma.geminiKey.findFirst({
+            const centralKey = await getSharedPrismaClient().geminiKey.findFirst({
                 where: {
                     keyType: 'CENTRAL',
                     isActive: true
@@ -44,7 +44,7 @@ async function resetModelRPD(modelName = null, keyId = null, resetAll = false) {
         }
         
         // جلب النماذج
-        const models = await prisma.geminiKeyModel.findMany({
+        const models = await getSharedPrismaClient().geminiKeyModel.findMany({
             where: whereClause
         });
         
@@ -78,7 +78,7 @@ async function resetModelRPD(modelName = null, keyId = null, resetAll = false) {
                     };
                     
                     // حفظ التغييرات
-                    await prisma.geminiKeyModel.update({
+                    await getSharedPrismaClient().geminiKeyModel.update({
                         where: { id: model.id },
                         data: {
                             usage: JSON.stringify(usage),
@@ -102,7 +102,7 @@ async function resetModelRPD(modelName = null, keyId = null, resetAll = false) {
         console.error('❌ خطأ:', error.message);
         console.error(error.stack);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
@@ -113,4 +113,5 @@ const resetAll = args.includes('--all');
 const keyId = args.find(arg => arg.startsWith('--key='))?.replace('--key=', '') || null;
 
 resetModelRPD(modelName, keyId, resetAll);
+
 

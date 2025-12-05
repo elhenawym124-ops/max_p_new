@@ -5,12 +5,12 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 
 async function verifyFix() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     try {
         console.log('\n🔍 التحقق من حالة النماذج...\n');
         
         // فحص النماذج
-        const models = await prisma.geminiKeyModel.findMany({
+        const models = await getSharedPrismaClient().geminiKeyModel.findMany({
             select: {
                 id: true,
                 model: true,
@@ -55,7 +55,7 @@ async function verifyFix() {
             }
         }
         
-        const totalModels = await prisma.geminiKeyModel.count();
+        const totalModels = await getSharedPrismaClient().geminiKeyModel.count();
         
         console.log(`\n📊 الإحصائيات (عينة من ${models.length}):`);
         console.log(`   ✅ نماذج صحيحة: ${validCount}`);
@@ -67,10 +67,11 @@ async function verifyFix() {
         console.error('❌ خطأ:', error.message);
         console.error(error.stack);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 verifyFix();
+
 
 

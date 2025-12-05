@@ -4,7 +4,7 @@
  */
 
 const { getSharedPrismaClient } = require('../sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 class RateLimitResetService {
   constructor() {
@@ -53,7 +53,7 @@ class RateLimitResetService {
     try {
       // ✅ FIX: التحقق من اتصال Prisma قبل الاستخدام
       try {
-        await prisma.$connect();
+        await getSharedPrismaClient().$connect();
       } catch (connectError) {
         // Prisma قد يكون متصل بالفعل، تجاهل الخطأ
         if (!connectError.message?.includes('already connected')) {
@@ -65,7 +65,7 @@ class RateLimitResetService {
       let resetCount = 0;
 
       // جلب جميع النماذج
-      const allModels = await prisma.geminiKeyModel.findMany({
+      const allModels = await getSharedPrismaClient().geminiKeyModel.findMany({
         where: {
           isEnabled: true
         }
@@ -127,7 +127,7 @@ class RateLimitResetService {
 
           // تحديث السجل إذا لزم الأمر
           if (needsUpdate) {
-            await prisma.geminiKeyModel.update({
+            await getSharedPrismaClient().geminiKeyModel.update({
               where: { id: model.id },
               data: {
                 usage: JSON.stringify(usage),
@@ -150,7 +150,7 @@ class RateLimitResetService {
         console.warn('⚠️ [RATE-LIMIT-RESET] Prisma engine not connected, will retry on next interval');
         // محاولة إعادة الاتصال
         try {
-          await prisma.$connect();
+          await getSharedPrismaClient().$connect();
         } catch (reconnectError) {
           console.warn('⚠️ [RATE-LIMIT-RESET] Failed to reconnect:', reconnectError.message);
         }
@@ -183,4 +183,5 @@ module.exports = {
   RateLimitResetService,
   getRateLimitResetService
 };
+
 

@@ -3,7 +3,7 @@
  */
 
 const { getSharedPrismaClient } = require('./sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 const COMPANY_ID = 'cmem8ayyr004cufakqkcsyn97'; // شركة التسويق
 
@@ -14,7 +14,7 @@ async function checkMessages() {
     console.log('='.repeat(60) + '\n');
 
     // البحث عن customer اختبار
-    const testCustomer = await prisma.customer.findFirst({
+    const testCustomer = await getSharedPrismaClient().customer.findFirst({
       where: {
         companyId: COMPANY_ID,
         firstName: 'عميل اختبار',
@@ -32,7 +32,7 @@ async function checkMessages() {
     console.log(`   Company ID: ${testCustomer.companyId}\n`);
 
     // البحث عن محادثات TEST
-    const conversations = await prisma.conversation.findMany({
+    const conversations = await getSharedPrismaClient().conversation.findMany({
       where: {
         companyId: COMPANY_ID,
         channel: 'TEST',
@@ -60,7 +60,7 @@ async function checkMessages() {
       console.log(`   Preview: ${conv.lastMessagePreview || 'لا يوجد'}`);
 
       // جلب الرسائل
-      const messages = await prisma.message.findMany({
+      const messages = await getSharedPrismaClient().message.findMany({
         where: {
           conversationId: conv.id
         },
@@ -90,7 +90,7 @@ async function checkMessages() {
       console.log(`📋 تفاصيل آخر محادثة: ${lastConv.id}`);
       console.log('='.repeat(60));
 
-      const allMessages = await prisma.message.findMany({
+      const allMessages = await getSharedPrismaClient().message.findMany({
         where: {
           conversationId: lastConv.id
         },
@@ -118,9 +118,10 @@ async function checkMessages() {
     console.error('❌ خطأ في فحص الرسائل:', error);
     console.error(error.stack);
   } finally {
-    await prisma.$disconnect();
+    await getSharedPrismaClient().$disconnect();
   }
 }
 
 checkMessages();
+
 

@@ -11,7 +11,7 @@
  */
 
 const { getSharedPrismaClient } = require('../sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const WhatsAppMessageHandler = require('./WhatsAppMessageHandler');
 const WhatsAppManager = require('./WhatsAppManager');
 const socketService = require('../socketService');
@@ -46,7 +46,7 @@ async function processMessage(sessionId, companyId, message, sock, sessionConfig
         }
 
         // جلب إعدادات AI للشركة
-        const aiSettings = await prisma.aiSettings.findUnique({
+        const aiSettings = await getSharedPrismaClient().aiSettings.findUnique({
             where: { companyId }
         });
 
@@ -190,7 +190,7 @@ async function sendSuggestion(sessionId, companyId, remoteJid, aiResponse) {
  */
 async function generateSuggestion(sessionId, companyId, message) {
     try {
-        const aiSettings = await prisma.aiSettings.findUnique({
+        const aiSettings = await getSharedPrismaClient().aiSettings.findUnique({
             where: { companyId }
         });
 
@@ -249,7 +249,7 @@ async function handleMediaMessage(sessionId, companyId, message, sock, sessionCo
 async function sendAwayMessage(sessionId, to, awayMessage) {
     try {
         // التحقق من عدم إرسال رسالة عدم التواجد مؤخراً
-        const recentAwayMessage = await prisma.whatsAppMessage.findFirst({
+        const recentAwayMessage = await getSharedPrismaClient().whatsAppMessage.findFirst({
             where: {
                 sessionId,
                 remoteJid: to,
@@ -282,7 +282,7 @@ async function sendAwayMessage(sessionId, to, awayMessage) {
 async function sendWelcomeMessage(sessionId, to, welcomeMessage) {
     try {
         // التحقق من أن هذه أول رسالة من هذا الرقم
-        const existingMessages = await prisma.whatsAppMessage.count({
+        const existingMessages = await getSharedPrismaClient().whatsAppMessage.count({
             where: {
                 sessionId,
                 remoteJid: to
@@ -336,7 +336,7 @@ async function sendProductSuggestions(sessionId, to, products) {
  */
 async function getConversationContext(sessionId, remoteJid, limit = 10) {
     try {
-        const messages = await prisma.whatsAppMessage.findMany({
+        const messages = await getSharedPrismaClient().whatsAppMessage.findMany({
             where: {
                 sessionId,
                 remoteJid
@@ -362,7 +362,7 @@ async function getConversationContext(sessionId, remoteJid, limit = 10) {
 async function getCustomerInfo(sessionId, remoteJid, companyId) {
     try {
         // جلب جهة الاتصال
-        const contact = await prisma.whatsAppContact.findUnique({
+        const contact = await getSharedPrismaClient().whatsAppContact.findUnique({
             where: {
                 sessionId_jid: {
                     sessionId,
@@ -534,3 +534,4 @@ module.exports = {
     analyzeSentiment,
     generateConversationSummary
 };
+

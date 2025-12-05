@@ -1,10 +1,10 @@
 const { getSharedPrismaClient } = require('./services/sharedDatabase');
 
 async function deepCheck() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     try {
         // 1. Find the connected session for the phone number 01123087745
-        const session = await prisma.whatsAppSession.findFirst({
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
             where: {
                 phoneNumber: { contains: '01123087745' },
                 status: 'CONNECTED'
@@ -19,7 +19,7 @@ async function deepCheck() {
         console.log(`✅ Found Session: ${session.id} (${session.name})`);
 
         // 2. Find the contact 'swan' or the number 01112257060
-        const contact = await prisma.whatsAppContact.findFirst({
+        const contact = await getSharedPrismaClient().whatsAppContact.findFirst({
             where: {
                 sessionId: session.id,
                 OR: [
@@ -43,7 +43,7 @@ async function deepCheck() {
 
         // 3. Get the last 5 messages for this contact
         if (contact) {
-            const messages = await prisma.whatsAppMessage.findMany({
+            const messages = await getSharedPrismaClient().whatsAppMessage.findMany({
                 where: {
                     sessionId: session.id,
                     remoteJid: contact.jid
@@ -66,3 +66,4 @@ async function deepCheck() {
 }
 
 deepCheck();
+

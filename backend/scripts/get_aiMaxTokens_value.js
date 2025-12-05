@@ -5,13 +5,13 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 
 async function getAIMaxTokens() {
-  const prisma = getSharedPrismaClient();
+  // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
   
   try {
-    await prisma.$connect();
+    await getSharedPrismaClient().$connect();
     console.log('✅ Connected to database\n');
     
-    const allSettings = await prisma.aiSettings.findMany({
+    const allSettings = await getSharedPrismaClient().aiSettings.findMany({
       select: {
         companyId: true,
         aiMaxTokens: true,
@@ -97,9 +97,10 @@ async function getAIMaxTokens() {
       console.error('Stack:', error.stack.split('\n').slice(0, 10).join('\n'));
     }
   } finally {
-    await prisma.$disconnect();
+    await getSharedPrismaClient().$disconnect();
     process.exit(0);
   }
 }
 
 getAIMaxTokens();
+

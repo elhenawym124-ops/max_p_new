@@ -4,14 +4,14 @@
  */
 
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 async function fixUsageFieldTruncation() {
     try {
         console.log('\n🔧 ========== إصلاح حقل usage المقطوع ==========\n');
 
         // جلب جميع النماذج
-        const allModels = await prisma.geminiKeyModel.findMany({
+        const allModels = await getSharedPrismaClient().geminiKeyModel.findMany({
             select: {
                 id: true,
                 model: true,
@@ -51,7 +51,7 @@ async function fixUsageFieldTruncation() {
                 console.log(`   طول الحقل الحالي: ${(modelRecord.usage || '').length}`);
                 
                 try {
-                    await prisma.geminiKeyModel.update({
+                    await getSharedPrismaClient().geminiKeyModel.update({
                         where: { id: modelRecord.id },
                         data: {
                             usage: JSON.stringify(defaultUsage)
@@ -76,9 +76,10 @@ async function fixUsageFieldTruncation() {
     } catch (error) {
         console.error('❌ خطأ:', error);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 fixUsageFieldTruncation();
+
 

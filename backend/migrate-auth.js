@@ -3,7 +3,7 @@
  */
 
 const { getSharedPrismaClient } = require('./services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
@@ -88,7 +88,7 @@ async function migrateSession(sessionId) {
 
     // Save to database
     try {
-        await prisma.whatsAppSession.update({
+        await getSharedPrismaClient().whatsAppSession.update({
             where: { id: sessionId },
             data: {
                 authState: JSON.stringify(authState),
@@ -107,7 +107,7 @@ async function main() {
     try {
         console.log('🚀 Starting migration from files to database...\n');
 
-        const sessions = await prisma.whatsAppSession.findMany({
+        const sessions = await getSharedPrismaClient().whatsAppSession.findMany({
             select: { id: true, name: true }
         });
 
@@ -140,7 +140,7 @@ async function main() {
         console.error('\n❌ Migration error:', error);
         throw error; // Re-throw to allow caller to handle
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
@@ -150,4 +150,5 @@ if (require.main === module) {
 }
 
 module.exports = { migrateSession, main };
+
 

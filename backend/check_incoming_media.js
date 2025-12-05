@@ -1,9 +1,9 @@
 const { getSharedPrismaClient } = require('./services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 async function checkIncomingMedia() {
     try {
-        const lastIncoming = await prisma.whatsAppMessage.findFirst({
+        const lastIncoming = await getSharedPrismaClient().whatsAppMessage.findFirst({
             where: {
                 fromMe: false,
                 messageType: 'IMAGE'
@@ -15,8 +15,9 @@ async function checkIncomingMedia() {
     } catch (error) {
         console.error('Error:', error);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 checkIncomingMedia();
+

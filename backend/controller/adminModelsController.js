@@ -1,5 +1,5 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 /**
  * Get all models across all keys (central + company keys)
@@ -37,7 +37,7 @@ const getAllModels = async (req, res) => {
             whereClause.isEnabled = true;
         }
 
-        const models = await prisma.geminiKeyModel.findMany({
+        const models = await getSharedPrismaClient().geminiKeyModel.findMany({
             where: whereClause,
             include: {
                 key: {
@@ -165,7 +165,7 @@ const toggleModelEnabled = async (req, res) => {
         const { id } = req.params;
         const { isEnabled } = req.body;
 
-        const model = await prisma.geminiKeyModel.findUnique({
+        const model = await getSharedPrismaClient().geminiKeyModel.findUnique({
             where: { id },
             include: {
                 key: {
@@ -184,7 +184,7 @@ const toggleModelEnabled = async (req, res) => {
             });
         }
 
-        const updatedModel = await prisma.geminiKeyModel.update({
+        const updatedModel = await getSharedPrismaClient().geminiKeyModel.update({
             where: { id },
             data: {
                 isEnabled: isEnabled !== undefined ? isEnabled : !model.isEnabled,
@@ -242,7 +242,7 @@ const updateModelPriority = async (req, res) => {
             });
         }
 
-        const model = await prisma.geminiKeyModel.findUnique({
+        const model = await getSharedPrismaClient().geminiKeyModel.findUnique({
             where: { id }
         });
 
@@ -253,7 +253,7 @@ const updateModelPriority = async (req, res) => {
             });
         }
 
-        const updatedModel = await prisma.geminiKeyModel.update({
+        const updatedModel = await getSharedPrismaClient().geminiKeyModel.update({
             where: { id },
             data: {
                 priority: parseInt(priority),
@@ -305,7 +305,7 @@ const updateModelLimit = async (req, res) => {
             });
         }
 
-        const model = await prisma.geminiKeyModel.findUnique({
+        const model = await getSharedPrismaClient().geminiKeyModel.findUnique({
             where: { id }
         });
 
@@ -325,7 +325,7 @@ const updateModelLimit = async (req, res) => {
             limit: parseInt(limit)
         };
 
-        const updatedModel = await prisma.geminiKeyModel.update({
+        const updatedModel = await getSharedPrismaClient().geminiKeyModel.update({
             where: { id },
             data: {
                 usage: JSON.stringify(updatedUsage),
@@ -373,7 +373,7 @@ const getModelsByModelName = async (req, res) => {
         console.log('🔍 [ADMIN-MODELS] getModelsByModelName called');
         const { modelName } = req.params;
 
-        const models = await prisma.geminiKeyModel.findMany({
+        const models = await getSharedPrismaClient().geminiKeyModel.findMany({
             where: {
                 model: modelName
             },
@@ -455,4 +455,5 @@ module.exports = {
     updateModelLimit,
     getModelsByModelName
 };
+
 

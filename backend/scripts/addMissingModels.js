@@ -37,13 +37,13 @@ function generateId() {
 }
 
 async function addMissingModels() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     try {
         console.log('\n🔧 إضافة النماذج المفقودة إلى المفاتيح...\n');
         
         // جلب جميع المفاتيح النشطة
-        const keys = await prisma.geminiKey.findMany({
+        const keys = await getSharedPrismaClient().geminiKey.findMany({
             where: {
                 isActive: true
             }
@@ -59,7 +59,7 @@ async function addMissingModels() {
             
             for (const modelInfo of missingModels) {
                 // التحقق إذا كان النموذج موجود بالفعل
-                const existing = await prisma.geminiKeyModel.findFirst({
+                const existing = await getSharedPrismaClient().geminiKeyModel.findFirst({
                     where: {
                         keyId: key.id,
                         model: modelInfo.model
@@ -95,7 +95,7 @@ async function addMissingModels() {
                         }
                     };
                     
-                    await prisma.geminiKeyModel.create({
+                    await getSharedPrismaClient().geminiKeyModel.create({
                         data: {
                             id: generateId(),
                             keyId: key.id,
@@ -123,7 +123,7 @@ async function addMissingModels() {
         // عرض ملخص لكل نموذج
         console.log('\n📋 ملخص لكل نموذج:\n');
         for (const modelInfo of missingModels) {
-            const count = await prisma.geminiKeyModel.count({
+            const count = await getSharedPrismaClient().geminiKeyModel.count({
                 where: {
                     model: modelInfo.model
                 }
@@ -137,9 +137,10 @@ async function addMissingModels() {
         console.error('❌ خطأ:', error.message);
         console.error(error.stack);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 addMissingModels();
+
 

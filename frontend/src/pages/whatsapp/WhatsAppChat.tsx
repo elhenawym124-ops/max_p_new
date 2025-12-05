@@ -179,7 +179,6 @@ const WhatsAppChat: React.FC = () => {
 
   // Broadcast
   const [broadcastDialogOpen, setBroadcastDialogOpen] = useState(false);
-  const [broadcastData, setBroadcastData] = useState({ message: '', selectedContacts: [] as string[] });
 
   // Catalog
   const [catalogDialogOpen, setCatalogDialogOpen] = useState(false);
@@ -213,6 +212,11 @@ const WhatsAppChat: React.FC = () => {
   const [chatFilter, setChatFilter] = useState('all'); // 'all', 'unread', 'groups'
   const [createGroupDialogOpen, setCreateGroupDialogOpen] = useState(false);
   const [currentUserProfile, setCurrentUserProfile] = useState<{ name: string; status: string; profilePicUrl: string } | null>(null);
+
+  // Pagination State
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingContacts, setLoadingContacts] = useState(false);
 
   const fetchUserProfile = async () => {
     if (!selectedSession || selectedSession === 'all') return;
@@ -320,15 +324,59 @@ const WhatsAppChat: React.FC = () => {
     requestNotificationPermission();
   }, []);
 
-  const loadContacts = useCallback(async () => {
+  // Load from cache on session change
+  useEffect(() => {
     if (!selectedSession) return;
-    try {
-      const res = await api.get('/whatsapp/conversations', { params: { sessionId: selectedSession } });
-      setContacts(res.data.conversations || []);
-    } catch (error) {
-      console.error(error);
+    const cached = localStorage.getItem(`whatsapp_contacts_${selectedSession}`);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setContacts(parsed);
+        }
+      } catch (e) {
+        console.error('Failed to load contacts from cache', e);
+      }
     }
   }, [selectedSession]);
+
+  const loadContacts = useCallback(async (pageNum = 1, reset = false) => {
+    if (!selectedSession) return;
+    // If loading, don't trigger again unless it's a reset (search/filter change)
+    if (loadingContacts && !reset) return;
+
+    setLoadingContacts(true);
+    try {
+      const res = await api.get('/whatsapp/conversations', {
+        params: {
+          sessionId: selectedSession,
+          page: pageNum,
+          limit: 15 // Reduced initial load
+        }
+      });
+      const newContacts = res.data.conversations || [];
+      const pagination = res.data.pagination;
+
+      setContacts(prev => {
+        if (reset) {
+          // Cache the first page for instant load next time
+          localStorage.setItem(`whatsapp_contacts_${selectedSession}`, JSON.stringify(newContacts));
+          return newContacts;
+        }
+        // Filter out duplicates just in case
+        const existingIds = new Set(prev.map(c => c.id));
+        const uniqueNewContacts = newContacts.filter((c: Contact) => !existingIds.has(c.id));
+        return [...prev, ...uniqueNewContacts];
+      });
+
+      setHasMore(pagination ? pagination.page < pagination.totalPages : newContacts.length === 15);
+      setPage(pageNum);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoadingContacts(false);
+    }
+  }, [selectedSession, loadingContacts]);
 
   // Debounced version to avoid excessive API calls
   const debouncedLoadContacts = useCallback(() => {
@@ -336,7 +384,7 @@ const WhatsAppChat: React.FC = () => {
       clearTimeout(loadContactsTimeoutRef.current);
     }
     loadContactsTimeoutRef.current = setTimeout(() => {
-      loadContacts();
+      loadContacts(1, true);
     }, 500);
   }, [loadContacts]);
 
@@ -353,6 +401,7 @@ const WhatsAppChat: React.FC = () => {
     };
 
     const handleNewMessage = (data: any) => {
+      // console.log('🔔 [FRONTEND] Received whatsapp:message:new:', data);
       const { sessionId, message } = data;
 
       // Normalize JIDs for comparison
@@ -431,6 +480,28 @@ const WhatsAppChat: React.FC = () => {
           }
         }
       }
+      // Update contact list immediately
+      setContacts(prev => {
+        const contactIndex = prev.findIndex(c => normalizeJid(c.jid) === msgJid);
+        if (contactIndex > -1) {
+          const contact = prev[contactIndex];
+          const updatedContact = {
+            ...contact,
+            lastMessage: message,
+            lastMessageAt: message.timestamp,
+            unreadCount: isCurrentChat ? 0 : (contact.unreadCount || 0) + 1
+          };
+          const newContacts = [...prev];
+          newContacts.splice(contactIndex, 1);
+          const pinned = newContacts.filter(c => c.isPinned);
+          const unpinned = newContacts.filter(c => !c.isPinned);
+          if (updatedContact.isPinned) pinned.unshift(updatedContact);
+          else unpinned.unshift(updatedContact);
+          return [...pinned, ...unpinned];
+        }
+        return prev;
+      });
+
       // Update contact list with debouncing
       debouncedLoadContacts();
     };
@@ -438,7 +509,7 @@ const WhatsAppChat: React.FC = () => {
     const handleNotification = (data: any) => {
       const { contactName, message, messageType, soundEnabled, notificationsEnabled, sessionId } = data;
 
-      console.log('🔔 [NOTIFICATION] Received notification:', { contactName, messageType, soundEnabled, notificationsEnabled });
+      // console.log('🔔 [NOTIFICATION] Received notification:', { contactName, messageType, soundEnabled, notificationsEnabled });
 
       // Prepare message text
       const messageText = message ||
@@ -502,6 +573,7 @@ const WhatsAppChat: React.FC = () => {
     };
 
     const handleMessageSent = (data: any) => {
+      // console.log('🔔 [FRONTEND] Received whatsapp:message:sent:', data);
       const { sessionId, message } = data;
 
       const msgJid = normalizeJid(message.remoteJid);
@@ -514,6 +586,28 @@ const WhatsAppChat: React.FC = () => {
           return [...prev, message];
         });
       }
+      // Update contact list immediately
+      setContacts(prev => {
+        const msgJid = normalizeJid(message.remoteJid);
+        const contactIndex = prev.findIndex(c => normalizeJid(c.jid) === msgJid);
+        if (contactIndex > -1) {
+          const contact = prev[contactIndex];
+          const updatedContact = {
+            ...contact,
+            lastMessage: message,
+            lastMessageAt: message.timestamp
+          };
+          const newContacts = [...prev];
+          newContacts.splice(contactIndex, 1);
+          const pinned = newContacts.filter(c => c.isPinned);
+          const unpinned = newContacts.filter(c => !c.isPinned);
+          if (updatedContact.isPinned) pinned.unshift(updatedContact);
+          else unpinned.unshift(updatedContact);
+          return [...pinned, ...unpinned];
+        }
+        return prev;
+      });
+
       // Update contact list with debouncing
       debouncedLoadContacts();
     };
@@ -522,7 +616,7 @@ const WhatsAppChat: React.FC = () => {
     socket.on('whatsapp:message:status', handleMessageStatus);
     socket.on('whatsapp:message:sent', handleMessageSent);
     socket.on('whatsapp:notification:new', (data) => {
-      console.log('🔔 [FRONTEND] Received whatsapp:notification:new event:', data);
+      // console.log('🔔 [FRONTEND] Received whatsapp:notification:new event:', data);
       handleNotification(data);
     });
     socket.on('user_typing', handleUserTyping);
@@ -1137,21 +1231,7 @@ const WhatsAppChat: React.FC = () => {
   };
 
   // ==================== Broadcast ====================
-  const handleSendBroadcast = async () => {
-    if (!selectedSession || !broadcastData.message.trim() || broadcastData.selectedContacts.length === 0) return;
-    try {
-      await api.post('/whatsapp/broadcast/send', {
-        sessionId: selectedSession,
-        jids: broadcastData.selectedContacts,
-        message: { text: broadcastData.message }
-      });
-      enqueueSnackbar(`تم إرسال البث إلى ${broadcastData.selectedContacts.length} جهة اتصال`, { variant: 'success' });
-      setBroadcastDialogOpen(false);
-      setBroadcastData({ message: '', selectedContacts: [] });
-    } catch (error) {
-      enqueueSnackbar('فشل إرسال البث', { variant: 'error' });
-    }
-  };
+
 
   // ==================== Catalog ====================
   const loadProducts = async () => {
@@ -1439,10 +1519,10 @@ const WhatsAppChat: React.FC = () => {
               {sessions.map(s => <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>)}
             </Select>
           </FormControl>
-          <IconButton onClick={() => setProfileDialogOpen(true)} title="الملف الشخصي" disabled={!selectedSession}>
+          <IconButton onClick={() => setProfileDialogOpen(true)} title="الملف الشخصي" disabled={!selectedSession || selectedSession === 'all'}>
             <PersonIcon />
           </IconButton>
-          <IconButton onClick={() => setLabelDialogOpen(true)} title="التصنيفات" disabled={!selectedSession}>
+          <IconButton onClick={() => setLabelDialogOpen(true)} title="التصنيفات" disabled={!selectedSession || selectedSession === 'all'}>
             <LabelIcon />
           </IconButton>
         </Box>
@@ -1453,24 +1533,43 @@ const WhatsAppChat: React.FC = () => {
             <Chip label="غير مقروء" size="small" onClick={() => setChatFilter('unread')} color={chatFilter === 'unread' ? 'primary' : 'default'} clickable />
             <Chip label="مجموعات" size="small" onClick={() => setChatFilter('groups')} color={chatFilter === 'groups' ? 'primary' : 'default'} clickable />
             <Box sx={{ flex: 1 }} />
-            <IconButton size="small" onClick={() => setCreateGroupDialogOpen(true)} title="إنشاء مجموعة جديدة">
+            <IconButton size="small" onClick={() => setCreateGroupDialogOpen(true)} title="إنشاء مجموعة جديدة" disabled={!selectedSession || selectedSession === 'all'}>
               <GroupAddIcon fontSize="small" />
             </IconButton>
-            <IconButton size="small" onClick={() => setCheckNumberDialogOpen(true)} title="التحقق من رقم">
+            <IconButton size="small" onClick={() => setCheckNumberDialogOpen(true)} title="التحقق من رقم" disabled={!selectedSession || selectedSession === 'all'}>
               <PersonSearchIcon fontSize="small" />
             </IconButton>
-            <IconButton size="small" onClick={() => setBroadcastDialogOpen(true)} title="إرسال بث">
+            <IconButton
+              size="small"
+              onClick={() => {
+                if (selectedSession === 'all') {
+                  enqueueSnackbar('يرجى اختيار جلسة محددة لإرسال بث', { variant: 'warning' });
+                  return;
+                }
+                setBroadcastDialogOpen(true);
+              }}
+              title="إرسال بث"
+              disabled={!selectedSession || selectedSession === 'all'}
+            >
               <BroadcastIcon fontSize="small" />
             </IconButton>
-            <IconButton size="small" onClick={() => setPrivacyDialogOpen(true)} title="الخصوصية">
+            <IconButton size="small" onClick={() => setPrivacyDialogOpen(true)} title="الخصوصية" disabled={!selectedSession || selectedSession === 'all'}>
               <SecurityIcon fontSize="small" />
             </IconButton>
-            <IconButton size="small" onClick={() => setBusinessProfileDialogOpen(true)} title="ملف النشاط التجاري">
+            <IconButton size="small" onClick={() => setBusinessProfileDialogOpen(true)} title="ملف النشاط التجاري" disabled={!selectedSession || selectedSession === 'all'}>
               <StoreIcon fontSize="small" />
             </IconButton>
           </Box>
         </Box>
-        <List sx={{ flex: 1, overflow: 'auto' }}>
+        <List
+          sx={{ flex: 1, overflow: 'auto' }}
+          onScroll={(e) => {
+            const { scrollTop, clientHeight, scrollHeight } = e.currentTarget;
+            if (scrollHeight - scrollTop <= clientHeight + 50 && hasMore && !loadingContacts) {
+              loadContacts(page + 1, false);
+            }
+          }}
+        >
           {filteredContacts.map(contact => (
             <ListItem key={contact.id} button selected={selectedContact?.id === contact.id} onClick={() => setSelectedContact(contact)} onContextMenu={(e) => { e.preventDefault(); setChatMenuAnchor(e.currentTarget); setSelectedChatForMenu(contact); }}>
               <ListItemAvatar>
@@ -2146,75 +2245,7 @@ const WhatsAppChat: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Broadcast Dialog */}
-      <Dialog open={broadcastDialogOpen} onClose={() => setBroadcastDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <BroadcastIcon color="primary" />
-            إرسال بث جماعي
-          </Box>
-        </DialogTitle>
-        <DialogContent dividers>
-          <Alert severity="info" sx={{ mb: 2 }}>
-            سيتم إرسال الرسالة لجميع جهات الاتصال المحددة بشكل فردي.
-          </Alert>
-          <TextField
-            fullWidth
-            label="نص الرسالة"
-            multiline
-            rows={4}
-            value={broadcastData.message}
-            onChange={(e) => setBroadcastData(prev => ({ ...prev, message: e.target.value }))}
-            sx={{ mb: 2 }}
-          />
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            اختر جهات الاتصال ({broadcastData.selectedContacts.length} محدد):
-          </Typography>
-          <Paper sx={{ maxHeight: 300, overflow: 'auto' }}>
-            <List dense>
-              {contacts.filter(c => !c.isGroup).map(contact => (
-                <ListItem
-                  key={contact.id}
-                  button
-                  onClick={() => {
-                    if (broadcastData.selectedContacts.includes(contact.jid)) {
-                      setBroadcastData(prev => ({
-                        ...prev,
-                        selectedContacts: prev.selectedContacts.filter(j => j !== contact.jid)
-                      }));
-                    } else {
-                      setBroadcastData(prev => ({
-                        ...prev,
-                        selectedContacts: [...prev.selectedContacts, contact.jid]
-                      }));
-                    }
-                  }}
-                >
-                  <ListItemAvatar>
-                    <Avatar src={contact.profilePicUrl || ''} sx={{ width: 32, height: 32 }}>
-                      {getContactName(contact)[0]}
-                    </Avatar>
-                  </ListItemAvatar>
-                  <ListItemText primary={getContactName(contact)} secondary={contact.phoneNumber} />
-                  {broadcastData.selectedContacts.includes(contact.jid) && (
-                    <CheckIcon color="primary" />
-                  )}
-                </ListItem>
-              ))}
-            </List>
-          </Paper>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setBroadcastDialogOpen(false)}>إلغاء</Button>
-          <Button
-            variant="contained"
-            onClick={handleSendBroadcast}
-            disabled={!broadcastData.message.trim() || broadcastData.selectedContacts.length === 0}
-          >
-            إرسال ({broadcastData.selectedContacts.length})
-          </Button>
-        </DialogActions>
-      </Dialog>
+
 
       {/* Catalog Dialog */}
       <Dialog open={catalogDialogOpen} onClose={() => setCatalogDialogOpen(false)} maxWidth="md" fullWidth>

@@ -1,5 +1,5 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // In-memory storage for post response settings (fallback when database is not available)
 const postResponseSettingsMemory = new Map();
@@ -67,7 +67,7 @@ const getFacebookComments = async (req, res) => {
     }
 
     // Get comments
-    const comments = await prisma.facebookComment.findMany({
+    const comments = await getSharedPrismaClient().facebookComment.findMany({
       where: whereClause,
       skip: skip,
       take: take,
@@ -84,7 +84,7 @@ const getFacebookComments = async (req, res) => {
     });
 
     // Get total count for pagination
-    const totalCount = await prisma.facebookComment.count({
+    const totalCount = await getSharedPrismaClient().facebookComment.count({
       where: whereClause
     });
 
@@ -125,7 +125,7 @@ const getFacebookCommentById = async (req, res) => {
     const { id } = req.params;
 
     // Find comment with company isolation
-    const comment = await prisma.facebookComment.findFirst({
+    const comment = await getSharedPrismaClient().facebookComment.findFirst({
       where: {
         id: id,
         companyId: companyId
@@ -177,7 +177,7 @@ const updateFacebookComment = async (req, res) => {
     const { response } = req.body;
 
     // Find comment with company isolation
-    const existingComment = await prisma.facebookComment.findFirst({
+    const existingComment = await getSharedPrismaClient().facebookComment.findFirst({
       where: {
         id: id,
         companyId: companyId
@@ -195,7 +195,7 @@ const updateFacebookComment = async (req, res) => {
     }
 
     // Update comment response
-    const updatedComment = await prisma.facebookComment.update({
+    const updatedComment = await getSharedPrismaClient().facebookComment.update({
       where: { id: id },
       data: {
         response: response,
@@ -303,7 +303,7 @@ const sendManualResponseToFacebook = async (req, res) => {
     }
 
     // Find comment with company isolation
-    const existingComment = await prisma.facebookComment.findFirst({
+    const existingComment = await getSharedPrismaClient().facebookComment.findFirst({
       where: {
         id: id,
         companyId: companyId
@@ -356,7 +356,7 @@ const sendManualResponseToFacebook = async (req, res) => {
     }
 
     // Update comment response in database
-    const updatedComment = await prisma.facebookComment.update({
+    const updatedComment = await getSharedPrismaClient().facebookComment.update({
       where: { id: id },
       data: {
         response: response,
@@ -399,7 +399,7 @@ const deleteFacebookComment = async (req, res) => {
     const { id } = req.params;
 
     // Find comment with company isolation
-    const existingComment = await prisma.facebookComment.findFirst({
+    const existingComment = await getSharedPrismaClient().facebookComment.findFirst({
       where: {
         id: id,
         companyId: companyId
@@ -452,7 +452,7 @@ const deleteFacebookComment = async (req, res) => {
     }
 
     // Delete comment from database
-    await prisma.facebookComment.delete({
+    await getSharedPrismaClient().facebookComment.delete({
       where: { id: id }
     });
 
@@ -500,7 +500,7 @@ const bulkDeleteFacebookComments = async (req, res) => {
     }
 
     // Get all comments to be deleted with company isolation
-    const commentsToDelete = await prisma.facebookComment.findMany({
+    const commentsToDelete = await getSharedPrismaClient().facebookComment.findMany({
       where: {
         id: { in: ids },
         companyId: companyId
@@ -559,7 +559,7 @@ const bulkDeleteFacebookComments = async (req, res) => {
     }
 
     // Delete comments from database with company isolation
-    const result = await prisma.facebookComment.deleteMany({
+    const result = await getSharedPrismaClient().facebookComment.deleteMany({
       where: {
         id: { in: ids },
         companyId: companyId
@@ -611,12 +611,12 @@ const getCommentStats = async (req, res) => {
     const companyId = user.companyId;
 
     // Get total comments
-    const totalComments = await prisma.facebookComment.count({
+    const totalComments = await getSharedPrismaClient().facebookComment.count({
       where: { companyId: companyId }
     });
 
     // Get responded comments
-    const respondedComments = await prisma.facebookComment.count({
+    const respondedComments = await getSharedPrismaClient().facebookComment.count({
       where: {
         companyId: companyId,
         NOT: { respondedAt: null }
@@ -624,7 +624,7 @@ const getCommentStats = async (req, res) => {
     });
 
     // Get pending comments
-    const pendingComments = await prisma.facebookComment.count({
+    const pendingComments = await getSharedPrismaClient().facebookComment.count({
       where: {
         companyId: companyId,
         respondedAt: null
@@ -635,7 +635,7 @@ const getCommentStats = async (req, res) => {
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
 
-    const recentComments = await prisma.facebookComment.count({
+    const recentComments = await getSharedPrismaClient().facebookComment.count({
       where: {
         companyId: companyId,
         createdTime: {
@@ -693,7 +693,7 @@ const getFacebookPosts = async (req, res) => {
     const take = parseInt(limit);
 
     // First get distinct post IDs with comments
-    const posts = await prisma.facebookComment.groupBy({
+    const posts = await getSharedPrismaClient().facebookComment.groupBy({
       by: ['postId', 'pageId'],
       where: {
         companyId: companyId,
@@ -713,7 +713,7 @@ const getFacebookPosts = async (req, res) => {
     });
 
     // Get total count for pagination
-    const totalPosts = await prisma.facebookComment.groupBy({
+    const totalPosts = await getSharedPrismaClient().facebookComment.groupBy({
       by: ['postId'],
       where: {
         companyId: companyId,
@@ -728,7 +728,7 @@ const getFacebookPosts = async (req, res) => {
     // Get detailed information for each post
     const postDetails = [];
     for (const post of posts) {
-      const comments = await prisma.facebookComment.findMany({
+      const comments = await getSharedPrismaClient().facebookComment.findMany({
         where: {
           postId: post.postId,
           companyId: companyId
@@ -824,7 +824,7 @@ const getCommentsByPostId = async (req, res) => {
     }
 
     // Get comments for this post
-    const comments = await prisma.facebookComment.findMany({
+    const comments = await getSharedPrismaClient().facebookComment.findMany({
       where: whereClause,
       orderBy: {
         createdTime: 'desc'
@@ -891,9 +891,9 @@ const setPostResponseMethod = async (req, res) => {
     const settingsKey = `${postId}-${companyId}`;
 
     try {
-      if (prisma.postResponseSettings) {
+      if (getSharedPrismaClient().postResponseSettings) {
         // Create or update post response settings in database
-        postSettings = await prisma.postResponseSettings.upsert({
+        postSettings = await getSharedPrismaClient().postResponseSettings.upsert({
           where: {
             postId_companyId: {
               postId: postId,
@@ -974,9 +974,9 @@ const getPostResponseMethod = async (req, res) => {
     const settingsKey = `${postId}-${companyId}`;
 
     try {
-      if (prisma.postResponseSettings) {
+      if (getSharedPrismaClient().postResponseSettings) {
         // Get post response settings from database
-        postSettings = await prisma.postResponseSettings.findUnique({
+        postSettings = await getSharedPrismaClient().postResponseSettings.findUnique({
           where: {
             postId_companyId: {
               postId: postId,
@@ -1029,9 +1029,9 @@ const applyPostResponseMethod = async (req, res) => {
     const settingsKey = `${postId}-${companyId}`;
 
     try {
-      if (prisma.postResponseSettings) {
+      if (getSharedPrismaClient().postResponseSettings) {
         // Get post response settings from database
-        postSettings = await prisma.postResponseSettings.findUnique({
+        postSettings = await getSharedPrismaClient().postResponseSettings.findUnique({
           where: {
             postId_companyId: {
               postId: postId,
@@ -1058,7 +1058,7 @@ const applyPostResponseMethod = async (req, res) => {
     }
 
     // Get all pending comments for this post
-    const pendingComments = await prisma.facebookComment.findMany({
+    const pendingComments = await getSharedPrismaClient().facebookComment.findMany({
       where: {
         postId: postId,
         companyId: companyId,
@@ -1139,7 +1139,7 @@ async function processCommentWithAI(comment, companyId) {
         const responseText = aiResponse.content;
 
         // Update comment with AI response
-        await prisma.facebookComment.update({
+        await getSharedPrismaClient().facebookComment.update({
           where: { id: comment.id },
           data: {
             response: responseText,
@@ -1173,7 +1173,7 @@ async function processCommentWithAI(comment, companyId) {
 async function sendFixedResponse(comment, fixedMessage) {
   try {
     // Update comment with fixed response
-    await prisma.facebookComment.update({
+    await getSharedPrismaClient().facebookComment.update({
       where: { id: comment.id },
       data: {
         response: fixedMessage,
@@ -1200,7 +1200,7 @@ async function sendFixedResponse(comment, fixedMessage) {
         const companyId = comment.companyId;
 
         // Find customer by Facebook ID
-        let customer = await prisma.customer.findFirst({
+        let customer = await getSharedPrismaClient().customer.findFirst({
           where: {
             facebookId: comment.senderId,
             companyId: companyId
@@ -1209,7 +1209,7 @@ async function sendFixedResponse(comment, fixedMessage) {
 
         // If customer doesn't exist, create one
         if (!customer) {
-          customer = await prisma.customer.create({
+          customer = await getSharedPrismaClient().customer.create({
             data: {
               facebookId: comment.senderId,
               firstName: comment.senderName || 'Facebook User',
@@ -1227,7 +1227,7 @@ async function sendFixedResponse(comment, fixedMessage) {
         }
 
         // Find or create conversation
-        let conversation = await prisma.conversation.findFirst({
+        let conversation = await getSharedPrismaClient().conversation.findFirst({
           where: {
             customerId: customer.id,
             status: { in: ['ACTIVE', 'RESOLVED'] }
@@ -1243,7 +1243,7 @@ async function sendFixedResponse(comment, fixedMessage) {
             pageName = pageData.pageName;
           } else if (comment.pageId) {
             // Try to get page name from database
-            const page = await prisma.facebookPage.findUnique({
+            const page = await getSharedPrismaClient().facebookPage.findUnique({
               where: { pageId: comment.pageId }
             });
             if (page) {
@@ -1258,7 +1258,7 @@ async function sendFixedResponse(comment, fixedMessage) {
             pageName: pageName
           };
 
-          conversation = await prisma.conversation.create({
+          conversation = await getSharedPrismaClient().conversation.create({
             data: {
               customerId: customer.id,
               companyId: companyId,
@@ -1270,7 +1270,7 @@ async function sendFixedResponse(comment, fixedMessage) {
           });
         } else if (conversation.status === 'RESOLVED') {
           // Reactivate resolved conversation
-          conversation = await prisma.conversation.update({
+          conversation = await getSharedPrismaClient().conversation.update({
             where: { id: conversation.id },
             data: {
               status: 'ACTIVE',
@@ -1281,7 +1281,7 @@ async function sendFixedResponse(comment, fixedMessage) {
         }
 
         // Save the response as a message from the admin (not from customer)
-        const message = await prisma.message.create({
+        const message = await getSharedPrismaClient().message.create({
           data: {
             conversationId: conversation.id,
             content: fixedMessage,
@@ -1311,7 +1311,7 @@ async function sendFixedResponse(comment, fixedMessage) {
             console.log(`✅ [FIXED-COMMENT-MESSENGER] Successfully sent fixed response to Messenger for user ${customer.facebookId}`);
 
             // Update message with Facebook message ID
-            await prisma.message.update({
+            await getSharedPrismaClient().message.update({
               where: { id: message.id },
               data: {
                 metadata: JSON.stringify({
@@ -1344,7 +1344,7 @@ async function sendCommentReplyToMessenger(comment, responseText, pageData) {
     const companyId = comment.companyId;
 
     // Find customer by Facebook ID
-    let customer = await prisma.customer.findFirst({
+    let customer = await getSharedPrismaClient().customer.findFirst({
       where: {
         facebookId: comment.senderId,
         companyId: companyId
@@ -1353,7 +1353,7 @@ async function sendCommentReplyToMessenger(comment, responseText, pageData) {
 
     // If customer doesn't exist, create one
     if (!customer) {
-      customer = await prisma.customer.create({
+      customer = await getSharedPrismaClient().customer.create({
         data: {
           facebookId: comment.senderId,
           firstName: comment.senderName || 'Facebook User',
@@ -1371,7 +1371,7 @@ async function sendCommentReplyToMessenger(comment, responseText, pageData) {
     }
 
     // Find or create conversation
-    let conversation = await prisma.conversation.findFirst({
+    let conversation = await getSharedPrismaClient().conversation.findFirst({
       where: {
         customerId: customer.id,
         status: { in: ['ACTIVE', 'RESOLVED'] }
@@ -1387,7 +1387,7 @@ async function sendCommentReplyToMessenger(comment, responseText, pageData) {
         pageName = pageData.pageName;
       } else if (comment.pageId) {
         // Try to get page name from database
-        const page = await prisma.facebookPage.findUnique({
+        const page = await getSharedPrismaClient().facebookPage.findUnique({
           where: { pageId: comment.pageId }
         });
         if (page) {
@@ -1402,7 +1402,7 @@ async function sendCommentReplyToMessenger(comment, responseText, pageData) {
         pageName: pageName
       };
 
-      conversation = await prisma.conversation.create({
+      conversation = await getSharedPrismaClient().conversation.create({
         data: {
           customerId: customer.id,
           companyId: companyId,
@@ -1414,7 +1414,7 @@ async function sendCommentReplyToMessenger(comment, responseText, pageData) {
       });
     } else if (conversation.status === 'RESOLVED') {
       // Reactivate resolved conversation
-      conversation = await prisma.conversation.update({
+      conversation = await getSharedPrismaClient().conversation.update({
         where: { id: conversation.id },
         data: {
           status: 'ACTIVE',
@@ -1425,7 +1425,7 @@ async function sendCommentReplyToMessenger(comment, responseText, pageData) {
     }
 
     // Save the response as a message from the admin (not from customer)
-    const message = await prisma.message.create({
+    const message = await getSharedPrismaClient().message.create({
       data: {
         conversationId: conversation.id,
         content: responseText,
@@ -1458,7 +1458,7 @@ async function sendCommentReplyToMessenger(comment, responseText, pageData) {
         console.log(`✅ [COMMENT-REPLY-MESSENGER] Successfully sent comment reply to Messenger for user ${customer.facebookId}`);
 
         // Update message with Facebook message ID
-        await prisma.message.update({
+        await getSharedPrismaClient().message.update({
           where: { id: message.id },
           data: {
             metadata: JSON.stringify({
@@ -1510,8 +1510,8 @@ const setPageResponseMethod = async (req, res) => {
     const settingsKey = `${pageId}-${companyId}`;
 
     try {
-      if (prisma.pageResponseSettings) {
-        pageSettings = await prisma.pageResponseSettings.upsert({
+      if (getSharedPrismaClient().pageResponseSettings) {
+        pageSettings = await getSharedPrismaClient().pageResponseSettings.upsert({
           where: { pageId_companyId: { pageId, companyId } },
           update: {
             responseMethod,
@@ -1569,8 +1569,8 @@ const getPageResponseMethod = async (req, res) => {
     const settingsKey = `${pageId}-${companyId}`;
 
     try {
-      if (prisma.pageResponseSettings) {
-        pageSettings = await prisma.pageResponseSettings.findUnique({
+      if (getSharedPrismaClient().pageResponseSettings) {
+        pageSettings = await getSharedPrismaClient().pageResponseSettings.findUnique({
           where: { pageId_companyId: { pageId, companyId } }
         });
       } else {
@@ -1599,7 +1599,7 @@ const getFacebookPages = async (req, res) => {
     const companyId = user.companyId;
 
     // Get all connected/active pages for this company
-    const connectedPages = await prisma.facebookPage.findMany({
+    const connectedPages = await getSharedPrismaClient().facebookPage.findMany({
       where: {
         companyId: companyId,
         status: { in: ['connected', 'active'] }
@@ -1609,18 +1609,18 @@ const getFacebookPages = async (req, res) => {
     const pageDetails = [];
     for (const pageInfo of connectedPages) {
       // Get posts for this page
-      const posts = await prisma.facebookComment.groupBy({
+      const posts = await getSharedPrismaClient().facebookComment.groupBy({
         by: ['postId'],
         where: { companyId, pageId: pageInfo.pageId }
       });
 
       // Get total comments
-      const totalComments = await prisma.facebookComment.count({
+      const totalComments = await getSharedPrismaClient().facebookComment.count({
         where: { companyId, pageId: pageInfo.pageId }
       });
 
       // Get responded comments
-      const respondedComments = await prisma.facebookComment.count({
+      const respondedComments = await getSharedPrismaClient().facebookComment.count({
         where: { companyId, pageId: pageInfo.pageId, NOT: { respondedAt: null } }
       });
 
@@ -1653,7 +1653,7 @@ const getPostsByPageId = async (req, res) => {
     const companyId = user.companyId;
     const { pageId } = req.params;
 
-    const posts = await prisma.facebookComment.groupBy({
+    const posts = await getSharedPrismaClient().facebookComment.groupBy({
       by: ['postId'],
       where: { companyId, pageId },
       orderBy: { _max: { createdTime: 'desc' } }
@@ -1661,7 +1661,7 @@ const getPostsByPageId = async (req, res) => {
 
     const postDetails = [];
     for (const post of posts) {
-      const comments = await prisma.facebookComment.findMany({
+      const comments = await getSharedPrismaClient().facebookComment.findMany({
         where: { postId: post.postId, companyId }
       });
 

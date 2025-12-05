@@ -5,12 +5,12 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 
 async function checkModel() {
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     try {
         console.log('\n🔍 فحص نموذج محدد...\n');
         
         // جلب نموذج واحد
-        const model = await prisma.geminiKeyModel.findFirst({
+        const model = await getSharedPrismaClient().geminiKeyModel.findFirst({
             select: {
                 id: true,
                 model: true,
@@ -54,9 +54,10 @@ async function checkModel() {
     } catch (error) {
         console.error('❌ خطأ:', error.message);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 checkModel();
+
 

@@ -6,14 +6,14 @@
 
 const FacebookAdsService = require('../services/facebookAdsService');
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 /**
  * جلب Access Token للشركة
  */
 async function getCompanyAdsAccessToken(companyId) {
   try {
-    const company = await prisma.company.findUnique({
+    const company = await getSharedPrismaClient().company.findUnique({
       where: { id: companyId },
       select: { 
         facebookAdsAccessToken: true,
@@ -36,7 +36,7 @@ async function getOrCreateAdAccount(companyId, adAccountId = null) {
   try {
     // إذا كان هناك adAccountId، احصل عليه
     if (adAccountId) {
-      const account = await prisma.facebookAdAccount.findFirst({
+      const account = await getSharedPrismaClient().facebookAdAccount.findFirst({
         where: {
           companyId,
           accountId: adAccountId
@@ -49,7 +49,7 @@ async function getOrCreateAdAccount(companyId, adAccountId = null) {
     }
 
     // جلب Ad Account الافتراضي للشركة
-    const defaultAccount = await prisma.facebookAdAccount.findFirst({
+    const defaultAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: {
         companyId,
         isActive: true
@@ -84,7 +84,7 @@ const getCampaigns = async (req, res) => {
     }
 
     // جلب الحملات من قاعدة البيانات
-    const campaigns = await prisma.facebookCampaign.findMany({
+    const campaigns = await getSharedPrismaClient().facebookCampaign.findMany({
       where: { companyId },
       include: {
         adSets: {
@@ -210,7 +210,7 @@ const createCampaign = async (req, res) => {
     }
 
     // حفظ الحملة في قاعدة البيانات مع كل البيانات
-    const campaign = await prisma.facebookCampaign.create({
+    const campaign = await getSharedPrismaClient().facebookCampaign.create({
       data: {
         companyId,
         adAccountId: adAccount.id,
@@ -260,7 +260,7 @@ const createCampaign = async (req, res) => {
 
         if (adSetResult.success) {
           // حفظ Ad Set في قاعدة البيانات
-          await prisma.facebookAdSet.create({
+          await getSharedPrismaClient().facebookAdSet.create({
             data: {
               companyId,
               campaignId: campaign.id,
@@ -315,7 +315,7 @@ const createFullAd = async (req, res) => {
     }
 
     // جلب Ad Account النشط
-    const adAccount = await prisma.facebookAdAccount.findFirst({
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: { companyId, isActive: true }
     });
 
@@ -377,7 +377,7 @@ const createFullAd = async (req, res) => {
     // حفظ البيانات في قاعدة البيانات
     try {
       // حفظ Campaign
-      const campaign = await prisma.facebookCampaign.create({
+      const campaign = await getSharedPrismaClient().facebookCampaign.create({
         data: {
           companyId,
           adAccountId: adAccount.id,
@@ -398,7 +398,7 @@ const createFullAd = async (req, res) => {
       });
 
       // حفظ AdSet
-      const adSet = await prisma.facebookAdSet.create({
+      const adSet = await getSharedPrismaClient().facebookAdSet.create({
         data: {
           companyId,
           campaignId: campaign.id,
@@ -413,7 +413,7 @@ const createFullAd = async (req, res) => {
       });
 
       // حفظ Ad
-      const ad = await prisma.facebookAd.create({
+      const ad = await getSharedPrismaClient().facebookAd.create({
         data: {
           companyId,
           adSetId: adSet.id,
@@ -485,7 +485,7 @@ const getCampaign = async (req, res) => {
     const { id } = req.params;
     const companyId = req.user?.companyId;
 
-    const campaign = await prisma.facebookCampaign.findFirst({
+    const campaign = await getSharedPrismaClient().facebookCampaign.findFirst({
       where: {
         id,
         companyId
@@ -538,7 +538,7 @@ const updateCampaign = async (req, res) => {
     const updateData = req.body;
 
     // جلب الحملة
-    const campaign = await prisma.facebookCampaign.findFirst({
+    const campaign = await getSharedPrismaClient().facebookCampaign.findFirst({
       where: { id, companyId }
     });
 
@@ -559,7 +559,7 @@ const updateCampaign = async (req, res) => {
     }
 
     // تحديث في قاعدة البيانات
-    const updated = await prisma.facebookCampaign.update({
+    const updated = await getSharedPrismaClient().facebookCampaign.update({
       where: { id },
       data: {
         ...updateData,
@@ -591,7 +591,7 @@ const deleteCampaign = async (req, res) => {
     const companyId = req.user?.companyId;
 
     // جلب الحملة
-    const campaign = await prisma.facebookCampaign.findFirst({
+    const campaign = await getSharedPrismaClient().facebookCampaign.findFirst({
       where: { id, companyId }
     });
 
@@ -612,7 +612,7 @@ const deleteCampaign = async (req, res) => {
     }
 
     // حذف من قاعدة البيانات (CASCADE سيحذف AdSets و Ads تلقائياً)
-    await prisma.facebookCampaign.delete({
+    await getSharedPrismaClient().facebookCampaign.delete({
       where: { id }
     });
 
@@ -638,7 +638,7 @@ const pauseCampaign = async (req, res) => {
     const { id } = req.params;
     const companyId = req.user?.companyId;
 
-    const campaign = await prisma.facebookCampaign.findFirst({
+    const campaign = await getSharedPrismaClient().facebookCampaign.findFirst({
       where: { id, companyId }
     });
 
@@ -659,7 +659,7 @@ const pauseCampaign = async (req, res) => {
     }
 
     // تحديث في قاعدة البيانات
-    const updated = await prisma.facebookCampaign.update({
+    const updated = await getSharedPrismaClient().facebookCampaign.update({
       where: { id },
       data: { status: 'PAUSED' }
     });
@@ -687,7 +687,7 @@ const resumeCampaign = async (req, res) => {
     const { id } = req.params;
     const companyId = req.user?.companyId;
 
-    const campaign = await prisma.facebookCampaign.findFirst({
+    const campaign = await getSharedPrismaClient().facebookCampaign.findFirst({
       where: { id, companyId }
     });
 
@@ -708,7 +708,7 @@ const resumeCampaign = async (req, res) => {
     }
 
     // تحديث في قاعدة البيانات
-    const updated = await prisma.facebookCampaign.update({
+    const updated = await getSharedPrismaClient().facebookCampaign.update({
       where: { id },
       data: { status: 'ACTIVE' }
     });
@@ -785,7 +785,7 @@ const getAdSets = async (req, res) => {
     const companyId = req.user?.companyId;
 
     // التحقق من أن الحملة تخص الشركة
-    const campaign = await prisma.facebookCampaign.findFirst({
+    const campaign = await getSharedPrismaClient().facebookCampaign.findFirst({
       where: { id: campaignId, companyId }
     });
 
@@ -796,7 +796,7 @@ const getAdSets = async (req, res) => {
       });
     }
 
-    const adSets = await prisma.facebookAdSet.findMany({
+    const adSets = await getSharedPrismaClient().facebookAdSet.findMany({
       where: { campaignId },
       include: {
         ads: true
@@ -851,7 +851,7 @@ const createAdSet = async (req, res) => {
     }
 
     // التحقق من الحملة
-    const campaign = await prisma.facebookCampaign.findFirst({
+    const campaign = await getSharedPrismaClient().facebookCampaign.findFirst({
       where: { id: campaignId, companyId },
       include: { adAccount: true }
     });
@@ -873,7 +873,7 @@ const createAdSet = async (req, res) => {
     }
 
     // الحصول على Ad Account
-    const adAccount = campaign.adAccount || await prisma.facebookAdAccount.findFirst({
+    const adAccount = campaign.adAccount || await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: { companyId, isActive: true }
     });
 
@@ -918,7 +918,7 @@ const createAdSet = async (req, res) => {
     }
 
     // حفظ AdSet في قاعدة البيانات
-    const adSet = await prisma.facebookAdSet.create({
+    const adSet = await getSharedPrismaClient().facebookAdSet.create({
       data: {
         campaignId,
         name,
@@ -961,7 +961,7 @@ const deleteAdSet = async (req, res) => {
     const { id } = req.params;
     const companyId = req.user?.companyId;
 
-    const adSet = await prisma.facebookAdSet.findFirst({
+    const adSet = await getSharedPrismaClient().facebookAdSet.findFirst({
       where: { id },
       include: {
         campaign: true
@@ -984,7 +984,7 @@ const deleteAdSet = async (req, res) => {
     }
 
     // حذف من قاعدة البيانات
-    await prisma.facebookAdSet.delete({
+    await getSharedPrismaClient().facebookAdSet.delete({
       where: { id }
     });
 
@@ -1017,7 +1017,7 @@ const getAds = async (req, res) => {
     const companyId = req.user?.companyId;
 
     // التحقق من أن AdSet تخص الشركة
-    const adSet = await prisma.facebookAdSet.findFirst({
+    const adSet = await getSharedPrismaClient().facebookAdSet.findFirst({
       where: { id: adSetId },
       include: { campaign: true }
     });
@@ -1029,7 +1029,7 @@ const getAds = async (req, res) => {
       });
     }
 
-    const ads = await prisma.facebookAd.findMany({
+    const ads = await getSharedPrismaClient().facebookAd.findMany({
       where: { adSetId },
       include: {
         insights: {
@@ -1085,7 +1085,7 @@ const createAd = async (req, res) => {
     }
 
     // التحقق من AdSet
-    const adSet = await prisma.facebookAdSet.findFirst({
+    const adSet = await getSharedPrismaClient().facebookAdSet.findFirst({
       where: { id: adSetId },
       include: { 
         campaign: {
@@ -1109,7 +1109,7 @@ const createAd = async (req, res) => {
 
     // إنشاء الإعلان في Facebook إذا كان هناك Access Token و AdSet ID
     if (accessToken && adSet.facebookAdSetId) {
-      const adAccount = adSet.campaign.adAccount || await prisma.facebookAdAccount.findFirst({
+      const adAccount = adSet.campaign.adAccount || await getSharedPrismaClient().facebookAdAccount.findFirst({
         where: { companyId, isActive: true }
       });
 
@@ -1144,7 +1144,7 @@ const createAd = async (req, res) => {
     }
 
     // حفظ الإعلان في قاعدة البيانات
-    const ad = await prisma.facebookAd.create({
+    const ad = await getSharedPrismaClient().facebookAd.create({
       data: {
         adSetId,
         companyId,
@@ -1188,7 +1188,7 @@ const updateAd = async (req, res) => {
     const companyId = req.user?.companyId;
     const updateData = req.body;
 
-    const ad = await prisma.facebookAd.findFirst({
+    const ad = await getSharedPrismaClient().facebookAd.findFirst({
       where: { id, companyId }
     });
 
@@ -1200,7 +1200,7 @@ const updateAd = async (req, res) => {
     }
 
     // تحديث في قاعدة البيانات
-    const updated = await prisma.facebookAd.update({
+    const updated = await getSharedPrismaClient().facebookAd.update({
       where: { id },
       data: {
         ...updateData,
@@ -1231,7 +1231,7 @@ const deleteAd = async (req, res) => {
     const { id } = req.params;
     const companyId = req.user?.companyId;
 
-    const ad = await prisma.facebookAd.findFirst({
+    const ad = await getSharedPrismaClient().facebookAd.findFirst({
       where: { id, companyId }
     });
 
@@ -1243,7 +1243,7 @@ const deleteAd = async (req, res) => {
     }
 
     // حذف من قاعدة البيانات
-    await prisma.facebookAd.delete({
+    await getSharedPrismaClient().facebookAd.delete({
       where: { id }
     });
 
@@ -1276,7 +1276,7 @@ const getAdInsights = async (req, res) => {
     const { startDate, endDate } = req.query;
     const companyId = req.user?.companyId;
 
-    const ad = await prisma.facebookAd.findFirst({
+    const ad = await getSharedPrismaClient().facebookAd.findFirst({
       where: { id: adId, companyId }
     });
 
@@ -1296,7 +1296,7 @@ const getAdInsights = async (req, res) => {
       };
     }
 
-    const insights = await prisma.facebookAdInsight.findMany({
+    const insights = await getSharedPrismaClient().facebookAdInsight.findMany({
       where: whereClause,
       orderBy: { date: 'desc' },
       take: 30
@@ -1325,7 +1325,7 @@ const syncAdInsights = async (req, res) => {
     const { startDate, endDate } = req.body;
     const companyId = req.user?.companyId;
 
-    const ad = await prisma.facebookAd.findFirst({
+    const ad = await getSharedPrismaClient().facebookAd.findFirst({
       where: { id: adId, companyId }
     });
 
@@ -1356,7 +1356,7 @@ const syncAdInsights = async (req, res) => {
     // حفظ الإحصائيات في قاعدة البيانات
     const savedInsights = [];
     for (const insight of result.data) {
-      const saved = await prisma.facebookAdInsight.upsert({
+      const saved = await getSharedPrismaClient().facebookAdInsight.upsert({
         where: {
           adId_date: {
             adId,
@@ -1388,7 +1388,7 @@ const syncAdInsights = async (req, res) => {
     }
 
     // تحديث lastSyncAt
-    await prisma.facebookAd.update({
+    await getSharedPrismaClient().facebookAd.update({
       where: { id: adId },
       data: { lastSyncAt: new Date() }
     });
@@ -1416,7 +1416,7 @@ const getCampaignInsights = async (req, res) => {
     const { campaignId } = req.params;
     const companyId = req.user?.companyId;
 
-    const campaign = await prisma.facebookCampaign.findFirst({
+    const campaign = await getSharedPrismaClient().facebookCampaign.findFirst({
       where: { id: campaignId, companyId },
       include: {
         adSets: {
@@ -1545,7 +1545,7 @@ const syncFromFacebook = async (req, res) => {
 
     for (const fbCampaign of campaignsResult.data) {
       // البحث عن الحملة المحلية أو إنشاء جديدة
-      const existingCampaign = await prisma.facebookCampaign.findFirst({
+      const existingCampaign = await getSharedPrismaClient().facebookCampaign.findFirst({
         where: {
           companyId,
           facebookCampaignId: fbCampaign.id
@@ -1564,12 +1564,12 @@ const syncFromFacebook = async (req, res) => {
 
       let campaign;
       if (existingCampaign) {
-        campaign = await prisma.facebookCampaign.update({
+        campaign = await getSharedPrismaClient().facebookCampaign.update({
           where: { id: existingCampaign.id },
           data: campaignData
         });
       } else {
-        campaign = await prisma.facebookCampaign.create({
+        campaign = await getSharedPrismaClient().facebookCampaign.create({
           data: {
             ...campaignData,
             companyId,
@@ -1620,7 +1620,7 @@ const saveAdAccount = async (req, res) => {
     }
 
     // حفظ أو تحديث Ad Account
-    const adAccount = await prisma.facebookAdAccount.upsert({
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.upsert({
       where: {
         companyId_accountId: {
           companyId,
@@ -1668,7 +1668,7 @@ const getSavedAdAccounts = async (req, res) => {
   try {
     const companyId = req.user?.companyId;
 
-    const adAccounts = await prisma.facebookAdAccount.findMany({
+    const adAccounts = await getSharedPrismaClient().facebookAdAccount.findMany({
       where: { companyId },
       orderBy: { createdAt: 'desc' }
     });
@@ -1708,7 +1708,7 @@ const uploadImage = async (req, res) => {
       });
     }
 
-    const adAccount = await prisma.facebookAdAccount.findFirst({
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: { companyId, isActive: true }
     });
 
@@ -1778,7 +1778,7 @@ const uploadVideo = async (req, res) => {
       });
     }
 
-    const adAccount = await prisma.facebookAdAccount.findFirst({
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: { companyId, isActive: true }
     });
 
@@ -1850,7 +1850,7 @@ const getCustomAudiences = async (req, res) => {
       });
     }
 
-    const adAccount = await prisma.facebookAdAccount.findFirst({
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: { companyId, isActive: true }
     });
 
@@ -1901,7 +1901,7 @@ const createCustomAudience = async (req, res) => {
       });
     }
 
-    const adAccount = await prisma.facebookAdAccount.findFirst({
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: { companyId, isActive: true }
     });
 
@@ -1963,7 +1963,7 @@ const addUsersToAudience = async (req, res) => {
       });
     }
 
-    const adAccount = await prisma.facebookAdAccount.findFirst({
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: { companyId, isActive: true }
     });
 
@@ -2014,7 +2014,7 @@ const createLookalikeAudience = async (req, res) => {
       });
     }
 
-    const adAccount = await prisma.facebookAdAccount.findFirst({
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: { companyId, isActive: true }
     });
 
@@ -2081,7 +2081,7 @@ const createABTest = async (req, res) => {
       });
     }
 
-    const adAccount = await prisma.facebookAdAccount.findFirst({
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: { companyId, isActive: true }
     });
 
@@ -2135,7 +2135,7 @@ const getABTestResults = async (req, res) => {
       });
     }
 
-    const adAccount = await prisma.facebookAdAccount.findFirst({
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: { companyId, isActive: true }
     });
 
@@ -2192,7 +2192,7 @@ const createLeadForm = async (req, res) => {
       });
     }
 
-    const adAccount = await prisma.facebookAdAccount.findFirst({
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: { companyId, isActive: true }
     });
 
@@ -2239,7 +2239,7 @@ const getLeads = async (req, res) => {
       });
     }
 
-    const adAccount = await prisma.facebookAdAccount.findFirst({
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: { companyId, isActive: true }
     });
 
@@ -2296,7 +2296,7 @@ const sendConversionEvent = async (req, res) => {
       });
     }
 
-    const adAccount = await prisma.facebookAdAccount.findFirst({
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: { companyId, isActive: true }
     });
 
@@ -2353,7 +2353,7 @@ const updateAdSetSchedule = async (req, res) => {
     }
 
     // جلب Ad Set من قاعدة البيانات
-    const adSet = await prisma.facebookAdSet.findFirst({
+    const adSet = await getSharedPrismaClient().facebookAdSet.findFirst({
       where: { id, companyId }
     });
 
@@ -2372,7 +2372,7 @@ const updateAdSetSchedule = async (req, res) => {
       });
     }
 
-    const adAccount = await prisma.facebookAdAccount.findFirst({
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: { companyId, isActive: true }
     });
 
@@ -2406,7 +2406,7 @@ const createDynamicCreative = async (req, res) => {
     const data = req.body;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     if (!adAccount) return res.status(404).json({ success: false, error: 'Ad Account not found' });
     const adsService = new FacebookAdsService(accessToken, adAccount.accountId);
     const result = await adsService.createDynamicCreative(data);
@@ -2424,7 +2424,7 @@ const createAdvantagePlusShoppingCampaign = async (req, res) => {
     const data = req.body;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     if (!adAccount) return res.status(404).json({ success: false, error: 'Ad Account not found' });
     const adsService = new FacebookAdsService(accessToken, adAccount.accountId);
     const result = await adsService.createAdvantagePlusShoppingCampaign(data);
@@ -2442,7 +2442,7 @@ const createAsyncReport = async (req, res) => {
     const data = req.body;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     if (!adAccount) return res.status(404).json({ success: false, error: 'Ad Account not found' });
     const adsService = new FacebookAdsService(accessToken, adAccount.accountId);
     const result = await adsService.createAsyncReport(data);
@@ -2459,7 +2459,7 @@ const getAsyncReportStatus = async (req, res) => {
     const { reportRunId } = req.params;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     const adsService = new FacebookAdsService(accessToken, adAccount?.accountId);
     const result = await adsService.getAsyncReportStatus(reportRunId);
     res.json({ success: true, data: result });
@@ -2474,7 +2474,7 @@ const getAsyncReportResults = async (req, res) => {
     const { reportRunId } = req.params;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     const adsService = new FacebookAdsService(accessToken, adAccount?.accountId);
     const result = await adsService.getAsyncReportResults(reportRunId);
     res.json({ success: true, data: result });
@@ -2490,7 +2490,7 @@ const createCollectionCreative = async (req, res) => {
     const data = req.body;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     if (!adAccount) return res.status(404).json({ success: false, error: 'Ad Account not found' });
     const adsService = new FacebookAdsService(accessToken, adAccount.accountId);
     const result = await adsService.createCollectionCreative(data);
@@ -2507,7 +2507,7 @@ const createStoriesReelsCreative = async (req, res) => {
     const data = req.body;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     if (!adAccount) return res.status(404).json({ success: false, error: 'Ad Account not found' });
     const adsService = new FacebookAdsService(accessToken, adAccount.accountId);
     const result = await adsService.createStoriesReelsCreative(data);
@@ -2524,7 +2524,7 @@ const createInstantExperience = async (req, res) => {
     const { pageId, name, components } = req.body;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     const adsService = new FacebookAdsService(accessToken, adAccount?.accountId);
     const result = await adsService.createInstantExperience(pageId, { name, components });
     if (!result.success) return res.status(400).json({ success: false, error: result.error });
@@ -2541,7 +2541,7 @@ const createAutomatedRule = async (req, res) => {
     const data = req.body;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     if (!adAccount) return res.status(404).json({ success: false, error: 'Ad Account not found' });
     const adsService = new FacebookAdsService(accessToken, adAccount.accountId);
     const result = await adsService.createAutomatedRule(data);
@@ -2557,7 +2557,7 @@ const getAutomatedRules = async (req, res) => {
     const companyId = req.user?.companyId;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     if (!adAccount) return res.status(404).json({ success: false, error: 'Ad Account not found' });
     const adsService = new FacebookAdsService(accessToken, adAccount.accountId);
     const result = await adsService.getAutomatedRules();
@@ -2574,7 +2574,7 @@ const updateAutomatedRule = async (req, res) => {
     const data = req.body;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     const adsService = new FacebookAdsService(accessToken, adAccount?.accountId);
     const result = await adsService.updateAutomatedRule(id, data);
     if (!result.success) return res.status(400).json({ success: false, error: result.error });
@@ -2590,7 +2590,7 @@ const deleteAutomatedRule = async (req, res) => {
     const { id } = req.params;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     const adsService = new FacebookAdsService(accessToken, adAccount?.accountId);
     const result = await adsService.deleteAutomatedRule(id);
     if (!result.success) return res.status(400).json({ success: false, error: result.error });
@@ -2608,7 +2608,7 @@ const updateAttributionSettings = async (req, res) => {
     const settings = req.body;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     const adsService = new FacebookAdsService(accessToken, adAccount?.accountId);
     const result = await adsService.updateAttributionSettings(adSetId, settings);
     if (!result.success) return res.status(400).json({ success: false, error: result.error });
@@ -2624,11 +2624,11 @@ const updateAdSet = async (req, res) => {
     const companyId = req.user?.companyId;
     const { id } = req.params;
     const data = req.body;
-    const adSet = await prisma.facebookAdSet.findFirst({ where: { id, companyId } });
+    const adSet = await getSharedPrismaClient().facebookAdSet.findFirst({ where: { id, companyId } });
     if (!adSet) return res.status(404).json({ success: false, error: 'Ad Set not found' });
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     const adsService = new FacebookAdsService(accessToken, adAccount?.accountId);
     const result = await adsService.updateAdSet(adSet.facebookAdSetId, data);
     if (!result.success) return res.status(400).json({ success: false, error: result.error });
@@ -2643,11 +2643,11 @@ const updateFrequencyCap = async (req, res) => {
     const companyId = req.user?.companyId;
     const { id } = req.params;
     const { maxFrequency, intervalDays } = req.body;
-    const adSet = await prisma.facebookAdSet.findFirst({ where: { id, companyId } });
+    const adSet = await getSharedPrismaClient().facebookAdSet.findFirst({ where: { id, companyId } });
     if (!adSet) return res.status(404).json({ success: false, error: 'Ad Set not found' });
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     const adsService = new FacebookAdsService(accessToken, adAccount?.accountId);
     const result = await adsService.updateFrequencyCap(adSet.facebookAdSetId, { maxFrequency, intervalDays });
     if (!result.success) return res.status(400).json({ success: false, error: result.error });
@@ -2664,7 +2664,7 @@ const searchTargetingOptions = async (req, res) => {
     const { query, type } = req.query;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     const adsService = new FacebookAdsService(accessToken, adAccount?.accountId);
     const result = await adsService.searchTargetingOptions(query, type);
     res.json({ success: true, data: result.data || [] });
@@ -2679,7 +2679,7 @@ const getTargetingSuggestions = async (req, res) => {
     const { targetingList } = req.body;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     if (!adAccount) return res.status(404).json({ success: false, error: 'Ad Account not found' });
     const adsService = new FacebookAdsService(accessToken, adAccount.accountId);
     const result = await adsService.getTargetingSuggestions(targetingList);
@@ -2695,7 +2695,7 @@ const getReachEstimate = async (req, res) => {
     const { targeting } = req.body;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     if (!adAccount) return res.status(404).json({ success: false, error: 'Ad Account not found' });
     const adsService = new FacebookAdsService(accessToken, adAccount.accountId);
     const result = await adsService.getReachEstimate(targeting);
@@ -2713,7 +2713,7 @@ const getAdPreview = async (req, res) => {
     const { format } = req.query;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     const adsService = new FacebookAdsService(accessToken, adAccount?.accountId);
     const result = await adsService.getAdPreview(adId, format);
     res.json({ success: true, data: result.data || [] });
@@ -2729,7 +2729,7 @@ const getCreativePreview = async (req, res) => {
     const { format } = req.query;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     if (!adAccount) return res.status(404).json({ success: false, error: 'Ad Account not found' });
     const adsService = new FacebookAdsService(accessToken, adAccount.accountId);
     const result = await adsService.getCreativePreview(creativeId, format);
@@ -2746,7 +2746,7 @@ const createSavedAudience = async (req, res) => {
     const { name, description, targeting } = req.body;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     if (!adAccount) return res.status(404).json({ success: false, error: 'Ad Account not found' });
     const adsService = new FacebookAdsService(accessToken, adAccount.accountId);
     const result = await adsService.createSavedAudience({ name, description, targeting });
@@ -2762,7 +2762,7 @@ const getSavedAudiences = async (req, res) => {
     const companyId = req.user?.companyId;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     if (!adAccount) return res.status(404).json({ success: false, error: 'Ad Account not found' });
     const adsService = new FacebookAdsService(accessToken, adAccount.accountId);
     const result = await adsService.getSavedAudiences();
@@ -2778,7 +2778,7 @@ const deleteSavedAudience = async (req, res) => {
     const { id } = req.params;
     const accessToken = await getCompanyAdsAccessToken(companyId);
     if (!accessToken) return res.status(400).json({ success: false, error: 'Access Token not found' });
-    const adAccount = await prisma.facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({ where: { companyId, isActive: true } });
     const adsService = new FacebookAdsService(accessToken, adAccount?.accountId);
     const result = await adsService.deleteSavedAudience(id);
     if (!result.success) return res.status(400).json({ success: false, error: result.error });
@@ -2810,7 +2810,7 @@ const getFacebookPages = async (req, res) => {
       });
     }
 
-    const adAccount = await prisma.facebookAdAccount.findFirst({
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: { companyId, isActive: true }
     });
 
@@ -2853,7 +2853,7 @@ const getFacebookPixels = async (req, res) => {
       });
     }
 
-    const adAccount = await prisma.facebookAdAccount.findFirst({
+    const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
       where: { companyId, isActive: true }
     });
 
@@ -3002,7 +3002,7 @@ module.exports = {
         });
       }
 
-      const adAccount = await prisma.facebookAdAccount.findFirst({
+      const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
         where: { companyId, isActive: true }
       });
 
@@ -3040,7 +3040,7 @@ module.exports = {
         });
       }
 
-      const adAccount = await prisma.facebookAdAccount.findFirst({
+      const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
         where: { companyId, isActive: true }
       });
 
@@ -3077,7 +3077,7 @@ module.exports = {
         });
       }
 
-      const adAccount = await prisma.facebookAdAccount.findFirst({
+      const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
         where: { companyId, isActive: true }
       });
 
@@ -3114,7 +3114,7 @@ module.exports = {
         });
       }
 
-      const adAccount = await prisma.facebookAdAccount.findFirst({
+      const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
         where: { companyId, isActive: true }
       });
 
@@ -3152,7 +3152,7 @@ module.exports = {
         });
       }
 
-      const adAccount = await prisma.facebookAdAccount.findFirst({
+      const adAccount = await getSharedPrismaClient().facebookAdAccount.findFirst({
         where: { companyId, isActive: true }
       });
 
@@ -3176,4 +3176,5 @@ module.exports = {
     }
   }
 };
+
 

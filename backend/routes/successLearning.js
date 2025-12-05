@@ -14,7 +14,7 @@ const PatternCleanupService = require('../services/patternCleanupService');
 const scheduledMaintenance = require('../services/scheduledPatternMaintenanceService');
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const successAnalyzer = new SuccessAnalyzer();
 const patternDetector = new PatternDetector();
 const outcomeTracker = new OutcomeTracker();
@@ -28,17 +28,17 @@ const patternCleanup = new PatternCleanupService();
 router.get('/public/system-status', async (req, res) => {
   try {
     // إحصائيات عامة بدون معلومات حساسة
-    const totalPatterns = await prisma.successPattern.count();
-    const activePatterns = await prisma.successPattern.count({
+    const totalPatterns = await getSharedPrismaClient().successPattern.count();
+    const activePatterns = await getSharedPrismaClient().successPattern.count({
       where: { isActive: true }
     });
-    const approvedPatterns = await prisma.successPattern.count({
+    const approvedPatterns = await getSharedPrismaClient().successPattern.count({
       where: { isApproved: true }
     });
 
     // إحصائيات الاستخدام
-    const totalUsage = await prisma.patternUsage.count();
-    const recentUsage = await prisma.patternUsage.count({
+    const totalUsage = await getSharedPrismaClient().patternUsage.count();
+    const recentUsage = await getSharedPrismaClient().patternUsage.count({
       where: {
         createdAt: {
           gte: new Date(Date.now() - 24 * 60 * 60 * 1000) // آخر 24 ساعة
@@ -293,13 +293,13 @@ router.get('/patterns', async (req, res) => {
 
     // جلب الأنماط مع التصفح
     const [patterns, totalCount] = await Promise.all([
-      prisma.successPattern.findMany({
+      getSharedPrismaClient().successPattern.findMany({
         where,
         orderBy: Array.isArray(orderBy) ? orderBy : [orderBy, { createdAt: 'desc' }],
         skip,
         take: limitNum
       }),
-      prisma.successPattern.count({ where })
+      getSharedPrismaClient().successPattern.count({ where })
     ]);
 
     // حساب معلومات التصفح
@@ -342,7 +342,7 @@ router.put('/patterns/:id/approve', async (req, res) => {
     const { id } = req.params;
     const { approvedBy = 'system' } = req.body;
 
-    const pattern = await prisma.successPattern.update({
+    const pattern = await getSharedPrismaClient().successPattern.update({
       where: { id },
       data: {
         isApproved: true,
@@ -377,7 +377,7 @@ router.put('/patterns/:id/reject', async (req, res) => {
   try {
     const { id } = req.params;
 
-    const pattern = await prisma.successPattern.update({
+    const pattern = await getSharedPrismaClient().successPattern.update({
       where: { id },
       data: {
         isActive: false,
@@ -413,7 +413,7 @@ router.put('/patterns/:id/unapprove', async (req, res) => {
     const { reason = 'تم إيقاف الاعتماد يدوياً' } = req.body;
 
     // التحقق من وجود النمط وأنه معتمد
-    const existingPattern = await prisma.successPattern.findUnique({
+    const existingPattern = await getSharedPrismaClient().successPattern.findUnique({
       where: { id },
       select: { id: true, isApproved: true, description: true }
     });
@@ -433,7 +433,7 @@ router.put('/patterns/:id/unapprove', async (req, res) => {
     }
 
     // إيقاف الاعتماد مع الاحتفاظ بالنشاط
-    const pattern = await prisma.successPattern.update({
+    const pattern = await getSharedPrismaClient().successPattern.update({
       where: { id },
       data: {
         isApproved: false,
@@ -486,7 +486,7 @@ router.delete('/patterns/:id', async (req, res) => {
     }
 
     // التحقق من وجود النمط وأنه ينتمي للشركة
-    const existingPattern = await prisma.successPattern.findFirst({
+    const existingPattern = await getSharedPrismaClient().successPattern.findFirst({
       where: {
         id,
         companyId
@@ -509,7 +509,7 @@ router.delete('/patterns/:id', async (req, res) => {
 
     // حذف سجلات الاستخدام المرتبطة بالنمط أولاً
     const deletedUsageCount = // SECURITY WARNING: Ensure companyId filter is included
-      await prisma.patternUsage.deleteMany({
+      await getSharedPrismaClient().patternUsage.deleteMany({
       where: {
         patternId: id,
         companyId
@@ -517,7 +517,7 @@ router.delete('/patterns/:id', async (req, res) => {
     });
 
     // حذف النمط نهائياً
-    await prisma.successPattern.delete({
+    await getSharedPrismaClient().successPattern.delete({
       where: { id }
     });
 
@@ -572,7 +572,7 @@ router.get('/outcome-stats', async (req, res) => {
     startDate.setDate(startDate.getDate() - parseInt(timeRange));
 
     // جلب الطلبات الفعلية
-    const orders = await enhancedOrderService.prisma.order.findMany({
+    const orders = await enhancedOrderService.getSharedPrismaClient().order.findMany({
       where: {
         companyId,
         createdAt: { gte: startDate }
@@ -583,7 +583,7 @@ router.get('/outcome-stats', async (req, res) => {
     });
 
     // جلب المحادثات النشطة
-    const conversations = await enhancedOrderService.prisma.conversation.findMany({
+    const conversations = await enhancedOrderService.getSharedPrismaClient().conversation.findMany({
       where: {
         companyId,
         createdAt: { gte: startDate }
@@ -649,7 +649,7 @@ router.get('/response-effectiveness', async (req, res) => {
     if (responseType) where.responseType = responseType;
     if (minEffectiveness > 0) where.effectivenessScore = { gte: parseFloat(minEffectiveness) };
 
-    const responses = await prisma.responseEffectiveness.findMany({
+    const responses = await getSharedPrismaClient().responseEffectiveness.findMany({
       where,
       orderBy: { effectivenessScore: 'desc' },
       take: parseInt(limit)
@@ -760,7 +760,7 @@ router.get('/export', async (req, res) => {
     //console.log(`📤 [API] Exporting data for company: ${companyId}, format: ${format}`);
 
     // جلب الأنماط
-    const patterns = await prisma.successPattern.findMany({
+    const patterns = await getSharedPrismaClient().successPattern.findMany({
       where: {
         companyId,
         createdAt: {
@@ -820,7 +820,7 @@ router.get('/pattern-performance', async (req, res) => {
     //console.log(`📊 [API] Getting pattern performance for company: ${companyId}`);
 
     // جلب إحصائيات الأداء
-    const performance = await prisma.patternPerformance.findMany({
+    const performance = await getSharedPrismaClient().patternPerformance.findMany({
       where: { companyId },
       include: {
         pattern: {
@@ -904,7 +904,7 @@ router.get('/pattern-usage', async (req, res) => {
     }
 
     // جلب بيانات الاستخدام
-    const usage = await prisma.patternUsage.findMany({
+    const usage = await getSharedPrismaClient().patternUsage.findMany({
       where: whereClause,
       include: {
         pattern: {
@@ -996,7 +996,7 @@ router.post('/test-pattern', async (req, res) => {
     //console.log(`🧪 [API] Testing pattern ${patternId} with message: ${testMessage.substring(0, 50)}...`);
 
     // جلب النمط
-    const pattern = await prisma.successPattern.findUnique({
+    const pattern = await getSharedPrismaClient().successPattern.findUnique({
       where: { id: patternId }
     });
 
@@ -1095,7 +1095,7 @@ router.post('/patterns/:patternId/approve', async (req, res) => {
     //console.log(`✅ [API] Approving pattern: ${patternId}`);
 
     // تحديث النمط في قاعدة البيانات
-    const updatedPattern = await prisma.successPattern.update({
+    const updatedPattern = await getSharedPrismaClient().successPattern.update({
       where: { id: patternId },
       data: {
         isApproved: true,
@@ -1317,7 +1317,7 @@ router.post('/system/enable', async (req, res) => {
 
     // تفعيل جميع الأنماط المعتمدة
     const enabledPatterns = // SECURITY WARNING: Ensure companyId filter is included
-      await prisma.successPattern.updateMany({
+      await getSharedPrismaClient().successPattern.updateMany({
       where: {
         companyId,
         isApproved: true
@@ -1334,7 +1334,7 @@ router.post('/system/enable', async (req, res) => {
     };
 
     // حفظ الحالة في metadata أو جدول منفصل
-    await prisma.company.update({
+    await getSharedPrismaClient().company.update({
       where: { id: companyId },
       data: {
         settings: JSON.stringify({
@@ -1397,13 +1397,13 @@ router.post('/system/disable', async (req, res) => {
 
     // إيقاف جميع الأنماط
     const disabledPatterns = // SECURITY WARNING: Ensure companyId filter is included
-      await prisma.successPattern.updateMany({
+      await getSharedPrismaClient().successPattern.updateMany({
       where: { companyId },
       data: { isActive: false }
     });
 
     // التحقق من أن جميع الأنماط تم إيقافها فعلاً
-    const stillActiveCount = await prisma.successPattern.count({
+    const stillActiveCount = await getSharedPrismaClient().successPattern.count({
       where: {
         companyId,
         isActive: true
@@ -1415,7 +1415,7 @@ router.post('/system/disable', async (req, res) => {
 
       // محاولة إضافية لإيقاف الأنماط المتبقية
       // SECURITY WARNING: Ensure companyId filter is included
-      await prisma.successPattern.updateMany({
+      await getSharedPrismaClient().successPattern.updateMany({
         where: {
           companyId,
           isActive: true
@@ -1436,7 +1436,7 @@ router.post('/system/disable', async (req, res) => {
     };
 
     // حفظ الحالة
-    await prisma.company.update({
+    await getSharedPrismaClient().company.update({
       where: { id: companyId },
       data: {
         settings: JSON.stringify({
@@ -1495,7 +1495,7 @@ router.get('/system/companies-status', async (req, res) => {
     //console.log('📊 [API] Getting pattern system status for all companies');
 
     // جلب جميع الشركات مع إعداداتها
-    const companies = await prisma.company.findMany({
+    const companies = await getSharedPrismaClient().company.findMany({
       select: {
         id: true,
         name: true,
@@ -1515,11 +1515,11 @@ router.get('/system/companies-status', async (req, res) => {
       }
 
       // عد الأنماط
-      const patternsCount = await prisma.successPattern.count({
+      const patternsCount = await getSharedPrismaClient().successPattern.count({
         where: { companyId: company.id }
       });
 
-      const activePatternsCount = await prisma.successPattern.count({
+      const activePatternsCount = await getSharedPrismaClient().successPattern.count({
         where: {
           companyId: company.id,
           isActive: true
@@ -1598,13 +1598,13 @@ router.post('/system/bulk-control', async (req, res) => {
         if (action === 'enable') {
           // تفعيل الأنماط
           const enabledPatterns = // SECURITY WARNING: Ensure companyId filter is included
-      await prisma.successPattern.updateMany({
+      await getSharedPrismaClient().successPattern.updateMany({
             where: { companyId },
             data: { isActive: true }
           });
 
           // تحديث الإعدادات
-          await prisma.company.update({
+          await getSharedPrismaClient().company.update({
             where: { id: companyId },
             data: {
               settings: JSON.stringify({
@@ -1628,13 +1628,13 @@ router.post('/system/bulk-control', async (req, res) => {
         } else {
           // إيقاف الأنماط
           const disabledPatterns = // SECURITY WARNING: Ensure companyId filter is included
-      await prisma.successPattern.updateMany({
+      await getSharedPrismaClient().successPattern.updateMany({
             where: { companyId },
             data: { isActive: false }
           });
 
           // تحديث الإعدادات
-          await prisma.company.update({
+          await getSharedPrismaClient().company.update({
             where: { id: companyId },
             data: {
               settings: JSON.stringify({
@@ -1710,7 +1710,7 @@ router.get('/system/status', async (req, res) => {
     //console.log(`📊 [API] Getting pattern system status for company: ${companyId}`);
 
     // جلب معلومات الشركة
-    const company = await prisma.company.findUnique({
+    const company = await getSharedPrismaClient().company.findUnique({
       where: { id: companyId },
       select: { settings: true }
     });
@@ -1723,18 +1723,18 @@ router.get('/system/status', async (req, res) => {
     }
 
     // إحصائيات الأنماط
-    const totalPatterns = await prisma.successPattern.count({
+    const totalPatterns = await getSharedPrismaClient().successPattern.count({
       where: { companyId }
     });
 
-    const activePatterns = await prisma.successPattern.count({
+    const activePatterns = await getSharedPrismaClient().successPattern.count({
       where: {
         companyId,
         isActive: true
       }
     });
 
-    const approvedPatterns = await prisma.successPattern.count({
+    const approvedPatterns = await getSharedPrismaClient().successPattern.count({
       where: {
         companyId,
         isApproved: true
@@ -1832,3 +1832,4 @@ router.post('/cleanup-patterns', async (req, res) => {
 });
 
 module.exports = router;
+

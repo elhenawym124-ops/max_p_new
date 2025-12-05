@@ -1,5 +1,5 @@
 const { getSharedPrismaClient, initializeSharedDatabase, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const axios = require('axios');
 
 const getAllCustomer = async(req , res)=>{
@@ -15,7 +15,7 @@ const getAllCustomer = async(req , res)=>{
 
     //console.log('👥 Fetching customers for company:', companyId);
 
-    const customers = await prisma.customer.findMany({
+    const customers = await getSharedPrismaClient().customer.findMany({
       where: { companyId }, // فلترة بـ companyId
       orderBy: { createdAt: 'desc' },
       take: 50
@@ -37,7 +37,7 @@ const getAllCustomer = async(req , res)=>{
 
 const deleteAllConversations = async (req, res) => {
   try {
-    const deleted = await prisma.conversation.deleteMany({});
+    const deleted = await getSharedPrismaClient().conversation.deleteMany({});
 
     res.json({
       success: true,
@@ -56,7 +56,7 @@ const deleteAllConversations = async (req, res) => {
 // 🗑️ مسح كل العملاء بدون فلترة
 const deleteAllCustomers = async (req, res) => {
   try {
-    const deleted = await prisma.customer.deleteMany({});
+    const deleted = await getSharedPrismaClient().customer.deleteMany({});
 
     res.json({
       success: true,
@@ -96,7 +96,7 @@ const blockCustomerOnPage = async (req, res) => {
     }
 
     // التحقق من وجود العميل والشركة
-    const customer = await prisma.customer.findUnique({
+    const customer = await getSharedPrismaClient().customer.findUnique({
       where: { id: customerId },
       select: { id: true, companyId: true, facebookId: true }
     });
@@ -116,7 +116,7 @@ const blockCustomerOnPage = async (req, res) => {
     }
 
     // التحقق من وجود صفحة الفيس بوك
-    const facebookPage = await prisma.facebookPage.findUnique({
+    const facebookPage = await getSharedPrismaClient().facebookPage.findUnique({
       where: { pageId: pageId },
       select: { id: true, companyId: true, pageAccessToken: true }
     });
@@ -136,7 +136,7 @@ const blockCustomerOnPage = async (req, res) => {
     }
 
     // التحقق من عدم وجود حظر سابق
-    const existingBlock = await prisma.blockedCustomerOnPage.findFirst({
+    const existingBlock = await getSharedPrismaClient().blockedCustomerOnPage.findFirst({
       where: {
         facebookPageId: facebookPage.id,
         customerId: customerId
@@ -193,7 +193,7 @@ const blockCustomerOnPage = async (req, res) => {
     }
 
     // إنشاء الحظر في قاعدة البيانات
-    const blocked = await prisma.blockedCustomerOnPage.create({
+    const blocked = await getSharedPrismaClient().blockedCustomerOnPage.create({
       data: {
         facebookPageId: facebookPage.id,
         pageId: pageId,
@@ -269,7 +269,7 @@ const unblockCustomerOnPage = async (req, res) => {
     }
 
     // التحقق من وجود صفحة الفيس بوك
-    const facebookPage = await prisma.facebookPage.findUnique({
+    const facebookPage = await getSharedPrismaClient().facebookPage.findUnique({
       where: { pageId: pageId },
       select: { id: true, companyId: true, pageAccessToken: true }
     });
@@ -289,7 +289,7 @@ const unblockCustomerOnPage = async (req, res) => {
     }
 
     // البحث عن الحظر وحذفه
-    const blocked = await prisma.blockedCustomerOnPage.findFirst({
+    const blocked = await getSharedPrismaClient().blockedCustomerOnPage.findFirst({
       where: {
         facebookPageId: facebookPage.id,
         customerId: customerId
@@ -350,7 +350,7 @@ const unblockCustomerOnPage = async (req, res) => {
     }
 
     // حذف الحظر من قاعدة البيانات
-    await prisma.blockedCustomerOnPage.delete({
+    await getSharedPrismaClient().blockedCustomerOnPage.delete({
       where: { id: blocked.id }
     });
 
@@ -392,7 +392,7 @@ const getBlockedCustomersOnPage = async (req, res) => {
     }
 
     // التحقق من وجود صفحة الفيس بوك
-    const facebookPage = await prisma.facebookPage.findUnique({
+    const facebookPage = await getSharedPrismaClient().facebookPage.findUnique({
       where: { pageId: pageId },
       select: { id: true, companyId: true }
     });
@@ -412,7 +412,7 @@ const getBlockedCustomersOnPage = async (req, res) => {
     }
 
     // جلب العملاء المحظورين
-    const blockedCustomers = await prisma.blockedCustomerOnPage.findMany({
+    const blockedCustomers = await getSharedPrismaClient().blockedCustomerOnPage.findMany({
       where: {
         facebookPageId: facebookPage.id
       },
@@ -470,7 +470,7 @@ const checkCustomerBlockStatus = async (req, res) => {
     }
 
     // التحقق من وجود صفحة الفيس بوك
-    const facebookPage = await prisma.facebookPage.findUnique({
+    const facebookPage = await getSharedPrismaClient().facebookPage.findUnique({
       where: { pageId: pageId },
       select: { id: true, companyId: true }
     });
@@ -490,7 +490,7 @@ const checkCustomerBlockStatus = async (req, res) => {
     }
 
     // البحث عن الحظر
-    const blocked = await prisma.blockedCustomerOnPage.findFirst({
+    const blocked = await getSharedPrismaClient().blockedCustomerOnPage.findFirst({
       where: {
         facebookPageId: facebookPage.id,
         customerId: customerId
@@ -544,7 +544,7 @@ const getCustomerOrders = async (req, res) => {
     }
 
     // التحقق من أن العميل ينتمي للشركة
-    const customer = await prisma.customer.findUnique({
+    const customer = await getSharedPrismaClient().customer.findUnique({
       where: { id: customerId },
       select: { id: true, companyId: true }
     });
@@ -564,7 +564,7 @@ const getCustomerOrders = async (req, res) => {
     }
 
     // جلب طلبات العميل
-    const orders = await prisma.order.findMany({
+    const orders = await getSharedPrismaClient().order.findMany({
       where: {
         customerId: customerId,
         companyId: companyId

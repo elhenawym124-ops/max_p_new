@@ -1,5 +1,5 @@
 const { getSharedPrismaClient, initializeSharedDatabase, executeWithRetry } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const socketService = require('../services/socketService');
 const axios = require('axios');
 const MessageHealthChecker = require('../utils/messageHealthChecker');
@@ -40,7 +40,7 @@ async function getPageToken(pageId) {
   // 🔒 CRITICAL FIX: Always check database for status, even if cached
   // This ensures disconnected pages are not used
   try {
-    const page = await prisma.facebookPage.findUnique({
+    const page = await getSharedPrismaClient().facebookPage.findUnique({
       where: { pageId: pageId }
     });
 
@@ -96,7 +96,7 @@ const deleteConverstation = async (req, res) => {
     //console.log(`🗑️ Attempting to delete conversation: ${id}`);
 
     // Check if conversation exists
-    const conversation = await prisma.conversation.findUnique({
+    const conversation = await getSharedPrismaClient().conversation.findUnique({
       where: { id },
       include: {
         customer: true,
@@ -114,17 +114,17 @@ const deleteConverstation = async (req, res) => {
     }
 
     // Delete all messages first (due to foreign key constraints)
-    const deletedMessages = await prisma.message.deleteMany({
+    const deletedMessages = await getSharedPrismaClient().message.deleteMany({
       where: { conversationId: id }
     });
 
     // Delete conversation memory
-    await prisma.conversationMemory.deleteMany({
+    await getSharedPrismaClient().conversationMemory.deleteMany({
       where: { conversationId: id }
     });
 
     // Delete the conversation
-    await prisma.conversation.delete({
+    await getSharedPrismaClient().conversation.delete({
       where: { id }
     });
 
@@ -201,14 +201,14 @@ const postMessageConverstation = async (req, res) => {
     const senderId = req.user?.userId || req.user?.id;
 
     const [conversation, user] = await Promise.all([
-      prisma.conversation.findUnique({
+      getSharedPrismaClient().conversation.findUnique({
         where: { id },
         include: {
           customer: true
         }
       }),
       // جلب معلومات المستخدم فقط إذا كان موجود
-      senderId ? prisma.user.findUnique({
+      senderId ? getSharedPrismaClient().user.findUnique({
         where: { id: senderId },
         select: {
           id: true,
@@ -264,7 +264,7 @@ const postMessageConverstation = async (req, res) => {
     }
 
     // Single update query instead of 2-3 separate ones
-    await prisma.conversation.update({
+    await getSharedPrismaClient().conversation.update({
       where: { id },
       data: conversationUpdateData
     });
@@ -279,7 +279,7 @@ const postMessageConverstation = async (req, res) => {
     // 💾 حفظ الرسالة فوراً في قاعدة البيانات (INSTANT SAVE)
     let savedMessage = null;
     try {
-      savedMessage = await prisma.message.create({
+      savedMessage = await getSharedPrismaClient().message.create({
         data: {
           content: message,
           type: 'TEXT',
@@ -360,7 +360,7 @@ const postMessageConverstation = async (req, res) => {
 
           // أولاً: البحث عن صفحة Facebook متصلة
           if (!pageData) {
-            const facebookPage = await prisma.facebookPage.findFirst({
+            const facebookPage = await getSharedPrismaClient().facebookPage.findFirst({
               where: {
                 status: 'connected',
                 companyId: conversation.companyId // 🔐 عزل الشركات
@@ -423,7 +423,7 @@ const postMessageConverstation = async (req, res) => {
               // 🔄 تحديث الرسالة المحفوظة بـ Facebook Message ID
               if (facebookSent && facebookMessageId && savedMessage) {
                 try {
-                  await prisma.message.update({
+                  await getSharedPrismaClient().message.update({
                     where: { id: savedMessage.id },
                     data: {
                       metadata: JSON.stringify({
@@ -441,7 +441,7 @@ const postMessageConverstation = async (req, res) => {
 
               // NEW: Handle Facebook errors more gracefully
               if (!facebookSent && response.error === 'RECIPIENT_NOT_AVAILABLE') {
-                await prisma.conversation.update({
+                await getSharedPrismaClient().conversation.update({
                   where: { id },
                   data: {
                     metadata: JSON.stringify({
@@ -460,7 +460,7 @@ const postMessageConverstation = async (req, res) => {
                 //console.log(`⚠️ [FACEBOOK-SEND] User hasn't started conversation with page`);
 
                 // Update the conversation to indicate this issue
-                await prisma.conversation.update({
+                await getSharedPrismaClient().conversation.update({
                   where: { id },
                   data: {
                     metadata: JSON.stringify({
@@ -598,7 +598,7 @@ const uploadFile = async (req, res) => {
       let senderName = 'موظف';
 
       if (senderId) {
-        const user = await prisma.user.findUnique({
+        const user = await getSharedPrismaClient().user.findUnique({
           where: { id: senderId },
           select: { firstName: true, lastName: true, email: true }
         });
@@ -610,7 +610,7 @@ const uploadFile = async (req, res) => {
       // 💾 حفظ الملف فوراً في قاعدة البيانات (INSTANT SAVE)
       let savedFileMessage = null;
       try {
-        savedFileMessage = await prisma.message.create({
+        savedFileMessage = await getSharedPrismaClient().message.create({
           data: {
             content: fullUrl,
             type: messageType,
@@ -663,7 +663,7 @@ const uploadFile = async (req, res) => {
       }
 
       // Update conversation last message
-      await prisma.conversation.update({
+      await getSharedPrismaClient().conversation.update({
         where: { id },
         data: {
           lastMessageAt: new Date(),
@@ -688,7 +688,7 @@ const uploadFile = async (req, res) => {
       let facebookMessageId = null; // Store Facebook message ID
       try {
         //console.log(`🔍 [FACEBOOK-FILE] Checking conversation ${id} for Facebook integration...`);
-        const conversation = await prisma.conversation.findUnique({
+        const conversation = await getSharedPrismaClient().conversation.findUnique({
           where: { id },
           include: { customer: true }
         });
@@ -730,7 +730,7 @@ const uploadFile = async (req, res) => {
 
           // If we still don't have a page, find the default connected page
           if (!facebookPage) {
-            facebookPage = await prisma.facebookPage.findFirst({
+            facebookPage = await getSharedPrismaClient().facebookPage.findFirst({
               where: {
                 companyId: conversation.companyId,
                 status: 'connected'
@@ -764,7 +764,7 @@ const uploadFile = async (req, res) => {
                 // 🔄 تحديث الملف المحفوظ بـ Facebook Message ID
                 if (facebookMessageId && savedFileMessage) {
                   try {
-                    await prisma.message.update({
+                    await getSharedPrismaClient().message.update({
                       where: { id: savedFileMessage.id },
                       data: {
                         metadata: JSON.stringify({
@@ -798,7 +798,7 @@ const uploadFile = async (req, res) => {
 
                 // Update conversation with error info for user experience
                 if (result.error === 'NO_MATCHING_USER') {
-                  await prisma.conversation.update({
+                  await getSharedPrismaClient().conversation.update({
                     where: { id: conversation.id },
                     data: {
                       metadata: JSON.stringify({
@@ -875,11 +875,11 @@ const postReply = async (req, res) => {
     const senderId = req.user?.userId || req.user?.id;
 
     const [conversation, user] = await Promise.all([
-      prisma.conversation.findUnique({
+      getSharedPrismaClient().conversation.findUnique({
         where: { id },
         include: { customer: true }
       }),
-      senderId ? prisma.user.findUnique({
+      senderId ? getSharedPrismaClient().user.findUnique({
         where: { id: senderId },
         select: {
           id: true,
@@ -907,7 +907,7 @@ const postReply = async (req, res) => {
     // 💾 حفظ الرسالة فوراً في قاعدة البيانات (INSTANT SAVE)
     let savedMessage = null;
     try {
-      savedMessage = await prisma.message.create({
+      savedMessage = await getSharedPrismaClient().message.create({
         data: {
           content: message || (hasImages ? `${imageUrls.length} صورة` : ''),
           type: messageType,
@@ -956,7 +956,7 @@ const postReply = async (req, res) => {
       }
 
       // Update conversation last message
-      await prisma.conversation.update({
+      await getSharedPrismaClient().conversation.update({
         where: { id },
         data: {
           lastMessageAt: new Date(),
@@ -1012,7 +1012,7 @@ const postReply = async (req, res) => {
 
         // If we still don't have a page, find the default connected page
         if (!facebookPage) {
-          facebookPage = await prisma.facebookPage.findFirst({
+          facebookPage = await getSharedPrismaClient().facebookPage.findFirst({
             where: {
               companyId: conversation.companyId,
               status: 'connected'
@@ -1087,7 +1087,7 @@ const postReply = async (req, res) => {
             // 🔄 تحديث الرسالة المحفوظة بـ Facebook Message ID
             if (facebookSent && facebookMessageId && savedMessage) {
               try {
-                await prisma.message.update({
+                await getSharedPrismaClient().message.update({
                   where: { id: savedMessage.id },
                   data: {
                     metadata: JSON.stringify({
@@ -1105,7 +1105,7 @@ const postReply = async (req, res) => {
 
             // NEW: Handle Facebook errors more gracefully
             if (!facebookSent && response.error === 'RECIPIENT_NOT_AVAILABLE') {
-              await prisma.conversation.update({
+              await getSharedPrismaClient().conversation.update({
                 where: { id },
                 data: {
                   metadata: JSON.stringify({
@@ -1124,7 +1124,7 @@ const postReply = async (req, res) => {
               //console.log(`⚠️ [FACEBOOK-REPLY] User hasn't started conversation with page`);
 
               // Update the conversation to indicate this issue
-              await prisma.conversation.update({
+              await getSharedPrismaClient().conversation.update({
                 where: { id },
                 data: {
                   metadata: JSON.stringify({
@@ -1193,7 +1193,7 @@ const postReply = async (req, res) => {
 
     // 🔧 FIX: Update conversation (only if message is not empty)
     if (message && message.trim() !== '') {
-      await prisma.conversation.update({
+      await getSharedPrismaClient().conversation.update({
         where: { id },
         data: {
           lastMessageAt: new Date(),
@@ -1246,7 +1246,7 @@ const markConversationAsRead = async (req, res) => {
     //console.log(`📖 [MARK-READ] Marking conversation ${id} as read for company ${companyId}`);
 
     // Verify conversation belongs to this company
-    const conversation = await prisma.conversation.findFirst({
+    const conversation = await getSharedPrismaClient().conversation.findFirst({
       where: {
         id,
         companyId
@@ -1261,7 +1261,7 @@ const markConversationAsRead = async (req, res) => {
     }
 
     // Update all unread messages from customer to read
-    const result = await prisma.message.updateMany({
+    const result = await getSharedPrismaClient().message.updateMany({
       where: {
         conversationId: id,
         isFromCustomer: true,
@@ -1309,7 +1309,7 @@ const markConversationAsUnread = async (req, res) => {
     console.log(`📧 [MARK-UNREAD] Setting conversation ${id} to ${unreadCount > 0 ? 'unread' : 'read'} for company ${companyId}`);
 
     // Verify conversation belongs to this company
-    const conversation = await prisma.conversation.findFirst({
+    const conversation = await getSharedPrismaClient().conversation.findFirst({
       where: {
         id,
         companyId
@@ -1337,7 +1337,7 @@ const markConversationAsUnread = async (req, res) => {
     const isMarkAsUnread = unreadCount > 0;
 
     // Update conversation isRead field
-    await prisma.conversation.update({
+    await getSharedPrismaClient().conversation.update({
       where: { id },
       data: {
         isRead: !isMarkAsUnread, // عكس unreadCount
@@ -1348,7 +1348,7 @@ const markConversationAsUnread = async (req, res) => {
     // Update last customer message if exists
     if (conversation.messages && conversation.messages.length > 0) {
       const lastMessage = conversation.messages[0];
-      await prisma.message.update({
+      await getSharedPrismaClient().message.update({
         where: { id: lastMessage.id },
         data: {
           isRead: !isMarkAsUnread,
@@ -1451,7 +1451,7 @@ const sendExistingImage = async (req, res) => {
     let senderName = 'موظف';
 
     if (senderId) {
-      const user = await prisma.user.findUnique({
+      const user = await getSharedPrismaClient().user.findUnique({
         where: { id: senderId },
         select: { firstName: true, lastName: true, email: true }
       });
@@ -1469,7 +1469,7 @@ const sendExistingImage = async (req, res) => {
     };
 
     // 💾 حفظ الصورة في قاعدة البيانات
-    const savedMessage = await prisma.message.create({
+    const savedMessage = await getSharedPrismaClient().message.create({
       data: {
         content: imageUrl,
         type: 'IMAGE',
@@ -1518,7 +1518,7 @@ const sendExistingImage = async (req, res) => {
     }
 
     // Update conversation last message
-    await prisma.conversation.update({
+    await getSharedPrismaClient().conversation.update({
       where: { id },
       data: {
         lastMessageAt: new Date(),
@@ -1529,7 +1529,7 @@ const sendExistingImage = async (req, res) => {
 
     // محاولة إرسال للـ Facebook (نفس طريقة uploadFile)
     try {
-      const conversation = await prisma.conversation.findUnique({
+      const conversation = await getSharedPrismaClient().conversation.findUnique({
         where: { id },
         include: { customer: true }
       });
@@ -1567,7 +1567,7 @@ const sendExistingImage = async (req, res) => {
 
         // لو مفيش page، جيب الـ default connected page
         if (!facebookPage) {
-          facebookPage = await prisma.facebookPage.findFirst({
+          facebookPage = await getSharedPrismaClient().facebookPage.findFirst({
             where: {
               companyId: conversation.companyId,
               status: 'connected'
@@ -1594,7 +1594,7 @@ const sendExistingImage = async (req, res) => {
             );
 
             if (result.success && result.messageId) {
-              await prisma.message.update({
+              await getSharedPrismaClient().message.update({
                 where: { id: savedMessage.id },
                 data: {
                   metadata: JSON.stringify({
@@ -1654,7 +1654,7 @@ const getConversationPostDetails = async (req, res) => {
     }
 
     // Get conversation with metadata
-    const conversation = await prisma.conversation.findFirst({
+    const conversation = await getSharedPrismaClient().conversation.findFirst({
       where: {
         id: id,
         companyId: companyId
@@ -1701,7 +1701,7 @@ const getConversationPostDetails = async (req, res) => {
     }
 
     // Get page access token
-    const facebookPage = await prisma.facebookPage.findFirst({
+    const facebookPage = await getSharedPrismaClient().facebookPage.findFirst({
       where: {
         pageId: pageId,
         companyId: companyId,
@@ -1772,7 +1772,7 @@ const getPostsAITracking = async (req, res) => {
     }
 
     // 🆕 جلب البوستات من PostTracking مباشرة (التي تم تسجيلها عند وصول العملاء)
-    const postTrackingData = await prisma.postTracking.findMany({
+    const postTrackingData = await getSharedPrismaClient().postTracking.findMany({
       where: {
         companyId: companyId
       },
@@ -1794,7 +1794,7 @@ const getPostsAITracking = async (req, res) => {
     const postIds = postTrackingData.map(tracking => tracking.postId);
 
     // جلب المحادثات فقط لاستخراج pageId (بدون حساب إحصائيات)
-    const conversations = await prisma.conversation.findMany({
+    const conversations = await getSharedPrismaClient().conversation.findMany({
       where: {
         companyId: companyId,
         metadata: {
@@ -1826,7 +1826,7 @@ const getPostsAITracking = async (req, res) => {
     }
 
     // Get PostResponseSettings for featured products
-    const postSettings = await prisma.postResponseSettings.findMany({
+    const postSettings = await getSharedPrismaClient().postResponseSettings.findMany({
       where: {
         postId: { in: postIds },
         companyId: companyId
@@ -1913,7 +1913,7 @@ const getPostDetails = async (req, res) => {
 
     // إذا لم يتم توفير pageId، حاول العثور عليه من المحادثات المرتبطة بهذا البوست
     if (!foundPageId) {
-      const conversations = await prisma.conversation.findMany({
+      const conversations = await getSharedPrismaClient().conversation.findMany({
         where: {
           companyId: companyId,
           metadata: {
@@ -1943,7 +1943,7 @@ const getPostDetails = async (req, res) => {
 
       // إذا لم يتم العثور عليه من المحادثات، جرب جميع صفحات الشركة
       if (!foundPageId) {
-        const allPages = await prisma.facebookPage.findMany({
+        const allPages = await getSharedPrismaClient().facebookPage.findMany({
           where: {
             companyId: companyId,
             status: 'connected'
@@ -1983,7 +1983,7 @@ const getPostDetails = async (req, res) => {
     }
 
     // Get page access token
-    const facebookPage = await prisma.facebookPage.findFirst({
+    const facebookPage = await getSharedPrismaClient().facebookPage.findFirst({
       where: {
         pageId: foundPageId,
         companyId: companyId,
@@ -2064,7 +2064,7 @@ const updatePostFeaturedProduct = async (req, res) => {
 
     // Validate product if provided
     if (featuredProductId) {
-      const product = await prisma.product.findFirst({
+      const product = await getSharedPrismaClient().product.findFirst({
         where: {
           id: featuredProductId,
           companyId: companyId,
@@ -2081,7 +2081,7 @@ const updatePostFeaturedProduct = async (req, res) => {
     }
 
     // Find or create PostResponseSettings
-    let postSettings = await prisma.postResponseSettings.findUnique({
+    let postSettings = await getSharedPrismaClient().postResponseSettings.findUnique({
       where: {
         postId_companyId: {
           postId: postId,
@@ -2092,7 +2092,7 @@ const updatePostFeaturedProduct = async (req, res) => {
 
     if (postSettings) {
       // Update existing settings
-      postSettings = await prisma.postResponseSettings.update({
+      postSettings = await getSharedPrismaClient().postResponseSettings.update({
         where: {
           postId_companyId: {
             postId: postId,
@@ -2114,7 +2114,7 @@ const updatePostFeaturedProduct = async (req, res) => {
       });
     } else {
       // Create new settings with featured product
-      postSettings = await prisma.postResponseSettings.create({
+      postSettings = await getSharedPrismaClient().postResponseSettings.create({
         data: {
           postId: postId,
           companyId: companyId,

@@ -7,7 +7,7 @@
 
 const axios = require('axios');
 const { getSharedPrismaClient } = require('./sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const FacebookAdsService = require('./facebookAdsService');
 
 class FacebookAdTestService {
@@ -641,4 +641,5 @@ class FacebookAdTestService {
 }
 
 module.exports = FacebookAdTestService;
+
 

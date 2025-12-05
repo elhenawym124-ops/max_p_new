@@ -61,8 +61,8 @@ async function runScenarioTest() {
       if (questionNum === 14) {
         await new Promise(resolve => setTimeout(resolve, 3000));
         const { getSharedPrismaClient } = require('./sharedDatabase');
-        const prisma = getSharedPrismaClient();
-        const order = await prisma.order.findFirst({
+        // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
+        const order = await getSharedPrismaClient().order.findFirst({
           where: { conversationId: runner.dbConversationId, companyId: COMPANY_ID },
           orderBy: { createdAt: 'desc' }
         });
@@ -96,4 +96,5 @@ async function runScenarioTest() {
 }
 
 runScenarioTest();
+
 

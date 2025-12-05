@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const { getSharedPrismaClient, safeQuery, healthCheck } = require('./sharedDatabase');
 
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 class BillingNotificationService {
   constructor() {
@@ -167,7 +167,7 @@ class BillingNotificationService {
 
       // Check for renewals in 7 days
       const renewalsIn7Days = await safeQuery(async () => {
-        return await prisma.subscription.findMany({
+        return await getSharedPrismaClient().subscription.findMany({
           where: { companyId: { not: null } },
           where: {
             status: 'ACTIVE',
@@ -191,7 +191,7 @@ class BillingNotificationService {
 
       // Check for renewals in 3 days
       const renewalsIn3Days = await safeQuery(async () => {
-        return await prisma.subscription.findMany({
+        return await getSharedPrismaClient().subscription.findMany({
           where: { companyId: { not: null } },
           where: {
             status: 'ACTIVE',
@@ -215,7 +215,7 @@ class BillingNotificationService {
 
       // Check for renewals in 1 day
       const renewalsIn1Day = await safeQuery(async () => {
-        return await prisma.subscription.findMany({
+        return await getSharedPrismaClient().subscription.findMany({
           where: { companyId: { not: null } },
           where: {
             status: 'ACTIVE',
@@ -267,7 +267,7 @@ class BillingNotificationService {
       const now = new Date();
       
       const overdueInvoices = await safeQuery(async () => {
-        return await prisma.invoice.findMany({
+        return await getSharedPrismaClient().invoice.findMany({
           where: { companyId: { not: null } },
           where: {
             status: 'SENT',
@@ -293,7 +293,7 @@ class BillingNotificationService {
         // Update invoice status to OVERDUE with company isolation
         // SECURITY WARNING: Ensure companyId filter is included
         await safeQuery(async () => {
-          await prisma.invoice.updateMany({
+          await getSharedPrismaClient().invoice.updateMany({
             where: {
               companyId: { in: overdueInvoices.map(inv => inv.companyId) },
               id: {
@@ -331,7 +331,7 @@ class BillingNotificationService {
 
       // Check for trials expiring in 3 days
       const trialsExpiring3Days = await safeQuery(async () => {
-        return await prisma.subscription.findMany({
+        return await getSharedPrismaClient().subscription.findMany({
           where: { companyId: { not: null } },
           where: {
             status: 'TRIAL',
@@ -354,7 +354,7 @@ class BillingNotificationService {
 
       // Check for trials expiring in 1 day
       const trialsExpiring1Day = await safeQuery(async () => {
-        return await prisma.subscription.findMany({
+        return await getSharedPrismaClient().subscription.findMany({
           where: { companyId: { not: null } },
           where: {
             status: 'TRIAL',
@@ -377,7 +377,7 @@ class BillingNotificationService {
 
       // Check for expired trials
       const expiredTrials = await safeQuery(async () => {
-        return await prisma.subscription.findMany({
+        return await getSharedPrismaClient().subscription.findMany({
           where: { companyId: { not: null } },
           where: {
             status: 'TRIAL',
@@ -414,7 +414,7 @@ class BillingNotificationService {
         // Update expired trials to EXPIRED status with company isolation
         // SECURITY WARNING: Ensure companyId filter is included
         await safeQuery(async () => {
-          await prisma.subscription.updateMany({
+          await getSharedPrismaClient().subscription.updateMany({
             where: {
               companyId: { in: expiredTrials.map(sub => sub.companyId) },
               id: {
@@ -446,7 +446,7 @@ class BillingNotificationService {
     try {
       
       const failedPayments = await safeQuery(async () => {
-        return await prisma.payment.findMany({
+        return await getSharedPrismaClient().payment.findMany({
           where: { companyId: { not: null } },
           where: {
             status: 'FAILED',
@@ -642,14 +642,14 @@ class BillingNotificationService {
         paidInvoices
       ] = await Promise.all([
         safeQuery(async () => {
-          return await prisma.subscription.count({
+          return await getSharedPrismaClient().subscription.count({
             where: {
               createdAt: { gte: weekAgo }
             }
           });
         }),
         safeQuery(async () => {
-          return await prisma.subscription.count({
+          return await getSharedPrismaClient().subscription.count({
             where: {
               status: 'CANCELLED',
               cancelledAt: { gte: weekAgo }
@@ -657,7 +657,7 @@ class BillingNotificationService {
           });
         }),
         safeQuery(async () => {
-          return await prisma.payment.aggregate({
+          return await getSharedPrismaClient().payment.aggregate({
             where: {
               status: 'COMPLETED',
               paidAt: { gte: weekAgo }
@@ -666,14 +666,14 @@ class BillingNotificationService {
           });
         }),
         safeQuery(async () => {
-          return await prisma.invoice.count({
+          return await getSharedPrismaClient().invoice.count({
             where: {
               createdAt: { gte: weekAgo }
             }
           });
         }),
         safeQuery(async () => {
-          return await prisma.invoice.count({
+          return await getSharedPrismaClient().invoice.count({
             where: {
               status: 'PAID',
               paidDate: { gte: weekAgo }
@@ -709,7 +709,7 @@ class BillingNotificationService {
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       
       const inactiveSubscriptions = await safeQuery(async () => {
-        return await prisma.subscription.findMany({
+        return await getSharedPrismaClient().subscription.findMany({
           where: { companyId: { not: null } },
           where: {
             status: 'INACTIVE',
@@ -774,3 +774,4 @@ class BillingNotificationService {
 }
 
 module.exports = BillingNotificationService;
+

@@ -109,6 +109,9 @@ model Company {
   // 🛒 WooCommerce Integration
   wooCommerceSettings    WooCommerceSettings? // ⚙️ إعدادات WooCommerce
   wooCommerceSyncLogs    WooCommerceSyncLog[] // 📋 سجل المزامنة
+  
+  // 🏷️ Order Status Management
+  orderStatusConfigs     OrderStatusConfig[] // ⚙️ إعدادات حالات الطلبات
 
   @@map("companies")
 }
@@ -2927,6 +2930,11 @@ model WhatsAppSession {
   // البيانات الوصفية
   metadata        String?  @db.Text
   
+  // ✅ Cached Profile Data
+  profileName     String?
+  profileStatus   String?
+  profilePictureUrl String? @db.Text
+  
   // التواريخ
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -3860,5 +3868,54 @@ model WooCommerceSyncLog {
   @@index([status])
   @@index([startedAt])
   @@map("woocommerce_sync_logs")
+}
+
+// 🏷️ Order Status Configuration - إدارة حالات الطلبات
+model OrderStatusConfig {
+  id                String   @id @default(cuid())
+  companyId         String
+  
+  // Status Info
+  code              String   // الكود الفريد للحالة (مثل: PENDING, processing, custom-status)
+  name              String   // الاسم المعروض (مثل: قيد الانتظار)
+  nameEn            String?  // الاسم بالإنجليزية
+  description       String?  @db.Text // وصف الحالة
+  
+  // Display Settings
+  color             String   @default("#6B7280") // لون الحالة
+  icon              String?  // أيقونة الحالة
+  sortOrder         Int      @default(0) // ترتيب العرض
+  
+  // Type & Source
+  statusType        String   @default("order") // order, payment, shipping
+  source            String   @default("system") // system, woocommerce, custom
+  isSystemStatus    Boolean  @default(false) // هل هي حالة نظام أساسية
+  isActive          Boolean  @default(true)
+  
+  // Mapping
+  mapsToSystem      String?  // تربط بأي حالة نظام (للحالات المستوردة)
+  wooCommerceStatus String?  // الحالة المقابلة في WooCommerce
+  
+  // Workflow
+  allowedNextStatuses String? @db.Text // JSON array of allowed next status codes
+  autoActions       String?  @db.Text // JSON: إجراءات تلقائية عند الوصول لهذه الحالة
+  
+  // Notifications
+  notifyCustomer    Boolean  @default(false) // إشعار العميل
+  notifyAdmin       Boolean  @default(false) // إشعار الإدارة
+  emailTemplate     String?  @db.Text // قالب الإيميل
+  smsTemplate       String?  @db.Text // قالب الرسالة
+  
+  // Metadata
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([statusType])
+  @@index([source])
+  @@map("order_status_configs")
 }
 

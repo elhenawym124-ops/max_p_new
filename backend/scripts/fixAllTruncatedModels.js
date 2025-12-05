@@ -3,7 +3,7 @@
  */
 
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
-const prisma = getSharedPrismaClient();
+// const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
 // القيم الافتراضية الصحيحة لكل نموذج
 const getModelDefaults = (modelName) => {
@@ -47,7 +47,7 @@ async function fixAllTruncatedModels() {
         console.log('\n🔧 ========== إصلاح جميع النماذج المقطوعة ==========\n');
 
         // جلب جميع النماذج
-        const allModels = await prisma.geminiKeyModel.findMany({
+        const allModels = await getSharedPrismaClient().geminiKeyModel.findMany({
             select: {
                 id: true,
                 model: true,
@@ -83,7 +83,7 @@ async function fixAllTruncatedModels() {
                         resetDate: null
                     };
                     
-                    await prisma.geminiKeyModel.update({
+                    await getSharedPrismaClient().geminiKeyModel.update({
                         where: { id: modelRecord.id },
                         data: {
                             usage: JSON.stringify(fixedUsage)
@@ -111,7 +111,7 @@ async function fixAllTruncatedModels() {
                         resetDate: null
                     };
                     
-                    await prisma.geminiKeyModel.update({
+                    await getSharedPrismaClient().geminiKeyModel.update({
                         where: { id: modelRecord.id },
                         data: {
                             usage: JSON.stringify(fixedUsage)
@@ -136,9 +136,10 @@ async function fixAllTruncatedModels() {
     } catch (error) {
         console.error('❌ خطأ:', error);
     } finally {
-        await prisma.$disconnect();
+        await getSharedPrismaClient().$disconnect();
     }
 }
 
 fixAllTruncatedModels();
+
 

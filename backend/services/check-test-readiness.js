@@ -60,10 +60,10 @@ async function checkReadiness() {
   console.log('\n4️⃣ فحص قاعدة البيانات...');
   try {
     const { getSharedPrismaClient } = require('./sharedDatabase');
-    const prisma = getSharedPrismaClient();
+    // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
     
     // محاولة استعلام بسيط
-    const company = await prisma.company.findFirst({
+    const company = await getSharedPrismaClient().company.findFirst({
       where: { id: 'cmem8ayyr004cufakqkcsyn97' }
     });
     
@@ -76,7 +76,7 @@ async function checkReadiness() {
       checks.push({ name: 'قاعدة البيانات', status: '⚠️', details: 'الشركة غير موجودة' });
     }
     
-    await prisma.$disconnect();
+    await getSharedPrismaClient().$disconnect();
   } catch (error) {
     console.log(`   ❌ خطأ: ${error.message}`);
     checks.push({ name: 'قاعدة البيانات', status: '❌', details: error.message });
@@ -107,5 +107,6 @@ checkReadiness().catch(error => {
   console.error(error.stack);
   process.exit(1);
 });
+
 
 

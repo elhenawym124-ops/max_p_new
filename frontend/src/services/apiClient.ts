@@ -70,12 +70,12 @@ class ApiClient {
         config.headers['X-Request-ID'] = this.generateRequestId();
 
         // Log request in development
-        if (import.meta.env.DEV) {
-          console.log(`🚀 ${config.method?.toUpperCase()} ${config.url}`, {
-            data: config.data,
-            params: config.params,
-          });
-        }
+        // if (import.meta.env.DEV) {
+        //   console.log(`🚀 ${config.method?.toUpperCase()} ${config.url}`, {
+        //     data: config.data,
+        //     params: config.params,
+        //   });
+        // }
 
         return config;
       },
@@ -89,12 +89,12 @@ class ApiClient {
     this.client.interceptors.response.use(
       (response) => {
         // Log response in development
-        if (import.meta.env.DEV) {
-          console.log(`✅ ${response.config.method?.toUpperCase()} ${response.config.url}`, {
-            status: response.status,
-            data: response.data,
-          });
-        }
+        // if (import.meta.env.DEV) {
+        //   console.log(`✅ ${response.config.method?.toUpperCase()} ${response.config.url}`, {
+        //     status: response.status,
+        //     data: response.data,
+        //   });
+        // }
 
         return response;
       },
@@ -109,7 +109,7 @@ class ApiClient {
             message: error.message,
             headers: originalRequest?.headers
           });
-          
+
           // Handle specific error cases with detailed logging
           if (error.response?.status === 401) {
             console.error('🔒 Authentication failed - token may be invalid or expired');
@@ -130,13 +130,13 @@ class ApiClient {
         if (error.response?.status === 503) {
           const retryCount = originalRequest._retryCount || 0;
           const maxRetries = 3;
-          
+
           if (retryCount < maxRetries) {
             originalRequest._retryCount = retryCount + 1;
             const delay = Math.min(1000 * Math.pow(2, retryCount), 5000); // Exponential backoff: 1s, 2s, 4s (max 5s)
-            
+
             console.log(`🔄 Retrying request (${retryCount + 1}/${maxRetries}) after ${delay}ms...`);
-            
+
             await new Promise(resolve => setTimeout(resolve, delay));
             return this.client(originalRequest);
           }
@@ -222,14 +222,14 @@ class ApiClient {
 
     // Redirect to login (if not already there AND not on public storefront routes)
     const currentPath = window.location.pathname;
-    const isPublicRoute = 
+    const isPublicRoute =
       currentPath.startsWith('/test-public') ||
       currentPath.startsWith('/home') ||
       currentPath.startsWith('/shop') ||
       currentPath.startsWith('/auth/') ||
       currentPath.startsWith('/super-admin/login') ||
       currentPath.startsWith('/payment/');
-    
+
     if (!isPublicRoute) {
       window.location.href = '/auth/login';
     }
@@ -247,7 +247,7 @@ class ApiClient {
 
     // Show error toast - check both error.message and message (backend sends message directly)
     const message = errorData?.error?.message || errorData?.message || 'حدث خطأ غير متوقع';
-    
+
     if (status && status >= 500) {
       toast.error('خطأ في الخادم. يرجى المحاولة لاحقاً');
     } else {
