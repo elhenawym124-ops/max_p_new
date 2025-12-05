@@ -1844,6 +1844,98 @@ app.get('/api/v1/conversations',
     }
   });
 
+// Get single conversation by ID with company isolation
+app.get('/api/v1/conversations/:id',
+  verifyToken.authenticateToken,
+  verifyToken.requireCompanyAccess,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const companyId = req.user?.companyId;
+
+      // التحقق من المصادقة والشركة
+      if (!companyId) {
+        return res.status(403).json({
+          success: false,
+          message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+        });
+      }
+
+      console.log(`🔍 Fetching conversation ${id} for company ${companyId}`);
+
+      // جلب المحادثة من قاعدة البيانات
+      const conversation = await safeDb.execute(async (prisma) => {
+        return await prisma.conversation.findFirst({
+          where: {
+            id: id,
+            companyId: companyId
+          },
+          include: {
+            customer: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                phone: true,
+                email: true,
+                facebookId: true,
+                whatsappId: true
+              }
+            }
+          }
+        });
+      });
+
+      if (!conversation) {
+        return res.status(404).json({
+          success: false,
+          message: 'المحادثة غير موجودة أو غير مصرح بالوصول إليها'
+        });
+      }
+
+      // تنسيق البيانات
+      const customerName = conversation.customer 
+        ? `${conversation.customer.firstName || ''} ${conversation.customer.lastName || ''}`.trim() || conversation.customerId
+        : conversation.customerId || 'عميل غير معروف';
+
+      const formattedConversation = {
+        id: conversation.id,
+        customerId: conversation.customerId,
+        customerName: customerName,
+        lastMessage: conversation.lastMessage || 'لا توجد رسائل',
+        lastMessageTime: conversation.lastMessageAt || conversation.createdAt,
+        lastMessageAt: conversation.lastMessageAt || conversation.createdAt,
+        unreadCount: conversation.unreadCount || 0,
+        platform: conversation.platform || conversation.channel || 'unknown',
+        channel: conversation.channel || conversation.platform || 'unknown',
+        companyId: conversation.companyId,
+        aiEnabled: conversation.aiEnabled !== undefined ? conversation.aiEnabled : true,
+        pageName: conversation.pageName || null,
+        pageId: conversation.pageId || null,
+        adSource: conversation.adSource || null,
+        metadata: conversation.metadata || null,
+        lastMessageIsFromCustomer: conversation.lastMessageIsFromCustomer || false,
+        lastCustomerMessageIsUnread: conversation.lastCustomerMessageIsUnread || false,
+        createdAt: conversation.createdAt,
+        updatedAt: conversation.updatedAt
+      };
+
+      console.log(`✅ Conversation ${id} found and returned`);
+
+      res.json({
+        success: true,
+        data: formattedConversation
+      });
+    } catch (error) {
+      console.error('❌ Error fetching conversation:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+        message: 'حدث خطأ في جلب المحادثة'
+      });
+    }
+  });
+
 // Real messages endpoint with company isolation and caching
 app.get('/api/v1/conversations/:id/messages',
   verifyToken.authenticateToken,
