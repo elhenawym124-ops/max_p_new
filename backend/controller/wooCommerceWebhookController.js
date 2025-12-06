@@ -252,6 +252,16 @@ const handleOrderCreated = async (companyId, orderData, settings) => {
         failedCount: 1,
         triggeredBy: 'webhook',
         errorMessage: error.message,
+        errorDetails: JSON.stringify({
+          error: error.message,
+          stack: error.stack,
+          orderData: orderData ? {
+            id: orderData.id,
+            number: orderData.number,
+            status: orderData.status
+          } : null,
+          timestamp: new Date().toISOString()
+        }),
         completedAt: new Date()
       }
     });

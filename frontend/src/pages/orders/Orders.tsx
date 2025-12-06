@@ -177,7 +177,7 @@ const Orders: React.FC = () => {
     try {
       setLoading(true);
       const token = localStorage.getItem('accessToken');
-      const apiUrl = import.meta.env['VITE_API_URL'] || 'http://localhost:3007/api/v1';
+      const apiUrl = import.meta.env['VITE_API_URL'] || 'https://mokhtarelhenawy.online/api/v1';
 
       // Build Query String
       const queryParams = new URLSearchParams({

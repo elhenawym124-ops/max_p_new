@@ -670,6 +670,29 @@ const importOrdersFromWooCommerce = async (req, res) => {
 
   } catch (error) {
     console.error('❌ [WOOCOMMERCE] Error importing orders:', error);
+    
+    // تحديث سجل المزامنة بالخطأ
+    if (syncLog) {
+      try {
+        await getSharedPrismaClient().wooCommerceSyncLog.update({
+          where: { id: syncLog.id },
+          data: {
+            status: 'failed',
+            errorMessage: error.message,
+            errorDetails: JSON.stringify({
+              error: error.message,
+              stack: error.stack,
+              timestamp: new Date().toISOString()
+            }),
+            completedAt: new Date(),
+            duration: Math.floor((Date.now() - syncLog.startedAt.getTime()) / 1000)
+          }
+        });
+      } catch (updateError) {
+        console.error('❌ Failed to update sync log:', updateError);
+      }
+    }
+    
     res.status(500).json({
       success: false,
       message: 'خطأ في استيراد الطلبات',
@@ -924,6 +947,29 @@ const exportOrdersToWooCommerce = async (req, res) => {
 
   } catch (error) {
     console.error('❌ [WOOCOMMERCE] Error exporting orders:', error);
+    
+    // تحديث سجل المزامنة بالخطأ
+    if (syncLog) {
+      try {
+        await getSharedPrismaClient().wooCommerceSyncLog.update({
+          where: { id: syncLog.id },
+          data: {
+            status: 'failed',
+            errorMessage: error.message,
+            errorDetails: JSON.stringify({
+              error: error.message,
+              stack: error.stack,
+              timestamp: new Date().toISOString()
+            }),
+            completedAt: new Date(),
+            duration: Math.floor((Date.now() - syncLog.startedAt.getTime()) / 1000)
+          }
+        });
+      } catch (updateError) {
+        console.error('❌ Failed to update sync log:', updateError);
+      }
+    }
+    
     res.status(500).json({
       success: false,
       message: 'خطأ في تصدير الطلبات',
@@ -1194,7 +1240,9 @@ const runAutoSync = async (companyId) => {
 
           if (!existing) {
             // Import the order
-            const customerName = `${wooOrder.billing?.first_name || ''} ${wooOrder.billing?.last_name || ''}`.trim() || 'عميل WooCommerce';
+            const firstName = wooOrder.billing?.first_name || 'عميل';
+            const lastName = wooOrder.billing?.last_name || 'WooCommerce';
+            const customerName = `${firstName} ${lastName}`.trim();
             const customerPhone = wooOrder.billing?.phone || '';
             const customerEmail = wooOrder.billing?.email || '';
 
@@ -1213,10 +1261,12 @@ const runAutoSync = async (companyId) => {
               customer = await getSharedPrismaClient().customer.create({
                 data: {
                   companyId,
-                  name: customerName,
+                  firstName: firstName,
+                  lastName: lastName,
                   phone: customerPhone || null,
                   email: customerEmail || null,
-                  source: 'woocommerce'
+                  notes: 'تم الاستيراد من WooCommerce',
+                  metadata: JSON.stringify({ source: 'woocommerce', importedAt: new Date().toISOString() })
                 }
               });
             }

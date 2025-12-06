@@ -95,6 +95,8 @@ interface SyncLog {
   startedAt: string;
   completedAt?: string;
   duration?: number;
+  errorMessage?: string;
+  errorDetails?: any;
 }
 
 interface Settings {
@@ -2401,6 +2403,32 @@ const WooCommerceSync: React.FC = () => {
                             </span>
                           )}
                         </div>
+                        
+                        {/* عرض رسالة الخطأ إذا كانت موجودة */}
+                        {(log.errorMessage || log.errorDetails) && (
+                          <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                            <div className="flex items-start gap-2">
+                              <ExclamationTriangleIcon className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-red-800 dark:text-red-300 mb-1">
+                                  تفاصيل الخطأ:
+                                </p>
+                                {log.errorMessage && (
+                                  <p className="text-sm text-red-700 dark:text-red-400 mb-2">
+                                    {log.errorMessage}
+                                  </p>
+                                )}
+                                {log.errorDetails && (
+                                  <pre className="text-xs text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 p-2 rounded overflow-x-auto max-h-40">
+                                    {typeof log.errorDetails === 'string' 
+                                      ? log.errorDetails 
+                                      : JSON.stringify(log.errorDetails, null, 2)}
+                                  </pre>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
