@@ -379,11 +379,32 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           // لكن فقط إذا كانت المحادثة المختارة حالياً (للمحافظة على الرسائل المحملة)
           const merged = formattedConversations.map(newConv => {
             const existing = validPrevConversations.find(c => c.id === newConv.id);
-            // إذا كانت المحادثة موجودة مسبقاً ولديها رسائل محملة، نحتفظ بالرسائل
-            if (existing && existing.messages && existing.messages.length > 0) {
+            
+            if (existing) {
+              // ✅ FIX: مقارنة الوقت - إذا كانت البيانات الموجودة أحدث من السيرفر، نحتفظ بها
+              const existingTime = existing.lastMessageTime ? new Date(existing.lastMessageTime).getTime() : 0;
+              const newTime = new Date(newConv.lastMessageTime).getTime();
+              const existingIsNewer = existingTime > newTime;
+              
+              if (!silent && existingIsNewer) {
+                console.log(`🔄 [REFRESH-MERGE] Conv ${newConv.id}: Keeping newer data from Socket.IO`, {
+                  existingTime: new Date(existingTime).toISOString(),
+                  newTime: new Date(newTime).toISOString(),
+                  existingIsFromCustomer: existing.lastMessageIsFromCustomer,
+                  newIsFromCustomer: newConv.lastMessageIsFromCustomer
+                });
+              }
+              
               return {
                 ...newConv,
-                messages: existing.messages // الحفاظ على الرسائل المحملة
+                messages: existing.messages && existing.messages.length > 0 ? existing.messages : newConv.messages,
+                // ✅ FIX: الحفاظ على البيانات الأحدث من Socket.IO
+                lastMessage: existingIsNewer ? existing.lastMessage : newConv.lastMessage,
+                lastMessageTime: existingIsNewer ? existing.lastMessageTime : newConv.lastMessageTime,
+                lastMessageIsFromCustomer: existingIsNewer ? existing.lastMessageIsFromCustomer : newConv.lastMessageIsFromCustomer,
+                lastCustomerMessageIsUnread: existingIsNewer ? existing.lastCustomerMessageIsUnread : newConv.lastCustomerMessageIsUnread,
+                // ✅ FIX: الحفاظ على unreadCount من Socket.IO إذا كانت البيانات أحدث
+                unreadCount: existingIsNewer ? existing.unreadCount : newConv.unreadCount
               };
             }
             return newConv;
@@ -538,20 +559,37 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           console.warn('⚠️ Failed to load messages, conversation will be added without messages');
         }
 
+        // ✅ FIX: استخدام آخر رسالة من الرسائل المحملة إذا كان lastMessage فارغ
+        const lastLoadedMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+        const actualLastMessage = conv.lastMessage || 
+          (lastLoadedMessage ? lastLoadedMessage.content : 'لا توجد رسائل');
+        
+        // ✅ FIX: استخدام isFromCustomer من آخر رسالة محملة بدلاً من السيرفر
+        // لأن السيرفر أحياناً يرجع قيمة قديمة أو خاطئة
+        const actualLastMessageIsFromCustomer = lastLoadedMessage 
+          ? lastLoadedMessage.isFromCustomer 
+          : (conv.lastMessageIsFromCustomer || false);
+        
+        console.log(`🔍 [LOAD-SPECIFIC] Conv ${conversationId}:`, {
+          serverIsFromCustomer: conv.lastMessageIsFromCustomer,
+          lastLoadedMsgIsFromCustomer: lastLoadedMessage?.isFromCustomer,
+          actualIsFromCustomer: actualLastMessageIsFromCustomer,
+          lastMessage: actualLastMessage.substring(0, 50)
+        });
+
         const formattedConversation: Conversation = {
           id: conv.id,
           customerId: conv.customerId || conv.id,
           customerName: conv.customerName || conv.customerId || 'عميل غير معروف',
-          lastMessage: conv.lastMessage || 'لا توجد رسائل',
+          lastMessage: actualLastMessage,
           lastMessageTime: new Date(conv.lastMessageTime || conv.lastMessageAt || Date.now()),
           unreadCount: conv.unreadCount || 0,
           platform: (conv.platform || conv.channel || 'unknown') as Conversation['platform'],
           isOnline: false,
           messages: messages, // ✅ إضافة الرسائل المحملة
-          lastMessageIsFromCustomer: conv.lastMessageIsFromCustomer || false,
-          lastCustomerMessageIsUnread: (conv.lastCustomerMessageIsUnread === true)
-            ? true
-            : ((conv.lastMessageIsFromCustomer === true) && ((conv.unreadCount || 0) > 0)),
+          lastMessageIsFromCustomer: actualLastMessageIsFromCustomer,
+          // ✅ FIX: إذا آخر رسالة من العميل و فيه رسائل غير مقروءة، يبقى آخر رسالة عميل غير مقروءة
+          lastCustomerMessageIsUnread: (actualLastMessageIsFromCustomer === true) && ((conv.unreadCount || 0) > 0),
           aiEnabled: conv.aiEnabled !== undefined ? conv.aiEnabled : true,
           pageName: conv.pageName || null,
           pageId: conv.pageId || null,
@@ -579,7 +617,55 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           } else {
             // ✅ تحديث المحادثة الموجودة بالرسائل الجديدة
             console.log(`✅ Updating existing conversation ${conversationId} with ${messages.length} messages`);
-            return prev.map(c => c.id === conversationId ? formattedConversation : c);
+            return prev.map(c => {
+              if (c.id === conversationId) {
+                // ✅ FIX: الحفاظ على lastMessage الموجود إذا كان السيرفر يرجع "لا توجد رسائل"
+                const shouldKeepExistingLastMessage = 
+                  formattedConversation.lastMessage === 'لا توجد رسائل' && 
+                  c.lastMessage && 
+                  c.lastMessage !== 'لا توجد رسائل';
+                
+                // ✅ FIX: الحفاظ على lastMessageIsFromCustomer من Socket.IO إذا كانت أحدث أو متساوية
+                const existingTime = c.lastMessageTime ? new Date(c.lastMessageTime).getTime() : 0;
+                const newTime = new Date(formattedConversation.lastMessageTime).getTime();
+                const shouldKeepExistingIsFromCustomer = 
+                  c.lastMessage && 
+                  c.lastMessage !== 'لا توجد رسائل' &&
+                  existingTime >= newTime;  // ✅ FIX: >= بدلاً من > للحفاظ على البيانات حتى لو الوقت متساوي
+                
+                // ✅ FIX: الحفاظ على unreadCount من Socket.IO دائماً إذا كان موجود
+                // لأن السيرفر دائماً بيرجع 0 (قديمة)
+                const shouldKeepUnreadCount = (c.unreadCount !== undefined && c.unreadCount > 0);
+                
+                console.log(`🔄 [LOAD-SPECIFIC-UPDATE] Conv ${conversationId}:`, {
+                  existingMsg: c.lastMessage?.substring(0, 30),
+                  existingIsFromCustomer: c.lastMessageIsFromCustomer,
+                  existingUnreadCount: c.unreadCount,
+                  existingTime: new Date(existingTime).toISOString(),
+                  existingPageName: c.pageName,
+                  newIsFromCustomer: formattedConversation.lastMessageIsFromCustomer,
+                  newUnreadCount: formattedConversation.unreadCount,
+                  newTime: new Date(newTime).toISOString(),
+                  newPageName: formattedConversation.pageName,
+                  shouldKeepIsFromCustomer: shouldKeepExistingIsFromCustomer,
+                  shouldKeepUnreadCount: shouldKeepUnreadCount
+                });
+                
+                return {
+                  ...formattedConversation,
+                  lastMessage: shouldKeepExistingLastMessage ? c.lastMessage : formattedConversation.lastMessage,
+                  lastMessageIsFromCustomer: shouldKeepExistingIsFromCustomer ? c.lastMessageIsFromCustomer : formattedConversation.lastMessageIsFromCustomer,
+                  lastMessageTime: shouldKeepExistingIsFromCustomer ? c.lastMessageTime : formattedConversation.lastMessageTime,
+                  // ✅ FIX: الحفاظ على unreadCount من Socket.IO دائماً إذا كان موجود
+                  unreadCount: shouldKeepUnreadCount ? c.unreadCount : formattedConversation.unreadCount,
+                  lastCustomerMessageIsUnread: shouldKeepUnreadCount ? c.lastCustomerMessageIsUnread : formattedConversation.lastCustomerMessageIsUnread,
+                  // ✅ FIX: الحفاظ على pageName و pageId من Socket.IO إذا كانت موجودة
+                  pageName: c.pageName || formattedConversation.pageName,
+                  pageId: c.pageId || formattedConversation.pageId
+                };
+              }
+              return c;
+            });
           }
         });
 
@@ -3061,6 +3147,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
           loadSpecificConversation(data.conversationId, shouldAutoSelect).then(() => {
             // ✅ بعد تحميل المحادثة الكاملة، ندمج الرسالة الجديدة مع الرسائل المحملة
+            // ✅ FIX: نحافظ على البيانات من Socket.IO (pageName, lastMessageIsFromCustomer, etc)
             setConversations((currentPrev: Conversation[]) => {
               return currentPrev.map((conv: Conversation) => {
                 if (conv.id === data.conversationId) {
@@ -3074,14 +3161,32 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                       new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
                     );
 
+                    // ✅ FIX: الحفاظ على unreadCount من Socket.IO (المحادثة المؤقتة)
+                    // لأن السيرفر بيرجع unreadCount = 0 (قديمة)
+                    const socketUnreadCount = data.isFromCustomer ? 1 : 0;
+                    
                     const updatedConv = {
                       ...conv,
                       messages: updatedMessages,
                       lastMessage: data.content,
                       lastMessageTime: new Date(data.timestamp),
                       lastMessageIsFromCustomer: !!data.isFromCustomer,
-                      lastCustomerMessageIsUnread: !!data.isFromCustomer
+                      lastCustomerMessageIsUnread: !!data.isFromCustomer,
+                      // ✅ FIX: استخدام unreadCount من Socket.IO بدلاً من السيرفر
+                      unreadCount: socketUnreadCount,
+                      // ✅ FIX: الحفاظ على pageName و pageId من Socket.IO إذا كانت موجودة
+                      pageName: data.pageName || conv.pageName,
+                      pageId: data.pageId || conv.pageId
                     };
+
+                    console.log(`🔄 [SOCKET-MERGE] Merged new message with loaded conversation:`, {
+                      conversationId: data.conversationId,
+                      lastMessageIsFromCustomer: updatedConv.lastMessageIsFromCustomer,
+                      unreadCount: updatedConv.unreadCount,
+                      pageName: updatedConv.pageName,
+                      fromSocket: { pageName: data.pageName, isFromCustomer: data.isFromCustomer, unreadCount: socketUnreadCount },
+                      fromServer: { pageName: conv.pageName, isFromCustomer: conv.lastMessageIsFromCustomer, unreadCount: conv.unreadCount }
+                    });
 
                     // ✅ تحديث المحادثة المحددة أيضاً إذا كانت نفس المحادثة
                     setSelectedConversation((currentSelected) => {
@@ -3092,6 +3197,31 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                     });
 
                     return updatedConv;
+                  } else {
+                    // ✅ FIX: حتى لو كانت الرسالة موجودة، تأكد من تحديث lastMessage
+                    // لأن السيرفر قد يكون أرجع قيمة قديمة أو فارغة
+                    const shouldUpdateLastMessage = 
+                      conv.lastMessage === 'لا توجد رسائل' || 
+                      !conv.lastMessage ||
+                      new Date(data.timestamp).getTime() > new Date(conv.lastMessageTime).getTime();
+                    
+                    if (shouldUpdateLastMessage) {
+                      // ✅ FIX: استخدام unreadCount من Socket.IO
+                      const socketUnreadCount = data.isFromCustomer ? 1 : 0;
+                      
+                      return {
+                        ...conv,
+                        lastMessage: data.content,
+                        lastMessageTime: new Date(data.timestamp),
+                        lastMessageIsFromCustomer: !!data.isFromCustomer,
+                        lastCustomerMessageIsUnread: !!data.isFromCustomer,
+                        // ✅ FIX: استخدام unreadCount من Socket.IO بدلاً من السيرفر
+                        unreadCount: socketUnreadCount,
+                        // ✅ FIX: الحفاظ على pageName و pageId من Socket.IO
+                        pageName: data.pageName || conv.pageName,
+                        pageId: data.pageId || conv.pageId
+                      };
+                    }
                   }
                 }
                 return conv;
@@ -3123,19 +3253,32 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             console.log('🔧 [UPDATE-CONV] Is from customer:', data.isFromCustomer);
             console.log('🔧 [UPDATE-CONV] Should update time:', shouldUpdateTime);
 
+            // ✅ FIX: الحفاظ على unreadCount من Socket.IO
+            // فقط نصفّر العداد إذا كانت المحادثة مفتوحة فعلاً وكانت رسالة من عميل
+            const newUnreadCount = isCurrentConversation && data.isFromCustomer
+              ? 0  // المحادثة مفتوحة ورسالة من عميل → نصفّر العداد
+              : data.isFromCustomer 
+                ? (conv.unreadCount || 0) + 1  // رسالة من عميل → نزيد العداد
+                : conv.unreadCount;  // رسالة من موظف → نحتفظ بالعداد
+            
+            console.log(`🔢 [UNREAD-COUNT] Conv ${conv.id}:`, {
+              isCurrentConversation,
+              isFromCustomer: data.isFromCustomer,
+              oldCount: conv.unreadCount,
+              newCount: newUnreadCount
+            });
+            
             return {
               ...conv,
               messages: messageExists ? existingMessages : [...existingMessages, newMessage],
               lastMessage: data.content,
               // فقط نحدث الوقت إذا كانت رسالة عميل أو محادثة مش مفتوحة
               lastMessageTime: shouldUpdateTime ? new Date(data.timestamp) : conv.lastMessageTime,
-              // عداد غير مقروءة يزيد فقط لرسائل العميل، ويصفر إن كانت المحادثة مفتوحة
-              unreadCount: (selectedConversation?.id === data.conversationId)
-                ? 0
-                : (data.isFromCustomer ? (conv.unreadCount + 1) : conv.unreadCount),
+              // ✅ FIX: استخدام العداد المحسوب بناءً على Socket.IO
+              unreadCount: newUnreadCount,
               // تحديث أعلام آخر رسالة وحالة عدم القراءة
               lastMessageIsFromCustomer: !!data.isFromCustomer,
-              lastCustomerMessageIsUnread: !!data.isFromCustomer && (selectedConversation?.id !== data.conversationId)
+              lastCustomerMessageIsUnread: !!data.isFromCustomer && !isCurrentConversation
             };
           }
           return conv;
@@ -3324,11 +3467,24 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         const existingIndex = prev.findIndex(conv => conv.id === data.id);
         if (existingIndex !== -1) {
           console.log('🔄 [SOCKET] Conversation already exists, updating instead of skipping...');
+          const existing = prev[existingIndex];
           const updated = [...prev];
+          
+          // ✅ FIX: الحفاظ على unreadCount من المحادثة المؤقتة (Socket.IO)
+          // لأن formattedConversation قد يحتوي على unreadCount = 0 من السيرفر
+          console.log(`🔢 [CONV-NEW-UPDATE] Conv ${data.id}:`, {
+            existingUnreadCount: existing.unreadCount,
+            newUnreadCount: formattedConversation.unreadCount,
+            keepingExisting: true
+          });
+          
           // تحديث المحادثة الموجودة بالبيانات الجديدة
           updated[existingIndex] = {
             ...updated[existingIndex],
             ...formattedConversation,
+            // ✅ FIX: الحفاظ على unreadCount من Socket.IO
+            unreadCount: existing.unreadCount,
+            lastCustomerMessageIsUnread: existing.lastCustomerMessageIsUnread,
             // الحفاظ على الرسائل الموجودة إذا كانت موجودة
             messages: updated[existingIndex].messages && updated[existingIndex].messages.length > 0
               ? updated[existingIndex].messages
