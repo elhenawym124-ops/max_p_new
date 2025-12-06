@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
+const socketService = require('../services/socketService');
 
 /**
  * Public Orders Routes
@@ -25,13 +26,13 @@ router.post('/orders', async (req, res) => {
   try {
     console.log('📝 [CREATE-ORDER] ===== Create Order Request =====');
     console.log('📝 [CREATE-ORDER] Body:', JSON.stringify(req.body, null, 2));
-    
+
     const { company } = req;
     const cartId = req.headers['x-cart-id'] || req.cookies?.cart_id;
-    
+
     console.log('🏢 [CREATE-ORDER] Company:', company?.id);
     console.log('🛒 [CREATE-ORDER] Cart ID:', cartId);
-    
+
     const {
       guestEmail,
       guestPhone,
@@ -45,25 +46,25 @@ router.post('/orders', async (req, res) => {
     } = req.body;
 
     if (!guestPhone || !guestName || !shippingAddress) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'جميع الحقول المطلوبة يجب ملؤها (الاسم، الهاتف، العنوان)' 
+      return res.status(400).json({
+        success: false,
+        error: 'جميع الحقول المطلوبة يجب ملؤها (الاسم، الهاتف، العنوان)'
       });
     }
 
     const prisma = getPrisma();
-    
+
     let cartItems = [];
     let cartTotal = 0;
     let shouldDeleteCart = false;
-    
+
     // ✅ Support two modes: cart-based or direct items
     if (items && Array.isArray(items) && items.length > 0) {
       // Direct items mode (for testing or quick checkout)
       console.log('📦 [PUBLIC-ORDER] Using direct items mode');
       cartItems = items;
       cartTotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      
+
       // ✅ FIX: Also clear cart if cartId exists (user might have items in cart)
       if (cartId) {
         shouldDeleteCart = true;
@@ -77,28 +78,28 @@ router.post('/orders', async (req, res) => {
       });
 
       if (!cart || !cart.items || cart.items.length === 0) {
-        return res.status(400).json({ 
-          success: false, 
-          error: 'السلة فارغة' 
+        return res.status(400).json({
+          success: false,
+          error: 'السلة فارغة'
         });
       }
-      
+
       cartItems = cart.items;
       cartTotal = cart.total || 0;
       shouldDeleteCart = true;
     } else {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'يجب توفير سلة أو عناصر للطلب' 
+      return res.status(400).json({
+        success: false,
+        error: 'يجب توفير سلة أو عناصر للطلب'
       });
     }
 
     // Verify stock again
     for (const item of cartItems) {
       console.log('🔍 [CREATE-ORDER] Checking product:', item.productId, 'variantId:', item.variantId, 'quantity:', item.quantity);
-      
+
       const product = await prisma.product.findFirst({
-        where: { 
+        where: {
           id: item.productId,
           companyId: company.id // Ensure product belongs to this company
         },
@@ -109,9 +110,9 @@ router.post('/orders', async (req, res) => {
 
       if (!product) {
         console.log('❌ [CREATE-ORDER] Product not found:', item.productId);
-        return res.status(400).json({ 
-          success: false, 
-          error: `المنتج غير موجود: ${item.name || 'Unknown'}` 
+        return res.status(400).json({
+          success: false,
+          error: `المنتج غير موجود: ${item.name || 'Unknown'}`
         });
       }
 
@@ -119,30 +120,30 @@ router.post('/orders', async (req, res) => {
       if (item.variantId) {
         const variant = product.variants.find(v => v.id === item.variantId);
         console.log('🔍 [CREATE-ORDER] Variant found:', variant ? 'Yes' : 'No', 'Stock:', variant?.stock, 'TrackInventory:', variant?.trackInventory);
-        
+
         if (!variant) {
           console.log('❌ [CREATE-ORDER] Variant not found:', item.variantId);
-          return res.status(400).json({ 
-            success: false, 
-            error: `الاختيار غير موجود للمنتج: ${item.name || product.name}` 
+          return res.status(400).json({
+            success: false,
+            error: `الاختيار غير موجود للمنتج: ${item.name || product.name}`
           });
         }
-        
+
         // Check variant stock if tracking is enabled
         if (variant.trackInventory !== false && variant.stock < item.quantity) {
           console.log('❌ [CREATE-ORDER] Insufficient variant stock:', variant.stock, 'requested:', item.quantity);
-          return res.status(400).json({ 
-            success: false, 
-            error: `المخزون غير كافي للاختيار: ${variant.name}. المتوفر: ${variant.stock}` 
+          return res.status(400).json({
+            success: false,
+            error: `المخزون غير كافي للاختيار: ${variant.name}. المتوفر: ${variant.stock}`
           });
         }
       } else {
         // Check main product stock if no variant and tracking is enabled
         if (product.trackInventory !== false && product.stock < item.quantity) {
           console.log('❌ [CREATE-ORDER] Insufficient stock:', product.stock, 'requested:', item.quantity);
-          return res.status(400).json({ 
-            success: false, 
-            error: `المخزون غير كافي للمنتج: ${item.name || product.name}. المتوفر: ${product.stock}` 
+          return res.status(400).json({
+            success: false,
+            error: `المخزون غير كافي للمنتج: ${item.name || product.name}. المتوفر: ${product.stock}`
           });
         }
       }
@@ -161,7 +162,7 @@ router.post('/orders', async (req, res) => {
       // Find matching zone (governorates is JSON array)
       const matchingZone = shippingZones.find(zone => {
         const govs = Array.isArray(zone.governorates) ? zone.governorates : [];
-        return govs.some(gov => 
+        return govs.some(gov =>
           gov.toLowerCase().includes(shippingAddress.governorate.toLowerCase()) ||
           shippingAddress.governorate.toLowerCase().includes(gov.toLowerCase())
         );
@@ -247,12 +248,12 @@ router.post('/orders', async (req, res) => {
         where: { companyId: company.id }
       });
 
-      if (storefrontSettings && 
-          storefrontSettings.facebookConvApiEnabled && 
-          storefrontSettings.facebookPixelId && 
-          storefrontSettings.facebookConvApiToken &&
-          storefrontSettings.capiTrackPurchase !== false) {
-        
+      if (storefrontSettings &&
+        storefrontSettings.facebookConvApiEnabled &&
+        storefrontSettings.facebookPixelId &&
+        storefrontSettings.facebookConvApiToken &&
+        storefrontSettings.capiTrackPurchase !== false) {
+
         const FacebookConversionsService = require('../services/facebookConversionsService');
         const fbService = new FacebookConversionsService(
           storefrontSettings.facebookPixelId,
@@ -263,7 +264,7 @@ router.post('/orders', async (req, res) => {
         // Use event ID from frontend Pixel for deduplication, or generate new one
         // This ensures the same event is not counted twice (Pixel + CAPI)
         const eventId = pixelEventId || `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        
+
         console.log('🔄 [Facebook CAPI] Using event ID for deduplication:', eventId);
 
         // Extract user data from request
@@ -300,8 +301,30 @@ router.post('/orders', async (req, res) => {
       console.error('❌ [Facebook CAPI] Error tracking Purchase event:', capiError);
     }
 
-    res.json({ 
-      success: true, 
+    // Emit socket event for real-time updates
+    try {
+      if (socketService && socketService.getIO()) {
+        const enhancedOrder = {
+          ...order,
+          // Add any necessary fields for the frontend to render immediately without refetching if possible
+          // or just sending the basic order is enough if frontend refetches or adapts it.
+          // Following the structure in Orders.tsx might be needed.
+          customerName: order.guestName,
+          customerPhone: order.guestPhone,
+          paymentStatus: 'PENDING',
+          status: 'PENDING',
+          items: cartItems, // simplified
+          createdAt: order.createdAt
+        };
+        socketService.getIO().to(`company_${company.id}`).emit('order:created', enhancedOrder);
+        console.log('📡 [SOCKET] Emitted order:created event');
+      }
+    } catch (socketError) {
+      console.error('❌ [SOCKET] Error emitting event:', socketError);
+    }
+
+    res.json({
+      success: true,
       data: order,
       message: 'تم إنشاء الطلب بنجاح'
     });
@@ -324,16 +347,16 @@ router.get('/orders/track', async (req, res) => {
     console.log('📞 [TRACK-ORDER] Phone:', phone);
 
     if (!orderNumber || !phone) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'رقم الطلب ورقم الهاتف مطلوبان' 
+      return res.status(400).json({
+        success: false,
+        error: 'رقم الطلب ورقم الهاتف مطلوبان'
       });
     }
 
     const prisma = getPrisma();
     const order = await prisma.guestOrder.findFirst({
       where: {
-        orderNumber: orderNumber ,
+        orderNumber: orderNumber,
         guestPhone: phone,
         companyId: company.id
       }
@@ -342,15 +365,15 @@ router.get('/orders/track', async (req, res) => {
     console.log('🔍 [TRACK-ORDER] Order found:', !!order);
 
     if (!order) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'الطلب غير موجود أو رقم الهاتف غير صحيح' 
+      return res.status(404).json({
+        success: false,
+        error: 'الطلب غير موجود أو رقم الهاتف غير صحيح'
       });
     }
 
     // إعادة حساب الشحن بناءً على المحافظة إذا لم يكن محسوباً
     let updatedOrder = { ...order };
-    
+
     // إعادة حساب المجموع الفرعي من المنتجات
     let calculatedSubtotal = 0;
     if (order.items && Array.isArray(order.items)) {
@@ -358,7 +381,7 @@ router.get('/orders/track', async (req, res) => {
         const itemPrice = parseFloat(item.price || 0);
         const itemQuantity = parseInt(item.quantity || 0);
         const itemTotal = itemPrice * itemQuantity;
-        
+
         console.log('🧮 [ITEM-CALC]', {
           name: item.name,
           price: item.price,
@@ -367,24 +390,24 @@ router.get('/orders/track', async (req, res) => {
           quantityAsNumber: itemQuantity,
           itemTotal: itemTotal
         });
-        
+
         return sum + itemTotal;
       }, 0);
-      
+
       console.log('🧮 [TRACK-ORDER] Calculated subtotal from items:', calculatedSubtotal);
       console.log('🧮 [TRACK-ORDER] Original total in DB:', order.total);
-      
+
       // استخدام المجموع المحسوب إذا كان مختلف عن المحفوظ
       if (Math.abs(calculatedSubtotal - (order.total || 0)) > 1) {
         console.log('⚠️ [TRACK-ORDER] Total mismatch, using calculated subtotal');
         updatedOrder.total = calculatedSubtotal;
       }
     }
-    
+
     if (order.shippingCost === 0 && order.shippingAddress) {
       try {
         let governorate = '';
-        
+
         // استخراج المحافظة من العنوان
         if (typeof order.shippingAddress === 'string') {
           // إذا كان العنوان string، حاول استخراج المحافظة
@@ -413,14 +436,14 @@ router.get('/orders/track', async (req, res) => {
         console.error('❌ [TRACK-ORDER] Error calculating shipping:', shippingError);
       }
     }
-    
+
     // إعادة حساب الإجمالي النهائي في جميع الحالات
     const subtotal = parseFloat(updatedOrder.total || 0);
     const shipping = parseFloat(updatedOrder.shippingCost || 0);
     const discount = parseFloat(updatedOrder.discountAmount || 0);
-    
+
     updatedOrder.finalTotal = subtotal + shipping - discount;
-    
+
     console.log('🧮 [TRACK-ORDER] Final calculation:', {
       subtotal: updatedOrder.total,
       shipping: updatedOrder.shippingCost,
@@ -436,8 +459,8 @@ router.get('/orders/track', async (req, res) => {
       discountAmount: updatedOrder.discountAmount,
       finalTotal: updatedOrder.finalTotal,
       items: updatedOrder.items?.length || 0,
-      shippingAddress: typeof updatedOrder.shippingAddress === 'object' 
-        ? updatedOrder.shippingAddress?.governorate 
+      shippingAddress: typeof updatedOrder.shippingAddress === 'object'
+        ? updatedOrder.shippingAddress?.governorate
         : 'string format'
     });
 
@@ -463,9 +486,9 @@ router.get('/orders/:orderNumber/track', async (req, res) => {
     });
 
     if (!order) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'الطلب غير موجود' 
+      return res.status(404).json({
+        success: false,
+        error: 'الطلب غير موجود'
       });
     }
 
@@ -483,9 +506,9 @@ router.get('/orders/search', async (req, res) => {
     const { email } = req.query;
 
     if (!email) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'البريد الإلكتروني مطلوب' 
+      return res.status(400).json({
+        success: false,
+        error: 'البريد الإلكتروني مطلوب'
       });
     }
 
@@ -516,7 +539,7 @@ router.get('/orders/:id', async (req, res) => {
     console.log('📦 [GET-ORDER] Fetching order:', { id, companyId: company?.id });
 
     const prisma = getPrisma();
-    
+
     // Try to find by ID first, then by order number
     let order = await prisma.guestOrder.findFirst({
       where: {
@@ -524,9 +547,9 @@ router.get('/orders/:id', async (req, res) => {
         companyId: company.id
       }
     });
-    
+
     console.log('🔍 [GET-ORDER] Search by ID result:', order ? 'Found' : 'Not found');
-    
+
     // If not found by ID, try by order number
     if (!order) {
       console.log('🔍 [GET-ORDER] Trying by order number...');
@@ -541,9 +564,9 @@ router.get('/orders/:id', async (req, res) => {
 
     if (!order) {
       console.log('❌ [GET-ORDER] Order not found');
-      return res.status(404).json({ 
-        success: false, 
-        error: 'الطلب غير موجود' 
+      return res.status(404).json({
+        success: false,
+        error: 'الطلب غير موجود'
       });
     }
 
@@ -563,10 +586,10 @@ router.patch('/orders/:orderNumber/status', async (req, res) => {
     const { orderNumber } = req.params;
     const { status, notes } = req.body;
 
-    console.log('📦 [UPDATE-GUEST-ORDER-STATUS] Updating order:', { 
-      orderNumber, 
-      status, 
-      companyId: company?.id 
+    console.log('📦 [UPDATE-GUEST-ORDER-STATUS] Updating order:', {
+      orderNumber,
+      status,
+      companyId: company?.id
     });
 
     if (!status) {
@@ -577,7 +600,7 @@ router.patch('/orders/:orderNumber/status', async (req, res) => {
     }
 
     const prisma = getPrisma();
-    
+
     // Find the guest order
     const existingOrder = await prisma.guestOrder.findFirst({
       where: {
@@ -588,9 +611,9 @@ router.patch('/orders/:orderNumber/status', async (req, res) => {
 
     if (!existingOrder) {
       console.log('❌ [UPDATE-GUEST-ORDER-STATUS] Order not found');
-      return res.status(404).json({ 
-        success: false, 
-        error: 'الطلب غير موجود' 
+      return res.status(404).json({
+        success: false,
+        error: 'الطلب غير موجود'
       });
     }
 
@@ -607,8 +630,8 @@ router.patch('/orders/:orderNumber/status', async (req, res) => {
     });
 
     console.log('✅ [UPDATE-GUEST-ORDER-STATUS] Order status updated:', updatedOrder.orderNumber);
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       data: updatedOrder,
       message: 'تم تحديث حالة الطلب بنجاح'
     });
@@ -626,10 +649,10 @@ router.patch('/orders/:orderNumber/payment-status', async (req, res) => {
     const { orderNumber } = req.params;
     const { paymentStatus, notes } = req.body;
 
-    console.log('📦 [UPDATE-GUEST-ORDER-PAYMENT] Updating order:', { 
-      orderNumber, 
-      paymentStatus, 
-      companyId: company?.id 
+    console.log('📦 [UPDATE-GUEST-ORDER-PAYMENT] Updating order:', {
+      orderNumber,
+      paymentStatus,
+      companyId: company?.id
     });
 
     if (!paymentStatus) {
@@ -640,7 +663,7 @@ router.patch('/orders/:orderNumber/payment-status', async (req, res) => {
     }
 
     const prisma = getPrisma();
-    
+
     // Find the guest order
     const existingOrder = await prisma.guestOrder.findFirst({
       where: {
@@ -651,9 +674,9 @@ router.patch('/orders/:orderNumber/payment-status', async (req, res) => {
 
     if (!existingOrder) {
       console.log('❌ [UPDATE-GUEST-ORDER-PAYMENT] Order not found');
-      return res.status(404).json({ 
-        success: false, 
-        error: 'الطلب غير موجود' 
+      return res.status(404).json({
+        success: false,
+        error: 'الطلب غير موجود'
       });
     }
 
@@ -670,8 +693,8 @@ router.patch('/orders/:orderNumber/payment-status', async (req, res) => {
     });
 
     console.log('✅ [UPDATE-GUEST-ORDER-PAYMENT] Order payment status updated:', updatedOrder.orderNumber);
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       data: updatedOrder,
       message: 'تم تحديث حالة الدفع بنجاح'
     });

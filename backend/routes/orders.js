@@ -1,5 +1,7 @@
 const express = require('express');
 const xlsx = require('xlsx');
+const PDFDocument = require('pdfkit');
+const socketService = require('../services/socketService');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const simpleOrderService = require('../services/simpleOrderService');
@@ -1209,4 +1211,181 @@ router.get('/export', async (req, res) => {
 });
 
 module.exports = router;
+
+// Update Order Details (Address, Notes)
+router.put('/simple/:orderNumber', async (req, res) => {
+  try {
+    const { orderNumber } = req.params;
+    const { shippingAddress, notes, customerName, customerPhone } = req.body;
+    const companyId = req.user?.companyId;
+
+    if (!companyId) return res.status(403).json({ success: false, message: 'Unauthorized' });
+
+    // Try Regular Order
+    const regularOrder = await getSharedPrismaClient().order.findFirst({
+      where: { orderNumber, companyId }
+    });
+
+    if (regularOrder) {
+      const updateData = {
+        shippingAddress: JSON.stringify(shippingAddress),
+        notes,
+        updatedAt: new Date()
+      };
+
+      await getSharedPrismaClient().order.update({
+        where: { id: regularOrder.id },
+        data: updateData
+      });
+
+      // Socket Emit
+      if (socketService?.getIO()) {
+        socketService.getIO().to(`company_${companyId}`).emit('order:updated', {
+          orderNumber,
+          ...updateData,
+          shippingAddress: typeof updateData.shippingAddress === 'string' ? JSON.parse(updateData.shippingAddress) : updateData.shippingAddress
+        });
+      }
+
+      return res.json({ success: true, message: 'Order updated successfully' });
+    }
+
+    // Try Guest Order
+    const guestOrder = await getSharedPrismaClient().guestOrder.findFirst({
+      where: { orderNumber, companyId }
+    });
+
+    if (guestOrder) {
+      await getSharedPrismaClient().guestOrder.update({
+        where: { id: guestOrder.id },
+        data: {
+          shippingAddress: JSON.stringify(shippingAddress),
+          notes,
+          guestName: customerName,
+          guestPhone: customerPhone,
+          updatedAt: new Date()
+        }
+      });
+
+      // Socket Emit
+      if (socketService?.getIO()) {
+        socketService.getIO().to(`company_${companyId}`).emit('order:updated', {
+          orderNumber,
+          shippingAddress,
+          notes,
+          customerName,
+          customerPhone
+        });
+      }
+
+      return res.json({ success: true, message: 'Order updated successfully' });
+    }
+
+    res.status(404).json({ success: false, message: 'Order not found' });
+
+  } catch (error) {
+    console.error('❌ Error updating order:', error);
+    res.status(500).json({ success: false, message: 'Failed to update order', error: error.message });
+  }
+});
+
+// Update Order Items
+router.put('/simple/:orderNumber/items', async (req, res) => {
+  try {
+    const { orderNumber } = req.params;
+    const { items, total, subtotal, tax, shipping } = req.body; // Expecting full new list of items
+    const companyId = req.user?.companyId;
+
+    if (!companyId) return res.status(403).json({ success: false, message: 'Unauthorized' });
+
+    // Try Regular Order
+    const regularOrder = await getSharedPrismaClient().order.findFirst({
+      where: { orderNumber, companyId }
+    });
+
+    if (regularOrder) {
+      // Transaction: Delete old items, Create new items, Update totals
+      await getSharedPrismaClient().$transaction(async (prisma) => {
+        // Delete existing items
+        await prisma.orderItem.deleteMany({
+          where: { orderId: regularOrder.id }
+        });
+
+        // Create new items
+        for (const item of items) {
+          await prisma.orderItem.create({
+            data: {
+              orderId: regularOrder.id,
+              productId: item.productId, // Must exist
+              quantity: item.quantity,
+              price: item.price,
+              total: item.total,
+              metadata: JSON.stringify(item.metadata || {})
+            }
+          });
+        }
+
+        // Update Order Totals
+        await prisma.order.update({
+          where: { id: regularOrder.id },
+          data: {
+            total,
+            subtotal,
+            tax,
+            shipping,
+            updatedAt: new Date()
+          }
+        });
+      });
+
+      // Socket Emit
+      if (socketService?.getIO()) {
+        socketService.getIO().to(`company_${companyId}`).emit('order:updated', {
+          orderNumber,
+          total,
+          shipping,
+          _refetch: true
+        });
+      }
+
+      return res.json({ success: true, message: 'Order items updated successfully' });
+    }
+
+    // Try Guest Order
+    const guestOrder = await getSharedPrismaClient().guestOrder.findFirst({
+      where: { orderNumber, companyId }
+    });
+
+    if (guestOrder) {
+      // Guest Order stores items as JSON, much easier
+      await getSharedPrismaClient().guestOrder.update({
+        where: { id: guestOrder.id },
+        data: {
+          items: JSON.stringify(items),
+          total,
+          shippingCost: shipping,
+          updatedAt: new Date()
+        }
+      });
+
+      // Socket Emit
+      if (socketService?.getIO()) {
+        socketService.getIO().to(`company_${companyId}`).emit('order:updated', {
+          orderNumber,
+          total,
+          shipping,
+          _refetch: true
+        });
+      }
+
+      return res.json({ success: true, message: 'Order items updated successfully' });
+    }
+
+    res.status(404).json({ success: false, message: 'Order not found' });
+
+  } catch (error) {
+    console.error('❌ Error updating order items:', error);
+    res.status(500).json({ success: false, message: 'Failed to update order items', error: error.message });
+  }
+});
 

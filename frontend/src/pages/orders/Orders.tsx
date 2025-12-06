@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useDateFormat } from '../../hooks/useDateFormat';
+import useSocket from '../../hooks/useSocket';
 import {
   ShoppingBagIcon,
   EyeIcon,
@@ -89,6 +90,84 @@ const Orders: React.FC = () => {
 
   const { formatPrice } = useCurrency();
   const { formatDate } = useDateFormat();
+
+  // Socket.IO Integration
+  const { socket, isConnected } = useSocket();
+
+  useEffect(() => {
+    if (!socket || !isConnected) return;
+
+    // Listen for new orders
+    const handleNewOrder = (newOrder: any) => {
+      // Only add if we are on the first page and no complex filters are active (simplification)
+      // Or just unshift it and let user filter later.
+      if (page === 1) {
+        setOrders(prev => {
+          // Check if order already exists to avoid duplicates
+          if (prev.find(o => o.orderNumber === newOrder.orderNumber)) return prev;
+          const formattedOrder: Order = {
+            ...newOrder,
+            id: newOrder.id,
+            customerName: newOrder.customerName || newOrder.guestName || 'Unknown',
+            customerPhone: newOrder.customerPhone || newOrder.guestPhone || '',
+            // map other fields if necessary
+          };
+          return [formattedOrder, ...prev];
+        });
+        setTotalOrders(prev => prev + 1);
+      } else {
+        // If not on first page, maybe just show a toast? For now, do nothing or refetch.
+        // fetchOrders(); // Aggressive but ensures consistency
+      }
+    };
+
+    // Listen for order updates
+    const handleOrderUpdate = (updatedData: any) => {
+      if (updatedData._refetch) {
+        fetchOrders();
+        return;
+      }
+
+      setOrders(prev => prev.map(order => {
+        if (order.orderNumber === updatedData.orderNumber) {
+          return { ...order, ...updatedData };
+        }
+        return order;
+      }));
+    };
+
+    // Listen for bulk updates
+    const handleBulkUpdate = (data: any) => {
+      // Data contains { orderIds: [], status: ... }
+      // We can just refetch to be safe and easy, or update locally
+      fetchOrders();
+    };
+
+    // Listen for deletions
+    const handleOrderDelete = (data: { orderId?: string, orderIds?: string[] }) => {
+      if (data.orderIds) {
+        setOrders(prev => prev.filter(o => !data.orderIds?.includes(o.orderNumber))); // Assuming assuming backend sends orderNumber in orderIds for bulk
+      } else if (data.orderId) {
+        // Logic if single delete event sent orderId
+      }
+    };
+
+    const handleBulkDelete = (data: any) => {
+      fetchOrders();
+    }
+
+    socket.on('order:created', handleNewOrder);
+    socket.on('order:updated', handleOrderUpdate);
+    socket.on('order:updated_bulk', handleBulkUpdate);
+    socket.on('order:deleted_bulk', handleBulkDelete);
+
+    return () => {
+      socket.off('order:created', handleNewOrder);
+      socket.off('order:updated', handleOrderUpdate);
+      socket.off('order:updated_bulk', handleBulkUpdate);
+      socket.off('order:deleted_bulk', handleBulkDelete);
+    };
+  }, [socket, isConnected, page]);
 
   useEffect(() => {
     fetchOrders();
@@ -661,8 +740,8 @@ const Orders: React.FC = () => {
                       key={p}
                       onClick={() => handlePageChange(p)}
                       className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm font-medium transition-colors ${page === p
-                          ? 'bg-blue-600 text-white'
-                          : 'text-gray-600 hover:bg-gray-100'
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-600 hover:bg-gray-100'
                         }`}
                     >
                       {p}
