@@ -313,9 +313,13 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           unreadCount: conv.unreadCount || 0,
           lastMessageIsFromCustomer: conv.lastMessageIsFromCustomer || false, // 🆕 هل آخر رسالة من العميل
           hasUnreadMessages: (conv.unreadCount || 0) > 0,
-          lastCustomerMessageIsUnread: (conv.lastCustomerMessageIsUnread === true)
-            ? true
-            : ((conv.lastMessageIsFromCustomer === true) && ((conv.unreadCount || 0) > 0)),
+          // ✅ FIX: نعتمد على lastCustomerMessageIsUnread من الـ API مباشرة
+          // لكن إذا كان lastMessageIsFromCustomer = true، نعتبر lastCustomerMessageIsUnread = true
+          // (بغض النظر عن unreadCount - لأن المحادثة قد تكون مفتوحة وقرأناها لكن لم نرد عليها)
+          // هذا يضمن أن المحادثات غير المرد عليها تبقى في القائمة حتى بعد فتحها وقراءتها
+          lastCustomerMessageIsUnread: (conv.lastMessageIsFromCustomer === true)
+            ? true  // إذا كان آخر رسالة من العميل، فهي غير م replied عليها حتى لو كان الـ API يقول غير ذلك
+            : (conv.lastCustomerMessageIsUnread === true), // إذا كان آخر رسالة من الموظف، نعتمد على الـ API
           platform: (conv.platform || conv.channel || 'unknown') as Conversation['platform'],
           isOnline: false, // سنحدثها لاحقاً مع Socket.IO
           messages: [],
@@ -570,11 +574,34 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           ? lastLoadedMessage.isFromCustomer 
           : (conv.lastMessageIsFromCustomer || false);
         
+        // ✅ FIX: حساب lastCustomerMessageIsUnread بناءً على الرسائل المحملة
+        // إذا كان آخر رسالة من العميل، فهذا يعني أنه لم يتم الرد عليها بعد
+        // إذا كان آخر رسالة من الموظف، فهذا يعني أنه تم الرد
+        let calculatedLastCustomerMessageIsUnread = false;
+        if (messages.length > 0) {
+          // إذا كان آخر رسالة من العميل، فهي غير م replied عليها
+          calculatedLastCustomerMessageIsUnread = actualLastMessageIsFromCustomer === true;
+        } else {
+          // إذا لم تكن هناك رسائل محملة، نعتمد على القيمة من الـ API أو lastMessageIsFromCustomer
+          calculatedLastCustomerMessageIsUnread = actualLastMessageIsFromCustomer === true;
+        }
+        
+        // ✅ FIX: نعتمد على lastCustomerMessageIsUnread من الـ API إذا كان محدداً
+        // لكن إذا كان actualLastMessageIsFromCustomer = true، نعتبر lastCustomerMessageIsUnread = true
+        // (بغض النظر عن unreadCount - لأن المحادثة قد تكون مفتوحة وقرأناها لكن لم نرد عليها)
+        // هذا يضمن أن المحادثات غير المرد عليها تبقى في القائمة حتى بعد فتحها وقراءتها
+        const finalLastCustomerMessageIsUnread = (actualLastMessageIsFromCustomer === true)
+          ? true  // إذا كان آخر رسالة من العميل، فهي غير م replied عليها حتى لو كان الـ API يقول غير ذلك
+          : (conv.lastCustomerMessageIsUnread === true); // إذا كان آخر رسالة من الموظف، نعتمد على الـ API
+        
         console.log(`🔍 [LOAD-SPECIFIC] Conv ${conversationId}:`, {
           serverIsFromCustomer: conv.lastMessageIsFromCustomer,
           lastLoadedMsgIsFromCustomer: lastLoadedMessage?.isFromCustomer,
           actualIsFromCustomer: actualLastMessageIsFromCustomer,
-          lastMessage: actualLastMessage.substring(0, 50)
+          lastMessage: actualLastMessage.substring(0, 50),
+          serverLastCustomerMessageIsUnread: conv.lastCustomerMessageIsUnread,
+          calculatedLastCustomerMessageIsUnread: calculatedLastCustomerMessageIsUnread,
+          finalLastCustomerMessageIsUnread: finalLastCustomerMessageIsUnread
         });
 
         const formattedConversation: Conversation = {
@@ -588,8 +615,8 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           isOnline: false,
           messages: messages, // ✅ إضافة الرسائل المحملة
           lastMessageIsFromCustomer: actualLastMessageIsFromCustomer,
-          // ✅ FIX: إذا آخر رسالة من العميل و فيه رسائل غير مقروءة، يبقى آخر رسالة عميل غير مقروءة
-          lastCustomerMessageIsUnread: (actualLastMessageIsFromCustomer === true) && ((conv.unreadCount || 0) > 0),
+          // ✅ FIX: نعتمد على lastCustomerMessageIsUnread من الـ API أو نحسبه من الرسائل
+          lastCustomerMessageIsUnread: finalLastCustomerMessageIsUnread,
           aiEnabled: conv.aiEnabled !== undefined ? conv.aiEnabled : true,
           pageName: conv.pageName || null,
           pageId: conv.pageId || null,
