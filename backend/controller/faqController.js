@@ -1,0 +1,305 @@
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+
+// Get all FAQs (Public)
+const getFAQs = async (req, res) => {
+  try {
+    const { category, search } = req.query;
+
+    const where = { isActive: true };
+    if (category) where.category = category;
+    if (search) {
+      where.OR = [
+        { question: { contains: search, mode: 'insensitive' } },
+        { answer: { contains: search, mode: 'insensitive' } }
+      ];
+    }
+    
+    const faqs = await prisma.fAQ.findMany({
+      where,
+      orderBy: [{ order: 'asc' }, { createdAt: 'desc' }]
+    });
+
+    // Group by category
+    const groupedFAQs = faqs.reduce((acc, faq) => {
+      if (!acc[faq.category]) {
+        acc[faq.category] = [];
+      }
+      // Transform for frontend
+      acc[faq.category].push({
+        _id: faq.id,
+        question: faq.question,
+        answer: faq.answer,
+        category: faq.category,
+        helpful: faq.helpful,
+        notHelpful: faq.notHelpful,
+        isActive: faq.isActive,
+        createdAt: faq.createdAt
+      });
+      return acc;
+    }, {});
+
+    res.json({
+      success: true,
+      faqs: groupedFAQs,
+      total: faqs.length
+    });
+  } catch (error) {
+    console.error('Error fetching FAQs:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في جلب الأسئلة الشائعة',
+      error: error.message
+    });
+  }
+};
+
+// Get FAQ categories
+const getFAQCategories = async (req, res) => {
+  try {
+    const faqs = await prisma.fAQ.findMany({
+      where: { isActive: true },
+      select: { category: true }
+    });
+
+    // Group and count by category
+    const categoryCount = faqs.reduce((acc, faq) => {
+      acc[faq.category] = (acc[faq.category] || 0) + 1;
+      return acc;
+    }, {});
+
+    const categories = Object.entries(categoryCount).map(([category, count]) => ({
+      category,
+      count
+    })).sort((a, b) => a.category.localeCompare(b.category));
+
+    res.json({
+      success: true,
+      categories
+    });
+  } catch (error) {
+    console.error('Error fetching FAQ categories:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في جلب تصنيفات الأسئلة',
+      error: error.message
+    });
+  }
+};
+
+// Rate FAQ helpfulness
+const rateFAQ = async (req, res) => {
+  try {
+    const { faqId } = req.params;
+    const { helpful } = req.body; // true or false
+
+    const faq = await prisma.fAQ.findUnique({ where: { id: faqId } });
+    if (!faq) {
+      return res.status(404).json({
+        success: false,
+        message: 'السؤال غير موجود'
+      });
+    }
+
+    const updatedFaq = await prisma.fAQ.update({
+      where: { id: faqId },
+      data: helpful 
+        ? { helpful: { increment: 1 } }
+        : { notHelpful: { increment: 1 } }
+    });
+
+    res.json({
+      success: true,
+      message: 'تم تسجيل تقييمك بنجاح',
+      faq: {
+        helpful: updatedFaq.helpful,
+        notHelpful: updatedFaq.notHelpful
+      }
+    });
+  } catch (error) {
+    console.error('Error rating FAQ:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في تقييم السؤال',
+      error: error.message
+    });
+  }
+};
+
+// Create FAQ (Admin only)
+const createFAQ = async (req, res) => {
+  try {
+    const isAdmin = req.user.role === 'SUPER_ADMIN' || req.user.role === 'superadmin';
+    if (!isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مسموح لك بإنشاء أسئلة شائعة'
+      });
+    }
+
+    const { question, answer, category, order, tags } = req.body;
+
+    const faq = await prisma.fAQ.create({
+      data: {
+        question,
+        answer,
+        category: category || 'general',
+        order: order || 0,
+        tags: tags ? JSON.stringify(tags) : null
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'تم إنشاء السؤال بنجاح',
+      faq: { _id: faq.id, ...faq }
+    });
+  } catch (error) {
+    console.error('Error creating FAQ:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في إنشاء السؤال',
+      error: error.message
+    });
+  }
+};
+
+// Update FAQ (Admin only)
+const updateFAQ = async (req, res) => {
+  try {
+    const isAdmin = req.user.role === 'SUPER_ADMIN' || req.user.role === 'superadmin';
+    if (!isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مسموح لك بتحديث الأسئلة الشائعة'
+      });
+    }
+
+    const { faqId } = req.params;
+    const { question, answer, category, order, tags, isActive } = req.body;
+
+    const updateData = {};
+    if (question !== undefined) updateData.question = question;
+    if (answer !== undefined) updateData.answer = answer;
+    if (category !== undefined) updateData.category = category;
+    if (order !== undefined) updateData.order = order;
+    if (tags !== undefined) updateData.tags = JSON.stringify(tags);
+    if (isActive !== undefined) updateData.isActive = isActive;
+
+    const faq = await prisma.fAQ.update({
+      where: { id: faqId },
+      data: updateData
+    });
+
+    res.json({
+      success: true,
+      message: 'تم تحديث السؤال بنجاح',
+      faq: { _id: faq.id, ...faq }
+    });
+  } catch (error) {
+    console.error('Error updating FAQ:', error);
+    if (error.code === 'P2025') {
+      return res.status(404).json({
+        success: false,
+        message: 'السؤال غير موجود'
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في تحديث السؤال',
+      error: error.message
+    });
+  }
+};
+
+// Delete FAQ (Admin only)
+const deleteFAQ = async (req, res) => {
+  try {
+    const isAdmin = req.user.role === 'SUPER_ADMIN' || req.user.role === 'superadmin';
+    if (!isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مسموح لك بحذف الأسئلة الشائعة'
+      });
+    }
+
+    const { faqId } = req.params;
+
+    await prisma.fAQ.delete({ where: { id: faqId } });
+
+    res.json({
+      success: true,
+      message: 'تم حذف السؤال بنجاح'
+    });
+  } catch (error) {
+    console.error('Error deleting FAQ:', error);
+    if (error.code === 'P2025') {
+      return res.status(404).json({
+        success: false,
+        message: 'السؤال غير موجود'
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في حذف السؤال',
+      error: error.message
+    });
+  }
+};
+
+// Get all FAQs for admin
+const getAllFAQsForAdmin = async (req, res) => {
+  try {
+    const isAdmin = req.user.role === 'SUPER_ADMIN' || req.user.role === 'superadmin';
+    if (!isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مسموح لك بعرض جميع الأسئلة'
+      });
+    }
+
+    const { category, isActive, page = 1, limit = 20 } = req.query;
+
+    const where = {};
+    if (category) where.category = category;
+    if (isActive !== undefined) where.isActive = isActive === 'true';
+
+    const [faqs, total] = await Promise.all([
+      prisma.fAQ.findMany({
+        where,
+        orderBy: [{ order: 'asc' }, { createdAt: 'desc' }],
+        take: parseInt(limit),
+        skip: (parseInt(page) - 1) * parseInt(limit)
+      }),
+      prisma.fAQ.count({ where })
+    ]);
+
+    res.json({
+      success: true,
+      faqs: faqs.map(faq => ({ _id: faq.id, ...faq })),
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching all FAQs for admin:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في جلب الأسئلة',
+      error: error.message
+    });
+  }
+};
+
+module.exports = {
+  getFAQs,
+  getFAQCategories,
+  rateFAQ,
+  createFAQ,
+  updateFAQ,
+  deleteFAQ,
+  getAllFAQsForAdmin
+};

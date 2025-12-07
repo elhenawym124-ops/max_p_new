@@ -8,7 +8,17 @@ const {
   departmentService,
   attendanceService,
   leaveService,
-  payrollService
+  payrollService,
+  documentService,
+  salaryHistoryService,
+  performanceService,
+  trainingService,
+  warningService,
+  shiftService,
+  benefitService,
+  goalService,
+  feedbackService,
+  resignationService
 } = require('../services/hr');
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -841,6 +851,1006 @@ async function getHRDashboard(req, res) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// 📚 التدريب - Training
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * إنشاء سجل تدريب جديد
+ * POST /api/hr/trainings
+ */
+async function createTraining(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId } = req.body;
+    const training = await trainingService.createTraining(companyId, employeeId, req.body);
+    res.status(201).json({ success: true, training });
+  } catch (error) {
+    console.error('❌ Error creating training:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء إنشاء سجل التدريب' });
+  }
+}
+
+/**
+ * جلب سجلات التدريب لموظف
+ * GET /api/hr/trainings/employee/:employeeId
+ */
+async function getEmployeeTrainings(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId } = req.params;
+    const { status, limit } = req.query;
+    const trainings = await trainingService.getEmployeeTrainings(companyId, employeeId, { status, limit });
+    res.json({ success: true, trainings });
+  } catch (error) {
+    console.error('❌ Error getting trainings:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب سجلات التدريب' });
+  }
+}
+
+/**
+ * جلب سجل تدريب بالـ ID
+ * GET /api/hr/trainings/:id
+ */
+async function getTrainingById(req, res) {
+  try {
+    const { companyId } = req.user;
+    const training = await trainingService.getTrainingById(companyId, req.params.id);
+    res.json({ success: true, training });
+  } catch (error) {
+    console.error('❌ Error getting training:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء جلب سجل التدريب' });
+  }
+}
+
+/**
+ * تحديث سجل تدريب
+ * PUT /api/hr/trainings/:id
+ */
+async function updateTraining(req, res) {
+  try {
+    const { companyId } = req.user;
+    const training = await trainingService.updateTraining(companyId, req.params.id, req.body);
+    res.json({ success: true, training });
+  } catch (error) {
+    console.error('❌ Error updating training:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء تحديث سجل التدريب' });
+  }
+}
+
+/**
+ * حذف سجل تدريب
+ * DELETE /api/hr/trainings/:id
+ */
+async function deleteTraining(req, res) {
+  try {
+    const { companyId } = req.user;
+    await trainingService.deleteTraining(companyId, req.params.id);
+    res.json({ success: true, message: 'تم حذف سجل التدريب بنجاح' });
+  } catch (error) {
+    console.error('❌ Error deleting training:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء حذف سجل التدريب' });
+  }
+}
+
+/**
+ * إحصائيات التدريب
+ * GET /api/hr/trainings/stats
+ */
+async function getTrainingStats(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId, year } = req.query;
+    const stats = await trainingService.getTrainingStats(companyId, { employeeId, year });
+    res.json({ success: true, stats });
+  } catch (error) {
+    console.error('❌ Error getting training stats:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب الإحصائيات' });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ⚠️ الإنذارات - Warnings
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * إنشاء إنذار جديد
+ * POST /api/hr/warnings
+ */
+async function createWarning(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId } = req.body;
+    const warning = await warningService.createWarning(companyId, employeeId, req.body);
+    res.status(201).json({ success: true, warning });
+  } catch (error) {
+    console.error('❌ Error creating warning:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء إنشاء الإنذار' });
+  }
+}
+
+/**
+ * جلب إنذارات موظف
+ * GET /api/hr/warnings/employee/:employeeId
+ */
+async function getEmployeeWarnings(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId } = req.params;
+    const { type, severity, limit } = req.query;
+    const warnings = await warningService.getEmployeeWarnings(companyId, employeeId, { type, severity, limit });
+    res.json({ success: true, warnings });
+  } catch (error) {
+    console.error('❌ Error getting warnings:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب الإنذارات' });
+  }
+}
+
+/**
+ * جلب إنذار بالـ ID
+ * GET /api/hr/warnings/:id
+ */
+async function getWarningById(req, res) {
+  try {
+    const { companyId } = req.user;
+    const warning = await warningService.getWarningById(companyId, req.params.id);
+    res.json({ success: true, warning });
+  } catch (error) {
+    console.error('❌ Error getting warning:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء جلب الإنذار' });
+  }
+}
+
+/**
+ * تحديث إنذار
+ * PUT /api/hr/warnings/:id
+ */
+async function updateWarning(req, res) {
+  try {
+    const { companyId } = req.user;
+    const warning = await warningService.updateWarning(companyId, req.params.id, req.body);
+    res.json({ success: true, warning });
+  } catch (error) {
+    console.error('❌ Error updating warning:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء تحديث الإنذار' });
+  }
+}
+
+/**
+ * تسجيل اعتراف الموظف بالإنذار
+ * POST /api/hr/warnings/:id/acknowledge
+ */
+async function acknowledgeWarning(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeResponse } = req.body;
+    const warning = await warningService.acknowledgeWarning(companyId, req.params.id, employeeResponse);
+    res.json({ success: true, warning });
+  } catch (error) {
+    console.error('❌ Error acknowledging warning:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء تسجيل الاعتراف' });
+  }
+}
+
+/**
+ * حذف إنذار
+ * DELETE /api/hr/warnings/:id
+ */
+async function deleteWarning(req, res) {
+  try {
+    const { companyId } = req.user;
+    await warningService.deleteWarning(companyId, req.params.id);
+    res.json({ success: true, message: 'تم حذف الإنذار بنجاح' });
+  } catch (error) {
+    console.error('❌ Error deleting warning:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء حذف الإنذار' });
+  }
+}
+
+/**
+ * إحصائيات الإنذارات
+ * GET /api/hr/warnings/stats
+ */
+async function getWarningStats(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId, year } = req.query;
+    const stats = await warningService.getWarningStats(companyId, { employeeId, year });
+    res.json({ success: true, stats });
+  } catch (error) {
+    console.error('❌ Error getting warning stats:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب الإحصائيات' });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 📊 تقييم الأداء - Performance Reviews
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * إنشاء تقييم أداء جديد
+ * POST /api/hr/performance-reviews
+ */
+async function createPerformanceReview(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId } = req.body;
+    const review = await performanceService.createPerformanceReview(companyId, employeeId, req.body);
+    res.status(201).json({ success: true, review });
+  } catch (error) {
+    console.error('❌ Error creating performance review:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء إنشاء التقييم' });
+  }
+}
+
+/**
+ * جلب تقييمات أداء موظف
+ * GET /api/hr/performance-reviews/employee/:employeeId
+ */
+async function getEmployeeReviews(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId } = req.params;
+    const { status, limit } = req.query;
+    const reviews = await performanceService.getEmployeeReviews(companyId, employeeId, { status, limit });
+    res.json({ success: true, reviews });
+  } catch (error) {
+    console.error('❌ Error getting performance reviews:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب التقييمات' });
+  }
+}
+
+/**
+ * جلب تقييم أداء بالـ ID
+ * GET /api/hr/performance-reviews/:id
+ */
+async function getReviewById(req, res) {
+  try {
+    const { companyId } = req.user;
+    const review = await performanceService.getReviewById(companyId, req.params.id);
+    res.json({ success: true, review });
+  } catch (error) {
+    console.error('❌ Error getting performance review:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء جلب التقييم' });
+  }
+}
+
+/**
+ * تحديث تقييم أداء
+ * PUT /api/hr/performance-reviews/:id
+ */
+async function updateReview(req, res) {
+  try {
+    const { companyId } = req.user;
+    const review = await performanceService.updateReview(companyId, req.params.id, req.body);
+    res.json({ success: true, review });
+  } catch (error) {
+    console.error('❌ Error updating performance review:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء تحديث التقييم' });
+  }
+}
+
+/**
+ * حذف تقييم أداء
+ * DELETE /api/hr/performance-reviews/:id
+ */
+async function deleteReview(req, res) {
+  try {
+    const { companyId } = req.user;
+    await performanceService.deleteReview(companyId, req.params.id);
+    res.json({ success: true, message: 'تم حذف التقييم بنجاح' });
+  } catch (error) {
+    console.error('❌ Error deleting performance review:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء حذف التقييم' });
+  }
+}
+
+/**
+ * إحصائيات التقييمات
+ * GET /api/hr/performance-reviews/stats
+ */
+async function getPerformanceStats(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId, year } = req.query;
+    const stats = await performanceService.getPerformanceStats(companyId, { employeeId, year });
+    res.json({ success: true, stats });
+  } catch (error) {
+    console.error('❌ Error getting performance stats:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب الإحصائيات' });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 💵 سجل الرواتب - Salary History
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * جلب سجل الرواتب لموظف
+ * GET /api/hr/salary-history/employee/:employeeId
+ */
+async function getEmployeeSalaryHistory(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId } = req.params;
+    const { limit } = req.query;
+    const history = await salaryHistoryService.getEmployeeSalaryHistory(companyId, employeeId, { limit });
+    res.json({ success: true, history });
+  } catch (error) {
+    console.error('❌ Error getting salary history:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب سجل الرواتب' });
+  }
+}
+
+/**
+ * جلب سجل راتب بالـ ID
+ * GET /api/hr/salary-history/:id
+ */
+async function getSalaryHistoryById(req, res) {
+  try {
+    const { companyId } = req.user;
+    const history = await salaryHistoryService.getSalaryHistoryById(companyId, req.params.id);
+    res.json({ success: true, history });
+  } catch (error) {
+    console.error('❌ Error getting salary history:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء جلب السجل' });
+  }
+}
+
+/**
+ * إنشاء سجل راتب جديد
+ * POST /api/hr/salary-history
+ */
+async function createSalaryHistory(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId } = req.body;
+    const history = await salaryHistoryService.createSalaryHistory(companyId, employeeId, req.body);
+    res.status(201).json({ success: true, history });
+  } catch (error) {
+    console.error('❌ Error creating salary history:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء إنشاء السجل' });
+  }
+}
+
+/**
+ * إحصائيات سجل الرواتب
+ * GET /api/hr/salary-history/stats
+ */
+async function getSalaryHistoryStats(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId } = req.query;
+    const stats = await salaryHistoryService.getSalaryHistoryStats(companyId, employeeId);
+    res.json({ success: true, stats });
+  } catch (error) {
+    console.error('❌ Error getting salary history stats:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب الإحصائيات' });
+  }
+}
+
+/**
+ * تقرير الترقيات والزيادات
+ * GET /api/hr/salary-history/promotions-report
+ */
+async function getPromotionsReport(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { startDate, endDate, changeType } = req.query;
+    const report = await salaryHistoryService.getPromotionsReport(companyId, { startDate, endDate, changeType });
+    res.json({ success: true, report });
+  } catch (error) {
+    console.error('❌ Error getting promotions report:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب التقرير' });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 📄 المستندات - Documents
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * إنشاء مستند جديد
+ * POST /api/hr/documents
+ */
+async function createDocument(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId, name, type, expiryDate, notes } = req.body;
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'الملف مطلوب' });
+    }
+
+    const fileUrl = `/uploads/hr/documents/${req.file.filename}`;
+    const document = await documentService.createDocument(companyId, employeeId, {
+      name,
+      type,
+      fileUrl,
+      fileSize: req.file.size,
+      mimeType: req.file.mimetype,
+      expiryDate,
+      notes
+    });
+    
+    res.status(201).json({ success: true, document });
+  } catch (error) {
+    console.error('❌ Error creating document:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء إنشاء المستند' });
+  }
+}
+
+/**
+ * جلب مستندات موظف
+ * GET /api/hr/documents/employee/:employeeId
+ */
+async function getEmployeeDocuments(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId } = req.params;
+    const { type, expiredOnly } = req.query;
+    const documents = await documentService.getEmployeeDocuments(companyId, employeeId, { type, expiredOnly: expiredOnly === 'true' });
+    res.json({ success: true, documents });
+  } catch (error) {
+    console.error('❌ Error getting documents:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب المستندات' });
+  }
+}
+
+/**
+ * جلب مستند بالـ ID
+ * GET /api/hr/documents/:id
+ */
+async function getDocumentById(req, res) {
+  try {
+    const { companyId } = req.user;
+    const document = await documentService.getDocumentById(companyId, req.params.id);
+    res.json({ success: true, document });
+  } catch (error) {
+    console.error('❌ Error getting document:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء جلب المستند' });
+  }
+}
+
+/**
+ * تحديث مستند
+ * PUT /api/hr/documents/:id
+ */
+async function updateDocument(req, res) {
+  try {
+    const { companyId } = req.user;
+    const document = await documentService.updateDocument(companyId, req.params.id, req.body);
+    res.json({ success: true, document });
+  } catch (error) {
+    console.error('❌ Error updating document:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء تحديث المستند' });
+  }
+}
+
+/**
+ * التحقق من مستند
+ * POST /api/hr/documents/:id/verify
+ */
+async function verifyDocument(req, res) {
+  try {
+    const { companyId, id: verifiedBy } = req.user;
+    const document = await documentService.verifyDocument(companyId, req.params.id, verifiedBy);
+    res.json({ success: true, document });
+  } catch (error) {
+    console.error('❌ Error verifying document:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء التحقق من المستند' });
+  }
+}
+
+/**
+ * حذف مستند
+ * DELETE /api/hr/documents/:id
+ */
+async function deleteDocument(req, res) {
+  try {
+    const { companyId } = req.user;
+    await documentService.deleteDocument(companyId, req.params.id);
+    res.json({ success: true, message: 'تم حذف المستند بنجاح' });
+  } catch (error) {
+    console.error('❌ Error deleting document:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء حذف المستند' });
+  }
+}
+
+/**
+ * جلب المستندات المنتهية
+ * GET /api/hr/documents/expired
+ */
+async function getExpiredDocuments(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { daysBeforeExpiry } = req.query;
+    const documents = await documentService.getExpiredDocuments(companyId, parseInt(daysBeforeExpiry) || 30);
+    res.json({ success: true, documents });
+  } catch (error) {
+    console.error('❌ Error getting expired documents:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب المستندات المنتهية' });
+  }
+}
+
+/**
+ * إحصائيات المستندات
+ * GET /api/hr/documents/stats
+ */
+async function getDocumentStats(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId } = req.query;
+    const stats = await documentService.getDocumentStats(companyId, employeeId);
+    res.json({ success: true, stats });
+  } catch (error) {
+    console.error('❌ Error getting document stats:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب الإحصائيات' });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🕐 المناوبات - Shifts
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function createShift(req, res) {
+  try {
+    const { companyId } = req.user;
+    const shift = await shiftService.createShift(companyId, req.body);
+    res.status(201).json({ success: true, shift });
+  } catch (error) {
+    console.error('❌ Error creating shift:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء إنشاء المناوبة' });
+  }
+}
+
+async function getShifts(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { includeInactive } = req.query;
+    const shifts = await shiftService.getShifts(companyId, { includeInactive: includeInactive === 'true' });
+    res.json({ success: true, shifts });
+  } catch (error) {
+    console.error('❌ Error getting shifts:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب المناوبات' });
+  }
+}
+
+async function getShiftById(req, res) {
+  try {
+    const { companyId } = req.user;
+    const shift = await shiftService.getShiftById(companyId, req.params.id);
+    res.json({ success: true, shift });
+  } catch (error) {
+    console.error('❌ Error getting shift:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء جلب المناوبة' });
+  }
+}
+
+async function updateShift(req, res) {
+  try {
+    const { companyId } = req.user;
+    const shift = await shiftService.updateShift(companyId, req.params.id, req.body);
+    res.json({ success: true, shift });
+  } catch (error) {
+    console.error('❌ Error updating shift:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء تحديث المناوبة' });
+  }
+}
+
+async function deleteShift(req, res) {
+  try {
+    const { companyId } = req.user;
+    await shiftService.deleteShift(companyId, req.params.id);
+    res.json({ success: true, message: 'تم حذف المناوبة بنجاح' });
+  } catch (error) {
+    console.error('❌ Error deleting shift:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء حذف المناوبة' });
+  }
+}
+
+async function assignShift(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId, shiftId, date } = req.body;
+    const assignment = await shiftService.assignShift(companyId, employeeId, shiftId, date);
+    res.status(201).json({ success: true, assignment });
+  } catch (error) {
+    console.error('❌ Error assigning shift:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء تعيين المناوبة' });
+  }
+}
+
+async function getEmployeeAssignments(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId } = req.params;
+    const { startDate, endDate } = req.query;
+    const assignments = await shiftService.getEmployeeAssignments(companyId, employeeId, { startDate, endDate });
+    res.json({ success: true, assignments });
+  } catch (error) {
+    console.error('❌ Error getting assignments:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب التعيينات' });
+  }
+}
+
+async function removeAssignment(req, res) {
+  try {
+    const { companyId } = req.user;
+    await shiftService.removeAssignment(companyId, req.params.id);
+    res.json({ success: true, message: 'تم حذف التعيين بنجاح' });
+  } catch (error) {
+    console.error('❌ Error removing assignment:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء حذف التعيين' });
+  }
+}
+
+async function getShiftStats(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { startDate, endDate } = req.query;
+    const stats = await shiftService.getShiftStats(companyId, { startDate, endDate });
+    res.json({ success: true, stats });
+  } catch (error) {
+    console.error('❌ Error getting shift stats:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب الإحصائيات' });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 💎 المزايا - Benefits
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function createBenefit(req, res) {
+  try {
+    const { companyId } = req.user;
+    const benefit = await benefitService.createBenefit(companyId, req.body);
+    res.status(201).json({ success: true, benefit });
+  } catch (error) {
+    console.error('❌ Error creating benefit:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء إنشاء الميزة' });
+  }
+}
+
+async function getBenefits(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { includeInactive } = req.query;
+    const benefits = await benefitService.getBenefits(companyId, { includeInactive: includeInactive === 'true' });
+    res.json({ success: true, benefits });
+  } catch (error) {
+    console.error('❌ Error getting benefits:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب المزايا' });
+  }
+}
+
+async function getBenefitById(req, res) {
+  try {
+    const { companyId } = req.user;
+    const benefit = await benefitService.getBenefitById(companyId, req.params.id);
+    res.json({ success: true, benefit });
+  } catch (error) {
+    console.error('❌ Error getting benefit:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء جلب الميزة' });
+  }
+}
+
+async function updateBenefit(req, res) {
+  try {
+    const { companyId } = req.user;
+    const benefit = await benefitService.updateBenefit(companyId, req.params.id, req.body);
+    res.json({ success: true, benefit });
+  } catch (error) {
+    console.error('❌ Error updating benefit:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء تحديث الميزة' });
+  }
+}
+
+async function deleteBenefit(req, res) {
+  try {
+    const { companyId } = req.user;
+    await benefitService.deleteBenefit(companyId, req.params.id);
+    res.json({ success: true, message: 'تم حذف الميزة بنجاح' });
+  } catch (error) {
+    console.error('❌ Error deleting benefit:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء حذف الميزة' });
+  }
+}
+
+async function enrollEmployee(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId, benefitId } = req.body;
+    const enrollment = await benefitService.enrollEmployee(companyId, employeeId, benefitId, req.body);
+    res.status(201).json({ success: true, enrollment });
+  } catch (error) {
+    console.error('❌ Error enrolling employee:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء الاشتراك' });
+  }
+}
+
+async function getEmployeeEnrollments(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId } = req.params;
+    const enrollments = await benefitService.getEmployeeEnrollments(companyId, employeeId);
+    res.json({ success: true, enrollments });
+  } catch (error) {
+    console.error('❌ Error getting enrollments:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب الاشتراكات' });
+  }
+}
+
+async function updateEnrollment(req, res) {
+  try {
+    const { companyId } = req.user;
+    const enrollment = await benefitService.updateEnrollment(companyId, req.params.id, req.body);
+    res.json({ success: true, enrollment });
+  } catch (error) {
+    console.error('❌ Error updating enrollment:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء تحديث الاشتراك' });
+  }
+}
+
+async function getBenefitStats(req, res) {
+  try {
+    const { companyId } = req.user;
+    const stats = await benefitService.getBenefitStats(companyId);
+    res.json({ success: true, stats });
+  } catch (error) {
+    console.error('❌ Error getting benefit stats:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب الإحصائيات' });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 📈 الأهداف - Goals
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function createGoal(req, res) {
+  try {
+    const { companyId } = req.user;
+    const goal = await goalService.createGoal(companyId, req.body);
+    res.status(201).json({ success: true, goal });
+  } catch (error) {
+    console.error('❌ Error creating goal:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء إنشاء الهدف' });
+  }
+}
+
+async function getGoals(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId, departmentId, status } = req.query;
+    const goals = await goalService.getGoals(companyId, { employeeId, departmentId, status });
+    res.json({ success: true, goals });
+  } catch (error) {
+    console.error('❌ Error getting goals:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب الأهداف' });
+  }
+}
+
+async function getGoalById(req, res) {
+  try {
+    const { companyId } = req.user;
+    const goal = await goalService.getGoalById(companyId, req.params.id);
+    res.json({ success: true, goal });
+  } catch (error) {
+    console.error('❌ Error getting goal:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء جلب الهدف' });
+  }
+}
+
+async function updateGoal(req, res) {
+  try {
+    const { companyId } = req.user;
+    const goal = await goalService.updateGoal(companyId, req.params.id, req.body);
+    res.json({ success: true, goal });
+  } catch (error) {
+    console.error('❌ Error updating goal:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء تحديث الهدف' });
+  }
+}
+
+async function deleteGoal(req, res) {
+  try {
+    const { companyId } = req.user;
+    await goalService.deleteGoal(companyId, req.params.id);
+    res.json({ success: true, message: 'تم حذف الهدف بنجاح' });
+  } catch (error) {
+    console.error('❌ Error deleting goal:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء حذف الهدف' });
+  }
+}
+
+async function getGoalStats(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId, departmentId } = req.query;
+    const stats = await goalService.getGoalStats(companyId, { employeeId, departmentId });
+    res.json({ success: true, stats });
+  } catch (error) {
+    console.error('❌ Error getting goal stats:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب الإحصائيات' });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 💬 التغذية الراجعة - Feedback
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function createFeedback(req, res) {
+  try {
+    const { companyId, id: fromEmployeeId } = req.user;
+    const feedback = await feedbackService.createFeedback(companyId, fromEmployeeId, req.body);
+    res.status(201).json({ success: true, feedback });
+  } catch (error) {
+    console.error('❌ Error creating feedback:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء إنشاء التغذية الراجعة' });
+  }
+}
+
+async function getFeedback(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { toEmployeeId, fromEmployeeId, type, limit } = req.query;
+    const feedback = await feedbackService.getFeedback(companyId, { toEmployeeId, fromEmployeeId, type, limit });
+    res.json({ success: true, feedback });
+  } catch (error) {
+    console.error('❌ Error getting feedback:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب التغذية الراجعة' });
+  }
+}
+
+async function getFeedbackById(req, res) {
+  try {
+    const { companyId } = req.user;
+    const feedback = await feedbackService.getFeedbackById(companyId, req.params.id);
+    res.json({ success: true, feedback });
+  } catch (error) {
+    console.error('❌ Error getting feedback:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء جلب التغذية الراجعة' });
+  }
+}
+
+async function updateFeedback(req, res) {
+  try {
+    const { companyId } = req.user;
+    const feedback = await feedbackService.updateFeedback(companyId, req.params.id, req.body);
+    res.json({ success: true, feedback });
+  } catch (error) {
+    console.error('❌ Error updating feedback:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء تحديث التغذية الراجعة' });
+  }
+}
+
+async function deleteFeedback(req, res) {
+  try {
+    const { companyId } = req.user;
+    await feedbackService.deleteFeedback(companyId, req.params.id);
+    res.json({ success: true, message: 'تم حذف التغذية الراجعة بنجاح' });
+  } catch (error) {
+    console.error('❌ Error deleting feedback:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء حذف التغذية الراجعة' });
+  }
+}
+
+async function getFeedbackStats(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId } = req.query;
+    const stats = await feedbackService.getFeedbackStats(companyId, { employeeId });
+    res.json({ success: true, stats });
+  } catch (error) {
+    console.error('❌ Error getting feedback stats:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب الإحصائيات' });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 📝 الاستقالات - Resignations
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function createResignation(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { employeeId } = req.body;
+    const resignation = await resignationService.createResignation(companyId, employeeId, req.body);
+    res.status(201).json({ success: true, resignation });
+  } catch (error) {
+    console.error('❌ Error creating resignation:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء إنشاء الاستقالة' });
+  }
+}
+
+async function getResignations(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { status, limit } = req.query;
+    const resignations = await resignationService.getResignations(companyId, { status, limit });
+    res.json({ success: true, resignations });
+  } catch (error) {
+    console.error('❌ Error getting resignations:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب الاستقالات' });
+  }
+}
+
+async function getResignationById(req, res) {
+  try {
+    const { companyId } = req.user;
+    const resignation = await resignationService.getResignationById(companyId, req.params.id);
+    res.json({ success: true, resignation });
+  } catch (error) {
+    console.error('❌ Error getting resignation:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء جلب الاستقالة' });
+  }
+}
+
+async function updateResignation(req, res) {
+  try {
+    const { companyId, id: approvedBy } = req.user;
+    const resignation = await resignationService.updateResignation(companyId, req.params.id, { ...req.body, approvedBy });
+    res.json({ success: true, resignation });
+  } catch (error) {
+    console.error('❌ Error updating resignation:', error);
+    res.status(500).json({ error: error.message || 'حدث خطأ أثناء تحديث الاستقالة' });
+  }
+}
+
+async function getResignationStats(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { year } = req.query;
+    const stats = await resignationService.getResignationStats(companyId, { year });
+    res.json({ success: true, stats });
+  } catch (error) {
+    console.error('❌ Error getting resignation stats:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب الإحصائيات' });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 📅 العطلات الرسمية - Public Holidays
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function getPublicHolidays(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { getSharedPrismaClient } = require('../services/sharedDatabase');
+    const prisma = getSharedPrismaClient();
+
+    const settings = await prisma.hRSettings.findUnique({
+      where: { companyId }
+    });
+
+    const holidays = settings?.publicHolidays ? JSON.parse(settings.publicHolidays) : [];
+    res.json({ success: true, holidays });
+  } catch (error) {
+    console.error('❌ Error getting public holidays:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء جلب العطلات' });
+  }
+}
+
+async function updatePublicHolidays(req, res) {
+  try {
+    const { companyId } = req.user;
+    const { holidays } = req.body;
+    const { getSharedPrismaClient } = require('../services/sharedDatabase');
+    const prisma = getSharedPrismaClient();
+
+    await prisma.hRSettings.upsert({
+      where: { companyId },
+      update: { publicHolidays: JSON.stringify(holidays) },
+      create: { companyId, publicHolidays: JSON.stringify(holidays) }
+    });
+
+    res.json({ success: true, message: 'تم حفظ العطلات بنجاح' });
+  } catch (error) {
+    console.error('❌ Error updating public holidays:', error);
+    res.status(500).json({ error: 'حدث خطأ أثناء حفظ العطلات' });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // ⚙️ الإعدادات - Settings
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1035,5 +2045,96 @@ module.exports = {
   getHRDashboard,
 
   // Sync
-  syncUsersToEmployees
+  syncUsersToEmployees,
+
+  // Documents
+  createDocument,
+  getEmployeeDocuments,
+  getDocumentById,
+  updateDocument,
+  verifyDocument,
+  deleteDocument,
+  getExpiredDocuments,
+  getDocumentStats,
+
+  // Salary History
+  getEmployeeSalaryHistory,
+  getSalaryHistoryById,
+  createSalaryHistory,
+  getSalaryHistoryStats,
+  getPromotionsReport,
+
+  // Performance Reviews
+  createPerformanceReview,
+  getEmployeeReviews,
+  getReviewById,
+  updateReview,
+  deleteReview,
+  getPerformanceStats,
+
+  // Training
+  createTraining,
+  getEmployeeTrainings,
+  getTrainingById,
+  updateTraining,
+  deleteTraining,
+  getTrainingStats,
+
+  // Warnings
+  createWarning,
+  getEmployeeWarnings,
+  getWarningById,
+  updateWarning,
+  acknowledgeWarning,
+  deleteWarning,
+  getWarningStats,
+
+  // Shifts
+  createShift,
+  getShifts,
+  getShiftById,
+  updateShift,
+  deleteShift,
+  assignShift,
+  getEmployeeAssignments,
+  removeAssignment,
+  getShiftStats,
+
+  // Benefits
+  createBenefit,
+  getBenefits,
+  getBenefitById,
+  updateBenefit,
+  deleteBenefit,
+  enrollEmployee,
+  getEmployeeEnrollments,
+  updateEnrollment,
+  getBenefitStats,
+
+  // Goals
+  createGoal,
+  getGoals,
+  getGoalById,
+  updateGoal,
+  deleteGoal,
+  getGoalStats,
+
+  // Feedback
+  createFeedback,
+  getFeedback,
+  getFeedbackById,
+  updateFeedback,
+  deleteFeedback,
+  getFeedbackStats,
+
+  // Resignations
+  createResignation,
+  getResignations,
+  getResignationById,
+  updateResignation,
+  getResignationStats,
+
+  // Public Holidays
+  getPublicHolidays,
+  updatePublicHolidays
 };

@@ -74,7 +74,7 @@ const aiNotificationsRoutes = require('./routes/aiNotificationsRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const companyDashboardRoutes = require('./routes/companyDashboardRoutes');
 const invitationRoutes = require('./routes/invitationRoutes');
-
+const supportRoutes = require('./routes/supportRoutes'); // 🎫 Support System
 
 const adminAnalyticsRoutes = require('./routes/adminAnalyticsRoutes');
 const adminPlansRoutes = require('./routes/adminPlansRoutes');
@@ -571,6 +571,7 @@ app.use("/api/v1/messages/", messageFixRoutes)
 app.use("/api/v1/comments/", commentRoutes)
 app.use("/api/v1/user/image-gallery", imageGalleryRoutes) // 🖼️ حافظة الصور
 app.use("/api/v1/user/text-gallery", textGalleryRoutes) // 📝 حافظة النصوص
+app.use("/api/v1/support", supportRoutes) // 🎫 Support System
 
 // Homepage routes moved before globalSecurity middleware (line 434)
 

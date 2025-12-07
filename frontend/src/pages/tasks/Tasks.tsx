@@ -95,6 +95,7 @@ const Tasks: React.FC = () => {
     dueDateTo: '',
   });
   const [taskFilter, setTaskFilter] = useState<'all' | 'my-tasks' | 'assigned-by-me'>('all');
+  const [hideCompleted, setHideCompleted] = useState(true); // إخفاء المهام المكتملة افتراضياً
   
   // New features states
   const [searchQuery, setSearchQuery] = useState('');
@@ -123,6 +124,9 @@ const Tasks: React.FC = () => {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState<TaskCategory | null>(null);
   const [newCategory, setNewCategory] = useState({ name: '', description: '', color: '#6366f1' });
+  
+  // Filter sidebar state
+  const [showFilterSidebar, setShowFilterSidebar] = useState(false);
 
   const [newProject, setNewProject] = useState({
     name: '',
@@ -187,7 +191,7 @@ const Tasks: React.FC = () => {
         setTemplates(data.data || []);
       }
     } catch (error) {
-      console.error('Error fetching templates:', error);
+      // Silent fail
     }
   };
 
@@ -207,10 +211,7 @@ const Tasks: React.FC = () => {
     try {
       const token = localStorage.getItem('accessToken');
       
-      if (!token) {
-        console.warn('No access token found');
-        return;
-      }
+      if (!token) return;
       
       const response = await fetch(buildApiUrl('tasks/company-users'), {
         headers: {
@@ -218,11 +219,7 @@ const Tasks: React.FC = () => {
         }
       });
       
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('Error fetching users:', response.status, errorData);
-        return;
-      }
+      if (!response.ok) return;
       
       const data = await response.json();
       if (data.success) {
@@ -237,7 +234,7 @@ const Tasks: React.FC = () => {
         }
       }
     } catch (error) {
-      console.error('Error fetching users:', error);
+      // Silent fail
     }
   };
 
@@ -257,7 +254,7 @@ const Tasks: React.FC = () => {
         }
       }
     } catch (error) {
-      console.error('Error fetching categories:', error);
+      // Silent fail
     }
   };
 
@@ -288,7 +285,6 @@ const Tasks: React.FC = () => {
         alert(data.error || 'فشل في إنشاء القسم');
       }
     } catch (error) {
-      console.error('Error creating category:', error);
       alert('فشل في إنشاء القسم');
     }
   };
@@ -319,7 +315,6 @@ const Tasks: React.FC = () => {
         alert(data.error || 'فشل في تحديث القسم');
       }
     } catch (error) {
-      console.error('Error updating category:', error);
       alert('فشل في تحديث القسم');
     }
   };
@@ -341,7 +336,6 @@ const Tasks: React.FC = () => {
         alert(data.error || 'فشل في حذف القسم');
       }
     } catch (error) {
-      console.error('Error deleting category:', error);
       alert('فشل في حذف القسم');
     }
   };
@@ -352,7 +346,6 @@ const Tasks: React.FC = () => {
       const token = localStorage.getItem('accessToken');
       
       if (!token) {
-        console.warn('No access token found');
         setLoading(false);
         return;
       }
@@ -381,8 +374,6 @@ const Tasks: React.FC = () => {
       });
       
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('Error fetching tasks:', response.status, errorData);
         if (response.status === 401 || response.status === 403) {
           alert('انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى');
         }
@@ -395,7 +386,7 @@ const Tasks: React.FC = () => {
         setTasks(data.data);
       }
     } catch (error) {
-      console.error('Error fetching tasks:', error);
+      // Silent fail
     } finally {
       setLoading(false);
     }
@@ -405,10 +396,7 @@ const Tasks: React.FC = () => {
     try {
       const token = localStorage.getItem('accessToken');
       
-      if (!token) {
-        console.warn('No access token found');
-        return;
-      }
+      if (!token) return;
 
       const response = await fetch(buildApiUrl('projects'), {
         headers: {
@@ -417,11 +405,8 @@ const Tasks: React.FC = () => {
       });
       
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'خطأ غير معروف' }));
-        console.error('❌ [Tasks] Error fetching projects:', { status: response.status, errorData });
         if (response.status === 401 || response.status === 403) {
-          alert(`انتهت صلاحية الجلسة أو ليس لديك صلاحية (${response.status}). يرجى تسجيل الدخول مرة أخرى`);
-          // يمكن إضافة redirect للصفحة الرئيسية هنا
+          alert('انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى');
         }
         return;
       }
@@ -432,7 +417,7 @@ const Tasks: React.FC = () => {
         setProjects(data.data);
       }
     } catch (error) {
-      console.error('Error fetching projects:', error);
+      // Silent fail
     }
   };
 
@@ -446,7 +431,6 @@ const Tasks: React.FC = () => {
       }
 
       const url = buildApiUrl('tasks');
-      console.log('🔍 [Tasks] Creating task:', { url, hasToken: !!token, taskData: newTask });
 
       const response = await fetch(url, {
         method: 'POST',
@@ -456,14 +440,10 @@ const Tasks: React.FC = () => {
         },
         body: JSON.stringify(newTask),
       });
-      
-      console.log('🔍 [Tasks] Response status:', response.status, response.statusText);
 
       const data = await response.json();
-      console.log('🔍 [Tasks] Response data:', data);
       
       if (!response.ok) {
-        console.error('❌ [Tasks] Error response:', { status: response.status, data });
         alert(data.message || data.error || `فشل في إنشاء المهمة (${response.status})`);
         return;
       }
@@ -491,7 +471,6 @@ const Tasks: React.FC = () => {
         alert(data.error || 'فشل في إنشاء المهمة');
       }
     } catch (error) {
-      console.error('Error creating task:', error);
       alert('فشل في إنشاء المهمة');
     }
   };
@@ -517,7 +496,6 @@ const Tasks: React.FC = () => {
         alert('تم تحديث حالة المهمة بنجاح');
       }
     } catch (error) {
-      console.error('Error updating task status:', error);
       alert('فشل في تحديث حالة المهمة');
     }
   };
@@ -555,7 +533,6 @@ const Tasks: React.FC = () => {
         alert(data.error || 'فشل في إنشاء المشروع');
       }
     } catch (error) {
-      console.error('Error creating project:', error);
       alert('فشل في إنشاء المشروع');
     }
   };
@@ -584,7 +561,6 @@ const Tasks: React.FC = () => {
         alert(data.error || 'فشل في تحديث المهمة');
       }
     } catch (error) {
-      console.error('Error updating task:', error);
       alert('فشل في تحديث المهمة');
     }
   };
@@ -611,7 +587,6 @@ const Tasks: React.FC = () => {
         alert(data.error || 'فشل في حذف المهمة');
       }
     } catch (error) {
-      console.error('Error deleting task:', error);
       alert('فشل في حذف المهمة');
     }
   };
@@ -640,7 +615,6 @@ const Tasks: React.FC = () => {
         alert(data.error || 'فشل في تحديث المشروع');
       }
     } catch (error) {
-      console.error('Error updating project:', error);
       alert('فشل في تحديث المشروع');
     }
   };
@@ -667,7 +641,6 @@ const Tasks: React.FC = () => {
         alert(data.error || 'فشل في حذف المشروع');
       }
     } catch (error) {
-      console.error('Error deleting project:', error);
       alert('فشل في حذف المشروع');
     }
   };
@@ -758,6 +731,11 @@ const Tasks: React.FC = () => {
   // Filter and sort tasks
   const filteredAndSortedTasks = tasks
     .filter(task => {
+      // Hide completed tasks filter (unless status filter is specifically set to completed)
+      const taskStatus = task.status?.toLowerCase();
+      if (hideCompleted && !filters.status && (taskStatus === 'completed' || taskStatus === 'cancelled')) {
+        return false;
+      }
       // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -806,12 +784,12 @@ const Tasks: React.FC = () => {
     currentPage * itemsPerPage
   );
 
-  // Stats
+  // Stats (case-insensitive)
   const taskStats = {
     total: tasks.length,
-    pending: tasks.filter(t => t.status === 'pending').length,
-    inProgress: tasks.filter(t => t.status === 'in_progress').length,
-    completed: tasks.filter(t => t.status === 'completed').length,
+    pending: tasks.filter(t => t.status?.toLowerCase() === 'pending').length,
+    inProgress: tasks.filter(t => t.status?.toLowerCase() === 'in_progress').length,
+    completed: tasks.filter(t => t.status?.toLowerCase() === 'completed').length,
     overdue: tasks.filter(t => isOverdue(t.dueDate, t.status)).length,
   };
 
@@ -1106,6 +1084,26 @@ const Tasks: React.FC = () => {
                 </button>
               </div>
 
+              {/* Filter Button */}
+              <button
+                onClick={() => setShowFilterSidebar(true)}
+                className={`inline-flex items-center px-3 py-2 border text-sm font-medium rounded-md ${
+                  Object.values(filters).some(v => v) 
+                    ? 'border-indigo-500 text-indigo-700 bg-indigo-50 hover:bg-indigo-100' 
+                    : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
+                }`}
+              >
+                <svg className="h-4 w-4 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                </svg>
+                الفلاتر
+                {Object.values(filters).filter(v => v).length > 0 && (
+                  <span className="mr-2 bg-indigo-600 text-white text-xs rounded-full px-2 py-0.5">
+                    {Object.values(filters).filter(v => v).length}
+                  </span>
+                )}
+              </button>
+
               {/* Export */}
               <button
                 onClick={exportToCSV}
@@ -1119,37 +1117,62 @@ const Tasks: React.FC = () => {
             </div>
 
             {/* Task Filter Tabs */}
-            <div className="flex space-x-4 space-x-reverse mt-4 pt-4 border-t">
-              <button
-                onClick={() => setTaskFilter('all')}
-                className={`px-4 py-2 rounded-md text-sm font-medium ${
-                  taskFilter === 'all'
-                    ? 'bg-indigo-100 text-indigo-700'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                جميع المهام
-              </button>
-              <button
-                onClick={() => setTaskFilter('my-tasks')}
-                className={`px-4 py-2 rounded-md text-sm font-medium ${
-                  taskFilter === 'my-tasks'
-                    ? 'bg-indigo-100 text-indigo-700'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                مهامي
-              </button>
-              <button
-                onClick={() => setTaskFilter('assigned-by-me')}
-                className={`px-4 py-2 rounded-md text-sm font-medium ${
-                  taskFilter === 'assigned-by-me'
-                    ? 'bg-indigo-100 text-indigo-700'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                المهام التي أنشأتها
-              </button>
+            <div className="flex items-center justify-between mt-4 pt-4 border-t">
+              <div className="flex space-x-4 space-x-reverse">
+                <button
+                  onClick={() => setTaskFilter('all')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium ${
+                    taskFilter === 'all'
+                      ? 'bg-indigo-100 text-indigo-700'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  جميع المهام
+                </button>
+                <button
+                  onClick={() => setTaskFilter('my-tasks')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium ${
+                    taskFilter === 'my-tasks'
+                      ? 'bg-indigo-100 text-indigo-700'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  مهامي
+                </button>
+                <button
+                  onClick={() => setTaskFilter('assigned-by-me')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium ${
+                    taskFilter === 'assigned-by-me'
+                      ? 'bg-indigo-100 text-indigo-700'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  المهام التي أنشأتها
+                </button>
+              </div>
+              
+              {/* Hide Completed Toggle */}
+              <div className="flex items-center gap-2">
+                <label className="flex items-center cursor-pointer gap-2">
+                  <span className="text-sm text-gray-700">إخفاء المهام المكتملة</span>
+                  <input
+                    type="checkbox"
+                    checked={hideCompleted}
+                    onChange={(e) => setHideCompleted(e.target.checked)}
+                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                  />
+                </label>
+                {hideCompleted && taskStats.completed > 0 && (
+                  <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
+                    {taskStats.completed} مكتملة مخفية
+                  </span>
+                )}
+                {!hideCompleted && taskStats.completed > 0 && (
+                  <span className="text-xs text-gray-500">
+                    (يتم عرض {taskStats.completed} مكتملة)
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1190,129 +1213,58 @@ const Tasks: React.FC = () => {
             </div>
           )}
 
-          {/* Filters */}
-          <div className="bg-white shadow rounded-lg p-6 mb-8">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  المشروع
-                </label>
-                <select
-                  value={filters.projectId}
-                  onChange={(e) => setFilters({...filters, projectId: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          {/* Active Filters Display */}
+          {Object.values(filters).some(v => v) && (
+            <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 mb-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm text-indigo-700 font-medium">الفلاتر النشطة:</span>
+                  {filters.projectId && (
+                    <span className="inline-flex items-center px-2 py-1 bg-white border border-indigo-300 rounded-full text-xs text-indigo-700">
+                      المشروع: {projects.find(p => p.id === filters.projectId)?.name}
+                      <button onClick={() => setFilters({...filters, projectId: ''})} className="mr-1 hover:text-indigo-900">×</button>
+                    </span>
+                  )}
+                  {filters.categoryId && (
+                    <span className="inline-flex items-center px-2 py-1 bg-white border border-indigo-300 rounded-full text-xs text-indigo-700">
+                      القسم: {categories.find(c => c.id === filters.categoryId)?.name}
+                      <button onClick={() => setFilters({...filters, categoryId: ''})} className="mr-1 hover:text-indigo-900">×</button>
+                    </span>
+                  )}
+                  {filters.status && (
+                    <span className="inline-flex items-center px-2 py-1 bg-white border border-indigo-300 rounded-full text-xs text-indigo-700">
+                      الحالة: {filters.status === 'pending' ? 'في الانتظار' : filters.status === 'in_progress' ? 'قيد التنفيذ' : filters.status === 'completed' ? 'مكتمل' : 'ملغي'}
+                      <button onClick={() => setFilters({...filters, status: ''})} className="mr-1 hover:text-indigo-900">×</button>
+                    </span>
+                  )}
+                  {filters.priority && (
+                    <span className="inline-flex items-center px-2 py-1 bg-white border border-indigo-300 rounded-full text-xs text-indigo-700">
+                      الأولوية: {filters.priority === 'urgent' ? 'عاجل' : filters.priority === 'high' ? 'عالي' : filters.priority === 'medium' ? 'متوسط' : 'منخفض'}
+                      <button onClick={() => setFilters({...filters, priority: ''})} className="mr-1 hover:text-indigo-900">×</button>
+                    </span>
+                  )}
+                  {filters.assignedTo && (
+                    <span className="inline-flex items-center px-2 py-1 bg-white border border-indigo-300 rounded-full text-xs text-indigo-700">
+                      المسؤول: {users.find(u => u.id === filters.assignedTo)?.firstName}
+                      <button onClick={() => setFilters({...filters, assignedTo: ''})} className="mr-1 hover:text-indigo-900">×</button>
+                    </span>
+                  )}
+                  {(filters.dueDateFrom || filters.dueDateTo) && (
+                    <span className="inline-flex items-center px-2 py-1 bg-white border border-indigo-300 rounded-full text-xs text-indigo-700">
+                      التاريخ: {filters.dueDateFrom || '...'} - {filters.dueDateTo || '...'}
+                      <button onClick={() => setFilters({...filters, dueDateFrom: '', dueDateTo: ''})} className="mr-1 hover:text-indigo-900">×</button>
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => { setFilters({ projectId: '', categoryId: '', status: '', priority: '', assignedTo: '', dueDateFrom: '', dueDateTo: '' }); }}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
                 >
-                  <option value="">جميع المشاريع</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>{project.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  القسم
-                </label>
-                <select
-                  value={filters.categoryId}
-                  onChange={(e) => setFilters({...filters, categoryId: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="">جميع الأقسام</option>
-                  {categories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  الحالة
-                </label>
-                <select
-                  value={filters.status}
-                  onChange={(e) => setFilters({...filters, status: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="">جميع الحالات</option>
-                  <option value="pending">في الانتظار</option>
-                  <option value="in_progress">قيد التنفيذ</option>
-                  <option value="completed">مكتمل</option>
-                  <option value="cancelled">ملغي</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  الأولوية
-                </label>
-                <select
-                  value={filters.priority}
-                  onChange={(e) => setFilters({...filters, priority: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="">جميع الأولويات</option>
-                  <option value="urgent">عاجل</option>
-                  <option value="high">عالي</option>
-                  <option value="medium">متوسط</option>
-                  <option value="low">منخفض</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  المسؤول
-                </label>
-                <select
-                  value={filters.assignedTo}
-                  onChange={(e) => setFilters({...filters, assignedTo: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="">جميع المسؤولين</option>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.name || `${user.firstName} ${user.lastName}`}
-                    </option>
-                  ))}
-                </select>
+                  مسح الكل
+                </button>
               </div>
             </div>
-
-            {/* Date Range Filter */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  تاريخ الاستحقاق من
-                </label>
-                <input
-                  type="date"
-                  value={filters.dueDateFrom}
-                  onChange={(e) => setFilters({...filters, dueDateFrom: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  تاريخ الاستحقاق إلى
-                </label>
-                <input
-                  type="date"
-                  value={filters.dueDateTo}
-                  onChange={(e) => setFilters({...filters, dueDateTo: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-            </div>
-
-            <div className="mt-4">
-              <button
-                onClick={() => { setFilters({ projectId: '', categoryId: '', status: '', priority: '', assignedTo: '', dueDateFrom: '', dueDateTo: '' }); setSearchQuery(''); }}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
-              >
-                إعادة تعيين الفلاتر
-              </button>
-            </div>
-          </div>
+          )}
 
           {/* Tasks Table */}
           <div className="bg-white shadow rounded-lg overflow-hidden">
@@ -2798,6 +2750,197 @@ const Tasks: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Filter Sidebar */}
+      {showFilterSidebar && (
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity"
+            onClick={() => setShowFilterSidebar(false)}
+          />
+          
+          {/* Sidebar */}
+          <div className="fixed inset-y-0 left-0 w-96 bg-white shadow-xl z-50 transform transition-transform duration-300 ease-in-out overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+                <svg className="h-5 w-5 ml-2 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                </svg>
+                فلترة المهام
+              </h2>
+              <button
+                onClick={() => setShowFilterSidebar(false)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <XMarkIcon className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Filter Content */}
+            <div className="p-6 space-y-6">
+              {/* Project Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  المشروع
+                </label>
+                <select
+                  value={filters.projectId}
+                  onChange={(e) => setFilters({...filters, projectId: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                >
+                  <option value="">جميع المشاريع</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>{project.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Category Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  القسم
+                </label>
+                <select
+                  value={filters.categoryId}
+                  onChange={(e) => setFilters({...filters, categoryId: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                >
+                  <option value="">جميع الأقسام</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Status Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  الحالة
+                </label>
+                <div className="space-y-2">
+                  {[
+                    { value: '', label: 'جميع الحالات', color: 'gray' },
+                    { value: 'pending', label: 'في الانتظار', color: 'yellow' },
+                    { value: 'in_progress', label: 'قيد التنفيذ', color: 'blue' },
+                    { value: 'completed', label: 'مكتمل', color: 'green' },
+                    { value: 'cancelled', label: 'ملغي', color: 'red' },
+                  ].map((status) => (
+                    <label key={status.value} className="flex items-center cursor-pointer">
+                      <input
+                        type="radio"
+                        name="status"
+                        value={status.value}
+                        checked={filters.status === status.value}
+                        onChange={(e) => setFilters({...filters, status: e.target.value})}
+                        className="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                      />
+                      <span className={`mr-2 text-sm ${filters.status === status.value ? 'font-medium text-gray-900' : 'text-gray-600'}`}>
+                        {status.label}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Priority Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  الأولوية
+                </label>
+                <div className="space-y-2">
+                  {[
+                    { value: '', label: 'جميع الأولويات' },
+                    { value: 'urgent', label: 'عاجل', color: 'bg-red-100 text-red-800' },
+                    { value: 'high', label: 'عالي', color: 'bg-orange-100 text-orange-800' },
+                    { value: 'medium', label: 'متوسط', color: 'bg-yellow-100 text-yellow-800' },
+                    { value: 'low', label: 'منخفض', color: 'bg-green-100 text-green-800' },
+                  ].map((priority) => (
+                    <label key={priority.value} className="flex items-center cursor-pointer">
+                      <input
+                        type="radio"
+                        name="priority"
+                        value={priority.value}
+                        checked={filters.priority === priority.value}
+                        onChange={(e) => setFilters({...filters, priority: e.target.value})}
+                        className="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                      />
+                      <span className={`mr-2 text-sm px-2 py-0.5 rounded ${priority.color || ''} ${filters.priority === priority.value ? 'font-medium' : ''}`}>
+                        {priority.label}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Assigned To Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  المسؤول
+                </label>
+                <select
+                  value={filters.assignedTo}
+                  onChange={(e) => setFilters({...filters, assignedTo: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                >
+                  <option value="">جميع المسؤولين</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name || `${user.firstName} ${user.lastName}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Date Range Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  تاريخ الاستحقاق
+                </label>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">من</label>
+                    <input
+                      type="date"
+                      value={filters.dueDateFrom}
+                      onChange={(e) => setFilters({...filters, dueDateFrom: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">إلى</label>
+                    <input
+                      type="date"
+                      value={filters.dueDateTo}
+                      onChange={(e) => setFilters({...filters, dueDateTo: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Actions */}
+            <div className="sticky bottom-0 bg-white border-t px-6 py-4 flex items-center justify-between">
+              <button
+                onClick={() => { 
+                  setFilters({ projectId: '', categoryId: '', status: '', priority: '', assignedTo: '', dueDateFrom: '', dueDateTo: '' }); 
+                }}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium"
+              >
+                إعادة تعيين
+              </button>
+              <button
+                onClick={() => setShowFilterSidebar(false)}
+                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors"
+              >
+                تطبيق الفلاتر
+              </button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

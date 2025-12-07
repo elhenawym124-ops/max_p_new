@@ -165,12 +165,16 @@ class UploadService {
       const formData = new FormData();
       formData.append('image', file);
 
+      // Get token using consistent logic
+      const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+
       const response = await axios.post(
         `${API_BASE_URL}/upload/single`,
         formData,
         {
           headers: {
             'Content-Type': 'multipart/form-data',
+            ...(token && { 'Authorization': `Bearer ${token}` }),
           },
           timeout: 30000,
         }
@@ -179,11 +183,11 @@ class UploadService {
       return response.data;
     } catch (error: any) {
       console.error('Error uploading product image:', error);
-      
+
       if (error.response?.data) {
         return error.response.data;
       }
-      
+
       return {
         success: false,
         error: error.message || 'Failed to upload image'
@@ -201,12 +205,16 @@ class UploadService {
         formData.append('images', file);
       });
 
+      // Get token using consistent logic
+      const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+
       const response = await axios.post(
         `${API_BASE_URL}/upload/multiple`,
         formData,
         {
           headers: {
             'Content-Type': 'multipart/form-data',
+            ...(token && { 'Authorization': `Bearer ${token}` }),
           },
           timeout: 60000, // 60 seconds for multiple files
         }
@@ -215,11 +223,11 @@ class UploadService {
       return response.data;
     } catch (error: any) {
       console.error('Error uploading multiple images:', error);
-      
+
       if (error.response?.data) {
         return error.response.data;
       }
-      
+
       return {
         success: false,
         error: error.message || 'Failed to upload images'

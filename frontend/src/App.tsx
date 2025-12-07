@@ -139,6 +139,14 @@ import StorePage from './pages/storefront/StorePage';
 // AI Management
 import AIManagement from './pages/ai/AIManagement';
 
+// Support System
+import SupportCenter from './pages/support/SupportCenter';
+import CreateTicket from './pages/support/CreateTicket';
+import MyTickets from './pages/support/MyTickets';
+import TicketDetails from './pages/support/TicketDetails';
+import FAQ from './pages/support/FAQ';
+import SupportAdmin from './pages/admin/SupportAdmin';
+
 import { BroadcastDashboard } from './pages/broadcast';
 import Reminders from './pages/Reminders';
 import NotificationSettings from './pages/NotificationSettings';
@@ -195,7 +203,11 @@ import LandingPageList from './pages/LandingPageList';
 import { WhatsAppSettings, WhatsAppChat } from './pages/whatsapp';
 
 // HR Module
-import { HRDashboard, Employees, EmployeeDetails, Departments, Attendance, Leaves, Payroll, HRSettings, HRReports } from './pages/hr';
+import { 
+  HRDashboard, Employees, EmployeeDetails, Departments, Attendance, Leaves, Payroll, 
+  HRSettings, HRReports, Documents, SalaryHistory, PerformanceReviews, Training, 
+  Warnings, Shifts, Benefits, Goals, Feedback, Resignations 
+} from './pages/hr';
 
 import { useAuth } from './hooks/useAuthSimple';
 
@@ -456,6 +468,7 @@ const AppContent = () => {
               <Route path="/settings/homepage" element={<Layout><HomepageSettings /></Layout>} />
               <Route path="/settings/homepage/create" element={<Layout><HomepageEditor /></Layout>} />
               <Route path="/settings/homepage/edit/:id" element={<Layout><HomepageEditor /></Layout>} />
+              <Route path="/settings/homepage/:id" element={<Layout><HomepageEditor /></Layout>} />
               <Route path="/preview/homepage/:id" element={<HomepagePreview />} />
               <Route path="/settings/facebook" element={<Layout><FacebookSettings /></Layout>} />
               <Route path="/settings/facebook-oauth" element={<Layout><FacebookOAuth /></Layout>} />
@@ -472,13 +485,41 @@ const AppContent = () => {
               <Route path="/hr/dashboard" element={<Layout><HRDashboard /></Layout>} />
               <Route path="/hr/employees" element={<Layout><Employees /></Layout>} />
               <Route path="/hr/employees/:id" element={<Layout><EmployeeDetails /></Layout>} />
-              <Route path="/hr/employees/:id/edit" element={<Layout><Employees /></Layout>} />
               <Route path="/hr/departments" element={<Layout><Departments /></Layout>} />
               <Route path="/hr/attendance" element={<Layout><Attendance /></Layout>} />
               <Route path="/hr/leaves" element={<Layout><Leaves /></Layout>} />
               <Route path="/hr/payroll" element={<Layout><Payroll /></Layout>} />
               <Route path="/hr/settings" element={<Layout><HRSettings /></Layout>} />
               <Route path="/hr/reports" element={<Layout><HRReports /></Layout>} />
+              <Route path="/hr/documents/:employeeId" element={<Layout><Documents /></Layout>} />
+              <Route path="/hr/salary-history/:employeeId" element={<Layout><SalaryHistory /></Layout>} />
+              <Route path="/hr/performance-reviews" element={<Layout><PerformanceReviews /></Layout>} />
+              <Route path="/hr/performance-reviews/:id" element={<Layout><PerformanceReviews /></Layout>} />
+              <Route path="/hr/training" element={<Layout><Training /></Layout>} />
+              <Route path="/hr/training/:id" element={<Layout><Training /></Layout>} />
+              <Route path="/hr/warnings" element={<Layout><Warnings /></Layout>} />
+              <Route path="/hr/warnings/:id" element={<Layout><Warnings /></Layout>} />
+              <Route path="/hr/shifts" element={<Layout><Shifts /></Layout>} />
+              <Route path="/hr/shifts/:id" element={<Layout><Shifts /></Layout>} />
+              <Route path="/hr/benefits" element={<Layout><Benefits /></Layout>} />
+              <Route path="/hr/benefits/:id" element={<Layout><Benefits /></Layout>} />
+              <Route path="/hr/goals" element={<Layout><Goals /></Layout>} />
+              <Route path="/hr/goals/:id" element={<Layout><Goals /></Layout>} />
+              <Route path="/hr/feedback" element={<Layout><Feedback /></Layout>} />
+              <Route path="/hr/feedback/:id" element={<Layout><Feedback /></Layout>} />
+              <Route path="/hr/resignations" element={<Layout><Resignations /></Layout>} />
+              <Route path="/hr/resignations/:id" element={<Layout><Resignations /></Layout>} />
+
+              {/* Support System Routes */}
+              <Route path="/support" element={<Layout><SupportCenter /></Layout>} />
+              <Route path="/support/tickets" element={<Layout><MyTickets /></Layout>} />
+              <Route path="/support/tickets/new" element={<Layout><CreateTicket /></Layout>} />
+              <Route path="/support/tickets/:ticketId" element={<Layout><TicketDetails /></Layout>} />
+              <Route path="/support/faq" element={<Layout><FAQ /></Layout>} />
+              
+              {/* Admin Support Routes */}
+              <Route path="/admin/support" element={<Layout><SupportAdmin /></Layout>} />
+
             </>
           ) : (
             // Redirect unauthenticated users trying to access protected routes
@@ -526,6 +567,8 @@ const AppContent = () => {
               <Route path="/tasks" element={<Navigate to="/auth/login" replace />} />
               <Route path="/whatsapp/*" element={<Navigate to="/auth/login" replace />} />
               <Route path="/hr/*" element={<Navigate to="/auth/login" replace />} />
+              <Route path="/support/*" element={<Navigate to="/auth/login" replace />} />
+              <Route path="/admin/support" element={<Navigate to="/auth/login" replace />} />
             </>
           )}
         </Routes>

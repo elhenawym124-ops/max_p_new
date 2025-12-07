@@ -5,7 +5,7 @@ import { resolve } from 'path';
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  
+
   // Path resolution
   resolve: {
     alias: {
@@ -44,6 +44,11 @@ export default defineConfig({
         target: 'http://localhost:3007',
         changeOrigin: true,
         ws: true,
+      },
+      '/uploads': {
+        target: 'http://localhost:3007',
+        changeOrigin: true,
+        secure: false,
       },
     },
   },

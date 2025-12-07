@@ -948,8 +948,6 @@ const ProductNewFinal: React.FC = () => {
         tags: formData.tags,
         weight: formData.weight || null,
         dimensions: formData.dimensions || null,
-        weight: formData.weight || null,
-        dimensions: formData.dimensions || null,
         images: uploadedImages,
         metadata: JSON.stringify({ variantSettings }),
       };

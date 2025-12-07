@@ -271,12 +271,14 @@ const EmployeeDetails: React.FC = () => {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-5 w-full max-w-2xl">
+        <TabsList className="grid grid-cols-7 w-full max-w-3xl">
           <TabsTrigger value="overview">نظرة عامة</TabsTrigger>
           <TabsTrigger value="personal">البيانات الشخصية</TabsTrigger>
           <TabsTrigger value="attendance">الحضور</TabsTrigger>
           <TabsTrigger value="leaves">الإجازات</TabsTrigger>
           <TabsTrigger value="documents">المستندات</TabsTrigger>
+          <TabsTrigger value="salary">سجل الرواتب</TabsTrigger>
+          <TabsTrigger value="performance">الأداء</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
@@ -623,11 +625,23 @@ const EmployeeDetails: React.FC = () => {
         <TabsContent value="documents">
           <Card>
             <CardHeader>
-              <CardTitle>المستندات</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>المستندات</CardTitle>
+                <Button onClick={() => navigate(`/hr/documents/${employee.id}`)}>
+                  <FileText className="h-4 w-4 ml-2" />
+                  إدارة المستندات
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {employee.documents_rel?.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">لا توجد مستندات</p>
+                <div className="text-center py-8">
+                  <p className="text-gray-500 mb-4">لا توجد مستندات</p>
+                  <Button onClick={() => navigate(`/hr/documents/${employee.id}`)}>
+                    <FileText className="h-4 w-4 ml-2" />
+                    إضافة مستند
+                  </Button>
+                </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {employee.documents_rel?.map((doc: any) => (
@@ -641,6 +655,54 @@ const EmployeeDetails: React.FC = () => {
                   ))}
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Salary History Tab */}
+        <TabsContent value="salary">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>سجل الرواتب</CardTitle>
+                <Button onClick={() => navigate(`/hr/salary-history/${employee.id}`)}>
+                  <DollarSign className="h-4 w-4 ml-2" />
+                  عرض السجل الكامل
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-8">
+                <p className="text-gray-500 mb-4">عرض سجل التغييرات في الراتب</p>
+                <Button onClick={() => navigate(`/hr/salary-history/${employee.id}`)}>
+                  <DollarSign className="h-4 w-4 ml-2" />
+                  عرض سجل الرواتب
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Performance Tab */}
+        <TabsContent value="performance">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>تقييمات الأداء</CardTitle>
+                <Button onClick={() => navigate(`/hr/performance-reviews?employeeId=${employee.id}`)}>
+                  <Award className="h-4 w-4 ml-2" />
+                  عرض جميع التقييمات
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-8">
+                <p className="text-gray-500 mb-4">عرض تقييمات الأداء للموظف</p>
+                <Button onClick={() => navigate(`/hr/performance-reviews?employeeId=${employee.id}`)}>
+                  <Award className="h-4 w-4 ml-2" />
+                  عرض التقييمات
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

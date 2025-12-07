@@ -18,10 +18,31 @@ const HomepagePreview: React.FC = () => {
   const loadTemplate = async () => {
     try {
       setLoading(true);
-      const response = await homepageService.getTemplates();
-      const templates = response.data.data || [];
-      const foundTemplate = templates.find((t: HomepageTemplate) => t.id === id);
-      
+      let foundTemplate: any = null;
+
+      // 1. Try system template if ID starts with 'sys_'
+      if (id && id.startsWith('sys_')) {
+        try {
+          const sysResponse = await homepageService.getSystemTemplateById(id);
+          if (sysResponse.data) {
+            foundTemplate = sysResponse.data;
+          }
+        } catch (e) {
+          console.warn('Template not found in system templates:', e);
+        }
+      }
+
+      // 2. If not found, try company templates
+      if (!foundTemplate) {
+        try {
+          const response = await homepageService.getTemplates();
+          const templates = response.data.data || [];
+          foundTemplate = templates.find((t: HomepageTemplate) => t.id === id);
+        } catch (e) {
+          console.error('Error fetching company templates:', e);
+        }
+      }
+
       if (foundTemplate) {
         setTemplate(foundTemplate);
       }
@@ -62,8 +83,8 @@ const HomepagePreview: React.FC = () => {
     );
   }
 
-  const content = typeof template.content === 'string' 
-    ? JSON.parse(template.content) 
+  const content = typeof template.content === 'string'
+    ? JSON.parse(template.content)
     : template.content;
 
   return (
@@ -90,11 +111,10 @@ const HomepagePreview: React.FC = () => {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                template.isActive 
-                  ? 'bg-green-100 text-green-800' 
-                  : 'bg-gray-100 text-gray-800'
-              }`}>
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${template.isActive
+                ? 'bg-green-100 text-green-800'
+                : 'bg-gray-100 text-gray-800'
+                }`}>
                 {template.isActive ? '✅ نشط' : '⚪ غير نشط'}
               </span>
               <button
@@ -177,8 +197,8 @@ const HomepagePreview: React.FC = () => {
               <div>
                 <span className="text-gray-600">المسافات:</span>
                 <span className="font-medium text-gray-900 mr-2">
-                  {content.settings?.spacing === 'compact' ? 'مضغوط' : 
-                   content.settings?.spacing === 'relaxed' ? 'واسع' : 'عادي'}
+                  {content.settings?.spacing === 'compact' ? 'مضغوط' :
+                    content.settings?.spacing === 'relaxed' ? 'واسع' : 'عادي'}
                 </span>
               </div>
               <div>
@@ -320,6 +340,73 @@ const renderSectionPreview = (section: any) => {
               <p className="text-sm text-gray-600">تعليق العميل هنا...</p>
             </div>
           ))}
+        </div>
+      );
+
+    case 'hero_grid':
+      const items = section.items || [];
+      const leftBanner = items.find((i: any) => i.position === 'left') || items[0];
+      const centerTop = items.find((i: any) => i.position === 'center-top') || items[1];
+      const centerBottom = items.find((i: any) => i.position === 'center-bottom') || items[2];
+      const rightBanner = items.find((i: any) => i.position === 'right') || items[3];
+
+      return (
+        <div className="grid grid-cols-12 gap-8 mb-8">
+          {/* Left Banner (Tall) */}
+          {leftBanner && (
+            <div className="col-span-12 lg:col-span-3 hidden lg:block relative group overflow-hidden cursor-pointer order-3 lg:order-1">
+              <img src={leftBanner.image} alt={leftBanner.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+              <div className="absolute top-10 left-8">
+                <h4 className="text-3xl font-light mb-2" dangerouslySetInnerHTML={{ __html: leftBanner.title.replace(' ', '<br/><strong class="font-bold">') + '</strong>' }}></h4>
+                <span className="text-2xl font-bold text-[#DB3340]">{leftBanner.price}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Middle Banners (Stacked) */}
+          <div className="col-span-12 lg:col-span-3 flex flex-col gap-8 order-2">
+            {centerTop && (
+              <div className="relative group overflow-hidden cursor-pointer flex-1">
+                <img src={centerTop.image} alt={centerTop.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                <div className="absolute top-8 left-8">
+                  <h4 className="text-2xl font-light mb-4" dangerouslySetInnerHTML={{ __html: centerTop.title.replace(' ', '<br/><strong class="font-bold">') + '</strong>' }}></h4>
+                  <span className="text-[#DB3340] font-bold border-b border-[#DB3340] pb-1 uppercase text-xs tracking-wider">{centerTop.linkText || 'View More'}</span>
+                </div>
+              </div>
+            )}
+            {centerBottom && (
+              <div className="relative group overflow-hidden cursor-pointer flex-1">
+                <img src={centerBottom.image} alt={centerBottom.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                <div className="absolute top-8 left-8">
+                  <h4 className="text-2xl font-light mb-4" dangerouslySetInnerHTML={{ __html: centerBottom.title.replace(' ', '<br/><strong class="font-bold">') + '</strong>' }}></h4>
+                  <span className="text-[#DB3340] font-bold border-b border-[#DB3340] pb-1 uppercase text-xs tracking-wider">{centerBottom.linkText || 'View More'}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Right Banner (Large) */}
+          {rightBanner && (
+            <div className="col-span-12 lg:col-span-6 relative group overflow-hidden cursor-pointer order-1 lg:order-3">
+              <img src={rightBanner.image} alt={rightBanner.title} className="w-full h-auto object-cover transition-transform duration-700 group-hover:scale-105" />
+              <div className="absolute top-12 left-12">
+                <h4 className="text-4xl font-light mb-2" dangerouslySetInnerHTML={{ __html: rightBanner.title.replace(' ', '<br/><strong class="font-bold">') + '</strong>' }}></h4>
+                <p className="text-gray-500 mb-4">{rightBanner.subtitle}</p>
+                <span className="text-2xl font-bold text-[#DB3340]">{rightBanner.price}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+
+    case 'custom':
+      if (section.content && section.content.html) {
+        return <div dangerouslySetInnerHTML={{ __html: section.content.html }} />;
+      }
+      return (
+        <div className="text-center py-8 text-gray-500">
+          <p>معاينة القسم: {section.type}</p>
+          <p className="text-sm mt-2">سيتم عرض المحتوى هنا</p>
         </div>
       );
 

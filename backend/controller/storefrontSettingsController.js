@@ -1187,6 +1187,15 @@ exports.getPublicStorefrontSettings = async (req, res) => {
         quickViewEnabled: true,
         quickViewShowAddToCart: true,
         quickViewShowWishlist: true,
+        // Mobile Bottom Navbar Defaults
+        mobileBottomNavbarEnabled: true,
+        mobileBottomNavbarShowHome: true,
+        mobileBottomNavbarShowShop: true,
+        mobileBottomNavbarShowWishlist: true,
+        mobileBottomNavbarShowAccount: true,
+        mobileBottomNavbarShowCompare: true,
+        mobileBottomNavbarShowSearch: false,
+        mobileBottomNavbarShowCart: false,
         comparisonEnabled: true,
         maxComparisonProducts: 4,
         comparisonShowPrice: true,
@@ -1339,6 +1348,15 @@ exports.getPublicStorefrontSettings = async (req, res) => {
         ...settings,
         // Facebook Pixel Settings
         facebookPixelEnabled: Boolean(settings.facebookPixelEnabled),
+        // Mobile Bottom Navbar Serialization
+        mobileBottomNavbarEnabled: Boolean(settings.mobileBottomNavbarEnabled ?? true),
+        mobileBottomNavbarShowHome: Boolean(settings.mobileBottomNavbarShowHome ?? true),
+        mobileBottomNavbarShowShop: Boolean(settings.mobileBottomNavbarShowShop ?? true),
+        mobileBottomNavbarShowWishlist: Boolean(settings.mobileBottomNavbarShowWishlist ?? true),
+        mobileBottomNavbarShowAccount: Boolean(settings.mobileBottomNavbarShowAccount ?? true),
+        mobileBottomNavbarShowCompare: Boolean(settings.mobileBottomNavbarShowCompare ?? true),
+        mobileBottomNavbarShowSearch: Boolean(settings.mobileBottomNavbarShowSearch ?? false),
+        mobileBottomNavbarShowCart: Boolean(settings.mobileBottomNavbarShowCart ?? false),
         facebookPixelId: settings.facebookPixelId || null, // Ensure Pixel ID is returned
         pixelTrackPageView: Boolean(settings.pixelTrackPageView ?? true),
         pixelTrackViewContent: Boolean(settings.pixelTrackViewContent ?? true),

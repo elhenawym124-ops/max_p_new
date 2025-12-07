@@ -12,6 +12,7 @@ import BannerSection from '../../components/homepage/BannerSection';
 import CategoriesSection from '../../components/homepage/CategoriesSection';
 import TestimonialsSection from '../../components/homepage/TestimonialsSection';
 import CustomSection from '../../components/homepage/CustomSection';
+import WoodmartReplica from './WoodmartReplica';
 
 const Homepage: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -51,7 +52,7 @@ const Homepage: React.FC = () => {
 
     const id = determineCompanyId();
     setCompanyId(id);
-    
+
     // Save to localStorage for future use
     if (id) {
       localStorage.setItem('currentCompanyId', id);
@@ -65,7 +66,7 @@ const Homepage: React.FC = () => {
     try {
       setLoading(true);
       console.log('🔍 [Homepage] Loading homepage for company:', id);
-      
+
       // Load active homepage for this company
       const response = await homepageService.getPublicActiveTemplate(id);
       console.log('📦 [Homepage] API Response:', {
@@ -78,17 +79,17 @@ const Homepage: React.FC = () => {
         } : null,
         debug: response.data.debug
       });
-      
+
       if (response.data.success && response.data.data) {
         console.log('✅ [Homepage] Template loaded:', response.data.data.name);
         const loadedTemplate = response.data.data;
         setTemplate(loadedTemplate);
-        
+
         // Update SEO
-        const content = typeof loadedTemplate.content === 'string' 
-          ? JSON.parse(loadedTemplate.content) 
+        const content = typeof loadedTemplate.content === 'string'
+          ? JSON.parse(loadedTemplate.content)
           : loadedTemplate.content;
-        
+
         updateSEO({
           title: loadedTemplate.name || 'الصفحة الرئيسية',
           description: loadedTemplate.description || 'مرحباً بك في متجرنا',
@@ -109,7 +110,7 @@ const Homepage: React.FC = () => {
         status: error.response?.status,
         data: error.response?.data
       });
-      
+
       if (error.response?.status === 404) {
         console.warn('⚠️ [Homepage] No homepage template found for this company');
         if (error.response?.data?.debug) {
@@ -159,11 +160,21 @@ const Homepage: React.FC = () => {
     );
   }
 
-  const content = typeof template.content === 'string' 
-    ? JSON.parse(template.content) 
+  const content = typeof template.content === 'string'
+    ? JSON.parse(template.content)
     : template.content;
 
   const settings = content.settings || {};
+
+  // Special Handling for Woodmart Replica Theme
+  if (settings.themeId === 'woodmart') {
+    return (
+      <div className="homepage-woodmart-replcia">
+        {/* WoodmartReplica handles its own Header/Footer/Layout */}
+        <WoodmartReplica />
+      </div>
+    );
+  }
 
   return (
     <div className="homepage" style={{
@@ -171,33 +182,33 @@ const Homepage: React.FC = () => {
     }}>
       {/* Navigation Bar */}
       <StorefrontNav />
-      
+
       {/* Render all sections */}
       {content.sections && content.sections.map((section: any, index: number) => {
         const key = section.id || `section-${index}`;
-        
+
         switch (section.type) {
           case 'hero':
             return <HeroSection key={key} section={section} settings={settings} />;
-          
+
           case 'features':
             return <FeaturesSection key={key} section={section} settings={settings} />;
-          
+
           case 'products':
             return <ProductsSection key={key} section={section} settings={settings} />;
-          
+
           case 'banner':
             return <BannerSection key={key} section={section} settings={settings} />;
-          
+
           case 'categories':
             return <CategoriesSection key={key} section={section} settings={settings} />;
-          
+
           case 'testimonials':
             return <TestimonialsSection key={key} section={section} settings={settings} />;
-          
+
           case 'custom':
             return <CustomSection key={key} section={section} settings={settings} />;
-          
+
           default:
             return null;
         }

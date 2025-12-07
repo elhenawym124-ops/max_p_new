@@ -5,6 +5,7 @@ import { buildStoreUrl } from '../../utils/storeUrl';
 import { useAuth } from '../../hooks/useAuthSimple';
 import NotificationDropdown from '../notifications/NotificationDropdown';
 import LanguageSwitcher from '../common/LanguageSwitcher';
+import FloatingSupportButton from '../support/FloatingSupportButton';
 import ThemeToggle from '../ui/theme-toggle';
 import {
   UserCircleIcon,
@@ -48,6 +49,7 @@ import {
   Bars3Icon,
   XMarkIcon,
   MegaphoneIcon,
+  QuestionMarkCircleIcon,
   RocketLaunchIcon,
   StarIcon,
 } from '@heroicons/react/24/outline';
@@ -152,6 +154,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         { to: '/hr/attendance', icon: <CheckCircleIcon className="h-5 w-5" />, label: 'الحضور والانصراف' },
         { to: '/hr/leaves', icon: <CalendarIcon className="h-5 w-5" />, label: 'الإجازات' },
         { to: '/hr/payroll', icon: <BanknotesIcon className="h-5 w-5" />, label: 'الرواتب' },
+        { to: '/hr/performance-reviews', icon: <ChartBarIcon className="h-5 w-5" />, label: 'تقييم الأداء' },
+        { to: '/hr/training', icon: <CheckCircleIcon className="h-5 w-5" />, label: 'التدريب' },
+        { to: '/hr/warnings', icon: <DocumentTextIcon className="h-5 w-5" />, label: 'الإنذارات' },
+        { to: '/hr/shifts', icon: <CalendarIcon className="h-5 w-5" />, label: 'المناوبات' },
+        { to: '/hr/benefits', icon: <BanknotesIcon className="h-5 w-5" />, label: 'المزايا' },
+        { to: '/hr/goals', icon: <ChartBarIcon className="h-5 w-5" />, label: 'الأهداف' },
+        { to: '/hr/feedback', icon: <DocumentTextIcon className="h-5 w-5" />, label: 'التغذية الراجعة' },
+        { to: '/hr/resignations', icon: <DocumentTextIcon className="h-5 w-5" />, label: 'الاستقالات' },
         { to: '/hr/reports', icon: <DocumentTextIcon className="h-5 w-5" />, label: 'التقارير' },
         { to: '/hr/settings', icon: <Cog6ToothIcon className="h-5 w-5" />, label: 'الإعدادات' },
       ]
@@ -205,6 +215,20 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         { to: '/ai-management', icon: <BeakerIcon className="h-5 w-5" />, label: t('sidebar.aiManagement') },
         { to: '/test-chat', icon: <SparklesIcon className="h-5 w-5" />, label: 'اختبار الرد' },
         { to: '/ai-quality', icon: <BeakerIcon className="h-5 w-5" />, label: t('sidebar.aiQuality') },
+      ]
+    },
+    {
+      id: 'support',
+      title: 'الدعم الفني',
+      icon: '🎫',
+      items: [
+        { to: '/support', icon: <ChatBubbleLeftRightIcon className="h-5 w-5" />, label: 'مركز الدعم', badge: 'جديد' },
+        { to: '/support/tickets', icon: <TicketIcon className="h-5 w-5" />, label: 'تذاكري' },
+        { to: '/support/tickets/new', icon: <DocumentTextIcon className="h-5 w-5" />, label: 'تذكرة جديدة' },
+        { to: '/support/faq', icon: <QuestionMarkCircleIcon className="h-5 w-5" />, label: 'الأسئلة الشائعة' },
+        ...(user?.role === 'SUPER_ADMIN' || user?.role === 'COMPANY_ADMIN' ? [
+          { to: '/admin/support', icon: <WrenchScrewdriverIcon className="h-5 w-5" />, label: 'إدارة الدعم' }
+        ] : [])
       ]
     },
     {
@@ -630,6 +654,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           </main>
         </div>
       </div>
+
+      {/* Floating Support Button */}
+      <FloatingSupportButton />
     </div>
   );
 };

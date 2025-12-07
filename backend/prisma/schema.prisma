@@ -127,7 +127,17 @@ model Company {
   salaryHistory          SalaryHistory[] // 💵 سجل الرواتب
   employeeWarnings       EmployeeWarning[] // ⚠️ الإنذارات
   employeeTrainings      EmployeeTraining[] // 📚 التدريب
+  shifts                 Shift[] // 🕐 المناوبات
+  shiftAssignments       ShiftAssignment[] // 👤 تعيينات المناوبات
+  benefits               Benefit[] // 💎 المزايا
+  benefitEnrollments     BenefitEnrollment[] // 📋 اشتراكات المزايا
+  goals                  Goal[] // 📈 الأهداف
+  feedback               Feedback[] // 💬 التغذية الراجعة
+  resignations           Resignation[] // 📝 الاستقالات
   hrSettings             HRSettings? // ⚙️ إعدادات HR
+  
+  // 🎫 Support System
+  supportTickets         SupportTicket[] // 🎫 تذاكر الدعم
 
   @@map("companies")
 }
@@ -175,6 +185,9 @@ model User {
   taskTemplates         TaskTemplate[]
   taskNotifications     TaskNotification[]
   completedChecklistItems TaskChecklistItem[]
+  // 🎫 Support System
+  supportTickets        SupportTicket[]
+  supportMessages       SupportMessage[]
 
   @@index([companyId], map: "users_companyId_idx")
   @@map("users")
@@ -4039,6 +4052,7 @@ model Department {
   children        Department[] @relation("DepartmentHierarchy")
   employees       Employee[]   @relation("EmployeeDepartment")
   positions       Position[]
+  goals           Goal[]
   
   @@unique([companyId, code])
   @@index([companyId])
@@ -4158,6 +4172,12 @@ model Employee {
   salaryHistory     SalaryHistory[]
   warnings          EmployeeWarning[]
   trainings         EmployeeTraining[]
+  shiftAssignments  ShiftAssignment[]
+  benefitEnrollments BenefitEnrollment[]
+  goals             Goal[]
+  feedbackFrom      Feedback[]       @relation("FeedbackFrom")
+  feedbackTo        Feedback[]       @relation("FeedbackTo")
+  resignations      Resignation[]
   
   @@unique([companyId, employeeNumber])
   @@index([companyId])
@@ -4492,6 +4512,173 @@ model EmployeeTraining {
   @@map("hr_employee_training")
 }
 
+// 🕐 المناوبات - Shifts
+model Shift {
+  id              String       @id @default(cuid())
+  companyId       String
+  name            String       // اسم المناوبة
+  startTime       String       // وقت البدء (HH:mm)
+  endTime         String       // وقت الانتهاء (HH:mm)
+  breakDuration   Int          @default(60) // مدة الراحة بالدقائق
+  color           String?      @default("#3B82F6")
+  isActive        Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignments     ShiftAssignment[]
+  
+  @@index([companyId])
+  @@map("hr_shifts")
+}
+
+// 👤 تعيينات المناوبات - Shift Assignments
+model ShiftAssignment {
+  id              String       @id @default(cuid())
+  companyId       String
+  employeeId      String
+  shiftId         String
+  date            DateTime     @db.Date
+  notes           String?      @db.Text
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee        Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shift           Shift        @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  
+  @@unique([employeeId, shiftId, date])
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([shiftId])
+  @@index([date])
+  @@map("hr_shift_assignments")
+}
+
+// 💎 المزايا - Benefits
+model Benefit {
+  id              String       @id @default(cuid())
+  companyId       String
+  name            String       // اسم الميزة
+  description     String?      @db.Text
+  type            String       // health_insurance, life_insurance, retirement, other
+  cost            Decimal?     @db.Decimal(12, 2) // التكلفة الشهرية
+  currency        String       @default("EGP")
+  isActive        Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  enrollments     BenefitEnrollment[]
+  
+  @@index([companyId])
+  @@map("hr_benefits")
+}
+
+// 📋 اشتراكات المزايا - Benefit Enrollments
+model BenefitEnrollment {
+  id              String       @id @default(cuid())
+  companyId       String
+  employeeId      String
+  benefitId       String
+  startDate       DateTime     @db.Date
+  endDate         DateTime?    @db.Date
+  status          String       @default("ACTIVE") // ACTIVE, SUSPENDED, CANCELLED
+  notes           String?      @db.Text
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee        Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  benefit         Benefit      @relation(fields: [benefitId], references: [id], onDelete: Cascade)
+  
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([benefitId])
+  @@map("hr_benefit_enrollments")
+}
+
+// 📈 الأهداف - Goals
+model Goal {
+  id              String       @id @default(cuid())
+  companyId       String
+  employeeId      String?      // null للأهداف الجماعية
+  departmentId    String?      // للأهداف القسمية
+  title           String
+  description     String?      @db.Text
+  targetValue     Decimal      @db.Decimal(12, 2)
+  currentValue    Decimal      @default(0) @db.Decimal(12, 2)
+  unit            String?      // percentage, amount, count, etc.
+  startDate       DateTime     @db.Date
+  endDate         DateTime     @db.Date
+  status          String       @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, CANCELLED
+  progress        Int          @default(0) // 0-100
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee        Employee?    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  department      Department?  @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([departmentId])
+  @@index([status])
+  @@map("hr_goals")
+}
+
+// 💬 التغذية الراجعة - Feedback
+model Feedback {
+  id              String       @id @default(cuid())
+  companyId       String
+  fromEmployeeId  String       // من الموظف
+  toEmployeeId    String?      // إلى الموظف (null للتغذية العامة)
+  type            String       @default("PEER") // PEER, MANAGER, SUBORDINATE, SELF, GENERAL
+  category        String?      // performance, behavior, skills, other
+  content         String       @db.Text
+  rating          Int?         // 1-5
+  isAnonymous     Boolean      @default(false)
+  status          String       @default("ACTIVE") // ACTIVE, ARCHIVED
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fromEmployee    Employee     @relation("FeedbackFrom", fields: [fromEmployeeId], references: [id], onDelete: Cascade)
+  toEmployee      Employee?    @relation("FeedbackTo", fields: [toEmployeeId], references: [id], onDelete: Cascade)
+  
+  @@index([companyId])
+  @@index([fromEmployeeId])
+  @@index([toEmployeeId])
+  @@index([type])
+  @@map("hr_feedback")
+}
+
+// 📝 الاستقالات - Resignations
+model Resignation {
+  id              String       @id @default(cuid())
+  companyId       String
+  employeeId      String
+  resignationDate DateTime     @db.Date
+  lastWorkingDay  DateTime     @db.Date
+  reason          String?      @db.Text
+  exitInterview   String?      @db.Text
+  status          String       @default("PENDING") // PENDING, APPROVED, REJECTED, COMPLETED
+  approvedBy      String?
+  approvedAt      DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee        Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([status])
+  @@map("hr_resignations")
+}
+
 // 📅 إعدادات العمل - Work Settings
 model HRSettings {
   id                    String   @id @default(cuid())
@@ -4622,5 +4809,107 @@ enum TrainingStatus {
   IN_PROGRESS
   COMPLETED
   CANCELLED
+}
+
+// ==================== Support Ticket System ====================
+
+model SupportTicket {
+  id          String               @id @default(cuid())
+  ticketId    String               @unique
+  subject     String
+  description String               @db.Text
+  category    SupportCategory      @default(INQUIRY)
+  status      SupportTicketStatus  @default(OPEN)
+  rating      Int?
+  feedback    String?              @db.Text
+  
+  userId      String
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  companyId   String?
+  company     Company?             @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  
+  messages    SupportMessage[]
+  attachments SupportAttachment[]
+  
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  closedAt    DateTime?
+
+  @@index([userId])
+  @@index([companyId])
+  @@index([status])
+  @@index([category])
+}
+
+model SupportMessage {
+  id          String              @id @default(cuid())
+  content     String              @db.Text
+  isFromAdmin Boolean             @default(false)
+  
+  ticketId    String
+  ticket      SupportTicket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  
+  senderId    String
+  sender      User                @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  
+  attachments SupportAttachment[]
+  
+  createdAt   DateTime            @default(now())
+
+  @@index([ticketId])
+  @@index([senderId])
+}
+
+model SupportAttachment {
+  id          String          @id @default(cuid())
+  filename    String
+  originalName String
+  mimeType    String
+  size        Int
+  url         String
+  
+  ticketId    String?
+  ticket      SupportTicket?  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  
+  messageId   String?
+  message     SupportMessage? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime        @default(now())
+
+  @@index([ticketId])
+  @@index([messageId])
+}
+
+model FAQ {
+  id          String      @id @default(cuid())
+  question    String
+  answer      String      @db.Text
+  category    String      @default("general")
+  tags        String?     @db.Text // JSON array stored as text
+  order       Int         @default(0)
+  helpful     Int         @default(0)
+  notHelpful  Int         @default(0)
+  isActive    Boolean     @default(true)
+  
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([category])
+  @@index([isActive])
+}
+
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  CLOSED
+}
+
+enum SupportCategory {
+  TECHNICAL
+  BILLING
+  INQUIRY
+  SUGGESTION
+  COMPLAINT
 }
 

@@ -35,7 +35,10 @@ import {
 
   BarChart as BarChartIcon,
   Palette as PaletteIcon,
-  Web as WebIcon
+  Web as WebIcon,
+  SupportAgent as SupportIcon,
+  ConfirmationNumber as TicketIcon,
+  QuestionAnswer as FAQIcon
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuthSimple';
@@ -166,6 +169,17 @@ const SuperAdminLayout: React.FC<SuperAdminLayoutProps> = ({ children }) => {
       text: 'إعدادات النظام',
       icon: <SettingsIcon />,
       path: '/super-admin/settings'
+    },
+    // قسم الدعم الفني
+    {
+      text: 'إدارة الدعم الفني',
+      icon: <SupportIcon />,
+      path: '/admin/support'
+    },
+    {
+      text: 'جميع التذاكر',
+      icon: <TicketIcon />,
+      path: '/admin/support'
     }
   ];
 

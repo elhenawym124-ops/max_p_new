@@ -28,23 +28,23 @@ const Footer: React.FC = () => {
     try {
       // محاولة الحصول على companyId من عدة مصادر
       let companyId: string | null = null;
-      
+
       // 1. من URL query params (للواجهة العامة)
       const urlCompanyId = searchParams.get('companyId');
       if (urlCompanyId) {
         companyId = urlCompanyId;
       }
-      
+
       // 2. من user context (للمستخدمين المسجلين)
       if (!companyId && user?.companyId) {
         companyId = user.companyId;
       }
-      
+
       // 3. من localStorage
       if (!companyId) {
         companyId = localStorage.getItem('companyId');
       }
-      
+
       let response;
       if (companyId) {
         // استخدام Public API
@@ -102,11 +102,11 @@ const Footer: React.FC = () => {
       // Only log unexpected errors in development
       const status = error?.response?.status || error?.status;
       const isDevelopment = process.env.NODE_ENV === 'development';
-      
+
       if (status && ![401, 403, 404, 500].includes(status) && isDevelopment) {
         console.error('❌ [Footer] Error loading footer settings:', error);
       }
-      
+
       // Use default settings on error (server issues or auth failures)
       setSettings({
         showAboutStore: true,
@@ -144,7 +144,7 @@ const Footer: React.FC = () => {
       const apiUrl = getApiUrl();
       const response = await fetch(`${apiUrl}/store-pages/${companyId}/public`);
       const data = await response.json();
-      
+
       if (data.success) {
         // Filter pages that should show in footer
         const footerPages = data.data.filter((page: StorePage) => page.showInFooter && page.isActive);
@@ -161,7 +161,7 @@ const Footer: React.FC = () => {
   }
 
   return (
-    <footer className="bg-gray-800 text-white py-8 mt-auto">
+    <footer className="storefront-footer bg-gray-800 text-white py-8 mt-auto">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {/* About Store */}
@@ -212,7 +212,7 @@ const Footer: React.FC = () => {
               <ul className="space-y-2">
                 {storePages.map((page) => (
                   <li key={page.id}>
-                    <Link 
+                    <Link
                       to={`/shop/page/${page.slug}?companyId=${searchParams.get('companyId') || ''}`}
                       className="text-gray-300 hover:text-white transition-colors text-sm"
                     >
