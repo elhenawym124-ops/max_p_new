@@ -8,6 +8,7 @@ export default defineConfig({
 
   // Path resolution
   resolve: {
+    extensions: ['.mjs', '.js', '.mts', '.ts', '.jsx', '.tsx', '.json'],
     alias: {
       '@': resolve(__dirname, './src'),
       '@/components': resolve(__dirname, './src/components'),
