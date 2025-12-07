@@ -20,7 +20,7 @@ exports.getStorefrontSettings = async (req, res) => {
     console.log('🔍 [STOREFRONT-SETTINGS] Method:', req.method);
     console.log('🔍 [STOREFRONT-SETTINGS] Path:', req.path);
     console.log('🔍 [STOREFRONT-SETTINGS] req.user exists:', !!req.user);
-    
+
     if (req.user) {
       console.log('🔍 [STOREFRONT-SETTINGS] req.user.id:', req.user.id);
       console.log('🔍 [STOREFRONT-SETTINGS] req.user.email:', req.user.email);
@@ -31,7 +31,7 @@ exports.getStorefrontSettings = async (req, res) => {
       console.error('❌ [STOREFRONT-SETTINGS] This should not happen if requireAuth middleware is working');
       console.error('❌ [STOREFRONT-SETTINGS] req.headers.authorization:', req.headers.authorization ? 'exists' : 'missing');
     }
-    
+
     const companyId = req.user?.companyId;
     const prisma = getPrisma();
 
@@ -89,7 +89,7 @@ exports.getStorefrontSettings = async (req, res) => {
         console.error('❌ [STOREFRONT-SETTINGS] Error code:', createError.code);
         console.error('❌ [STOREFRONT-SETTINGS] Error message:', createError.message);
         console.error('❌ [STOREFRONT-SETTINGS] Error meta:', createError.meta);
-        
+
         // إذا فشل الإنشاء، قد يكون بسبب أن السجل موجود بالفعل (race condition)
         // أو مشكلة في قاعدة البيانات
         if (createError.code === 'P2002') {
@@ -260,6 +260,16 @@ exports.getStorefrontSettings = async (req, res) => {
       pixelTrackPurchase: Boolean(settings.pixelTrackPurchase),
       pixelTrackSearch: Boolean(settings.pixelTrackSearch),
       pixelTrackAddToWishlist: Boolean(settings.pixelTrackAddToWishlist),
+      // Mobile Bottom Navbar Settings
+      mobileBottomNavbarEnabled: Boolean(settings.mobileBottomNavbarEnabled),
+      mobileBottomNavbarShowHome: Boolean(settings.mobileBottomNavbarShowHome),
+      mobileBottomNavbarShowShop: Boolean(settings.mobileBottomNavbarShowShop),
+      mobileBottomNavbarShowWishlist: Boolean(settings.mobileBottomNavbarShowWishlist),
+      mobileBottomNavbarShowAccount: Boolean(settings.mobileBottomNavbarShowAccount),
+      mobileBottomNavbarShowCompare: Boolean(settings.mobileBottomNavbarShowCompare),
+      mobileBottomNavbarShowSearch: Boolean(settings.mobileBottomNavbarShowSearch),
+      mobileBottomNavbarShowCart: Boolean(settings.mobileBottomNavbarShowCart),
+
       // Facebook Conversions API Settings
       facebookConvApiEnabled: Boolean(settings.facebookConvApiEnabled),
       facebookConvApiToken: settings.facebookConvApiToken || null,
@@ -390,13 +400,17 @@ exports.updateStorefrontSettings = async (req, res) => {
       'tabsEnabled', 'tabDescription', 'tabSpecifications', 'tabReviews', 'tabShipping',
       // Sticky Add to Cart
       'stickyAddToCartEnabled', 'stickyShowOnMobile', 'stickyShowOnDesktop',
-      'stickyScrollThreshold', 'stickyShowBuyNow', 'stickyShowAddToCartButton', 
+      'stickyScrollThreshold', 'stickyShowBuyNow', 'stickyShowAddToCartButton',
       'stickyShowQuantity', 'stickyShowProductImage', 'stickyShowProductName',
       'stickyTrackAnalytics', 'stickyAutoScrollToCheckout',
       // Product Navigation
       'navigationEnabled', 'navigationType', 'showNavigationButtons', 'keyboardShortcuts',
       // Sold Number Display
       'soldNumberEnabled', 'soldNumberType', 'soldNumberMin', 'soldNumberMax', 'soldNumberText',
+      // Mobile Bottom Navbar Settings
+      'mobileBottomNavbarEnabled', 'mobileBottomNavbarShowHome', 'mobileBottomNavbarShowShop',
+      'mobileBottomNavbarShowWishlist', 'mobileBottomNavbarShowAccount', 'mobileBottomNavbarShowCompare',
+      'mobileBottomNavbarShowSearch', 'mobileBottomNavbarShowCart',
       // Variant Styles
       'variantColorStyle', 'variantColorShowName', 'variantColorSize',
       'variantSizeStyle', 'variantSizeShowGuide', 'variantSizeShowStock',
@@ -447,13 +461,13 @@ exports.updateStorefrontSettings = async (req, res) => {
     const updateData = {};
     console.log('🔍 [STOREFRONT-SETTINGS] Processing fields. Total allowed fields:', allowedFields.length);
     console.log('🔍 [STOREFRONT-SETTINGS] Settings data keys:', Object.keys(settingsData));
-    
+
     for (const field of allowedFields) {
       if (settingsData[field] !== undefined) {
         console.log(`🔍 [STOREFRONT-SETTINGS] Processing field: ${field}, type: ${typeof settingsData[field]}, value:`, settingsData[field]);
         // معالجة أنواع البيانات المختلفة
         // IMPORTANT: Check specific fields first before generic patterns
-        
+
         // String fields (must be checked BEFORE Boolean patterns to avoid conversion)
         // List of ALL String fields in StorefrontSettings
         // NOTE: productPageOrder is handled separately in Text/JSON fields section
@@ -474,7 +488,7 @@ exports.updateStorefrontSettings = async (req, res) => {
           'variationImagesBehavior', 'variationImagesAnimation',
           'mobileGalleryLayout', 'imageHoverEffect', 'imageLoadingEffect', 'imagePlaceholder'
         ];
-        
+
         if (stringFields.includes(field)) {
           console.log(`🔍 [STOREFRONT-SETTINGS] Processing STRING field: ${field}, type: ${typeof settingsData[field]}, value:`, settingsData[field]);
           // Handle String fields - convert to string or null
@@ -582,19 +596,19 @@ exports.updateStorefrontSettings = async (req, res) => {
           }
           continue; // Skip to next field
         }
-        
+
         // Boolean filter fields (must be checked first to avoid being caught by generic patterns)
         if (field === 'filterByPrice' || field === 'filterByRating' || field === 'filterByBrand' || field === 'filterByAttributes') {
           updateData[field] = Boolean(settingsData[field]);
           continue; // Skip to next field
         }
-        
+
         // Product Page Layout fields - all Boolean except productPageOrder (handled above)
         if (field.startsWith('productPageShow') || field === 'productPageLayoutEnabled') {
           updateData[field] = Boolean(settingsData[field]);
           continue; // Skip to next field
         }
-        
+
         // Numeric fields (Integer)
         const intFields = [
           'minRatingToDisplay', 'fomoDelay',
@@ -605,18 +619,18 @@ exports.updateStorefrontSettings = async (req, res) => {
           'view360RotateSpeed', 'imageBorderRadius'
         ];
         if (intFields.includes(field) ||
-            field.includes('Count') || field.includes('Days') || field.includes('Items') || 
-            field.includes('Products') || field.includes('Threshold') || field.includes('Interval')) {
+          field.includes('Count') || field.includes('Days') || field.includes('Items') ||
+          field.includes('Products') || field.includes('Threshold') || field.includes('Interval')) {
           updateData[field] = parseInt(settingsData[field]) || 0;
           continue; // Skip to next field
         }
-        
+
         // Float fields
         if (field === 'zoomLevel') {
           updateData[field] = parseFloat(settingsData[field]) || 2.5;
           continue; // Skip to next field
         }
-        
+
         // Boolean fields (generic pattern) - BUT exclude String fields
         // estimatedDeliveryShowOnProduct is Boolean, so it's OK
         // NOTE: productPageOrder and reasonsToPurchaseList are handled separately in Text/JSON fields section
@@ -637,7 +651,7 @@ exports.updateStorefrontSettings = async (req, res) => {
           'variationImagesBehavior', 'variationImagesAnimation',
           'mobileGalleryLayout', 'imageHoverEffect', 'imageLoadingEffect', 'imagePlaceholder'
         ];
-        
+
         // Product Image Gallery Boolean fields
         const imageGalleryBooleanFields = [
           'sliderEnabled', 'sliderAutoplay', 'sliderShowArrows', 'sliderShowDots', 'sliderInfiniteLoop',
@@ -649,7 +663,7 @@ exports.updateStorefrontSettings = async (req, res) => {
           'view360Enabled', 'view360AutoRotate', 'view360ShowControls',
           'imageShadow', 'mouseWheelZoom'
         ];
-        
+
         if (imageGalleryBooleanFields.includes(field)) {
           // Convert to boolean - handle 0/1 and true/false
           const value = settingsData[field];
@@ -658,17 +672,17 @@ exports.updateStorefrontSettings = async (req, res) => {
           updateData[field] = boolValue;
           continue; // Skip to next field
         }
-        
-        if ((field.includes('Enabled') || field.includes('Show') || field.includes('Require') || 
-            field.includes('Moderation') || field.includes('Autoplay') || field.includes('Controls') ||
-            field.startsWith('badge') || field.startsWith('tab') || field.startsWith('share') ||
-            field.startsWith('seo') || field === 'multiLanguageEnabled') &&
-            // Exclude ALL String fields
-            !stringFieldsList.includes(field)) {
+
+        if ((field.includes('Enabled') || field.includes('Show') || field.includes('Require') ||
+          field.includes('Moderation') || field.includes('Autoplay') || field.includes('Controls') ||
+          field.startsWith('badge') || field.startsWith('tab') || field.startsWith('share') ||
+          field.startsWith('seo') || field === 'multiLanguageEnabled') &&
+          // Exclude ALL String fields
+          !stringFieldsList.includes(field)) {
           updateData[field] = Boolean(settingsData[field]);
           continue; // Skip to next field
         }
-        
+
         // JSON/Array fields
         if (field === 'supportedLanguages') {
           if (Array.isArray(settingsData[field])) {
@@ -684,7 +698,7 @@ exports.updateStorefrontSettings = async (req, res) => {
           }
           continue; // Skip to next field
         }
-        
+
         // Text/JSON fields (stored as TEXT in DB) - MUST be checked BEFORE generic patterns
         if (field === 'productPageOrder' || field === 'reasonsToPurchaseList') {
           console.log(`🔍 [STOREFRONT-SETTINGS] Processing TEXT/JSON field: ${field}, type: ${typeof settingsData[field]}, value:`, settingsData[field]);
@@ -708,7 +722,7 @@ exports.updateStorefrontSettings = async (req, res) => {
           console.log(`✅ [STOREFRONT-SETTINGS] ${field} processed, final value:`, updateData[field]);
           continue; // Skip to next field
         }
-        
+
         // Default: keep as is
         updateData[field] = settingsData[field];
       }
@@ -760,24 +774,24 @@ exports.updateStorefrontSettings = async (req, res) => {
     ];
     const debugData = {};
     const typeErrors = [];
-    
+
     stringFieldsList.forEach(field => {
       if (updateData[field] !== undefined) {
         const value = updateData[field];
         const type = typeof value;
         debugData[field] = { value, type };
-        
+
         // Check if String field has wrong type
         if (type === 'boolean') {
           typeErrors.push(`${field} is Boolean but should be String!`);
         }
       }
     });
-    
+
     if (Object.keys(debugData).length > 0) {
       console.log('🔍 [STOREFRONT-SETTINGS] String fields in updateData:', JSON.stringify(debugData, null, 2));
     }
-    
+
     if (typeErrors.length > 0) {
       console.error('❌ [STOREFRONT-SETTINGS] Type errors found:', typeErrors);
       // Fix the errors - use the same logic as in the main loop
@@ -837,7 +851,7 @@ exports.updateStorefrontSettings = async (req, res) => {
     const cleanUpdateData = {};
     for (const [key, value] of Object.entries(updateData)) {
       if (value === undefined) continue; // Skip undefined
-      
+
       // Final type check and fix for String fields
       if (stringFieldsList.includes(key)) {
         if (typeof value === 'boolean') {
@@ -870,7 +884,7 @@ exports.updateStorefrontSettings = async (req, res) => {
           'imageShadow', 'mouseWheelZoom',
           'imageZoomEnabled', 'productVideosEnabled', 'videoAutoplay', 'videoShowControls'
         ];
-        
+
         if (imageGalleryBooleanFields.includes(key)) {
           // Ensure it's a proper boolean
           if (typeof value === 'number') {
@@ -886,7 +900,7 @@ exports.updateStorefrontSettings = async (req, res) => {
     }
 
     console.log('🔄 [STOREFRONT-SETTINGS] Starting upsert with', Object.keys(cleanUpdateData).length, 'fields');
-    
+
     // Final validation log
     stringFieldsList.forEach(field => {
       if (cleanUpdateData[field] !== undefined) {
@@ -908,14 +922,14 @@ exports.updateStorefrontSettings = async (req, res) => {
         }
       }
     });
-    
+
     // Build createData with final validation
     const createData = {
       companyId,
       ...cleanUpdateData,
       supportedLanguages: cleanUpdateData.supportedLanguages || ["ar"]
     };
-    
+
     // Fix ALL Boolean fields in createData that might have Int values
     const allBooleanFields = [
       'sliderEnabled', 'sliderAutoplay', 'sliderShowArrows', 'sliderShowDots', 'sliderInfiniteLoop',
@@ -928,14 +942,14 @@ exports.updateStorefrontSettings = async (req, res) => {
       'imageShadow', 'mouseWheelZoom',
       'imageZoomEnabled', 'productVideosEnabled', 'videoAutoplay', 'videoShowControls'
     ];
-    
+
     allBooleanFields.forEach(field => {
       if (createData[field] !== undefined && typeof createData[field] === 'number') {
         console.log(`🔧 [STOREFRONT-SETTINGS] Fixing createData.${field} from number ${createData[field]} to boolean`);
         createData[field] = createData[field] === 1;
       }
     });
-    
+
     console.log('🔍 [STOREFRONT-SETTINGS] === Checking createData String fields ===');
     allStringFields.forEach(field => {
       if (createData[field] !== undefined) {
@@ -960,25 +974,25 @@ exports.updateStorefrontSettings = async (req, res) => {
 
     console.log('🔄 [STOREFRONT-SETTINGS] Attempting upsert with cleanUpdateData keys:', Object.keys(cleanUpdateData));
     console.log('🔄 [STOREFRONT-SETTINGS] cleanUpdateData sample (first 5):', Object.fromEntries(Object.entries(cleanUpdateData).slice(0, 5)));
-    
+
     // Debug: Check ALL fields for type mismatches
     console.log('🔍🔍🔍 [STOREFRONT-SETTINGS] === FINAL TYPE CHECK BEFORE UPSERT ===');
     Object.entries(cleanUpdateData).forEach(([field, val]) => {
       const valType = typeof val;
       // Check Boolean fields
-      if ((field.includes('Enabled') || field.includes('Show') || field.includes('Autoplay') || 
-           field.includes('Require') || field.includes('Moderation') || field.includes('Controls') ||
-           field.startsWith('badge') || field.startsWith('tab') || field.startsWith('share') ||
-           field.startsWith('seo') || field.includes('Zoom') || field.includes('Loop') ||
-           field.includes('Muted') || field.includes('Icon') || field.includes('Shadow') ||
-           field.includes('Wheel') || field.includes('Swipe') || field.includes('Pinch') ||
-           field.includes('Fullscreen') || field.includes('Thumbnails') || field.includes('Arrows') ||
-           field.includes('Counter') || field.includes('Nav') || field.includes('Overlay') ||
-           field.includes('Rotate') || field.includes('Keyboard')) && valType === 'number') {
+      if ((field.includes('Enabled') || field.includes('Show') || field.includes('Autoplay') ||
+        field.includes('Require') || field.includes('Moderation') || field.includes('Controls') ||
+        field.startsWith('badge') || field.startsWith('tab') || field.startsWith('share') ||
+        field.startsWith('seo') || field.includes('Zoom') || field.includes('Loop') ||
+        field.includes('Muted') || field.includes('Icon') || field.includes('Shadow') ||
+        field.includes('Wheel') || field.includes('Swipe') || field.includes('Pinch') ||
+        field.includes('Fullscreen') || field.includes('Thumbnails') || field.includes('Arrows') ||
+        field.includes('Counter') || field.includes('Nav') || field.includes('Overlay') ||
+        field.includes('Rotate') || field.includes('Keyboard')) && valType === 'number') {
         console.error(`❌❌❌ [STOREFRONT-SETTINGS] BOOLEAN FIELD HAS INT: ${field} = ${val} (type: ${valType})`);
       }
     });
-    
+
     // FINAL FIX: Force convert ALL Boolean fields to proper boolean type
     const forceBooleanFields = [
       'quickViewEnabled', 'quickViewShowAddToCart', 'quickViewShowWishlist',
@@ -1030,7 +1044,7 @@ exports.updateStorefrontSettings = async (req, res) => {
       'capiTrackInitiateCheckout', 'capiTrackPurchase', 'capiTrackSearch',
       'eventDeduplicationEnabled', 'gdprCompliant', 'hashUserData'
     ];
-    
+
     forceBooleanFields.forEach(field => {
       if (cleanUpdateData[field] !== undefined) {
         const val = cleanUpdateData[field];
@@ -1045,14 +1059,14 @@ exports.updateStorefrontSettings = async (req, res) => {
         }
       }
     });
-    
+
     console.log('🔍 [STOREFRONT-SETTINGS] Final cleanUpdateData Boolean check:');
     forceBooleanFields.forEach(field => {
       if (cleanUpdateData[field] !== undefined && typeof cleanUpdateData[field] !== 'boolean') {
         console.error(`❌ STILL NOT BOOLEAN: ${field} = ${cleanUpdateData[field]} (${typeof cleanUpdateData[field]})`);
       }
     });
-    
+
     try {
       const settings = await prisma.storefrontSettings.upsert({
         where: { companyId },
@@ -1072,7 +1086,7 @@ exports.updateStorefrontSettings = async (req, res) => {
       console.error('❌ [STOREFRONT-SETTINGS] Error code:', prismaError.code);
       console.error('❌ [STOREFRONT-SETTINGS] Error meta:', prismaError.meta);
       console.error('❌ [STOREFRONT-SETTINGS] Error message:', prismaError.message);
-      
+
       // Check if it's a field not found error
       if (prismaError.code === 'P2009' || prismaError.message?.includes('Unknown field')) {
         return res.status(500).json({
@@ -1083,7 +1097,7 @@ exports.updateStorefrontSettings = async (req, res) => {
           meta: prismaError.meta
         });
       }
-      
+
       throw prismaError; // Re-throw to be caught by outer catch
     }
   } catch (error) {
@@ -1120,10 +1134,10 @@ exports.getPublicStorefrontSettings = async (req, res) => {
     // Prisma IDs usually start with 'c' followed by alphanumeric characters
     // Slugs are usually lowercase letters, numbers, and hyphens
     const isSlug = !/^c[a-z0-9]{20,}$/.test(companyId);
-    
+
     if (isSlug) {
       console.log('🔍 [STOREFRONT-SETTINGS-PUBLIC] companyId looks like a slug, finding company by slug...');
-      
+
       // Find company by slug
       const company = await prisma.company.findFirst({
         where: {
@@ -1353,7 +1367,7 @@ exports.getPublicStorefrontSettings = async (req, res) => {
         lastPixelTest: settings.lastPixelTest || null,
         lastCapiTest: settings.lastCapiTest || null
       };
-      
+
       // Debug logging
       console.log('📊 [STOREFRONT-SETTINGS-PUBLIC] Returning settings with Pixel:', {
         facebookPixelEnabled: settings.facebookPixelEnabled,
@@ -1398,7 +1412,7 @@ exports.resetStorefrontSettings = async (req, res) => {
     });
 
     const settings = await prisma.storefrontSettings.create({
-      data: { 
+      data: {
         companyId,
         // Ensure supportedLanguages is provided (required Json field)
         supportedLanguages: ["ar"] // Default to Arabic

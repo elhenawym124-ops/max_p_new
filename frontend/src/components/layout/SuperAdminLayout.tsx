@@ -32,7 +32,10 @@ import {
   Psychology as ModelsIcon,
   Timeline as TimelineIcon,
   Speed as SpeedIcon,
-  BarChart as BarChartIcon
+
+  BarChart as BarChartIcon,
+  Palette as PaletteIcon,
+  Web as WebIcon
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuthSimple';
@@ -150,6 +153,16 @@ const SuperAdminLayout: React.FC<SuperAdminLayoutProps> = ({ children }) => {
       path: '/super-admin/system-management'
     },
     {
+      text: 'إدارة الثيمات',
+      icon: <PaletteIcon />,
+      path: '/super-admin/themes'
+    },
+    {
+      text: 'قوالب الصفحة الرئيسية',
+      icon: <WebIcon />,
+      path: '/super-admin/homepage-templates'
+    },
+    {
       text: 'إعدادات النظام',
       icon: <SettingsIcon />,
       path: '/super-admin/settings'
@@ -174,10 +187,10 @@ const SuperAdminLayout: React.FC<SuperAdminLayoutProps> = ({ children }) => {
         <Typography variant="h6" noWrap component="div">
           مدير النظام
         </Typography>
-        <Chip 
-          label="SUPER ADMIN" 
-          color="error" 
-          size="small" 
+        <Chip
+          label="SUPER ADMIN"
+          color="error"
+          size="small"
           sx={{ mt: 1 }}
         />
       </Box>
@@ -207,7 +220,7 @@ const SuperAdminLayout: React.FC<SuperAdminLayoutProps> = ({ children }) => {
               >
                 {item.icon}
               </ListItemIcon>
-              <ListItemText 
+              <ListItemText
                 primary={item.text}
                 sx={{
                   color: location.pathname === item.path ? 'primary.main' : 'inherit'
@@ -276,7 +289,7 @@ const SuperAdminLayout: React.FC<SuperAdminLayoutProps> = ({ children }) => {
               {user?.firstName?.charAt(0)}
             </Avatar>
           </IconButton>
-          
+
           <Menu
             id="profile-menu"
             anchorEl={anchorEl}

@@ -5,6 +5,7 @@ import { getCurrencyByCode } from '../../utils/currency';
 import { authService } from '../../services/authService';
 import { apiClient } from '../../services/apiClient';
 import { productApi, uploadFiles, deleteFile } from '../../utils/apiHelpers';
+import RichTextEditor from '../../components/RichTextEditor';
 import {
   ArrowLeftIcon,
   DocumentTextIcon,
@@ -16,6 +17,7 @@ import {
   Cog6ToothIcon,
   PlusIcon,
   XMarkIcon,
+  EyeIcon,
 } from '@heroicons/react/24/outline';
 
 interface ProductFormData {
@@ -95,16 +97,16 @@ const ProductNewFinal: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const isEditMode = Boolean(id);
   const { currency } = useCurrency();
-  
+
   const currencyInfo = getCurrencyByCode(currency || 'EGP');
   const displayCurrency = currencyInfo?.symbol || 'ج.م';
-  
+
   const [loading, setLoading] = useState(false);
   const [loadingProduct, setLoadingProduct] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [activeTab, setActiveTab] = useState('basic');
-  
+
   const [formData, setFormData] = useState<ProductFormData>({
     name: '',
     description: '',
@@ -131,7 +133,7 @@ const ProductNewFinal: React.FC = () => {
     shippingClass: 'standard',
     excludeFromFreeShipping: false,
   });
-  
+
   const [newTag, setNewTag] = useState('');
   const [showDimensions, setShowDimensions] = useState(false);
   const [showVariants, setShowVariants] = useState(false);
@@ -140,7 +142,7 @@ const ProductNewFinal: React.FC = () => {
   const [images, setImages] = useState<File[]>([]);
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
-  
+
   // Recommended Products
   const [relatedProducts, setRelatedProducts] = useState<string[]>([]);
   const [upsellProducts, setUpsellProducts] = useState<string[]>([]);
@@ -148,7 +150,7 @@ const ProductNewFinal: React.FC = () => {
   const [relatedInput, setRelatedInput] = useState('');
   const [upsellInput, setUpsellInput] = useState('');
   const [crossSellInput, setCrossSellInput] = useState('');
-  
+
   // Product Attributes System
   const [attributes, setAttributes] = useState<ProductAttribute[]>([]);
   const [newAttributeName, setNewAttributeName] = useState('');
@@ -158,6 +160,12 @@ const ProductNewFinal: React.FC = () => {
   const [bulkValue, setBulkValue] = useState<string>('');
   const [showBulkInput, setShowBulkInput] = useState(false);
   const [attributeMode, setAttributeMode] = useState<'templates' | 'custom'>('templates');
+
+  // Custom Variant Display Settings
+  const [variantSettings, setVariantSettings] = useState<{
+    styles: { [key: string]: 'buttons' | 'circles' | 'dropdown' | 'thumbnails' | 'radio' };
+    attributeImages: { [key: string]: { [value: string]: string } };
+  }>({ styles: {}, attributeImages: {} });
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -179,20 +187,23 @@ const ProductNewFinal: React.FC = () => {
   // تحميل بيانات المنتج عند التعديل
   useEffect(() => {
     if (!isEditMode || !id) return;
-    
+
     const fetchProduct = async () => {
       setLoadingProduct(true);
       try {
         const response = await apiClient.get(`/products/${id}`);
         const data = response.data;
-        
+
         if (data.success && data.data) {
           const product = data.data;
-          
+
           // تحديث بيانات النموذج
+          // Ensure description is a string
+          const descriptionValue = product.description ? String(product.description) : '';
+          
           setFormData({
             name: product.name || '',
-            description: product.description || '',
+            description: descriptionValue,
             price: parseFloat(product.price) || 0,
             comparePrice: product.comparePrice ? parseFloat(product.comparePrice) : undefined,
             cost: product.cost ? parseFloat(product.cost) : undefined,
@@ -215,16 +226,16 @@ const ProductNewFinal: React.FC = () => {
             shippingClass: product.shippingClass || 'standard',
             excludeFromFreeShipping: product.excludeFromFreeShipping || false,
           });
-          
+
           // تحميل الصور
           if (product.images) {
             const imgs = typeof product.images === 'string' ? JSON.parse(product.images) : product.images;
             setUploadedImages(imgs || []);
           }
-          
+
           // تحميل المتغيرات
           if (product.variants && product.variants.length > 0) {
-            setVariants(product.variants.map((v: any) => ({
+            const loadedVariants = product.variants.map((v: any) => ({
               id: v.id,
               name: v.name || '',
               type: v.type || 'color',
@@ -245,13 +256,117 @@ const ProductNewFinal: React.FC = () => {
               shippingClass: v.shippingClass || 'standard',
               allowBackorders: v.allowBackorders || false,
               lowStockThreshold: v.lowStockThreshold || 5,
-            })));
+              attributeValues: v.attributeValues ? (typeof v.attributeValues === 'string' ? JSON.parse(v.attributeValues) : v.attributeValues) : {},
+            }));
+            setVariants(loadedVariants);
             setShowVariants(true);
+
+            // استخراج الـ attributes من المتغيرات إذا لم تكن موجودة
+            if (loadedVariants.length > 0) {
+              const extractedAttributes: { [key: string]: Set<string> } = {};
+              
+              loadedVariants.forEach((variant: any) => {
+                // محاولة استخراج من attributeValues أولاً (إذا كان موجوداً في metadata)
+                let attributeValues = null;
+                if (variant.metadata) {
+                  try {
+                    const metadata = typeof variant.metadata === 'string' ? JSON.parse(variant.metadata) : variant.metadata;
+                    attributeValues = metadata.attributeValues || null;
+                  } catch (e) {
+                    // ignore
+                  }
+                }
+                
+                if (attributeValues && typeof attributeValues === 'object') {
+                  Object.keys(attributeValues).forEach(attrKey => {
+                    if (!extractedAttributes[attrKey]) {
+                      extractedAttributes[attrKey] = new Set();
+                    }
+                    extractedAttributes[attrKey].add(attributeValues[attrKey]);
+                  });
+                } else if (variant.name) {
+                  // محاولة استخراج من الاسم (مثل: "أحمر - كبير" أو "أحمر/كبير")
+                  const separators = [' - ', ' / ', ' | ', '-', '/', '|'];
+                  let parts: string[] = [];
+                  
+                  for (const sep of separators) {
+                    if (variant.name.includes(sep)) {
+                      parts = variant.name.split(sep).map((p: string) => p.trim()).filter((p: string) => p);
+                      break;
+                    }
+                  }
+                  
+                  if (parts.length === 0) {
+                    parts = [variant.name.trim()];
+                  }
+                  
+                  if (parts.length > 0) {
+                    // إذا كان هناك جزء واحد فقط، نستخدم type كاسم الصفة
+                    if (parts.length === 1) {
+                      const attrName = variant.type === 'color' ? 'اللون' : 
+                                      variant.type === 'size' ? 'الحجم' : 
+                                      variant.type || 'النوع';
+                      if (!extractedAttributes[attrName]) {
+                        extractedAttributes[attrName] = new Set();
+                      }
+                      extractedAttributes[attrName].add(parts[0]);
+                    } else {
+                      // إذا كان هناك أجزاء متعددة، نستخدم أسماء افتراضية
+                      const defaultNames = ['اللون', 'الحجم', 'النمط', 'المادة'];
+                      parts.forEach((part: string, idx: number) => {
+                        const attrKey = defaultNames[idx] || `صفة ${idx + 1}`;
+                        if (!extractedAttributes[attrKey]) {
+                          extractedAttributes[attrKey] = new Set();
+                        }
+                        extractedAttributes[attrKey].add(part);
+                      });
+                    }
+                  }
+                }
+              });
+
+              // تحويل إلى ProductAttribute format
+              const newAttributes: ProductAttribute[] = Object.keys(extractedAttributes).map((attrKey, idx) => ({
+                id: `extracted-${attrKey}-${idx}-${Date.now()}`,
+                name: attrKey,
+                slug: attrKey.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+                values: Array.from(extractedAttributes[attrKey]),
+                visible: true,
+                forVariations: true,
+              }));
+
+              if (newAttributes.length > 0) {
+                setAttributes(prev => {
+                  // تجنب التكرار
+                  const existingSlugs = new Set(prev.map(a => a.slug));
+                  const uniqueNew = newAttributes.filter(a => !existingSlugs.has(a.slug));
+                  if (uniqueNew.length > 0) {
+                    return [...prev, ...uniqueNew];
+                  }
+                  return prev;
+                });
+              }
+            }
           }
-          
+
           // إظهار الأبعاد إذا كانت موجودة
           if (product.dimensions) {
             setShowDimensions(true);
+          }
+
+          // تحميل إعدادات العرض المخصصة من Metadata
+          if (product.metadata) {
+            try {
+              const metadata = typeof product.metadata === 'string'
+                ? JSON.parse(product.metadata)
+                : product.metadata;
+
+              if (metadata.variantSettings) {
+                setVariantSettings(metadata.variantSettings);
+              }
+            } catch (e) {
+              console.error('Error parsing product metadata:', e);
+            }
           }
         } else {
           setError('فشل في تحميل بيانات المنتج');
@@ -263,9 +378,104 @@ const ProductNewFinal: React.FC = () => {
         setLoadingProduct(false);
       }
     };
-    
+
     fetchProduct();
   }, [id, isEditMode]);
+
+  // استخراج الـ attributes من المتغيرات بعد تحميلها
+  useEffect(() => {
+    if (isEditMode && variants.length > 0) {
+      // التحقق من وجود attributes للمتغيرات
+      const hasVariationAttributes = attributes.some(a => a.forVariations);
+      
+      if (!hasVariationAttributes) {
+        const extractedAttributes: { [key: string]: Set<string> } = {};
+        
+        variants.forEach((variant: ProductVariant) => {
+          // محاولة استخراج من attributeValues في metadata
+          let attributeValues = null;
+          if (variant.metadata) {
+            try {
+              const metadata = typeof variant.metadata === 'string' ? JSON.parse(variant.metadata) : variant.metadata;
+              attributeValues = metadata.attributeValues || null;
+            } catch (e) {
+              // ignore
+            }
+          }
+          
+          if (variant.attributeValues && typeof variant.attributeValues === 'object') {
+            Object.keys(variant.attributeValues).forEach(attrKey => {
+              if (!extractedAttributes[attrKey]) {
+                extractedAttributes[attrKey] = new Set();
+              }
+              extractedAttributes[attrKey].add(variant.attributeValues![attrKey]);
+            });
+          } else if (attributeValues && typeof attributeValues === 'object') {
+            Object.keys(attributeValues).forEach(attrKey => {
+              if (!extractedAttributes[attrKey]) {
+                extractedAttributes[attrKey] = new Set();
+              }
+              extractedAttributes[attrKey].add(attributeValues[attrKey]);
+            });
+          } else if (variant.name) {
+            // محاولة استخراج من الاسم
+            const separators = [' - ', ' / ', ' | ', '-', '/', '|'];
+            let parts: string[] = [];
+            
+            for (const sep of separators) {
+              if (variant.name.includes(sep)) {
+                parts = variant.name.split(sep).map(p => p.trim()).filter(p => p);
+                break;
+              }
+            }
+            
+            if (parts.length === 0) {
+              parts = [variant.name.trim()];
+            }
+            
+            if (parts.length > 0) {
+              if (parts.length === 1) {
+                const attrName = variant.type === 'color' ? 'اللون' : 
+                                variant.type === 'size' ? 'الحجم' : 
+                                variant.type || 'النوع';
+                if (!extractedAttributes[attrName]) {
+                  extractedAttributes[attrName] = new Set();
+                }
+                extractedAttributes[attrName].add(parts[0]);
+              } else {
+                const defaultNames = ['اللون', 'الحجم', 'النمط', 'المادة'];
+                parts.forEach((part: string, idx: number) => {
+                  const attrKey = defaultNames[idx] || `صفة ${idx + 1}`;
+                  if (!extractedAttributes[attrKey]) {
+                    extractedAttributes[attrKey] = new Set();
+                  }
+                  extractedAttributes[attrKey].add(part);
+                });
+              }
+            }
+          }
+        });
+
+        // تحويل إلى ProductAttribute format
+        const newAttributes: ProductAttribute[] = Object.keys(extractedAttributes).map((attrKey, idx) => ({
+          id: `extracted-${attrKey}-${idx}-${Date.now()}`,
+          name: attrKey,
+          slug: attrKey.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+          values: Array.from(extractedAttributes[attrKey]),
+          visible: true,
+          forVariations: true,
+        }));
+
+        if (newAttributes.length > 0) {
+          setAttributes(prev => {
+            const existingSlugs = new Set(prev.map(a => a.slug));
+            const uniqueNew = newAttributes.filter(a => !existingSlugs.has(a.slug));
+            return uniqueNew.length > 0 ? [...prev, ...uniqueNew] : prev;
+          });
+        }
+      }
+    }
+  }, [variants, isEditMode]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
@@ -300,13 +510,13 @@ const ProductNewFinal: React.FC = () => {
 
   const addVariant = () => {
     const baseVariant: ProductVariant = {
-      name: '', 
-      type: 'color', 
-      sku: '', 
-      images: [], 
+      name: '',
+      type: 'color',
+      sku: '',
+      images: [],
       stock: 0,
-      trackInventory: formData.trackInventory, 
-      isActive: true, 
+      trackInventory: formData.trackInventory,
+      isActive: true,
       sortOrder: variants.length,
       // New fields with defaults
       image: undefined,
@@ -333,10 +543,10 @@ const ProductNewFinal: React.FC = () => {
   // ===== Attributes Management =====
   const addAttribute = () => {
     if (!newAttributeName.trim()) return;
-    
+
     const values = newAttributeValuesList.map(v => v.trim()).filter(v => v);
     if (values.length === 0) return;
-    
+
     const newAttr: ProductAttribute = {
       id: `attr_${Date.now()}`,
       name: newAttributeName.trim(),
@@ -345,7 +555,7 @@ const ProductNewFinal: React.FC = () => {
       visible: true,
       forVariations: true
     };
-    
+
     setAttributes(prev => [...prev, newAttr]);
     setNewAttributeName('');
     setNewAttributeValuesList(['']);
@@ -391,7 +601,7 @@ const ProductNewFinal: React.FC = () => {
 
   const updateAttributeValues = (id: string, newValues: string) => {
     const values = newValues.split('|').map(v => v.trim()).filter(v => v);
-    setAttributes(prev => prev.map(attr => 
+    setAttributes(prev => prev.map(attr =>
       attr.id === id ? { ...attr, values } : attr
     ));
   };
@@ -402,7 +612,7 @@ const ProductNewFinal: React.FC = () => {
     if (variationAttributes.length === 0) return;
 
     // Generate all combinations
-    const combinations: { [key: string]: string }[][] = variationAttributes.map(attr => 
+    const combinations: { [key: string]: string }[][] = variationAttributes.map(attr =>
       attr.values.map(value => ({ [attr.slug]: value }))
     );
 
@@ -415,7 +625,7 @@ const ProductNewFinal: React.FC = () => {
     const newVariants: ProductVariant[] = allCombinations.map((combo, idx) => {
       const attributeValues = combo.reduce((acc, curr) => ({ ...acc, ...curr }), {});
       const name = Object.values(attributeValues).join(' - ');
-      
+
       return {
         name,
         type: 'combination',
@@ -440,7 +650,7 @@ const ProductNewFinal: React.FC = () => {
 
   // ===== Bulk Actions =====
   const toggleVariantSelection = (index: number) => {
-    setSelectedVariants(prev => 
+    setSelectedVariants(prev =>
       prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]
     );
   };
@@ -468,7 +678,7 @@ const ProductNewFinal: React.FC = () => {
 
   const applyBulkAction = () => {
     if (!bulkAction || variants.length === 0) return;
-    
+
     const numValue = parseFloat(bulkValue) || 0;
 
     switch (bulkAction) {
@@ -551,7 +761,7 @@ const ProductNewFinal: React.FC = () => {
         setVariants(prev => prev.map(v => ({ ...v, shippingClass: bulkValue })));
         break;
     }
-    
+
     setBulkAction('');
     setBulkValue('');
     setShowBulkInput(false);
@@ -617,29 +827,29 @@ const ProductNewFinal: React.FC = () => {
       setActiveTab('basic');
       return '⚠️ من فضلك أدخل اسم المنتج';
     }
-    
+
     if (!formData.price || formData.price <= 0) {
       setActiveTab('pricing');
       return '⚠️ من فضلك أدخل سعر المنتج (يجب أن يكون أكبر من صفر)';
     }
-    
+
     if (!formData.category || formData.category.trim() === '') {
       setActiveTab('basic');
       return '⚠️ من فضلك اختر فئة المنتج';
     }
-    
+
     // التحقق من السعر القديم
     if (formData.comparePrice && formData.comparePrice <= formData.price) {
       setActiveTab('pricing');
       return '⚠️ السعر قبل الخصم يجب أن يكون أكبر من السعر الحالي';
     }
-    
+
     // التحقق من المخزون
     if (formData.trackInventory && formData.stock < 0) {
       setActiveTab('inventory');
       return '⚠️ كمية المخزون لا يمكن أن تكون سالبة';
     }
-    
+
     // التحقق من تواريخ العرض
     if (formData.saleStartDate && formData.saleEndDate) {
       const startDate = new Date(formData.saleStartDate);
@@ -649,7 +859,7 @@ const ProductNewFinal: React.FC = () => {
         return '⚠️ تاريخ انتهاء العرض يجب أن يكون بعد تاريخ البداية';
       }
     }
-    
+
     // التحقق من المتغيرات
     if (variants.length > 0) {
       for (let i = 0; i < variants.length; i++) {
@@ -668,28 +878,59 @@ const ProductNewFinal: React.FC = () => {
         }
       }
     }
-    
+
     return null; // لا يوجد أخطاء
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    
+
     // التحقق من صحة البيانات أولاً
     const validationError = validateForm();
     if (validationError) {
       setError(validationError);
       return;
     }
-    
+
     setLoading(true);
-    
+
     try {
+      // تحويل الصور base64 إلى URLs قبل الحفظ
+      let processedDescription = formData.description;
+      
+      // البحث عن جميع الصور base64 في الوصف
+      const base64ImageRegex = /<img[^>]+src=["'](data:image\/[^"']+)["'][^>]*>/gi;
+      const base64Matches = [...processedDescription.matchAll(base64ImageRegex)];
+      
+      if (base64Matches.length > 0) {
+        for (const match of base64Matches) {
+          const base64Data = match[1];
+          try {
+            // تحويل base64 إلى File
+            const base64Response = await fetch(base64Data);
+            const blob = await base64Response.blob();
+            const file = new File([blob], `image-${Date.now()}.png`, { type: blob.type });
+            
+            // رفع الصورة
+            const uploadResult = await uploadFiles([file]);
+            if (uploadResult.success && uploadResult.data?.[0]) {
+              const imageUrl = uploadResult.data[0].fullUrl || uploadResult.data[0].url;
+              
+              // استبدال base64 بـ URL
+              processedDescription = processedDescription.replace(base64Data, imageUrl);
+            }
+          } catch (error) {
+            console.error('❌ [ProductNewFinal] Error converting base64 image:', error);
+            // نترك الصورة base64 كما هي إذا فشل التحويل
+          }
+        }
+      }
+
       // إرسال الحقول الموجودة فقط في Prisma Schema
       const productData = {
         name: formData.name,
-        description: formData.description,
+        description: processedDescription,
         price: formData.price,
         comparePrice: formData.comparePrice || null,
         cost: formData.cost || null,
@@ -707,16 +948,19 @@ const ProductNewFinal: React.FC = () => {
         tags: formData.tags,
         weight: formData.weight || null,
         dimensions: formData.dimensions || null,
+        weight: formData.weight || null,
+        dimensions: formData.dimensions || null,
         images: uploadedImages,
+        metadata: JSON.stringify({ variantSettings }),
       };
-      
+
       let result;
-      
+
       if (isEditMode && id) {
         // تحديث المنتج - استخدام PATCH بدلاً من PUT
         const response = await apiClient.patch(`/products/${id}`, productData);
         result = response.data;
-        
+
         if (result.success) {
           // تحديث المتغيرات
           for (const variant of variants) {
@@ -737,7 +981,7 @@ const ProductNewFinal: React.FC = () => {
         // إنشاء منتج جديد
         const response = await productApi.create(productData);
         result = await response.json();
-        
+
         if (result.success) {
           const productId = result.data?.id;
           if (variants.length > 0 && productId) {
@@ -766,6 +1010,7 @@ const ProductNewFinal: React.FC = () => {
     { id: 'media', label: 'الصور', icon: <PhotoIcon className="w-5 h-5" />, badge: uploadedImages.length > 0 ? String(uploadedImages.length) : undefined },
     { id: 'attributes', label: 'الصفات', icon: <SwatchIcon className="w-5 h-5" />, badge: attributes.length > 0 ? String(attributes.length) : undefined },
     { id: 'variants', label: 'المتغيرات', icon: <CubeIcon className="w-5 h-5" />, badge: variants.length > 0 ? String(variants.length) : undefined },
+    { id: 'display', label: 'تخصيص العرض', icon: <EyeIcon className="w-5 h-5" /> },
     { id: 'shipping', label: 'الشحن', icon: <TruckIcon className="w-5 h-5" /> },
     { id: 'advanced', label: 'متقدم', icon: <Cog6ToothIcon className="w-5 h-5" /> },
   ];
@@ -816,14 +1061,14 @@ const ProductNewFinal: React.FC = () => {
           </div>
           {/* أزرار الحفظ في الأعلى */}
           <div className="flex items-center gap-3">
-            <button 
-              type="button" 
-              onClick={() => navigate('/products')} 
+            <button
+              type="button"
+              onClick={() => navigate('/products')}
               className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
             >
               إلغاء
             </button>
-            <button 
+            <button
               type="button"
               onClick={(e) => {
                 e.preventDefault();
@@ -854,9 +1099,8 @@ const ProductNewFinal: React.FC = () => {
                       key={tab.id}
                       type="button"
                       onClick={() => setActiveTab(tab.id)}
-                      className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${
-                        activeTab === tab.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-700 hover:bg-gray-100'
-                      }`}
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-700 hover:bg-gray-100'
+                        }`}
                     >
                       <span className="flex-shrink-0">{tab.icon}</span>
                       <span className="text-right flex-1">{tab.label}</span>
@@ -884,7 +1128,7 @@ const ProductNewFinal: React.FC = () => {
                       <h3 className="text-sm font-bold text-red-800">يرجى تصحيح الخطأ التالي:</h3>
                       <p className="mt-1 text-sm text-red-700">{error}</p>
                     </div>
-                    <button 
+                    <button
                       type="button"
                       onClick={() => setError(null)}
                       className="mr-auto text-red-500 hover:text-red-700"
@@ -905,9 +1149,25 @@ const ProductNewFinal: React.FC = () => {
                     <input type="text" name="name" value={formData.name} onChange={handleInputChange} className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" required />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">الوصف</label>
-                    <textarea name="description" rows={4} maxLength={5000} value={formData.description} onChange={handleInputChange} className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" placeholder="وصف تفصيلي للمنتج" />
-                    <p className="mt-1 text-xs text-gray-500">{formData.description.length}/5000 حرف</p>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">الوصف</label>
+                    <RichTextEditor
+                      key={id || 'new'} // Force re-render when product ID changes
+                      value={formData.description || ''}
+                      onChange={(value) => {
+                        const event = {
+                          target: {
+                            name: 'description',
+                            value: value
+                          }
+                        } as React.ChangeEvent<HTMLTextAreaElement>;
+                        handleInputChange(event);
+                      }}
+                      placeholder="اكتب وصف تفصيلي للمنتج مع إمكانية التنسيق..."
+                      minHeight="250px"
+                    />
+                    <p className="mt-2 text-xs text-gray-500">
+                      يمكنك استخدام أدوات التنسيق لتنسيق الوصف مثل WooCommerce
+                    </p>
                   </div>
                   <div className="grid grid-cols-2 gap-6">
                     <div>
@@ -960,12 +1220,12 @@ const ProductNewFinal: React.FC = () => {
                       <p className="mt-1 text-xs text-gray-500">تاريخ ووقت انتهاء العرض (اختياري)</p>
                     </div>
                   </div>
-                  {formData.saleStartDate && formData.saleEndDate && 
-                   new Date(formData.saleStartDate) >= new Date(formData.saleEndDate) && (
-                    <p className="mt-2 text-sm text-red-600">
-                      ⚠️ تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية
-                    </p>
-                  )}
+                  {formData.saleStartDate && formData.saleEndDate &&
+                    new Date(formData.saleStartDate) >= new Date(formData.saleEndDate) && (
+                      <p className="mt-2 text-sm text-red-600">
+                        ⚠️ تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية
+                      </p>
+                    )}
                 </div>
               )}
 
@@ -1058,11 +1318,10 @@ const ProductNewFinal: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setAttributeMode('templates')}
-                      className={`flex-1 p-4 rounded-lg border-2 transition-all ${
-                        attributeMode === 'templates' 
-                          ? 'border-indigo-500 bg-indigo-50' 
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
+                      className={`flex-1 p-4 rounded-lg border-2 transition-all ${attributeMode === 'templates'
+                        ? 'border-indigo-500 bg-indigo-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                        }`}
                     >
                       <div className="text-2xl mb-2">📦</div>
                       <h4 className="font-medium text-gray-900">قوالب جاهزة</h4>
@@ -1071,11 +1330,10 @@ const ProductNewFinal: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setAttributeMode('custom')}
-                      className={`flex-1 p-4 rounded-lg border-2 transition-all ${
-                        attributeMode === 'custom' 
-                          ? 'border-indigo-500 bg-indigo-50' 
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
+                      className={`flex-1 p-4 rounded-lg border-2 transition-all ${attributeMode === 'custom'
+                        ? 'border-indigo-500 bg-indigo-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                        }`}
                     >
                       <div className="text-2xl mb-2">✏️</div>
                       <h4 className="font-medium text-gray-900">صفات مخصصة</h4>
@@ -1117,11 +1375,10 @@ const ProductNewFinal: React.FC = () => {
                                 }
                               }}
                               disabled={isAdded}
-                              className={`p-3 rounded-lg border-2 transition-all text-center ${
-                                isAdded 
-                                  ? 'border-green-300 bg-green-50 cursor-default' 
-                                  : 'border-dashed border-gray-300 hover:border-indigo-400 hover:bg-indigo-50'
-                              }`}
+                              className={`p-3 rounded-lg border-2 transition-all text-center ${isAdded
+                                ? 'border-green-300 bg-green-50 cursor-default'
+                                : 'border-dashed border-gray-300 hover:border-indigo-400 hover:bg-indigo-50'
+                                }`}
                             >
                               <span className="text-2xl">{template.icon}</span>
                               <p className="text-sm font-medium text-gray-700 mt-1">{template.name}</p>
@@ -1317,7 +1574,7 @@ const ProductNewFinal: React.FC = () => {
                               <option value="set_shipping_class">📦 تعيين فئة الشحن</option>
                             </optgroup>
                           </select>
-                          
+
                           {/* Input for value-based actions */}
                           {showBulkInput && bulkAction !== 'set_shipping_class' && (
                             <input
@@ -1326,17 +1583,17 @@ const ProductNewFinal: React.FC = () => {
                               onChange={e => setBulkValue(e.target.value)}
                               placeholder={
                                 bulkAction.includes('percent') ? 'النسبة %' :
-                                bulkAction.includes('price') || bulkAction.includes('cost') ? 'المبلغ' :
-                                bulkAction.includes('stock') ? 'الكمية' :
-                                bulkAction.includes('weight') ? 'الوزن (كجم)' :
-                                'القيمة'
+                                  bulkAction.includes('price') || bulkAction.includes('cost') ? 'المبلغ' :
+                                    bulkAction.includes('stock') ? 'الكمية' :
+                                      bulkAction.includes('weight') ? 'الوزن (كجم)' :
+                                        'القيمة'
                               }
                               className="border-gray-300 rounded-md text-sm w-28"
                               min="0"
                               step={bulkAction.includes('weight') ? '0.01' : '1'}
                             />
                           )}
-                          
+
                           {/* Shipping class select */}
                           {showBulkInput && bulkAction === 'set_shipping_class' && (
                             <select
@@ -1351,7 +1608,7 @@ const ProductNewFinal: React.FC = () => {
                               <option value="express">سريع</option>
                             </select>
                           )}
-                          
+
                           <button
                             type="button"
                             onClick={applyBulkAction}
@@ -1364,121 +1621,101 @@ const ProductNewFinal: React.FC = () => {
                       </div>
                     )}
 
-                  {showVariants && (
-                    <div className="space-y-6">
-                      {variants.map((variant, idx) => (
-                        <div key={idx} className="border border-gray-300 rounded-lg overflow-hidden">
-                          {/* Variant Header */}
-                          <div className="bg-gray-100 px-4 py-3 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <span className="bg-indigo-600 text-white text-xs px-2 py-1 rounded">{idx + 1}</span>
-                              <h4 className="font-medium text-gray-800">
-                                {variant.name || 'متغير جديد'}
-                                {variant.type && <span className="text-gray-500 text-sm mr-2">({variant.type === 'color' ? 'لون' : variant.type === 'size' ? 'حجم' : variant.type})</span>}
-                              </h4>
-                            </div>
-                            <button type="button" onClick={() => removeVariant(idx)} className="text-red-500 hover:text-red-700 p-1">
-                              <XMarkIcon className="h-5 w-5" />
-                            </button>
-                          </div>
-
-                          {/* Variant Content */}
-                          <div className="p-4 space-y-6">
-                            {/* Section 1: Basic Info */}
-                            <div className="border-b border-gray-200 pb-4">
-                              <h5 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
-                                <DocumentTextIcon className="h-4 w-4 ml-1" />
-                                المعلومات الأساسية
-                              </h5>
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1">اسم المتغير *</label>
-                                  <input
-                                    type="text"
-                                    value={variant.name}
-                                    onChange={e => updateVariant(idx, 'name', e.target.value)}
-                                    placeholder="مثل: أبيض، كبير"
-                                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1">نوع المتغير</label>
-                                  <select
-                                    value={variant.type}
-                                    onChange={e => updateVariant(idx, 'type', e.target.value)}
-                                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                                  >
-                                    <option value="color">لون</option>
-                                    <option value="size">حجم</option>
-                                    <option value="material">مادة</option>
-                                    <option value="style">نمط</option>
-                                    <option value="other">أخرى</option>
-                                  </select>
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1">SKU</label>
-                                  <input
-                                    type="text"
-                                    value={variant.sku}
-                                    onChange={e => updateVariant(idx, 'sku', e.target.value)}
-                                    placeholder="PROD-VAR-001"
-                                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                                  />
-                                </div>
+                    {showVariants && (
+                      <div className="space-y-6">
+                        {variants.map((variant, idx) => (
+                          <div key={idx} className="border border-gray-300 rounded-lg overflow-hidden">
+                            {/* Variant Header */}
+                            <div className="bg-gray-100 px-4 py-3 flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <span className="bg-indigo-600 text-white text-xs px-2 py-1 rounded">{idx + 1}</span>
+                                <h4 className="font-medium text-gray-800">
+                                  {variant.name || 'متغير جديد'}
+                                  {variant.type && <span className="text-gray-500 text-sm mr-2">({variant.type === 'color' ? 'لون' : variant.type === 'size' ? 'حجم' : variant.type})</span>}
+                                </h4>
                               </div>
-                              {/* Description */}
-                              <div className="mt-3">
-                                <label className="block text-sm font-medium text-gray-700 mb-1">وصف المتغير</label>
-                                <textarea
-                                  value={variant.description || ''}
-                                  onChange={e => updateVariant(idx, 'description', e.target.value)}
-                                  rows={2}
-                                  placeholder="وصف مختصر لهذا المتغير (اختياري)"
-                                  className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                                />
-                              </div>
+                              <button type="button" onClick={() => removeVariant(idx)} className="text-red-500 hover:text-red-700 p-1">
+                                <XMarkIcon className="h-5 w-5" />
+                              </button>
                             </div>
 
-                            {/* Section 2: Image */}
-                            <div className="border-b border-gray-200 pb-4">
-                              <h5 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
-                                <PhotoIcon className="h-4 w-4 ml-1" />
-                                صورة المتغير
-                              </h5>
-                              <div className="flex items-center gap-4">
-                                {variant.image ? (
-                                  <div className="relative group">
-                                    <img src={variant.image} alt="" className="h-24 w-24 object-cover rounded-lg border" />
-                                    <button
-                                      type="button"
-                                      onClick={() => updateVariant(idx, 'image', undefined)}
-                                      className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-red-600"
-                                    >×</button>
-                                  </div>
-                                ) : (
-                                  <label className="h-24 w-24 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center bg-gray-50 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 transition-colors">
-                                    <PhotoIcon className="h-8 w-8 text-gray-400" />
-                                    <span className="text-xs text-gray-500 mt-1">رفع صورة</span>
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      onChange={e => handleVariantImageChange(idx, e)}
-                                      className="hidden"
-                                    />
-                                  </label>
-                                )}
-                                <div className="flex-1 space-y-2">
-                                  <div className="flex gap-2">
+                            {/* Variant Content */}
+                            <div className="p-4 space-y-6">
+                              {/* Section 1: Basic Info */}
+                              <div className="border-b border-gray-200 pb-4">
+                                <h5 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
+                                  <DocumentTextIcon className="h-4 w-4 ml-1" />
+                                  المعلومات الأساسية
+                                </h5>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">اسم المتغير *</label>
                                     <input
                                       type="text"
-                                      value={variant.image || ''}
-                                      onChange={e => updateVariant(idx, 'image', e.target.value)}
-                                      placeholder="أو أدخل رابط الصورة"
-                                      className="flex-1 border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                                      value={variant.name}
+                                      onChange={e => updateVariant(idx, 'name', e.target.value)}
+                                      placeholder="مثل: أبيض، كبير"
+                                      className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
                                     />
-                                    <label className="px-3 py-2 bg-indigo-600 text-white rounded-md text-sm cursor-pointer hover:bg-indigo-700 flex items-center gap-1">
-                                      <PhotoIcon className="h-4 w-4" />
-                                      رفع
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">نوع المتغير</label>
+                                    <select
+                                      value={variant.type}
+                                      onChange={e => updateVariant(idx, 'type', e.target.value)}
+                                      className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                                    >
+                                      <option value="color">لون</option>
+                                      <option value="size">حجم</option>
+                                      <option value="material">مادة</option>
+                                      <option value="style">نمط</option>
+                                      <option value="other">أخرى</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">SKU</label>
+                                    <input
+                                      type="text"
+                                      value={variant.sku}
+                                      onChange={e => updateVariant(idx, 'sku', e.target.value)}
+                                      placeholder="PROD-VAR-001"
+                                      className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                                    />
+                                  </div>
+                                </div>
+                                {/* Description */}
+                                <div className="mt-3">
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">وصف المتغير</label>
+                                  <textarea
+                                    value={variant.description || ''}
+                                    onChange={e => updateVariant(idx, 'description', e.target.value)}
+                                    rows={2}
+                                    placeholder="وصف مختصر لهذا المتغير (اختياري)"
+                                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Section 2: Image */}
+                              <div className="border-b border-gray-200 pb-4">
+                                <h5 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
+                                  <PhotoIcon className="h-4 w-4 ml-1" />
+                                  صورة المتغير
+                                </h5>
+                                <div className="flex items-center gap-4">
+                                  {variant.image ? (
+                                    <div className="relative group">
+                                      <img src={variant.image} alt="" className="h-24 w-24 object-cover rounded-lg border" />
+                                      <button
+                                        type="button"
+                                        onClick={() => updateVariant(idx, 'image', undefined)}
+                                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-red-600"
+                                      >×</button>
+                                    </div>
+                                  ) : (
+                                    <label className="h-24 w-24 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center bg-gray-50 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 transition-colors">
+                                      <PhotoIcon className="h-8 w-8 text-gray-400" />
+                                      <span className="text-xs text-gray-500 mt-1">رفع صورة</span>
                                       <input
                                         type="file"
                                         accept="image/*"
@@ -1486,226 +1723,387 @@ const ProductNewFinal: React.FC = () => {
                                         className="hidden"
                                       />
                                     </label>
+                                  )}
+                                  <div className="flex-1 space-y-2">
+                                    <div className="flex gap-2">
+                                      <input
+                                        type="text"
+                                        value={variant.image || ''}
+                                        onChange={e => updateVariant(idx, 'image', e.target.value)}
+                                        placeholder="أو أدخل رابط الصورة"
+                                        className="flex-1 border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                                      />
+                                      <label className="px-3 py-2 bg-indigo-600 text-white rounded-md text-sm cursor-pointer hover:bg-indigo-700 flex items-center gap-1">
+                                        <PhotoIcon className="h-4 w-4" />
+                                        رفع
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          onChange={e => handleVariantImageChange(idx, e)}
+                                          className="hidden"
+                                        />
+                                      </label>
+                                    </div>
+                                    <p className="text-xs text-gray-500">صورة مختلفة لهذا المتغير (اختياري)</p>
                                   </div>
-                                  <p className="text-xs text-gray-500">صورة مختلفة لهذا المتغير (اختياري)</p>
                                 </div>
                               </div>
-                            </div>
 
-                            {/* Section 3: Pricing */}
-                            <div className="border-b border-gray-200 pb-4">
-                              <h5 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
-                                <CurrencyDollarIcon className="h-4 w-4 ml-1" />
-                                التسعير
-                              </h5>
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1">السعر في الخصم ({displayCurrency})</label>
-                                  <input
-                                    type="number"
-                                    value={variant.price || ''}
-                                    onChange={e => updateVariant(idx, 'price', e.target.value ? parseFloat(e.target.value) : undefined)}
-                                    min="0"
-                                    step="0.01"
-                                    placeholder="السعر بعد الخصم"
-                                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1">السعر الأساسي ({displayCurrency})</label>
-                                  <input
-                                    type="number"
-                                    value={variant.comparePrice || ''}
-                                    onChange={e => updateVariant(idx, 'comparePrice', e.target.value ? parseFloat(e.target.value) : undefined)}
-                                    min="0"
-                                    step="0.01"
-                                    placeholder="السعر قبل الخصم"
-                                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1">سعر الشراء ({displayCurrency})</label>
-                                  <input
-                                    type="number"
-                                    value={variant.cost || ''}
-                                    onChange={e => updateVariant(idx, 'cost', e.target.value ? parseFloat(e.target.value) : undefined)}
-                                    min="0"
-                                    step="0.01"
-                                    placeholder="تكلفة الشراء"
-                                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                                  />
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Section 4: Inventory */}
-                            <div className="border-b border-gray-200 pb-4">
-                              <h5 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
-                                <CubeIcon className="h-4 w-4 ml-1" />
-                                المخزون
-                              </h5>
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                <div className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
+                              {/* Section 3: Pricing */}
+                              <div className="border-b border-gray-200 pb-4">
+                                <h5 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
+                                  <CurrencyDollarIcon className="h-4 w-4 ml-1" />
+                                  التسعير
+                                </h5>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                   <div>
-                                    <label className="block text-sm font-medium text-gray-700">تتبع المخزون</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">السعر في الخصم ({displayCurrency})</label>
+                                    <input
+                                      type="number"
+                                      value={variant.price || ''}
+                                      onChange={e => updateVariant(idx, 'price', e.target.value ? parseFloat(e.target.value) : undefined)}
+                                      min="0"
+                                      step="0.01"
+                                      placeholder="السعر بعد الخصم"
+                                      className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                                    />
                                   </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">السعر الأساسي ({displayCurrency})</label>
+                                    <input
+                                      type="number"
+                                      value={variant.comparePrice || ''}
+                                      onChange={e => updateVariant(idx, 'comparePrice', e.target.value ? parseFloat(e.target.value) : undefined)}
+                                      min="0"
+                                      step="0.01"
+                                      placeholder="السعر قبل الخصم"
+                                      className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">سعر الشراء ({displayCurrency})</label>
+                                    <input
+                                      type="number"
+                                      value={variant.cost || ''}
+                                      onChange={e => updateVariant(idx, 'cost', e.target.value ? parseFloat(e.target.value) : undefined)}
+                                      min="0"
+                                      step="0.01"
+                                      placeholder="تكلفة الشراء"
+                                      className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Section 4: Inventory */}
+                              <div className="border-b border-gray-200 pb-4">
+                                <h5 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
+                                  <CubeIcon className="h-4 w-4 ml-1" />
+                                  المخزون
+                                </h5>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                  <div className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-700">تتبع المخزون</label>
+                                    </div>
+                                    <input
+                                      type="checkbox"
+                                      checked={variant.trackInventory}
+                                      onChange={e => updateVariant(idx, 'trackInventory', e.target.checked)}
+                                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                                    />
+                                  </div>
+                                  {variant.trackInventory && (
+                                    <>
+                                      <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">الكمية</label>
+                                        <input
+                                          type="number"
+                                          value={variant.stock}
+                                          onChange={e => updateVariant(idx, 'stock', parseInt(e.target.value) || 0)}
+                                          min="0"
+                                          className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                                        />
+                                      </div>
+                                      <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">حد التنبيه</label>
+                                        <input
+                                          type="number"
+                                          value={variant.lowStockThreshold || ''}
+                                          onChange={e => updateVariant(idx, 'lowStockThreshold', parseInt(e.target.value) || undefined)}
+                                          min="0"
+                                          placeholder="5"
+                                          className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                                        />
+                                      </div>
+                                      <div className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
+                                        <div>
+                                          <label className="block text-sm font-medium text-gray-700">طلبات مسبقة</label>
+                                          <p className="text-xs text-gray-500">السماح بالشراء عند نفاد المخزون</p>
+                                        </div>
+                                        <input
+                                          type="checkbox"
+                                          checked={variant.allowBackorders || false}
+                                          onChange={e => updateVariant(idx, 'allowBackorders', e.target.checked)}
+                                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                                        />
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Section 5: Shipping */}
+                              <div className="border-b border-gray-200 pb-4">
+                                <h5 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
+                                  <TruckIcon className="h-4 w-4 ml-1" />
+                                  الشحن
+                                </h5>
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">الوزن (كجم)</label>
+                                    <input
+                                      type="number"
+                                      value={variant.weight || ''}
+                                      onChange={e => updateVariant(idx, 'weight', e.target.value ? parseFloat(e.target.value) : undefined)}
+                                      min="0"
+                                      step="0.01"
+                                      placeholder="0.5"
+                                      className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">الطول (سم)</label>
+                                    <input
+                                      type="number"
+                                      value={variant.dimensions?.length || ''}
+                                      onChange={e => updateVariant(idx, 'dimensions', { ...variant.dimensions, length: e.target.value ? parseFloat(e.target.value) : undefined })}
+                                      min="0"
+                                      placeholder="20"
+                                      className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">العرض (سم)</label>
+                                    <input
+                                      type="number"
+                                      value={variant.dimensions?.width || ''}
+                                      onChange={e => updateVariant(idx, 'dimensions', { ...variant.dimensions, width: e.target.value ? parseFloat(e.target.value) : undefined })}
+                                      min="0"
+                                      placeholder="15"
+                                      className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">الارتفاع (سم)</label>
+                                    <input
+                                      type="number"
+                                      value={variant.dimensions?.height || ''}
+                                      onChange={e => updateVariant(idx, 'dimensions', { ...variant.dimensions, height: e.target.value ? parseFloat(e.target.value) : undefined })}
+                                      min="0"
+                                      placeholder="10"
+                                      className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="mt-3">
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">فئة الشحن</label>
+                                  <select
+                                    value={variant.shippingClass || 'standard'}
+                                    onChange={e => updateVariant(idx, 'shippingClass', e.target.value)}
+                                    className="block w-full md:w-1/3 border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                                  >
+                                    <option value="standard">عادي (Standard)</option>
+                                    <option value="heavy">ثقيل (Heavy)</option>
+                                    <option value="fragile">قابل للكسر (Fragile)</option>
+                                    <option value="express">سريع (Express)</option>
+                                  </select>
+                                </div>
+                              </div>
+
+                              {/* Section 6: Status */}
+                              <div className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700">حالة المتغير</label>
+                                  <p className="text-xs text-gray-500">تفعيل أو إيقاف هذا المتغير</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-sm ${variant.isActive ? 'text-green-600' : 'text-gray-500'}`}>
+                                    {variant.isActive ? 'نشط' : 'غير نشط'}
+                                  </span>
                                   <input
                                     type="checkbox"
-                                    checked={variant.trackInventory}
-                                    onChange={e => updateVariant(idx, 'trackInventory', e.target.checked)}
+                                    checked={variant.isActive}
+                                    onChange={e => updateVariant(idx, 'isActive', e.target.checked)}
                                     className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                                   />
                                 </div>
-                                {variant.trackInventory && (
-                                  <>
-                                    <div>
-                                      <label className="block text-sm font-medium text-gray-700 mb-1">الكمية</label>
-                                      <input
-                                        type="number"
-                                        value={variant.stock}
-                                        onChange={e => updateVariant(idx, 'stock', parseInt(e.target.value) || 0)}
-                                        min="0"
-                                        className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="block text-sm font-medium text-gray-700 mb-1">حد التنبيه</label>
-                                      <input
-                                        type="number"
-                                        value={variant.lowStockThreshold || ''}
-                                        onChange={e => updateVariant(idx, 'lowStockThreshold', parseInt(e.target.value) || undefined)}
-                                        min="0"
-                                        placeholder="5"
-                                        className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                                      />
-                                    </div>
-                                    <div className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
-                                      <div>
-                                        <label className="block text-sm font-medium text-gray-700">طلبات مسبقة</label>
-                                        <p className="text-xs text-gray-500">السماح بالشراء عند نفاد المخزون</p>
-                                      </div>
-                                      <input
-                                        type="checkbox"
-                                        checked={variant.allowBackorders || false}
-                                        onChange={e => updateVariant(idx, 'allowBackorders', e.target.checked)}
-                                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                                      />
-                                    </div>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Section 5: Shipping */}
-                            <div className="border-b border-gray-200 pb-4">
-                              <h5 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
-                                <TruckIcon className="h-4 w-4 ml-1" />
-                                الشحن
-                              </h5>
-                              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1">الوزن (كجم)</label>
-                                  <input
-                                    type="number"
-                                    value={variant.weight || ''}
-                                    onChange={e => updateVariant(idx, 'weight', e.target.value ? parseFloat(e.target.value) : undefined)}
-                                    min="0"
-                                    step="0.01"
-                                    placeholder="0.5"
-                                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1">الطول (سم)</label>
-                                  <input
-                                    type="number"
-                                    value={variant.dimensions?.length || ''}
-                                    onChange={e => updateVariant(idx, 'dimensions', { ...variant.dimensions, length: e.target.value ? parseFloat(e.target.value) : undefined })}
-                                    min="0"
-                                    placeholder="20"
-                                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1">العرض (سم)</label>
-                                  <input
-                                    type="number"
-                                    value={variant.dimensions?.width || ''}
-                                    onChange={e => updateVariant(idx, 'dimensions', { ...variant.dimensions, width: e.target.value ? parseFloat(e.target.value) : undefined })}
-                                    min="0"
-                                    placeholder="15"
-                                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1">الارتفاع (سم)</label>
-                                  <input
-                                    type="number"
-                                    value={variant.dimensions?.height || ''}
-                                    onChange={e => updateVariant(idx, 'dimensions', { ...variant.dimensions, height: e.target.value ? parseFloat(e.target.value) : undefined })}
-                                    min="0"
-                                    placeholder="10"
-                                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                                  />
-                                </div>
-                              </div>
-                              <div className="mt-3">
-                                <label className="block text-sm font-medium text-gray-700 mb-1">فئة الشحن</label>
-                                <select
-                                  value={variant.shippingClass || 'standard'}
-                                  onChange={e => updateVariant(idx, 'shippingClass', e.target.value)}
-                                  className="block w-full md:w-1/3 border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                                >
-                                  <option value="standard">عادي (Standard)</option>
-                                  <option value="heavy">ثقيل (Heavy)</option>
-                                  <option value="fragile">قابل للكسر (Fragile)</option>
-                                  <option value="express">سريع (Express)</option>
-                                </select>
-                              </div>
-                            </div>
-
-                            {/* Section 6: Status */}
-                            <div className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700">حالة المتغير</label>
-                                <p className="text-xs text-gray-500">تفعيل أو إيقاف هذا المتغير</p>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className={`text-sm ${variant.isActive ? 'text-green-600' : 'text-gray-500'}`}>
-                                  {variant.isActive ? 'نشط' : 'غير نشط'}
-                                </span>
-                                <input
-                                  type="checkbox"
-                                  checked={variant.isActive}
-                                  onChange={e => updateVariant(idx, 'isActive', e.target.checked)}
-                                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                                />
                               </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
 
-                      {/* Add Variant Button */}
-                      <button
-                        type="button"
-                        onClick={addVariant}
-                        className="w-full flex justify-center items-center px-4 py-3 border-2 border-dashed border-indigo-300 rounded-lg text-indigo-600 hover:border-indigo-500 hover:bg-indigo-50 transition-colors"
-                      >
-                        <PlusIcon className="h-5 w-5 ml-2" />
-                        إضافة متغير جديد
-                      </button>
+                        {/* Add Variant Button */}
+                        <button
+                          type="button"
+                          onClick={addVariant}
+                          className="w-full flex justify-center items-center px-4 py-3 border-2 border-dashed border-indigo-300 rounded-lg text-indigo-600 hover:border-indigo-500 hover:bg-indigo-50 transition-colors"
+                        >
+                          <PlusIcon className="h-5 w-5 ml-2" />
+                          إضافة متغير جديد
+                        </button>
 
-                      {/* Info Box */}
-                      {variants.length === 0 && (
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-                          <CubeIcon className="h-12 w-12 text-blue-400 mx-auto mb-2" />
-                          <p className="text-blue-700 font-medium">لا توجد متغيرات</p>
-                          <p className="text-blue-600 text-sm">أضف متغيرات للمنتج مثل الألوان أو الأحجام المختلفة</p>
-                        </div>
-                      )}
+                        {/* Info Box */}
+                        {variants.length === 0 && (
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                            <CubeIcon className="h-12 w-12 text-blue-400 mx-auto mb-2" />
+                            <p className="text-blue-700 font-medium">لا توجد متغيرات</p>
+                            <p className="text-blue-600 text-sm">أضف متغيرات للمنتج مثل الألوان أو الأحجام المختلفة</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Display Customization Tab */}
+              {activeTab === 'display' && (
+                <div className="space-y-6">
+                  <div className="bg-white shadow rounded-lg p-6">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600">
+                        <EyeIcon className="h-6 w-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-medium text-gray-900">تخصيص عرض المتغيرات</h3>
+                        <p className="text-sm text-gray-500">
+                          اختر كيف تظهر المتغيرات (الألوان، المقاسات) للعملاء في صفحة المنتج.
+                          هذه الإعدادات خاصة بهذا المنتج فقط وتلغي الإعدادات العامة.
+                        </p>
+                      </div>
                     </div>
-                  )}
+
+                    {attributes.filter(a => a.forVariations).length === 0 ? (
+                      <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
+                        <SwatchIcon className="mx-auto h-12 w-12 text-gray-400" />
+                        <h3 className="mt-2 text-sm font-medium text-gray-900">لا توجد صفات للمتغيرات</h3>
+                        <p className="mt-1 text-sm text-gray-500">قم بإضافة صفات مثل "اللون" أو "الحجم" في تبويب الصفات أولاً.</p>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('attributes')}
+                          className="mt-6 inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
+                        >
+                          الذهاب للصفات
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-8">
+                        {attributes.filter(a => a.forVariations).map((attr) => (
+                          <div key={attr.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                            <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+                              <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                                <span className="bg-white px-2 py-1 rounded border border-gray-200 text-xs text-gray-500 uppercase">
+                                  {attr.name}
+                                </span>
+                              </h4>
+                              <select
+                                value={variantSettings.styles[attr.name] || ''}
+                                onChange={(e) => {
+                                  const val = e.target.value as any;
+                                  setVariantSettings(prev => ({
+                                    ...prev,
+                                    styles: { ...prev.styles, [attr.name]: val }
+                                  }));
+                                }}
+                                className="block w-48 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                              >
+                                <option value="">(افتراضي من المتجر)</option>
+                                <option value="buttons">أزرار (Buttons)</option>
+                                <option value="circles">دوائر ألوان (Circles)</option>
+                                <option value="dropdown">قائمة منسدلة (Dropdown)</option>
+                                <option value="thumbnails">صور مصغرة (Thumbnails)</option>
+                                <option value="radio">خيارات (Radio)</option>
+                              </select>
+                            </div>
+
+                            <div className="p-4 bg-white">
+                              <p className="text-sm text-gray-500 mb-4">
+                                يمكنك تخصيص صورة لكل قيمة (مثلاً صورة القماش للون الأحمر).
+                                ستظهر هذه الصور عند اختيار نمط "دوائر ألوان" أو "صور مصغرة".
+                              </p>
+
+                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                                {attr.values.map((value) => {
+                                  const currentImage = variantSettings.attributeImages[attr.name]?.[value];
+
+                                  return (
+                                    <div key={value} className="relative group border border-gray-200 rounded-lg p-2 hover:border-indigo-300 transition-colors">
+                                      <p className="text-xs font-medium text-center mb-2 text-gray-700 truncate" title={value}>{value}</p>
+
+                                      <div className="aspect-square bg-gray-50 rounded-md overflow-hidden relative">
+                                        {currentImage ? (
+                                          <>
+                                            <img src={currentImage} alt={value} className="w-full h-full object-cover" />
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                const newImages = { ...(variantSettings.attributeImages[attr.name] || {}) };
+                                                delete newImages[value];
+                                                setVariantSettings(prev => ({
+                                                  ...prev,
+                                                  attributeImages: { ...prev.attributeImages, [attr.name]: newImages }
+                                                }));
+                                              }}
+                                              className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs"
+                                            >
+                                              ×
+                                            </button>
+                                          </>
+                                        ) : (
+                                          <label className="flex flex-col items-center justify-center w-full h-full cursor-pointer hover:bg-gray-100 transition-colors">
+                                            <PhotoIcon className="w-6 h-6 text-gray-400" />
+                                            <span className="text-[10px] text-gray-500 mt-1">رفع صورة</span>
+                                            <input
+                                              type="file"
+                                              className="hidden"
+                                              accept="image/*"
+                                              onChange={async (e) => {
+                                                if (e.target.files?.[0]) {
+                                                  const file = e.target.files[0];
+                                                  try {
+                                                    const data = await uploadFiles([file]);
+                                                    if (data.success && data.data[0]) {
+                                                      const url = data.data[0].fullUrl;
+                                                      setVariantSettings(prev => ({
+                                                        ...prev,
+                                                        attributeImages: {
+                                                          ...prev.attributeImages,
+                                                          [attr.name]: {
+                                                            ...(prev.attributeImages[attr.name] || {}),
+                                                            [value]: url
+                                                          }
+                                                        }
+                                                      }));
+                                                    }
+                                                  } catch (err) {
+                                                    console.error('Error uploading attribute image', err);
+                                                  }
+                                                }
+                                              }}
+                                            />
+                                          </label>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1785,7 +2183,7 @@ const ProductNewFinal: React.FC = () => {
               {activeTab === 'advanced' && (
                 <div className="bg-white shadow rounded-lg p-6 space-y-6">
                   <h3 className="text-lg font-medium text-gray-900">إعدادات متقدمة</h3>
-                  
+
                   {/* Featured Product */}
                   <div className="space-y-4 border-b border-gray-200 pb-6">
                     <h4 className="text-md font-medium text-gray-900">المنتج المميز</h4>
@@ -1828,7 +2226,7 @@ const ProductNewFinal: React.FC = () => {
                   {/* Shipping Settings */}
                   <div className="space-y-4 border-b border-gray-200 pb-6">
                     <h4 className="text-md font-medium text-gray-900">إعدادات الشحن</h4>
-                    
+
                     <div>
                       <label htmlFor="shippingClass" className="block text-sm font-medium text-gray-700 mb-1">
                         فئة الشحن
@@ -2107,7 +2505,7 @@ const ProductNewFinal: React.FC = () => {
 
                     <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
                       <p className="text-xs text-blue-700">
-                        ℹ️ <strong>ملاحظة:</strong> النظام يقترح منتجات تلقائياً بناءً على الفئة والطلبات السابقة. 
+                        ℹ️ <strong>ملاحظة:</strong> النظام يقترح منتجات تلقائياً بناءً على الفئة والطلبات السابقة.
                         المنتجات المحددة هنا ستُضاف للتوصيات التلقائية.
                       </p>
                     </div>
@@ -2138,7 +2536,7 @@ const ProductNewFinal: React.FC = () => {
                         type="text"
                         value={newTag}
                         onChange={e => setNewTag(e.target.value)}
-                        onKeyPress={e => { if (e.key === 'Enter') { e.preventDefault(); addTag(); }}}
+                        onKeyPress={e => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
                         className="flex-1 border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                         placeholder="أضف علامة جديدة واضغط Enter"
                       />

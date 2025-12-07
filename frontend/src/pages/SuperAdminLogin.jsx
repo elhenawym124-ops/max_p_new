@@ -82,23 +82,49 @@ const SuperAdminLogin = () => {
         body: JSON.stringify(formData)
       });
 
+      if (!response.ok) {
+        let errorMessage = 'فشل في تسجيل الدخول';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorMessage;
+        } catch (parseError) {
+          errorMessage = response.statusText || `خطأ في الاتصال (${response.status})`;
+        }
+        throw new Error(errorMessage);
+      }
+
       const data = await response.json();
 
       if (data.success) {
-        // Store auth data
-        localStorage.setItem('accessToken', data.data.token);
-        localStorage.setItem('user', JSON.stringify(data.data.user));
+        // Prepare user data (ensure it has all required fields)
+        // Super admin may not have a company
+        const userData = {
+          ...data.data.user,
+          companyId: data.data.user.companyId || null,
+          company: data.data.user.company || null
+        };
         
-        // Update auth context
-        login(data.data.user, data.data.token);
+        // Store token first
+        localStorage.setItem('accessToken', data.data.token);
+        
+        // Store user data in localStorage for Socket.IO connection
+        localStorage.setItem('user', JSON.stringify(userData));
+        
+        // Update auth context using login function
+        const loggedInUser = await login(userData, data.data.token);
         
         // Redirect to super admin dashboard
-        navigate('/super-admin/dashboard');
+        if (loggedInUser) {
+          navigate('/super-admin/dashboard');
+        } else {
+          setError('فشل في تحديث حالة تسجيل الدخول');
+        }
       } else {
         setError(data.message || 'فشل في تسجيل الدخول');
       }
     } catch (err) {
-      setError('حدث خطأ في الاتصال بالخادم');
+      console.error('Super admin login error:', err);
+      setError(err.message || 'حدث خطأ في الاتصال بالخادم');
     } finally {
       setLoading(false);
     }

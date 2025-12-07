@@ -1,49 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Sun, Moon } from 'lucide-react';
 import { Button } from './button';
+import { useTheme } from '../../hooks/useTheme';
 
 const ThemeToggle: React.FC = () => {
-  const [isDark, setIsDark] = useState(false);
+  const { actualTheme, toggleTheme } = useTheme();
 
-  useEffect(() => {
-    // التحقق من الإعداد المحفوظ
-    const savedTheme = localStorage.getItem('theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    
-    const shouldBeDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
-    
-    setIsDark(shouldBeDark);
-    updateTheme(shouldBeDark);
-  }, []);
-
-  const updateTheme = (dark: boolean) => {
-    if (dark) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-    }
-  };
-
-  const toggleTheme = () => {
-    const newTheme = !isDark;
-    setIsDark(newTheme);
-    updateTheme(newTheme);
-  };
+  const isDark = actualTheme === 'dark';
 
   return (
     <Button
       onClick={toggleTheme}
       variant="ghost"
       size="sm"
-      className="w-9 h-9 p-0"
+      className="w-9 h-9 p-0 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
       title={isDark ? 'تبديل للوضع النهاري' : 'تبديل للوضع الليلي'}
     >
       {isDark ? (
-        <Sun className="h-4 w-4 text-yellow-500" />
+        <Sun className="h-5 w-5 text-yellow-500 transition-all hover:text-yellow-600" />
       ) : (
-        <Moon className="h-4 w-4 text-gray-600" />
+        <Moon className="h-5 w-5 text-gray-600 dark:text-gray-400 transition-all hover:text-gray-900 dark:hover:text-gray-200" />
       )}
     </Button>
   );

@@ -47,17 +47,19 @@ const upload = multer({
   }
 });
 
+// Specific routes must come before parameterized routes
 router.get('/', verifyToken.authenticateToken ,productController.getAllProducts);
+router.post('/', verifyToken.authenticateToken ,productController.createProduct);
+router.delete('/bulk/delete', verifyToken.authenticateToken ,productController.deleteAllProducts);
 router.get('/categories', verifyToken.authenticateToken ,productController.getCategory);
 router.post('/categories', verifyToken.authenticateToken ,productController.createNewCategory);
 router.put('/categories/:id',verifyToken.authenticateToken , productController.updateCategory);
 router.delete('/categories/:id', verifyToken.authenticateToken ,productController.deleteCategory);
 
-
+// Parameterized routes must come after specific routes
 router.get('/:id', verifyToken.authenticateToken ,productController.getSingleProduct);
 router.patch('/:id', verifyToken.authenticateToken ,productController.updateSingleProduct);
 router.delete('/:id', verifyToken.authenticateToken ,productController.deleteSingleProduct);
-router.post('/', verifyToken.authenticateToken ,productController.createProduct);
 
 // Product images routes
 router.post('/:id/images', verifyToken.authenticateToken, upload.any(), productController.uploadProductImages);

@@ -57,8 +57,22 @@ const Register: React.FC = () => {
       // Remove confirmPassword from data
       const { confirmPassword, ...registerData } = formData;
       
-      await registerUser(registerData);
-      navigate('/dashboard');
+      const userData = await registerUser(registerData);
+      
+      // Determine redirect path based on user role
+      let redirectPath = '/company-dashboard'; // Default for new company admins
+
+      if (userData) {
+        // Check user role and redirect accordingly
+        if (userData.role === 'SUPER_ADMIN') {
+          redirectPath = '/super-admin/dashboard';
+        } else {
+          // Company members go to company dashboard
+          redirectPath = '/company-dashboard';
+        }
+      }
+      
+      navigate(redirectPath);
     } catch (err: any) {
       setError(err.message || 'فشل في إنشاء الحساب');
     } finally {

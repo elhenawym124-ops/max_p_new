@@ -67,6 +67,8 @@ model Company {
   taskTemplates          TaskTemplate[] // 📋 قوالب المهام
   taskNotifications      TaskNotification[] // 🔔 إشعارات المهام
   taskCategories         TaskCategory[] // 📂 أقسام المهام
+  taskChecklists         TaskChecklist[] // ✅ قوائم التحقق
+  taskDependencies       TaskDependency[] // 🔗 تبعيات المهام
   broadcastCampaigns     BroadcastCampaign[] // 📢 حملات البرودكاست
   broadcastSettings      BroadcastSettings? // ⚙️ إعدادات البرودكاست
   customerLists          CustomerList[] // 📋 قوائم العملاء
@@ -112,6 +114,20 @@ model Company {
   
   // 🏷️ Order Status Management
   orderStatusConfigs     OrderStatusConfig[] // ⚙️ إعدادات حالات الطلبات
+  
+  // 👥 HR Module
+  departments            Department[] // 🏢 الأقسام
+  positions              Position[] // 💼 المناصب
+  employees              Employee[] // 👤 الموظفين
+  attendance             Attendance[] // ⏰ الحضور
+  leaveRequests          LeaveRequest[] // 🏖️ الإجازات
+  payrolls               Payroll[] // 💰 الرواتب
+  performanceReviews     PerformanceReview[] // 📊 تقييم الأداء
+  employeeDocuments      EmployeeDocument[] // 📄 مستندات الموظفين
+  salaryHistory          SalaryHistory[] // 💵 سجل الرواتب
+  employeeWarnings       EmployeeWarning[] // ⚠️ الإنذارات
+  employeeTrainings      EmployeeTraining[] // 📚 التدريب
+  hrSettings             HRSettings? // ⚙️ إعدادات HR
 
   @@map("companies")
 }
@@ -150,12 +166,15 @@ model User {
   whatsappMessages      WhatsAppMessage[] // 💬 رسائل واتساب المرسلة
   // Task Management Relations
   taskComments          TaskComment[]
+  // 👥 HR Module
+  employee              Employee? // 👤 ملف الموظف المرتبط
   taskAttachments       TaskAttachment[]
   timeEntries           TimeEntry[]
   taskWatchers          TaskWatcher[]
   taskActivities        TaskActivity[]
   taskTemplates         TaskTemplate[]
   taskNotifications     TaskNotification[]
+  completedChecklistItems TaskChecklistItem[]
 
   @@index([companyId], map: "users_companyId_idx")
   @@map("users")
@@ -317,7 +336,7 @@ model Category {
 model Product {
   id                 String                 @id @default(cuid())
   name               String
-  description        String?
+  description        String?                @db.Text
   sku                String?                @unique
   price              Decimal                @db.Decimal(10, 2)
   comparePrice       Decimal?               @db.Decimal(10, 2)
@@ -1309,6 +1328,9 @@ model Task {
   timeEntries   TimeEntry[]
   watchers      TaskWatcher[]
   activities    TaskActivity[]
+  checklists         TaskChecklist[]
+  taskDependencies   TaskDependency[] @relation("TaskDependencies")
+  dependedOnByTasks  TaskDependency[] @relation("DependsOnTasks")
 
   @@index([companyId])
   @@index([projectId])
@@ -1446,6 +1468,67 @@ model TaskActivity {
   @@index([companyId])
   @@index([createdAt])
   @@map("task_activities")
+}
+
+// قوائم التحقق
+model TaskChecklist {
+  id        String   @id @default(cuid())
+  taskId    String
+  title     String
+  position  Int      @default(0)
+  companyId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  task    Task                 @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  company Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  items   TaskChecklistItem[]
+
+  @@index([taskId])
+  @@index([companyId])
+  @@map("task_checklists")
+}
+
+// عناصر قائمة التحقق
+model TaskChecklistItem {
+  id          String   @id @default(cuid())
+  checklistId String
+  content     String
+  isCompleted Boolean  @default(false)
+  completedAt DateTime?
+  completedBy String?
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  checklist     TaskChecklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  completedUser User?         @relation(fields: [completedBy], references: [id])
+
+  @@index([checklistId])
+  @@map("task_checklist_items")
+}
+
+// تبعيات المهام
+model TaskDependency {
+  id            String   @id @default(cuid())
+  taskId        String   // المهمة الرئيسية
+  dependsOnId   String   // المهمة التي تعتمد عليها
+  type          String   @default("blocked_by") // blocked_by, blocks, related
+  companyId     String
+  createdAt     DateTime @default(now())
+
+  // Relations
+  task      Task    @relation("TaskDependencies", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOn Task    @relation("DependsOnTasks", fields: [dependsOnId], references: [id], onDelete: Cascade)
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, dependsOnId])
+  @@index([taskId])
+  @@index([dependsOnId])
+  @@index([companyId])
+  @@map("task_dependencies")
 }
 
 // قوالب المهام
@@ -2443,6 +2526,16 @@ model StorefrontSettings {
   seoStructuredData  Boolean @default(true)
   seoSitemap         Boolean @default(true)
   seoOpenGraph       Boolean @default(true)
+
+  // Mobile Bottom Navbar Settings
+  mobileBottomNavbarEnabled    Boolean @default(true)
+  mobileBottomNavbarShowHome   Boolean @default(true)
+  mobileBottomNavbarShowShop   Boolean @default(true)
+  mobileBottomNavbarShowWishlist Boolean @default(true)
+  mobileBottomNavbarShowAccount Boolean @default(true)
+  mobileBottomNavbarShowCompare Boolean @default(true)
+  mobileBottomNavbarShowSearch Boolean @default(false)
+  mobileBottomNavbarShowCart   Boolean @default(false)
 
   // Multi-language Settings
   multiLanguageEnabled Boolean @default(false)
@@ -3917,5 +4010,617 @@ model OrderStatusConfig {
   @@index([statusType])
   @@index([source])
   @@map("order_status_configs")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 👥 HR MODULE - نظام الموارد البشرية
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// 🏢 الأقسام - Departments
+model Department {
+  id              String       @id @default(cuid())
+  companyId       String
+  name            String       // اسم القسم
+  nameEn          String?      // الاسم بالإنجليزية
+  code            String?      // كود القسم
+  description     String?      @db.Text
+  managerId       String?      // مدير القسم
+  parentId        String?      // القسم الأب (للهيكل الشجري)
+  color           String?      @default("#3B82F6") // لون القسم
+  icon            String?      // أيقونة القسم
+  isActive        Boolean      @default(true)
+  sortOrder       Int          @default(0)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  manager         Employee?    @relation("DepartmentManager", fields: [managerId], references: [id])
+  parent          Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id])
+  children        Department[] @relation("DepartmentHierarchy")
+  employees       Employee[]   @relation("EmployeeDepartment")
+  positions       Position[]
+  
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([managerId])
+  @@map("hr_departments")
+}
+
+// 💼 المناصب الوظيفية - Positions
+model Position {
+  id              String       @id @default(cuid())
+  companyId       String
+  departmentId    String?
+  title           String       // المسمى الوظيفي
+  titleEn         String?      // المسمى بالإنجليزية
+  code            String?      // كود المنصب
+  description     String?      @db.Text
+  level           Int          @default(1) // المستوى الوظيفي (1-10)
+  minSalary       Decimal?     @db.Decimal(12, 2) // الحد الأدنى للراتب
+  maxSalary       Decimal?     @db.Decimal(12, 2) // الحد الأقصى للراتب
+  requirements    String?      @db.Text // متطلبات المنصب (JSON)
+  responsibilities String?     @db.Text // المسؤوليات (JSON)
+  isActive        Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  department      Department?  @relation(fields: [departmentId], references: [id])
+  employees       Employee[]
+  
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([departmentId])
+  @@map("hr_positions")
+}
+
+// 👤 الموظفين - Employees
+model Employee {
+  id                String           @id @default(cuid())
+  companyId         String
+  userId            String?          @unique // ربط بحساب المستخدم
+  employeeNumber    String           // رقم الموظف
+  
+  // البيانات الشخصية
+  firstName         String
+  lastName          String
+  firstNameEn       String?
+  lastNameEn        String?
+  email             String?
+  phone             String?
+  mobile            String?
+  avatar            String?
+  dateOfBirth       DateTime?
+  gender            Gender?
+  nationality       String?
+  nationalId        String?          // رقم الهوية
+  passportNumber    String?
+  maritalStatus     MaritalStatus?
+  
+  // العنوان
+  address           String?          @db.Text
+  city              String?
+  country           String?
+  postalCode        String?
+  
+  // بيانات التوظيف
+  departmentId      String?
+  positionId        String?
+  managerId         String?          // المدير المباشر
+  hireDate          DateTime         // تاريخ التعيين
+  probationEndDate  DateTime?        // نهاية فترة التجربة
+  contractType      ContractType     @default(FULL_TIME)
+  contractEndDate   DateTime?        // نهاية العقد (للعقود المؤقتة)
+  workLocation      String?          // موقع العمل
+  
+  // الراتب والمستحقات
+  baseSalary        Decimal?         @db.Decimal(12, 2)
+  currency          String           @default("EGP")
+  bankName          String?
+  bankAccountNumber String?
+  bankIban          String?
+  
+  // الإجازات
+  annualLeaveBalance   Int           @default(21) // رصيد الإجازات السنوية
+  sickLeaveBalance     Int           @default(15) // رصيد الإجازات المرضية
+  
+  // الحالة
+  status            EmployeeStatus   @default(ACTIVE)
+  terminationDate   DateTime?
+  terminationReason String?          @db.Text
+  
+  // بيانات إضافية
+  emergencyContact  String?          @db.Text // JSON: اسم، هاتف، علاقة
+  documents         String?          @db.Text // JSON: قائمة المستندات
+  notes             String?          @db.Text
+  metadata          String?          @db.Text // JSON: بيانات إضافية
+  
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  
+  // العلاقات
+  company           Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user              User?            @relation(fields: [userId], references: [id])
+  department        Department?      @relation("EmployeeDepartment", fields: [departmentId], references: [id])
+  position          Position?        @relation(fields: [positionId], references: [id])
+  manager           Employee?        @relation("EmployeeManager", fields: [managerId], references: [id])
+  subordinates      Employee[]       @relation("EmployeeManager")
+  managedDepartments Department[]    @relation("DepartmentManager")
+  
+  // سجلات HR
+  attendances       Attendance[]
+  leaveRequests     LeaveRequest[]   @relation("EmployeeLeaves")
+  approvedLeaves    LeaveRequest[]   @relation("LeaveApprover")
+  payrolls          Payroll[]
+  performanceReviews PerformanceReview[] @relation("EmployeeReviews")
+  givenReviews      PerformanceReview[] @relation("ReviewerReviews")
+  documents_rel     EmployeeDocument[]
+  salaryHistory     SalaryHistory[]
+  warnings          EmployeeWarning[]
+  trainings         EmployeeTraining[]
+  
+  @@unique([companyId, employeeNumber])
+  @@index([companyId])
+  @@index([departmentId])
+  @@index([positionId])
+  @@index([managerId])
+  @@index([status])
+  @@map("hr_employees")
+}
+
+// ⏰ الحضور والانصراف - Attendance
+model Attendance {
+  id              String           @id @default(cuid())
+  companyId       String
+  employeeId      String
+  date            DateTime         @db.Date
+  
+  // أوقات الحضور
+  checkIn         DateTime?        // وقت الحضور
+  checkOut        DateTime?        // وقت الانصراف
+  checkInLocation String?          // موقع الحضور (GPS)
+  checkOutLocation String?         // موقع الانصراف
+  checkInMethod   String?          // طريقة التسجيل: manual, biometric, mobile, qr
+  checkOutMethod  String?
+  
+  // الحسابات
+  workHours       Decimal?         @db.Decimal(5, 2) // ساعات العمل
+  overtimeHours   Decimal?         @db.Decimal(5, 2) // ساعات إضافية
+  lateMinutes     Int?             @default(0) // دقائق التأخير
+  earlyLeaveMinutes Int?           @default(0) // دقائق الخروج المبكر
+  
+  // الحالة
+  status          AttendanceStatus @default(PRESENT)
+  isApproved      Boolean          @default(false)
+  approvedBy      String?
+  
+  // ملاحظات
+  notes           String?          @db.Text
+  
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee        Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  
+  @@unique([employeeId, date])
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([date])
+  @@index([status])
+  @@map("hr_attendance")
+}
+
+// 🏖️ طلبات الإجازات - Leave Requests
+model LeaveRequest {
+  id              String       @id @default(cuid())
+  companyId       String
+  employeeId      String
+  
+  // تفاصيل الإجازة
+  type            LeaveType    // نوع الإجازة
+  startDate       DateTime     @db.Date
+  endDate         DateTime     @db.Date
+  totalDays       Int          // عدد الأيام
+  isHalfDay       Boolean      @default(false) // نصف يوم
+  halfDayPeriod   String?      // morning, afternoon
+  
+  // السبب والمرفقات
+  reason          String?      @db.Text
+  attachments     String?      @db.Text // JSON: قائمة المرفقات
+  
+  // حالة الطلب
+  status          LeaveStatus  @default(PENDING)
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectionReason String?      @db.Text
+  
+  // بيانات الاستبدال
+  substituteId    String?      // الموظف البديل
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee        Employee     @relation("EmployeeLeaves", fields: [employeeId], references: [id], onDelete: Cascade)
+  approver        Employee?    @relation("LeaveApprover", fields: [approvedBy], references: [id])
+  
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([status])
+  @@index([startDate])
+  @@map("hr_leave_requests")
+}
+
+// 💰 الرواتب - Payroll
+model Payroll {
+  id              String        @id @default(cuid())
+  companyId       String
+  employeeId      String
+  
+  // الفترة
+  month           Int           // الشهر (1-12)
+  year            Int           // السنة
+  periodStart     DateTime      @db.Date
+  periodEnd       DateTime      @db.Date
+  
+  // الراتب الأساسي
+  baseSalary      Decimal       @db.Decimal(12, 2)
+  workingDays     Int           @default(30)
+  actualWorkDays  Int           @default(30)
+  
+  // البدلات (JSON)
+  allowances      String?       @db.Text // JSON: {housing: 1000, transport: 500, ...}
+  totalAllowances Decimal       @default(0) @db.Decimal(12, 2)
+  
+  // الخصومات (JSON)
+  deductions      String?       @db.Text // JSON: {absence: 200, late: 50, ...}
+  totalDeductions Decimal       @default(0) @db.Decimal(12, 2)
+  
+  // الإضافي
+  overtimeHours   Decimal       @default(0) @db.Decimal(5, 2)
+  overtimeRate    Decimal       @default(1.5) @db.Decimal(3, 2)
+  overtimeAmount  Decimal       @default(0) @db.Decimal(12, 2)
+  
+  // المكافآت
+  bonuses         Decimal       @default(0) @db.Decimal(12, 2)
+  bonusNotes      String?       @db.Text
+  
+  // الاستقطاعات القانونية
+  socialInsurance Decimal       @default(0) @db.Decimal(12, 2)
+  taxAmount       Decimal       @default(0) @db.Decimal(12, 2)
+  
+  // الإجماليات
+  grossSalary     Decimal       @db.Decimal(12, 2) // إجمالي الراتب
+  netSalary       Decimal       @db.Decimal(12, 2) // صافي الراتب
+  
+  // حالة الصرف
+  status          PayrollStatus @default(DRAFT)
+  paidAt          DateTime?
+  paymentMethod   String?       // bank_transfer, cash, check
+  paymentReference String?
+  
+  notes           String?       @db.Text
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  company         Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee        Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  
+  @@unique([employeeId, month, year])
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([status])
+  @@index([month, year])
+  @@map("hr_payroll")
+}
+
+// 📊 تقييم الأداء - Performance Reviews
+model PerformanceReview {
+  id              String       @id @default(cuid())
+  companyId       String
+  employeeId      String
+  reviewerId      String       // المقيّم
+  
+  // فترة التقييم
+  reviewPeriod    String       // Q1-2024, H1-2024, 2024
+  periodStart     DateTime     @db.Date
+  periodEnd       DateTime     @db.Date
+  
+  // التقييمات (1-5)
+  overallRating   Decimal      @db.Decimal(3, 2) // التقييم العام
+  ratings         String?      @db.Text // JSON: {quality: 4, productivity: 5, teamwork: 4, ...}
+  
+  // الأهداف
+  goals           String?      @db.Text // JSON: قائمة الأهداف ونسب الإنجاز
+  goalsAchievement Decimal?    @db.Decimal(5, 2) // نسبة تحقيق الأهداف
+  
+  // نقاط القوة والتحسين
+  strengths       String?      @db.Text
+  improvements    String?      @db.Text
+  
+  // التعليقات
+  reviewerComments String?     @db.Text
+  employeeComments String?     @db.Text
+  
+  // التوصيات
+  recommendations String?      @db.Text // JSON: ترقية، زيادة، تدريب، إلخ
+  
+  // الحالة
+  status          ReviewStatus @default(DRAFT)
+  submittedAt     DateTime?
+  acknowledgedAt  DateTime?    // تاريخ اطلاع الموظف
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee        Employee     @relation("EmployeeReviews", fields: [employeeId], references: [id], onDelete: Cascade)
+  reviewer        Employee     @relation("ReviewerReviews", fields: [reviewerId], references: [id])
+  
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([reviewerId])
+  @@index([status])
+  @@map("hr_performance_reviews")
+}
+
+// 📄 مستندات الموظفين - Employee Documents
+model EmployeeDocument {
+  id              String       @id @default(cuid())
+  companyId       String
+  employeeId      String
+  
+  name            String       // اسم المستند
+  type            String       // contract, id, certificate, medical, other
+  fileUrl         String       // رابط الملف
+  fileSize        Int?         // حجم الملف
+  mimeType        String?
+  
+  expiryDate      DateTime?    // تاريخ الانتهاء
+  isVerified      Boolean      @default(false)
+  verifiedBy      String?
+  verifiedAt      DateTime?
+  
+  notes           String?      @db.Text
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee        Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([type])
+  @@map("hr_employee_documents")
+}
+
+// 💵 سجل الرواتب - Salary History
+model SalaryHistory {
+  id              String       @id @default(cuid())
+  companyId       String
+  employeeId      String
+  
+  previousSalary  Decimal      @db.Decimal(12, 2)
+  newSalary       Decimal      @db.Decimal(12, 2)
+  changeType      String       // promotion, annual_increase, adjustment, demotion
+  changePercentage Decimal?    @db.Decimal(5, 2)
+  effectiveDate   DateTime     @db.Date
+  reason          String?      @db.Text
+  approvedBy      String?
+  
+  createdAt       DateTime     @default(now())
+  
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee        Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  
+  @@index([companyId])
+  @@index([employeeId])
+  @@map("hr_salary_history")
+}
+
+// ⚠️ الإنذارات - Employee Warnings
+model EmployeeWarning {
+  id              String       @id @default(cuid())
+  companyId       String
+  employeeId      String
+  
+  type            WarningType  // نوع الإنذار
+  severity        String       @default("minor") // minor, moderate, severe
+  title           String
+  description     String       @db.Text
+  incidentDate    DateTime     @db.Date
+  
+  // الإجراء المتخذ
+  actionTaken     String?      @db.Text
+  
+  // التوقيعات
+  issuedBy        String
+  acknowledgedAt  DateTime?
+  employeeResponse String?     @db.Text
+  
+  // المرفقات
+  attachments     String?      @db.Text // JSON
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee        Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  
+  @@index([companyId])
+  @@index([employeeId])
+  @@map("hr_employee_warnings")
+}
+
+// 📚 التدريب - Employee Training
+model EmployeeTraining {
+  id              String       @id @default(cuid())
+  companyId       String
+  employeeId      String
+  
+  trainingName    String
+  provider        String?      // مقدم التدريب
+  type            String       // internal, external, online
+  description     String?      @db.Text
+  
+  startDate       DateTime     @db.Date
+  endDate         DateTime?    @db.Date
+  duration        Int?         // بالساعات
+  
+  cost            Decimal?     @db.Decimal(12, 2)
+  currency        String       @default("EGP")
+  
+  status          TrainingStatus @default(PLANNED)
+  completionDate  DateTime?
+  certificateUrl  String?
+  score           Decimal?     @db.Decimal(5, 2) // الدرجة إن وجدت
+  
+  feedback        String?      @db.Text
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee        Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([status])
+  @@map("hr_employee_training")
+}
+
+// 📅 إعدادات العمل - Work Settings
+model HRSettings {
+  id                    String   @id @default(cuid())
+  companyId             String   @unique
+  
+  // أيام العمل
+  workDays              String   @default("[1,2,3,4,5]") // JSON: أيام العمل (0=الأحد)
+  workStartTime         String   @default("09:00")
+  workEndTime           String   @default("17:00")
+  breakDuration         Int      @default(60) // بالدقائق
+  
+  // الإجازات
+  annualLeaveDefault    Int      @default(21)
+  sickLeaveDefault      Int      @default(15)
+  carryOverLimit        Int      @default(5) // حد ترحيل الإجازات
+  
+  // الحضور
+  lateGracePeriod       Int      @default(15) // فترة السماح بالتأخير (دقائق)
+  earlyLeaveGracePeriod Int      @default(15)
+  overtimeMinHours      Decimal  @default(1) @db.Decimal(3, 1) // الحد الأدنى للإضافي
+  overtimeRate          Decimal  @default(1.5) @db.Decimal(3, 2)
+  
+  // الرواتب
+  payrollDay            Int      @default(25) // يوم صرف الراتب
+  socialInsuranceRate   Decimal  @default(14) @db.Decimal(5, 2) // نسبة التأمينات
+  taxBrackets           String?  @db.Text // JSON: شرائح الضرائب
+  
+  // العطلات الرسمية
+  publicHolidays        String?  @db.Text // JSON: قائمة العطلات
+  
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  
+  company               Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  @@map("hr_settings")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HR ENUMS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum MaritalStatus {
+  SINGLE
+  MARRIED
+  DIVORCED
+  WIDOWED
+}
+
+enum ContractType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  TEMPORARY
+  INTERNSHIP
+  FREELANCE
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  ON_LEAVE
+  SUSPENDED
+  TERMINATED
+  RESIGNED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  HALF_DAY
+  ON_LEAVE
+  HOLIDAY
+  WEEKEND
+  REMOTE
+}
+
+enum LeaveType {
+  ANNUAL
+  SICK
+  UNPAID
+  MATERNITY
+  PATERNITY
+  BEREAVEMENT
+  MARRIAGE
+  HAJJ
+  STUDY
+  EMERGENCY
+  OTHER
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum PayrollStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+enum ReviewStatus {
+  DRAFT
+  SUBMITTED
+  ACKNOWLEDGED
+  COMPLETED
+}
+
+enum WarningType {
+  VERBAL
+  WRITTEN
+  FINAL
+  TERMINATION
+}
+
+enum TrainingStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
 }
 

@@ -149,6 +149,33 @@ const acceptInvitation = async (req, res) => {
             }
         });
 
+        // Auto-create employee record for the new user
+        try {
+            const employeeCount = await getSharedPrismaClient().employee.count({ 
+                where: { companyId: invitation.companyId } 
+            });
+            const employeeNumber = `EMP${String(employeeCount + 1).padStart(5, '0')}`;
+            
+            await getSharedPrismaClient().employee.create({
+                data: {
+                    companyId: invitation.companyId,
+                    userId: user.id,
+                    employeeNumber,
+                    firstName: user.firstName,
+                    lastName: user.lastName,
+                    email: user.email,
+                    hireDate: new Date(),
+                    status: 'ACTIVE',
+                    contractType: 'FULL_TIME'
+                }
+            });
+            
+            console.log('✅ [INVITATION] Employee record created for user:', user.email);
+        } catch (error) {
+            console.error('⚠️ [INVITATION] Failed to create employee record:', error);
+            // Don't fail invitation acceptance if employee creation fails
+        }
+
         // Update invitation status
         await getSharedPrismaClient().userInvitation.update({
             where: { id: invitation.id },

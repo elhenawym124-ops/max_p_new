@@ -15,9 +15,23 @@ const Login: React.FC = () => {
     setError(null);
 
     try {
-      await login({ email, password });
-      // إعادة توجيه للمحادثات
-      window.location.href = '/conversations-improved';
+      const userData = await login({ email, password });
+      
+      // Determine redirect path based on user role
+      let redirectPath = '/conversations-improved';
+
+      if (userData) {
+        // Check user role and redirect accordingly
+        if (userData.role === 'SUPER_ADMIN') {
+          redirectPath = '/super-admin/dashboard';
+        } else {
+          // Company members go to company dashboard
+          redirectPath = '/company-dashboard';
+        }
+      }
+      
+      // إعادة توجيه حسب دور المستخدم
+      window.location.href = redirectPath;
     } catch (error: any) {
       setError(error.message || 'فشل في تسجيل الدخول');
     } finally {

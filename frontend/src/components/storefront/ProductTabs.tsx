@@ -29,9 +29,10 @@ const ProductTabs: React.FC<ProductTabsProps> = ({
     return product.description ? (
       <div className="mt-8">
         <h3 className="text-xl font-bold text-gray-900 mb-4">الوصف</h3>
-        <p className="text-gray-700 leading-relaxed whitespace-pre-line">
-          {product.description}
-        </p>
+        <div 
+          className="text-gray-700 leading-relaxed prose prose-sm max-w-none"
+          dangerouslySetInnerHTML={{ __html: product.description }}
+        />
       </div>
     ) : null;
   }
@@ -84,11 +85,10 @@ const ProductTabs: React.FC<ProductTabsProps> = ({
       {/* Tab Content */}
       <div className="min-h-[200px]">
         {activeTab === 'description' && product.description && (
-          <div>
-            <p className="text-gray-700 leading-relaxed whitespace-pre-line">
-              {product.description}
-            </p>
-          </div>
+          <div 
+            className="text-gray-700 leading-relaxed prose prose-sm max-w-none product-description"
+            dangerouslySetInnerHTML={{ __html: product.description }}
+          />
         )}
 
         {activeTab === 'specifications' && product.specifications && (

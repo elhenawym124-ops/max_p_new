@@ -48,7 +48,6 @@ const webhookRoutes = require('./routes/webhookRoutes');
 const securityRoutes = require('./routes/securityRoutes');
 const healthRoute = require('./routes/healthRoute');
 const debugRoutes = require('./routes/debugRoutes');
-const testRagRoutes = require('./routes/testRagRoutes');
 const queueRoutes = require('./routes/queueRoutes');
 const authRoutes = require('./routes/authRoutes');
 const demoRoutes = require('./routes/demoRoutes');
@@ -70,7 +69,6 @@ const messageFixRoutes = require('./routes/messageFixRoutes');
 const aiRoutes = require('./routes/aiRoutes');
 const companyRoutes = require('./routes/companyRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
-const testChatRoutes = require('./routes/testChatRoutes');
 const notificationRoutes = require('./routes/notifications-simple');
 const aiNotificationsRoutes = require('./routes/aiNotificationsRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
@@ -118,8 +116,7 @@ const couponsRoutes = require('./routes/couponsRoutes'); // 🎟️ الكوبو
 const publicCouponsRoutes = require('./routes/publicCouponsRoutes'); // 🌐 الكوبونات العامة
 const homepageRoutes = require('./routes/homepageRoutes'); // 🏠 قوالب الصفحة الرئيسية
 const whatsappRoutes = require('./routes/whatsappRoutes'); // 📱 WhatsApp Integration
-
-
+const hrRoutes = require('./routes/hrRoutes'); // 👥 HR Module
 
 // Import Simple Monitoring System
 const { simpleMonitor } = require('./services/simpleMonitor');
@@ -498,6 +495,7 @@ console.log('✅ [SERVER] Public storefront routes registered');
 app.use(globalSecurity);
 
 app.use("/api/v1/whatsapp", whatsappRoutes) // 📱 WhatsApp Integration
+app.use("/api/v1/hr", hrRoutes); // 👥 HR Module
 
 // Protected routes (require authentication)
 app.use("/api/v1/reviews", productReviewRoutes); // ⭐ إدارة التقييمات (Protected)
@@ -541,7 +539,6 @@ app.use((req, res, next) => {
 });
 
 app.use('/api/v1/queue-stats', queueRoutes);
-app.use('/api/v1/test-rag', testRagRoutes);
 
 app.use("/api/v1/auth/", authRoutes)
 app.use("/api/v1/dev/", demoRoutes)
@@ -757,7 +754,6 @@ app.post('/test-ai-direct', async (req, res) => {
   }
 });
 app.use("/api/v1/ai/", aiRoutes)
-app.use('/api/v1/test-chat', testChatRoutes);
 
 
 // Graceful shutdown

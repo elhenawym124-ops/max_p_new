@@ -7,13 +7,13 @@ interface User {
   firstName: string;
   lastName: string;
   role: string;
-  companyId: string;
+  companyId: string | null;
   company: {
     id: string;
     name: string;
     slug: string | null; // ✅ FIX: إضافة slug للـ interface
     plan: string;
-  };
+  } | null;
 }
 
 interface LoginCredentials {
@@ -35,8 +35,8 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (credentials: LoginCredentials | User, token?: string) => Promise<void>;
-  register: (data: RegisterData) => Promise<void>;
+  login: (credentials: LoginCredentials | User, token?: string) => Promise<User | null>;
+  register: (data: RegisterData) => Promise<User | null>;
   logout: () => void;
 }
 
@@ -197,8 +197,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (token && typeof credentials === 'object' && 'id' in credentials) {
         console.log('🔍 [AuthProvider] Direct login with token');
         localStorage.setItem('accessToken', token);
-        setUser(credentials as User);
-        return;
+        const userData = credentials as User;
+        setUser(userData);
+        return userData;
       }
 
       // Normal login flow
@@ -241,10 +242,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         // Set user data
         console.log('✅ [AuthProvider] Setting user data:', data.data.user);
-        setUser(data.data.user);
+        const userData = data.data.user;
+        setUser(userData);
         
         // Store user data in localStorage for Socket.IO connection
-        localStorage.setItem('user', JSON.stringify(data.data.user));
+        localStorage.setItem('user', JSON.stringify(userData));
+        
+        // Return user data for immediate use
+        return userData;
       } else {
         throw new Error(data.message || 'فشل في تسجيل الدخول');
       }
@@ -276,9 +281,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       // Store token and user data
       localStorage.setItem('accessToken', result.data.token);
-      setUser(result.data.user);
+      
+      // Prepare user object with company data
+      const userData = {
+        ...result.data.user,
+        company: result.data.company || null
+      };
+      
+      setUser(userData);
+      
+      // Store user data in localStorage for Socket.IO connection
+      localStorage.setItem('user', JSON.stringify(userData));
 
-      return result;
+      return userData;
     } catch (error: any) {
       console.error('Registration error:', error);
       throw error;

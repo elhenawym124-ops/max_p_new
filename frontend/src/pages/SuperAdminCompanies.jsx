@@ -45,7 +45,7 @@ import {
   Error as ErrorIcon,
   Login as LoginIcon
 } from '@mui/icons-material';
-import { buildApiUrl } from '../utils/apiHelpers';
+import { buildApiUrl } from '../utils/urlHelper';
 
 const SuperAdminCompanies = () => {
   const [companies, setCompanies] = useState([]);

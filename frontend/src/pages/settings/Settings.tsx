@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuthSimple';
+import { useTheme } from '../../hooks/useTheme';
+import StoreThemeSettings from './StoreThemeSettings';
 import CompanySettings from './CompanySettings';
 import {
   Cog6ToothIcon,
@@ -12,6 +14,7 @@ import {
   CreditCardIcon,
   GlobeAltIcon,
   BuildingStorefrontIcon,
+  SwatchIcon
 } from '@heroicons/react/24/outline';
 
 interface SettingsTab {
@@ -43,6 +46,12 @@ const Settings: React.FC = () => {
       name: 'إعدادات المتجر',
       icon: BuildingStorefrontIcon,
       component: StoreSettingsRedirect,
+    },
+    {
+      id: 'store-theme',
+      name: 'ثيم المتجر',
+      icon: SwatchIcon,
+      component: StoreThemeSettings,
     },
     {
       id: 'notifications',
@@ -103,9 +112,8 @@ const Settings: React.FC = () => {
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`w-full px-4 py-3 text-right hover:bg-gray-50 focus:outline-none focus:bg-gray-50 flex items-center ${
-                      activeTab === tab.id ? 'bg-indigo-50 border-r-4 border-indigo-500 text-indigo-700' : 'text-gray-700'
-                    }`}
+                    className={`w-full px-4 py-3 text-right hover:bg-gray-50 focus:outline-none focus:bg-gray-50 flex items-center ${activeTab === tab.id ? 'bg-indigo-50 border-r-4 border-indigo-500 text-indigo-700' : 'text-gray-700'
+                      }`}
                   >
                     <Icon className={`h-5 w-5 mr-3 ${activeTab === tab.id ? 'text-indigo-500' : 'text-gray-400'}`} />
                     <span className="text-sm font-medium">{tab.name}</span>
@@ -142,7 +150,7 @@ const ProfileSettings: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     try {
       const token = localStorage.getItem('accessToken');
       const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://www.mokhtarelhenawy.online'}/api/v1/companies/profile/me`, {
@@ -189,7 +197,7 @@ const ProfileSettings: React.FC = () => {
             <input
               type="text"
               value={formData.firstName}
-              onChange={(e) => setFormData({...formData, firstName: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
@@ -200,7 +208,7 @@ const ProfileSettings: React.FC = () => {
             <input
               type="text"
               value={formData.lastName}
-              onChange={(e) => setFormData({...formData, lastName: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
@@ -213,7 +221,7 @@ const ProfileSettings: React.FC = () => {
           <input
             type="email"
             value={formData.email}
-            onChange={(e) => setFormData({...formData, email: e.target.value})}
+            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
         </div>
@@ -225,7 +233,7 @@ const ProfileSettings: React.FC = () => {
           <input
             type="tel"
             value={formData.phone}
-            onChange={(e) => setFormData({...formData, phone: e.target.value})}
+            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
             placeholder="+966501234567"
           />
@@ -238,7 +246,7 @@ const ProfileSettings: React.FC = () => {
             </label>
             <select
               value={formData.timezone}
-              onChange={(e) => setFormData({...formData, timezone: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
               <option value="Asia/Riyadh">الرياض (GMT+3)</option>
@@ -252,7 +260,7 @@ const ProfileSettings: React.FC = () => {
             </label>
             <select
               value={formData.language}
-              onChange={(e) => setFormData({...formData, language: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, language: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
               <option value="ar">العربية</option>
@@ -309,7 +317,7 @@ const NotificationSettings: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={settings[item.key as keyof typeof settings] as boolean}
-                    onChange={(e) => setSettings({...settings, [item.key]: e.target.checked})}
+                    onChange={(e) => setSettings({ ...settings, [item.key]: e.target.checked })}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
@@ -334,7 +342,7 @@ const NotificationSettings: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={settings[item.key as keyof typeof settings] as boolean}
-                    onChange={(e) => setSettings({...settings, [item.key]: e.target.checked})}
+                    onChange={(e) => setSettings({ ...settings, [item.key]: e.target.checked })}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
@@ -412,33 +420,43 @@ const SecuritySettings: React.FC = () => {
 
 // Appearance Settings Component
 const AppearanceSettings: React.FC = () => {
-  const [theme, setTheme] = useState('light');
+  const { theme, setTheme } = useTheme();
 
   return (
     <div className="px-6 py-6">
-      <div className="border-b border-gray-200 pb-4 mb-6">
-        <h2 className="text-xl font-semibold text-gray-900">إعدادات المظهر</h2>
-        <p className="text-sm text-gray-600 mt-1">تخصيص مظهر المنصة</p>
+      <div className="border-b border-gray-200 dark:border-gray-700 pb-4 mb-6">
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">إعدادات المظهر</h2>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">تخصيص مظهر المنصة</p>
       </div>
 
       <div className="space-y-6">
         <div>
-          <h3 className="text-lg font-medium text-gray-900 mb-4">المظهر</h3>
-          <div className="grid grid-cols-3 gap-4">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">المظهر</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[
-              { value: 'light', label: 'فاتح', preview: 'bg-white border-2' },
-              { value: 'dark', label: 'داكن', preview: 'bg-gray-900 border-2' },
-              { value: 'auto', label: 'تلقائي', preview: 'bg-gradient-to-r from-white to-gray-900 border-2' },
+              { value: 'light', label: 'فاتح', preview: 'bg-white border text-gray-900' },
+              { value: 'dark', label: 'داكن', preview: 'bg-gray-900 border text-white' },
+              { value: 'system', label: 'نظام الجهاز', preview: 'bg-gradient-to-br from-white to-gray-900 border text-gray-800' },
             ].map((option) => (
               <button
                 key={option.value}
-                onClick={() => setTheme(option.value)}
-                className={`p-4 rounded-lg border-2 ${
-                  theme === option.value ? 'border-indigo-500' : 'border-gray-200'
-                }`}
+                onClick={() => setTheme(option.value as any)}
+                className={`p-4 rounded-xl border-2 transition-all duration-200 flex flex-col items-center gap-3 ${theme === option.value
+                  ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/20'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                  }`}
               >
-                <div className={`h-16 rounded ${option.preview} mb-2`}></div>
-                <span className="text-sm font-medium">{option.label}</span>
+                <div className={`h-24 w-full rounded-lg shadow-sm border border-gray-100 dark:border-gray-600 ${option.preview} flex items-center justify-center`}>
+                  <span className="text-2xl">Aa</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-sm font-medium ${theme === option.value ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                    {option.label}
+                  </span>
+                  {theme === option.value && (
+                    <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
+                  )}
+                </div>
               </button>
             ))}
           </div>
@@ -589,7 +607,7 @@ const BillingSettings: React.FC = () => {
 // Store Settings Redirect Component
 const StoreSettingsRedirect: React.FC = () => {
   const navigate = useNavigate();
-  
+
   useEffect(() => {
     navigate('/settings/store');
   }, [navigate]);

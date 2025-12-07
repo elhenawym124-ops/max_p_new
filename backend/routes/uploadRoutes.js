@@ -54,6 +54,60 @@ const upload = multer({
   }
 });
 
+// Create tasks attachments directory
+const tasksDir = path.join(uploadsDir, 'tasks');
+if (!fs.existsSync(tasksDir)) {
+  fs.mkdirSync(tasksDir, { recursive: true });
+}
+
+// Configure multer for task attachments (any file type)
+const taskStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, tasksDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = uuidv4();
+    const extension = path.extname(file.originalname);
+    cb(null, `task-${uniqueSuffix}${extension}`);
+  }
+});
+
+const taskUpload = multer({
+  storage: taskStorage,
+  limits: {
+    fileSize: 25 * 1024 * 1024, // 25MB limit for task attachments
+  }
+});
+
+// General upload endpoint (for task attachments)
+router.post('/', taskUpload.single('file'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'No file uploaded'
+      });
+    }
+
+    const fileUrl = `/uploads/tasks/${req.file.filename}`;
+    
+    res.json({
+      success: true,
+      fileName: req.file.filename,
+      originalName: req.file.originalname,
+      fileSize: req.file.size,
+      filePath: fileUrl,
+      fullUrl: `${req.protocol}://${req.get('host')}${fileUrl}`
+    });
+  } catch (error) {
+    console.error('Error uploading file:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to upload file'
+    });
+  }
+});
+
 // Upload single image
 router.post('/single', upload.single('image'), (req, res) => {
   try {

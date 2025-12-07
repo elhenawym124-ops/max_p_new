@@ -41,9 +41,9 @@ const ProductNavigation: React.FC<ProductNavigationProps> = ({
 
     const handleKeyPress = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft' && previousProduct) {
-        navigate(`/shop/product/${previousProduct.id}?companyId=${getCompanyId()}`);
+        navigate(`/shop/products/${previousProduct.id}?companyId=${getCompanyId()}`);
       } else if (e.key === 'ArrowRight' && nextProduct) {
-        navigate(`/shop/product/${nextProduct.id}?companyId=${getCompanyId()}`);
+        navigate(`/shop/products/${nextProduct.id}?companyId=${getCompanyId()}`);
       }
     };
 
@@ -104,7 +104,7 @@ const ProductNavigation: React.FC<ProductNavigationProps> = ({
       <button
         onClick={() => {
           if (previousProduct) {
-            navigate(`/shop/product/${previousProduct.id}?companyId=${getCompanyId()}`);
+            navigate(`/shop/products/${previousProduct.id}?companyId=${getCompanyId()}`);
             window.scrollTo(0, 0);
           }
         }}
@@ -137,7 +137,7 @@ const ProductNavigation: React.FC<ProductNavigationProps> = ({
       <button
         onClick={() => {
           if (nextProduct) {
-            navigate(`/shop/product/${nextProduct.id}?companyId=${getCompanyId()}`);
+            navigate(`/shop/products/${nextProduct.id}?companyId=${getCompanyId()}`);
             window.scrollTo(0, 0);
           }
         }}

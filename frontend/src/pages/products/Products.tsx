@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { authService } from '../../services/authService';
 import { config } from '../../config';
@@ -9,6 +9,7 @@ import {
   PlusIcon,
   FunnelIcon,
   ArrowDownTrayIcon,
+  ArrowUpTrayIcon,
   PhotoIcon,
   PencilIcon,
   TrashIcon,
@@ -17,6 +18,14 @@ import {
   CheckCircleIcon,
   XCircleIcon,
   ShoppingBagIcon,
+  Squares2X2Icon,
+  ListBulletIcon,
+  DocumentDuplicateIcon,
+  ChevronUpIcon,
+  ChevronDownIcon,
+  XMarkIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
 } from '@heroicons/react/24/outline';
 
 // Helper function to safely parse JSON
@@ -48,6 +57,7 @@ interface Product {
   cost?: number;
   sku: string;
   category: string;
+  categoryId?: string;
   images: string[];
   stock: number;
   lowStockThreshold: number;
@@ -63,6 +73,10 @@ interface Product {
   };
 }
 
+type SortField = 'name' | 'price' | 'stock' | 'createdAt' | 'updatedAt';
+type SortDirection = 'asc' | 'desc';
+type ViewMode = 'table' | 'grid';
+
 const Products: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,72 +84,115 @@ const Products: React.FC = () => {
   const { formatPrice } = useCurrency();
   const { formatDate } = useDateFormat();
 
-  // Load products from API
-  useEffect(() => {
-    const loadProducts = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [totalItems, setTotalItems] = useState(0);
 
-        // Get auth token
-        const token = authService.getAccessToken();
-        const headers: HeadersInit = {
-          'Content-Type': 'application/json',
-        };
+  // Sorting state
+  const [sortField, setSortField] = useState<SortField>('createdAt');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-        }
+  // View mode state
+  const [viewMode, setViewMode] = useState<ViewMode>('table');
 
-        const response = await fetch(`${config.apiUrl}/products`, {
-          headers
-        });
-        const data = await response.json();
+  // Selection state for bulk actions
+  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
+  const [selectAll, setSelectAll] = useState(false);
 
-        if (data.success && data.data) {
-          // Transform API data to match frontend interface
-          const transformedProducts = data.data.map((product: any) => ({
-            id: product.id,
-            name: product.name,
-            description: product.description || '',
-            price: product.price,
-            comparePrice: product.comparePrice,
-            cost: product.cost,
-            sku: product.sku,
-            category: product.category?.name || 'غير محدد',
-            images: product.images ? safeJsonParse(product.images, []) : [],
-            stock: product.stock,
-            lowStockThreshold: product.lowStockThreshold || 5,
-            isActive: product.isActive,
-            createdAt: new Date(product.createdAt),
-            updatedAt: new Date(product.updatedAt),
-            tags: product.tags ? safeJsonParse(product.tags, []) : [],
-            weight: product.weight,
-            dimensions: product.dimensions ? safeJsonParse(product.dimensions, undefined) : undefined,
-          }));
+  // Advanced filters state
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [priceMin, setPriceMin] = useState<string>('');
+  const [priceMax, setPriceMax] = useState<string>('');
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
+  const [tagsFilter, setTagsFilter] = useState<string>('');
 
-          setProducts(transformedProducts);
-        } else {
-          setError('فشل في تحميل المنتجات');
-        }
-      } catch (err) {
-        console.error('Error loading products:', err);
-        setError('حدث خطأ أثناء تحميل المنتجات');
-      } finally {
-        setLoading(false);
+  // Quick edit state
+  const [editingProduct, setEditingProduct] = useState<string | null>(null);
+  const [editPrice, setEditPrice] = useState<string>('');
+  const [editStock, setEditStock] = useState<string>('');
+
+  // Import modal state
+  const [showImportModal, setShowImportModal] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load products from API with pagination
+  const loadProducts = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const token = authService.getAccessToken();
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
       }
-    };
 
+      // Build query params
+      const params = new URLSearchParams({
+        page: currentPage.toString(),
+        limit: itemsPerPage.toString(),
+        sortBy: sortField,
+        sortOrder: sortDirection,
+      });
+
+      const response = await fetch(`${config.apiUrl}/products?${params}`, {
+        headers
+      });
+      const data = await response.json();
+
+      if (data.success && data.data) {
+        const transformedProducts = data.data.map((product: any) => ({
+          id: product.id,
+          name: product.name,
+          description: product.description || '',
+          price: product.price,
+          comparePrice: product.comparePrice,
+          cost: product.cost,
+          sku: product.sku,
+          category: product.category?.name || 'غير محدد',
+          categoryId: product.categoryId,
+          images: product.images ? safeJsonParse(product.images, []) : [],
+          stock: product.stock,
+          lowStockThreshold: product.lowStockThreshold || 5,
+          isActive: product.isActive,
+          createdAt: new Date(product.createdAt),
+          updatedAt: new Date(product.updatedAt),
+          tags: product.tags ? safeJsonParse(product.tags, []) : [],
+          weight: product.weight,
+          dimensions: product.dimensions ? safeJsonParse(product.dimensions, undefined) : undefined,
+        }));
+
+        setProducts(transformedProducts);
+        setTotalItems(data.pagination?.total || transformedProducts.length);
+      } else {
+        setError('فشل في تحميل المنتجات');
+      }
+    } catch (err) {
+      console.error('Error loading products:', err);
+      setError('حدث خطأ أثناء تحميل المنتجات');
+    } finally {
+      setLoading(false);
+    }
+  }, [currentPage, itemsPerPage, sortField, sortDirection]);
+
+  useEffect(() => {
     loadProducts();
-  }, []);
+  }, [loadProducts]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [stockFilter, setStockFilter] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(false);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
 
   const categories = Array.from(new Set(products.map(p => p.category)));
+  const allTags = Array.from(new Set(products.flatMap(p => p.tags || [])));
 
   const getStockStatus = (product: Product) => {
     if (product.stock === 0) return 'out-of-stock';
@@ -169,10 +226,12 @@ const Products: React.FC = () => {
     }
   };
 
+  // Advanced filtering with price range, date range, and tags
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          product.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         product.description.toLowerCase().includes(searchQuery.toLowerCase());
+                         product.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         (product.tags || []).some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
     
     const matchesCategory = categoryFilter === 'all' || product.category === categoryFilter;
     const matchesStatus = statusFilter === 'all' || 
@@ -182,15 +241,352 @@ const Products: React.FC = () => {
     const stockStatus = getStockStatus(product);
     const matchesStock = stockFilter === 'all' || stockStatus === stockFilter;
 
-    return matchesSearch && matchesCategory && matchesStatus && matchesStock;
+    // Advanced filters
+    const matchesPriceMin = !priceMin || product.price >= parseFloat(priceMin);
+    const matchesPriceMax = !priceMax || product.price <= parseFloat(priceMax);
+    const matchesDateFrom = !dateFrom || new Date(product.createdAt) >= new Date(dateFrom);
+    const matchesDateTo = !dateTo || new Date(product.createdAt) <= new Date(dateTo);
+    const matchesTags = !tagsFilter || (product.tags || []).some(tag => 
+      tag.toLowerCase().includes(tagsFilter.toLowerCase())
+    );
+
+    return matchesSearch && matchesCategory && matchesStatus && matchesStock && 
+           matchesPriceMin && matchesPriceMax && matchesDateFrom && matchesDateTo && matchesTags;
   });
 
-  const handleExport = () => {
+  // Sorting
+  const sortedProducts = [...filteredProducts].sort((a, b) => {
+    let comparison = 0;
+    switch (sortField) {
+      case 'name':
+        comparison = a.name.localeCompare(b.name, 'ar');
+        break;
+      case 'price':
+        comparison = a.price - b.price;
+        break;
+      case 'stock':
+        comparison = a.stock - b.stock;
+        break;
+      case 'createdAt':
+        comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        break;
+      case 'updatedAt':
+        comparison = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+        break;
+    }
+    return sortDirection === 'asc' ? comparison : -comparison;
+  });
+
+  // Pagination calculations
+  const totalPages = Math.ceil(sortedProducts.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedProducts = sortedProducts.slice(startIndex, startIndex + itemsPerPage);
+
+  // Handle sort
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  // Handle select all
+  const handleSelectAll = () => {
+    if (selectAll) {
+      setSelectedProducts(new Set());
+    } else {
+      setSelectedProducts(new Set(paginatedProducts.map(p => p.id)));
+    }
+    setSelectAll(!selectAll);
+  };
+
+  // Handle single selection
+  const handleSelectProduct = (productId: string) => {
+    const newSelected = new Set(selectedProducts);
+    if (newSelected.has(productId)) {
+      newSelected.delete(productId);
+    } else {
+      newSelected.add(productId);
+    }
+    setSelectedProducts(newSelected);
+    setSelectAll(newSelected.size === paginatedProducts.length);
+  };
+
+  // Bulk actions
+  const handleBulkDelete = async () => {
+    if (selectedProducts.size === 0) return;
+    
+    if (!confirm(`هل أنت متأكد من حذف ${selectedProducts.size} منتج؟`)) return;
+
+    try {
+      const token = authService.getAccessToken();
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` })
+      };
+
+      let deletedCount = 0;
+      for (const productId of selectedProducts) {
+        const response = await fetch(`${config.apiUrl}/products/${productId}`, {
+          method: 'DELETE',
+          headers
+        });
+        if (response.ok) deletedCount++;
+      }
+
+      setProducts(prev => prev.filter(p => !selectedProducts.has(p.id)));
+      setSelectedProducts(new Set());
+      setSelectAll(false);
+      alert(`تم حذف ${deletedCount} منتج بنجاح`);
+    } catch (error) {
+      console.error('Error bulk deleting:', error);
+      alert('حدث خطأ أثناء الحذف');
+    }
+  };
+
+  const handleBulkToggleStatus = async (activate: boolean) => {
+    if (selectedProducts.size === 0) return;
+
+    try {
+      const token = authService.getAccessToken();
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` })
+      };
+
+      for (const productId of selectedProducts) {
+        await fetch(`${config.apiUrl}/products/${productId}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ isActive: activate })
+        });
+      }
+
+      setProducts(prev => prev.map(p => 
+        selectedProducts.has(p.id) ? { ...p, isActive: activate } : p
+      ));
+      setSelectedProducts(new Set());
+      setSelectAll(false);
+      alert(`تم ${activate ? 'تفعيل' : 'تعطيل'} ${selectedProducts.size} منتج بنجاح`);
+    } catch (error) {
+      console.error('Error bulk toggle status:', error);
+      alert('حدث خطأ أثناء تحديث الحالة');
+    }
+  };
+
+  // Quick edit handlers
+  const startQuickEdit = (product: Product) => {
+    setEditingProduct(product.id);
+    setEditPrice(product.price.toString());
+    setEditStock(product.stock.toString());
+  };
+
+  const cancelQuickEdit = () => {
+    setEditingProduct(null);
+    setEditPrice('');
+    setEditStock('');
+  };
+
+  const saveQuickEdit = async (productId: string) => {
+    try {
+      const token = authService.getAccessToken();
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` })
+      };
+
+      const response = await fetch(`${config.apiUrl}/products/${productId}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          price: parseFloat(editPrice),
+          stock: parseInt(editStock)
+        })
+      });
+
+      if (response.ok) {
+        setProducts(prev => prev.map(p => 
+          p.id === productId 
+            ? { ...p, price: parseFloat(editPrice), stock: parseInt(editStock), updatedAt: new Date() }
+            : p
+        ));
+        cancelQuickEdit();
+      } else {
+        alert('فشل في تحديث المنتج');
+      }
+    } catch (error) {
+      console.error('Error quick edit:', error);
+      alert('حدث خطأ أثناء التحديث');
+    }
+  };
+
+  // Duplicate product
+  const handleDuplicate = async (product: Product) => {
+    try {
+      const token = authService.getAccessToken();
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` })
+      };
+
+      const duplicateData = {
+        name: `${product.name} (نسخة)`,
+        description: product.description,
+        price: product.price,
+        comparePrice: product.comparePrice,
+        cost: product.cost,
+        sku: `${product.sku}-copy`,
+        categoryId: product.categoryId,
+        images: product.images,
+        tags: product.tags,
+        stock: product.stock,
+        lowStockThreshold: product.lowStockThreshold,
+        isActive: false,
+        weight: product.weight,
+        dimensions: product.dimensions,
+      };
+
+      const response = await fetch(`${config.apiUrl}/products`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(duplicateData)
+      });
+
+      if (response.ok) {
+        loadProducts();
+        alert('تم نسخ المنتج بنجاح');
+      } else {
+        alert('فشل في نسخ المنتج');
+      }
+    } catch (error) {
+      console.error('Error duplicating product:', error);
+      alert('حدث خطأ أثناء نسخ المنتج');
+    }
+  };
+
+  // Export to CSV
+  const handleExport = async () => {
     setIsLoading(true);
-    setTimeout(() => {
+    try {
+      const token = authService.getAccessToken();
+      const headers: HeadersInit = {
+        ...(token && { 'Authorization': `Bearer ${token}` })
+      };
+
+      const response = await fetch(`${config.apiUrl}/products/export?format=csv`, {
+        headers
+      });
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `products-${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        alert('تم تصدير المنتجات بنجاح!');
+      } else {
+        // Fallback: export locally
+        exportToCSVLocal();
+      }
+    } catch (error) {
+      console.error('Error exporting:', error);
+      exportToCSVLocal();
+    } finally {
       setIsLoading(false);
-      alert('تم تصدير المنتجات بنجاح!');
-    }, 2000);
+    }
+  };
+
+  // Local CSV export fallback
+  const exportToCSVLocal = () => {
+    const headers = ['الاسم', 'SKU', 'السعر', 'سعر المقارنة', 'المخزون', 'الفئة', 'الحالة', 'تاريخ الإنشاء'];
+    const rows = filteredProducts.map(p => [
+      p.name,
+      p.sku,
+      p.price,
+      p.comparePrice || '',
+      p.stock,
+      p.category,
+      p.isActive ? 'نشط' : 'غير نشط',
+      new Date(p.createdAt).toLocaleDateString('ar-EG')
+    ]);
+
+    const csvContent = '\uFEFF' + [headers, ...rows].map(row => row.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `products-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    alert('تم تصدير المنتجات بنجاح!');
+  };
+
+  // Import from CSV
+  const handleImportCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const lines = text.split('\n').filter(line => line.trim());
+      // Skip header line
+      const dataLines = lines.slice(1);
+      
+      const productsToImport = dataLines.map(line => {
+        const values = line.split(',');
+        return {
+          name: values[0]?.trim() || '',
+          sku: values[1]?.trim() || `SKU-${Date.now()}`,
+          price: parseFloat(values[2] || '0') || 0,
+          stock: parseInt(values[4] || '0', 10) || 0,
+          isActive: true,
+        };
+      }).filter(p => p.name);
+
+      const token = authService.getAccessToken();
+      const headersReq: HeadersInit = {
+        'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` })
+      };
+
+      let importedCount = 0;
+      for (const product of productsToImport) {
+        const response = await fetch(`${config.apiUrl}/products`, {
+          method: 'POST',
+          headers: headersReq,
+          body: JSON.stringify(product)
+        });
+        if (response.ok) importedCount++;
+      }
+
+      loadProducts();
+      setShowImportModal(false);
+      alert(`تم استيراد ${importedCount} منتج بنجاح`);
+    } catch (error) {
+      console.error('Error importing CSV:', error);
+      alert('حدث خطأ أثناء استيراد الملف');
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // Reset advanced filters
+  const resetAdvancedFilters = () => {
+    setPriceMin('');
+    setPriceMax('');
+    setDateFrom('');
+    setDateTo('');
+    setTagsFilter('');
   };
 
   const handleView = (productId: string) => {
@@ -276,26 +672,121 @@ const Products: React.FC = () => {
     }
   };
 
+  const handleDeleteAll = async () => {
+    if (products.length === 0) {
+      alert('لا توجد منتجات لحذفها');
+      return;
+    }
+
+    const confirmMessage = `هل أنت متأكد من حذف جميع المنتجات؟\n\nسيتم حذف ${products.length} منتج نهائياً.\n\nهذا الإجراء لا يمكن التراجع عنه!`;
+    
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    // تأكيد إضافي للسلامة
+    const secondConfirm = prompt('للتأكيد، اكتب "حذف الكل" في المربع أدناه:');
+    if (secondConfirm !== 'حذف الكل') {
+      alert('تم إلغاء عملية الحذف');
+      return;
+    }
+
+    try {
+      setIsDeletingAll(true);
+      const token = authService.getAccessToken();
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(`${config.apiUrl}/products/bulk/delete`, {
+        method: 'DELETE',
+        headers
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setProducts([]);
+        alert(`تم حذف ${data.data?.deletedProductsCount || 0} منتج و ${data.data?.deletedVariantsCount || 0} متغير بنجاح`);
+      } else {
+        alert(data.message || 'فشل في حذف المنتجات');
+      }
+    } catch (error) {
+      console.error('Error deleting all products:', error);
+      alert('حدث خطأ أثناء حذف المنتجات');
+    } finally {
+      setIsDeletingAll(false);
+    }
+  };
+
   const totalValue = products.reduce((sum, product) => sum + (product.price * product.stock), 0);
   const lowStockCount = products.filter(p => getStockStatus(p) === 'low-stock').length;
   const outOfStockCount = products.filter(p => getStockStatus(p) === 'out-of-stock').length;
-  console.log(filteredProducts)
+
+  // Sort icon component
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return <ChevronUpIcon className="h-4 w-4 text-gray-400" />;
+    return sortDirection === 'asc' 
+      ? <ChevronUpIcon className="h-4 w-4 text-indigo-600" />
+      : <ChevronDownIcon className="h-4 w-4 text-indigo-600" />;
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">إدارة المنتجات</h1>
           <p className="text-gray-600 mt-1">إدارة وتتبع جميع منتجاتك ومخزونك</p>
         </div>
-        <div className="flex items-center space-x-3 space-x-reverse">
+        <div className="flex items-center space-x-3 space-x-reverse flex-wrap gap-2">
+          {/* View Mode Toggle */}
+          <div className="flex border border-gray-300 rounded-lg overflow-hidden">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`p-2 ${viewMode === 'table' ? 'bg-indigo-100 text-indigo-600' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              title="عرض جدول"
+            >
+              <ListBulletIcon className="h-5 w-5" />
+            </button>
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-2 ${viewMode === 'grid' ? 'bg-indigo-100 text-indigo-600' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              title="عرض شبكة"
+            >
+              <Squares2X2Icon className="h-5 w-5" />
+            </button>
+          </div>
+
+          <button
+            onClick={handleDeleteAll}
+            disabled={isDeletingAll || products.length === 0}
+            className="inline-flex items-center px-4 py-2 border border-red-300 rounded-md shadow-sm text-sm font-medium text-red-700 bg-white hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <TrashIcon className="h-4 w-4 ml-2" />
+            {isDeletingAll ? 'جاري الحذف...' : 'حذف الكل'}
+          </button>
+          
+          {/* Import Button */}
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+          >
+            <ArrowUpTrayIcon className="h-4 w-4 ml-2" />
+            استيراد CSV
+          </button>
+          
           <button
             onClick={handleExport}
             disabled={isLoading}
             className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
           >
             <ArrowDownTrayIcon className="h-4 w-4 ml-2" />
-            {isLoading ? 'جاري التصدير...' : 'تصدير'}
+            {isLoading ? 'جاري التصدير...' : 'تصدير CSV'}
           </button>
           <Link
             to="/products/import-easy-orders"
@@ -322,19 +813,19 @@ const Products: React.FC = () => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
           <div className="flex items-center">
             <div className="p-2 bg-blue-100 rounded-lg">
               <PhotoIcon className="h-6 w-6 text-blue-600" />
             </div>
             <div className="mr-4">
               <p className="text-sm font-medium text-gray-600">إجمالي المنتجات</p>
-              <p className="text-2xl font-bold text-gray-900">{products.length}</p>
+              <p className="text-2xl font-bold text-gray-900">{totalItems || products.length}</p>
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
           <div className="flex items-center">
             <div className="p-2 bg-green-100 rounded-lg">
               <CheckCircleIcon className="h-6 w-6 text-green-600" />
@@ -347,7 +838,7 @@ const Products: React.FC = () => {
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
           <div className="flex items-center">
             <div className="p-2 bg-yellow-100 rounded-lg">
               <ExclamationTriangleIcon className="h-6 w-6 text-yellow-600" />
@@ -358,18 +849,68 @@ const Products: React.FC = () => {
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <div className="flex items-center">
+            <div className="p-2 bg-red-100 rounded-lg">
+              <XCircleIcon className="h-6 w-6 text-red-600" />
+            </div>
+            <div className="mr-4">
+              <p className="text-sm font-medium text-gray-600">نفد المخزون</p>
+              <p className="text-2xl font-bold text-gray-900">{outOfStockCount}</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
           <div className="flex items-center">
             <div className="p-2 bg-purple-100 rounded-lg">
               <PhotoIcon className="h-6 w-6 text-purple-600" />
             </div>
             <div className="mr-4">
               <p className="text-sm font-medium text-gray-600">قيمة المخزون</p>
-              <p className="text-2xl font-bold text-gray-900">{formatPrice(totalValue)}</p>
+              <p className="text-xl font-bold text-gray-900">{formatPrice(totalValue)}</p>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Bulk Actions Bar */}
+      {selectedProducts.size > 0 && (
+        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 flex items-center justify-between">
+          <span className="text-indigo-700 font-medium">
+            تم تحديد {selectedProducts.size} منتج
+          </span>
+          <div className="flex items-center space-x-3 space-x-reverse">
+            <button
+              onClick={() => handleBulkToggleStatus(true)}
+              className="inline-flex items-center px-3 py-1.5 bg-green-600 text-white rounded-md text-sm hover:bg-green-700"
+            >
+              <CheckCircleIcon className="h-4 w-4 ml-1" />
+              تفعيل
+            </button>
+            <button
+              onClick={() => handleBulkToggleStatus(false)}
+              className="inline-flex items-center px-3 py-1.5 bg-yellow-600 text-white rounded-md text-sm hover:bg-yellow-700"
+            >
+              <XCircleIcon className="h-4 w-4 ml-1" />
+              تعطيل
+            </button>
+            <button
+              onClick={handleBulkDelete}
+              className="inline-flex items-center px-3 py-1.5 bg-red-600 text-white rounded-md text-sm hover:bg-red-700"
+            >
+              <TrashIcon className="h-4 w-4 ml-1" />
+              حذف
+            </button>
+            <button
+              onClick={() => { setSelectedProducts(new Set()); setSelectAll(false); }}
+              className="inline-flex items-center px-3 py-1.5 bg-gray-600 text-white rounded-md text-sm hover:bg-gray-700"
+            >
+              <XMarkIcon className="h-4 w-4 ml-1" />
+              إلغاء التحديد
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -378,7 +919,7 @@ const Products: React.FC = () => {
             <MagnifyingGlassIcon className="h-5 w-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <input
               type="text"
-              placeholder="البحث عن منتج..."
+              placeholder="البحث عن منتج أو SKU أو Tag..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
@@ -413,11 +954,85 @@ const Products: React.FC = () => {
             <option value="low-stock">مخزون منخفض</option>
             <option value="out-of-stock">نفد المخزون</option>
           </select>
-          <button className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+          <button 
+            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+            className={`inline-flex items-center px-4 py-2 border rounded-lg text-sm font-medium ${
+              showAdvancedFilters 
+                ? 'border-indigo-500 text-indigo-700 bg-indigo-50' 
+                : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
+            }`}
+          >
             <FunnelIcon className="h-4 w-4 ml-2" />
             فلاتر متقدمة
           </button>
         </div>
+
+        {/* Advanced Filters Panel */}
+        {showAdvancedFilters && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">السعر من</label>
+                <input
+                  type="number"
+                  value={priceMin}
+                  onChange={(e) => setPriceMin(e.target.value)}
+                  placeholder="0"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">السعر إلى</label>
+                <input
+                  type="number"
+                  value={priceMax}
+                  onChange={(e) => setPriceMax(e.target.value)}
+                  placeholder="999999"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">من تاريخ</label>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">إلى تاريخ</label>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
+                <select
+                  value={tagsFilter}
+                  onChange={(e) => setTagsFilter(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">جميع الـ Tags</option>
+                  {allTags.map(tag => (
+                    <option key={tag} value={tag}>{tag}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="mt-3 flex justify-end">
+              <button
+                onClick={resetAdvancedFilters}
+                className="text-sm text-indigo-600 hover:text-indigo-800"
+              >
+                إعادة تعيين الفلاتر
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Loading State */}
@@ -490,27 +1105,59 @@ const Products: React.FC = () => {
         </div>
       )}
 
-      {/* Products Table */}
-      {!loading && !error && products.length > 0 && (
+      {/* Products Table View */}
+      {!loading && !error && products.length > 0 && viewMode === 'table' && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    المنتج
+                  <th className="px-4 py-3 text-right">
+                    <input
+                      type="checkbox"
+                      checked={selectAll}
+                      onChange={handleSelectAll}
+                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                    />
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    السعر
+                  <th 
+                    className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('name')}
+                  >
+                    <div className="flex items-center gap-1">
+                      المنتج
+                      <SortIcon field="name" />
+                    </div>
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    المخزون
+                  <th 
+                    className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('price')}
+                  >
+                    <div className="flex items-center gap-1">
+                      السعر
+                      <SortIcon field="price" />
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('stock')}
+                  >
+                    <div className="flex items-center gap-1">
+                      المخزون
+                      <SortIcon field="stock" />
+                    </div>
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                     الحالة
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    آخر تحديث
+                  <th 
+                    className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('updatedAt')}
+                  >
+                    <div className="flex items-center gap-1">
+                      آخر تحديث
+                      <SortIcon field="updatedAt" />
+                    </div>
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                     الإجراءات
@@ -518,10 +1165,19 @@ const Products: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredProducts.map((product) => {
+                {paginatedProducts.map((product) => {
                   const stockStatus = getStockStatus(product);
+                  const isEditing = editingProduct === product.id;
                   return (
-                    <tr key={product.id} className="hover:bg-gray-50">
+                    <tr key={product.id} className={`hover:bg-gray-50 ${selectedProducts.has(product.id) ? 'bg-indigo-50' : ''}`}>
+                      <td className="px-4 py-4">
+                        <input
+                          type="checkbox"
+                          checked={selectedProducts.has(product.id)}
+                          onChange={() => handleSelectProduct(product.id)}
+                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                        />
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <div className="flex-shrink-0 h-12 w-12">
@@ -548,18 +1204,40 @@ const Products: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{formatPrice(product.price)}</div>
-                        {product.comparePrice && (
-                          <div className="text-sm text-gray-500 line-through">
-                            {formatPrice(product.comparePrice)}
-                          </div>
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            value={editPrice}
+                            onChange={(e) => setEditPrice(e.target.value)}
+                            className="w-24 px-2 py-1 border border-gray-300 rounded text-sm"
+                          />
+                        ) : (
+                          <>
+                            <div className="text-sm text-gray-900">{formatPrice(product.price)}</div>
+                            {product.comparePrice && (
+                              <div className="text-sm text-gray-500 line-through">
+                                {formatPrice(product.comparePrice)}
+                              </div>
+                            )}
+                          </>
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{product.stock} قطعة</div>
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStockStatusColor(stockStatus)}`}>
-                          {getStockStatusText(stockStatus)}
-                        </span>
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            value={editStock}
+                            onChange={(e) => setEditStock(e.target.value)}
+                            className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+                          />
+                        ) : (
+                          <>
+                            <div className="text-sm text-gray-900">{product.stock} قطعة</div>
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStockStatusColor(stockStatus)}`}>
+                              {getStockStatusText(stockStatus)}
+                            </span>
+                          </>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
@@ -573,34 +1251,69 @@ const Products: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex items-center space-x-2 space-x-reverse">
-                          <button
-                            onClick={() => handleView(product.id)}
-                            className="text-indigo-600 hover:text-indigo-900"
-                            title="عرض المنتج"
-                          >
-                            <EyeIcon className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => handleEdit(product.id)}
-                            className="text-green-600 hover:text-green-900"
-                            title="تعديل المنتج"
-                          >
-                            <PencilIcon className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => handleToggleStatus(product.id)}
-                            className={`${product.isActive ? 'text-yellow-600 hover:text-yellow-900' : 'text-green-600 hover:text-green-900'}`}
-                            title={product.isActive ? 'إلغاء تفعيل المنتج' : 'تفعيل المنتج'}
-                          >
-                            {product.isActive ? <XCircleIcon className="h-4 w-4" /> : <CheckCircleIcon className="h-4 w-4" />}
-                          </button>
-                          <button
-                            onClick={() => handleDelete(product.id)}
-                            className="text-red-600 hover:text-red-900"
-                            title="حذف المنتج"
-                          >
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
+                          {isEditing ? (
+                            <>
+                              <button
+                                onClick={() => saveQuickEdit(product.id)}
+                                className="text-green-600 hover:text-green-900"
+                                title="حفظ"
+                              >
+                                <CheckCircleIcon className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={cancelQuickEdit}
+                                className="text-red-600 hover:text-red-900"
+                                title="إلغاء"
+                              >
+                                <XCircleIcon className="h-4 w-4" />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => handleView(product.id)}
+                                className="text-indigo-600 hover:text-indigo-900"
+                                title="عرض المنتج"
+                              >
+                                <EyeIcon className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => handleEdit(product.id)}
+                                className="text-green-600 hover:text-green-900"
+                                title="تعديل المنتج"
+                              >
+                                <PencilIcon className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => startQuickEdit(product)}
+                                className="text-blue-600 hover:text-blue-900"
+                                title="تعديل سريع"
+                              >
+                                <PencilIcon className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDuplicate(product)}
+                                className="text-purple-600 hover:text-purple-900"
+                                title="نسخ المنتج"
+                              >
+                                <DocumentDuplicateIcon className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => handleToggleStatus(product.id)}
+                                className={`${product.isActive ? 'text-yellow-600 hover:text-yellow-900' : 'text-green-600 hover:text-green-900'}`}
+                                title={product.isActive ? 'إلغاء تفعيل المنتج' : 'تفعيل المنتج'}
+                              >
+                                {product.isActive ? <XCircleIcon className="h-4 w-4" /> : <CheckCircleIcon className="h-4 w-4" />}
+                              </button>
+                              <button
+                                onClick={() => handleDelete(product.id)}
+                                className="text-red-600 hover:text-red-900"
+                                title="حذف المنتج"
+                              >
+                                <TrashIcon className="h-4 w-4" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -612,38 +1325,217 @@ const Products: React.FC = () => {
         </div>
       )}
 
+      {/* Products Grid View */}
+      {!loading && !error && products.length > 0 && viewMode === 'grid' && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {paginatedProducts.map((product) => {
+            const stockStatus = getStockStatus(product);
+            return (
+              <div 
+                key={product.id} 
+                className={`bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow ${
+                  selectedProducts.has(product.id) ? 'ring-2 ring-indigo-500' : ''
+                }`}
+              >
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    checked={selectedProducts.has(product.id)}
+                    onChange={() => handleSelectProduct(product.id)}
+                    className="absolute top-2 right-2 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded z-10"
+                  />
+                  {product.images && product.images.length > 0 ? (
+                    <img
+                      src={product.images[0]}
+                      alt={product.name}
+                      className="w-full h-48 object-cover"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <div className="w-full h-48 bg-gray-200 flex items-center justify-center">
+                      <PhotoIcon className="h-12 w-12 text-gray-400" />
+                    </div>
+                  )}
+                  <span className={`absolute bottom-2 left-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                    product.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                  }`}>
+                    {product.isActive ? 'نشط' : 'غير نشط'}
+                  </span>
+                </div>
+                <div className="p-4">
+                  <h3 className="text-sm font-medium text-gray-900 truncate">{product.name}</h3>
+                  <p className="text-xs text-gray-500 mt-1">SKU: {product.sku}</p>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-lg font-bold text-indigo-600">{formatPrice(product.price)}</span>
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStockStatusColor(stockStatus)}`}>
+                      {product.stock}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+                    <button
+                      onClick={() => handleView(product.id)}
+                      className="text-indigo-600 hover:text-indigo-900"
+                      title="عرض"
+                    >
+                      <EyeIcon className="h-5 w-5" />
+                    </button>
+                    <button
+                      onClick={() => handleEdit(product.id)}
+                      className="text-green-600 hover:text-green-900"
+                      title="تعديل"
+                    >
+                      <PencilIcon className="h-5 w-5" />
+                    </button>
+                    <button
+                      onClick={() => handleDuplicate(product)}
+                      className="text-purple-600 hover:text-purple-900"
+                      title="نسخ"
+                    >
+                      <DocumentDuplicateIcon className="h-5 w-5" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(product.id)}
+                      className="text-red-600 hover:text-red-900"
+                      title="حذف"
+                    >
+                      <TrashIcon className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Pagination */}
-      <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6 rounded-lg shadow-sm border border-gray-200">
-        <div className="flex-1 flex justify-between sm:hidden">
-          <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            السابق
-          </button>
-          <button className="mr-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            التالي
-          </button>
-        </div>
-        <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm text-gray-700">
-              عرض <span className="font-medium">1</span> إلى <span className="font-medium">{filteredProducts.length}</span> من{' '}
-              <span className="font-medium">{products.length}</span> منتج
-            </p>
+      {!loading && !error && sortedProducts.length > 0 && (
+        <div className="bg-white px-4 py-3 flex items-center justify-between rounded-lg shadow-sm border border-gray-200">
+          <div className="flex-1 flex justify-between sm:hidden">
+            <button 
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+            >
+              <ChevronRightIcon className="h-5 w-5" />
+              السابق
+            </button>
+            <button 
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              className="mr-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+            >
+              التالي
+              <ChevronLeftIcon className="h-5 w-5" />
+            </button>
           </div>
-          <div>
-            <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-              <button className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                السابق
-              </button>
-              <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
-                1
-              </button>
-              <button className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                التالي
-              </button>
-            </nav>
+          <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+            <div className="flex items-center gap-4">
+              <p className="text-sm text-gray-700">
+                عرض <span className="font-medium">{startIndex + 1}</span> إلى{' '}
+                <span className="font-medium">{Math.min(startIndex + itemsPerPage, sortedProducts.length)}</span> من{' '}
+                <span className="font-medium">{sortedProducts.length}</span> منتج
+              </p>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                className="px-2 py-1 border border-gray-300 rounded text-sm"
+              >
+                <option value={10}>10 لكل صفحة</option>
+                <option value={25}>25 لكل صفحة</option>
+                <option value={50}>50 لكل صفحة</option>
+                <option value={100}>100 لكل صفحة</option>
+              </select>
+            </div>
+            <div>
+              <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                <button 
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <ChevronRightIcon className="h-5 w-5" />
+                </button>
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = currentPage - 2 + i;
+                  }
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
+                        currentPage === pageNum
+                          ? 'z-10 bg-indigo-50 border-indigo-500 text-indigo-600'
+                          : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+                <button 
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <ChevronLeftIcon className="h-5 w-5" />
+                </button>
+              </nav>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Import CSV Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">استيراد منتجات من CSV</h3>
+              <button onClick={() => setShowImportModal(false)} className="text-gray-400 hover:text-gray-600">
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 mb-2">
+                قم برفع ملف CSV يحتوي على الأعمدة التالية:
+              </p>
+              <ul className="text-xs text-gray-500 list-disc list-inside">
+                <li>الاسم (مطلوب)</li>
+                <li>SKU</li>
+                <li>السعر</li>
+                <li>سعر المقارنة</li>
+                <li>المخزون</li>
+              </ul>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv"
+              onChange={handleImportCSV}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setShowImportModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

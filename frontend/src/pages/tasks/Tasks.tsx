@@ -17,7 +17,10 @@ import {
   PencilIcon,
   TrashIcon,
   ChartBarIcon,
+  ArrowPathIcon,
+  DocumentDuplicateIcon,
 } from '@heroicons/react/24/outline';
+import RecurringTaskForm from '../../components/tasks/RecurringTaskForm';
 
 interface TaskCategory {
   id: string;
@@ -100,10 +103,9 @@ const Tasks: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
   const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
-  const [showBulkActions, setShowBulkActions] = useState(false);
 
   // Users state
-  const [users, setUsers] = useState<{ id: string; firstName: string; lastName: string }[]>([]);
+  const [users, setUsers] = useState<{ id: string; firstName: string; lastName: string; name?: string }[]>([]);
   
   // Project modals
   const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
@@ -150,12 +152,56 @@ const Tasks: React.FC = () => {
     tags: [] as string[],
   });
 
+  // Recurring task state
+  const [recurringConfig, setRecurringConfig] = useState({
+    enabled: false,
+    frequency: 'weekly' as 'daily' | 'weekly' | 'monthly' | 'yearly',
+    interval: 1,
+    daysOfWeek: [] as number[],
+    dayOfMonth: 1,
+    endType: 'never' as 'never' | 'date' | 'count',
+    endDate: '',
+    endCount: 10,
+  });
+
+  // Templates state
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [showTemplateSelector, setShowTemplateSelector] = useState(false);
+
   useEffect(() => {
     fetchTasks();
     fetchProjects();
     fetchUsers();
     fetchCategories();
+    fetchTemplates();
   }, [filters, taskFilter]);
+
+  const fetchTemplates = async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch(buildApiUrl('tasks/templates'), {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (data.success) {
+        setTemplates(data.data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching templates:', error);
+    }
+  };
+
+  const applyTemplate = (template: any) => {
+    setNewTask({
+      ...newTask,
+      title: template.title,
+      description: template.description || '',
+      priority: template.priority || 'medium',
+      estimatedHours: template.estimatedHours || 0,
+      tags: template.tags || [],
+    });
+    setShowTemplateSelector(false);
+  };
 
   const fetchUsers = async () => {
     try {
@@ -427,6 +473,7 @@ const Tasks: React.FC = () => {
         setShowCreateTaskModal(false);
         setNewTask({
           projectId: '',
+          categoryId: '',
           title: '',
           description: '',
           priority: 'medium',
@@ -887,6 +934,27 @@ const Tasks: React.FC = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
               الإشعارات
+            </Link>
+            <Link
+              to="/tasks/calendar"
+              className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            >
+              <CalendarIcon className="h-5 w-5 mr-2" />
+              التقويم
+            </Link>
+            <Link
+              to="/tasks/time-reports"
+              className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            >
+              <ClockIcon className="h-5 w-5 mr-2" />
+              تقارير الوقت
+            </Link>
+            <Link
+              to="/tasks/templates"
+              className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            >
+              <FolderIcon className="h-5 w-5 mr-2" />
+              القوالب
             </Link>
             <button
               onClick={() => setShowCreateTaskModal(true)}
@@ -1817,12 +1885,38 @@ const Tasks: React.FC = () => {
       {/* Create Task Modal */}
       {showCreateTaskModal && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
+          <div className="relative top-10 mx-auto p-5 border w-full max-w-3xl shadow-lg rounded-md bg-white max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-medium text-gray-900">إنشاء مهمة جديدة</h3>
-              <button onClick={() => setShowCreateTaskModal(false)} className="text-gray-400 hover:text-gray-600">
-                <XMarkIcon className="h-6 w-6" />
-              </button>
+              <div className="flex items-center space-x-2 space-x-reverse">
+                {/* Template Button */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowTemplateSelector(!showTemplateSelector)}
+                    className="inline-flex items-center px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                  >
+                    <DocumentDuplicateIcon className="h-4 w-4 ml-1" />
+                    من قالب
+                  </button>
+                  {showTemplateSelector && templates.length > 0 && (
+                    <div className="absolute left-0 top-full mt-1 w-64 bg-white rounded-lg shadow-lg border z-50 max-h-48 overflow-y-auto">
+                      {templates.map((template) => (
+                        <button
+                          key={template.id}
+                          onClick={() => applyTemplate(template)}
+                          className="w-full text-right px-4 py-2 hover:bg-gray-50 border-b last:border-b-0"
+                        >
+                          <div className="font-medium text-gray-900">{template.name}</div>
+                          <div className="text-xs text-gray-500">{template.description}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => setShowCreateTaskModal(false)} className="text-gray-400 hover:text-gray-600">
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
             </div>
             
             <div className="space-y-4">
@@ -1939,6 +2033,36 @@ const Tasks: React.FC = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   min="0"
                 />
+              </div>
+
+              {/* Recurring Task Section */}
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="flex items-center text-sm font-medium text-gray-700">
+                    <ArrowPathIcon className="h-5 w-5 ml-2 text-indigo-600" />
+                    مهمة متكررة
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setRecurringConfig({...recurringConfig, enabled: !recurringConfig.enabled})}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      recurringConfig.enabled ? 'bg-indigo-600' : 'bg-gray-200'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        recurringConfig.enabled ? '-translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+                
+                {recurringConfig.enabled && (
+                  <RecurringTaskForm
+                    value={recurringConfig}
+                    onChange={setRecurringConfig}
+                  />
+                )}
               </div>
             </div>
 

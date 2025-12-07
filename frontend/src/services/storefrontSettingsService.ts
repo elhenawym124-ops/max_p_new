@@ -8,56 +8,56 @@ import { getApiUrl } from '../config/environment';
 export interface StorefrontSettings {
   id: string;
   companyId: string;
-  
+
   // Quick View Settings
   quickViewEnabled: boolean;
   quickViewShowAddToCart: boolean;
   quickViewShowWishlist: boolean;
-  
+
   // Product Comparison Settings
   comparisonEnabled: boolean;
   maxComparisonProducts: number;
   comparisonShowPrice: boolean;
   comparisonShowSpecs: boolean;
-  
+
   // Wishlist Settings
   wishlistEnabled: boolean;
   wishlistRequireLogin: boolean;
   wishlistMaxItems: number;
-  
+
   // Advanced Filters Settings
   advancedFiltersEnabled: boolean;
   filterByPrice: boolean;
   filterByRating: boolean;
   filterByBrand: boolean;
   filterByAttributes: boolean;
-  
+
   // Reviews & Ratings Settings
   reviewsEnabled: boolean;
   reviewsRequirePurchase: boolean;
   reviewsModerationEnabled: boolean;
   reviewsShowRating: boolean;
   minRatingToDisplay: number;
-  
+
   // Countdown Timer Settings
   countdownEnabled: boolean;
   countdownShowOnProduct: boolean;
   countdownShowOnListing: boolean;
-  
+
   // Back in Stock Settings
   backInStockEnabled: boolean;
   backInStockNotifyEmail: boolean;
   backInStockNotifySMS: boolean;
-  
+
   // Recently Viewed Settings
   recentlyViewedEnabled: boolean;
   recentlyViewedCount: number;
   recentlyViewedDays: number;
-  
+
   // ==========================================
   // 🖼️ Product Image Gallery Settings (NEW)
   // ==========================================
-  
+
   // Gallery Layout Settings
   galleryLayout?: 'bottom' | 'left' | 'right' | 'top' | 'grid';
   galleryStyle?: 'slider' | 'grid' | 'vertical-scroll';
@@ -66,7 +66,7 @@ export interface StorefrontSettings {
   thumbnailSpacing?: number;
   thumbnailBorderRadius?: number;
   mainImageAspectRatio?: '1:1' | '4:3' | '3:4' | '16:9' | 'auto';
-  
+
   // Slider/Carousel Settings
   sliderEnabled?: boolean;
   sliderAutoplay?: boolean;
@@ -76,7 +76,7 @@ export interface StorefrontSettings {
   sliderInfiniteLoop?: boolean;
   sliderTransitionEffect?: 'slide' | 'fade' | 'flip' | 'cube';
   sliderTransitionSpeed?: number;
-  
+
   // Image Zoom Settings (Enhanced)
   imageZoomEnabled: boolean;
   imageZoomType: 'hover' | 'click' | 'both';
@@ -87,7 +87,7 @@ export interface StorefrontSettings {
   zoomWindowPosition?: 'right' | 'left' | 'top' | 'bottom';
   zoomWindowSize?: number;
   mouseWheelZoom?: boolean;
-  
+
   // Lightbox Settings
   lightboxEnabled?: boolean;
   lightboxShowThumbnails?: boolean;
@@ -97,7 +97,7 @@ export interface StorefrontSettings {
   lightboxKeyboardNav?: boolean;
   lightboxBackgroundColor?: string;
   lightboxCloseOnOverlay?: boolean;
-  
+
   // Product Videos Settings (Enhanced)
   productVideosEnabled: boolean;
   videoAutoplay: boolean;
@@ -107,57 +107,57 @@ export interface StorefrontSettings {
   videoPlayMode?: 'inline' | 'popup';
   videoPosition?: 'start' | 'end' | 'default';
   videoThumbnailIcon?: boolean;
-  
+
   // Variation Images Settings
   variationImagesEnabled?: boolean;
   variationImagesBehavior?: 'replace' | 'add' | 'highlight';
   variationImagesAnimation?: 'fade' | 'slide' | 'none';
-  
+
   // Mobile Gallery Settings
   mobileSwipeEnabled?: boolean;
   mobilePinchZoom?: boolean;
   mobileFullscreenOnTap?: boolean;
   mobileGalleryLayout?: 'slider' | 'vertical' | 'grid';
   mobileShowThumbnails?: boolean;
-  
+
   // 360° View Settings
   view360Enabled?: boolean;
   view360AutoRotate?: boolean;
   view360RotateSpeed?: number;
   view360ShowControls?: boolean;
-  
+
   // Visual Effects Settings
   imageHoverEffect?: 'none' | 'zoom' | 'brightness' | 'shadow';
   imageBorderRadius?: number;
   imageShadow?: boolean;
   imageLoadingEffect?: 'blur' | 'skeleton' | 'spinner';
   imagePlaceholder?: string;
-  
+
   // Size Guide Settings
   sizeGuideEnabled: boolean;
   sizeGuideShowOnProduct: boolean;
-  
+
   // Social Sharing Settings
   socialSharingEnabled: boolean;
   shareFacebook: boolean;
   shareTwitter: boolean;
   shareWhatsApp: boolean;
   shareTelegram: boolean;
-  
+
   // Product Badges Settings
   badgesEnabled: boolean;
   badgeNew: boolean;
   badgeBestSeller: boolean;
   badgeOnSale: boolean;
   badgeOutOfStock: boolean;
-  
+
   // Product Tabs Settings
   tabsEnabled: boolean;
   tabDescription: boolean;
   tabSpecifications: boolean;
   tabReviews: boolean;
   tabShipping: boolean;
-  
+
   // Sticky Add to Cart Settings
   stickyAddToCartEnabled: boolean;
   stickyShowOnMobile: boolean;
@@ -170,20 +170,20 @@ export interface StorefrontSettings {
   stickyShowProductName?: boolean;
   stickyTrackAnalytics?: boolean;
   stickyAutoScrollToCheckout?: boolean;
-  
+
   // Product Navigation Settings
   navigationEnabled?: boolean;
   navigationType?: 'sameCategory' | 'allProducts';
   showNavigationButtons?: boolean;
   keyboardShortcuts?: boolean;
-  
+
   // Sold Number Display Settings
   soldNumberEnabled?: boolean;
   soldNumberType?: 'real' | 'fake';
   soldNumberMin?: number;
   soldNumberMax?: number;
   soldNumberText?: string;
-  
+
   // Variant Styles Settings
   variantColorStyle?: 'buttons' | 'circles' | 'thumbnails' | 'dropdown' | 'swatches';
   variantColorShowName?: boolean;
@@ -191,7 +191,7 @@ export interface StorefrontSettings {
   variantSizeStyle?: 'buttons' | 'table' | 'dropdown' | 'grid';
   variantSizeShowGuide?: boolean;
   variantSizeShowStock?: boolean;
-  
+
   // Stock Progress Bar Settings
   stockProgressEnabled?: boolean;
   stockProgressType?: 'percentage' | 'count' | 'text';
@@ -199,7 +199,7 @@ export interface StorefrontSettings {
   stockProgressMediumColor?: string;
   stockProgressHighColor?: string;
   stockProgressThreshold?: number;
-  
+
   // Security Badges Settings
   securityBadgesEnabled?: boolean;
   badgeSecurePayment?: boolean;
@@ -213,14 +213,14 @@ export interface StorefrontSettings {
   badgeCustom2?: boolean;
   badgeCustom2Text?: string;
   badgeLayout?: 'horizontal' | 'vertical';
-  
+
   // Reasons to Purchase Settings
   reasonsToPurchaseEnabled?: boolean;
   reasonsToPurchaseType?: 'global' | 'perProduct';
   reasonsToPurchaseList?: string; // JSON array
   reasonsToPurchaseMaxItems?: number;
   reasonsToPurchaseStyle?: 'list' | 'icons';
-  
+
   // Online Visitors Count Settings
   onlineVisitorsEnabled?: boolean;
   onlineVisitorsType?: 'real' | 'fake';
@@ -228,12 +228,12 @@ export interface StorefrontSettings {
   onlineVisitorsMax?: number;
   onlineVisitorsUpdateInterval?: number;
   onlineVisitorsText?: string;
-  
+
   // Estimated Delivery Time Settings
   estimatedDeliveryEnabled?: boolean;
   estimatedDeliveryShowOnProduct?: boolean;
   estimatedDeliveryDefaultText?: string;
-  
+
   // FOMO Popup Settings
   fomoEnabled?: boolean;
   fomoType?: 'soldCount' | 'visitors' | 'stock' | 'countdown';
@@ -241,21 +241,9 @@ export interface StorefrontSettings {
   fomoDelay?: number;
   fomoShowOncePerSession?: boolean;
   fomoMessage?: string;
-  
+
   // SEO Settings
   seoEnabled: boolean;
-  seoMetaDescription: boolean;
-  seoStructuredData: boolean;
-  seoSitemap: boolean;
-  seoOpenGraph: boolean;
-  
-  // Multi-language Settings
-  multiLanguageEnabled: boolean;
-  defaultLanguage: string;
-  supportedLanguages: string[];
-  
-  // Facebook Pixel Settings
-  facebookPixelEnabled?: boolean;
   facebookPixelId?: string;
   pixelTrackPageView?: boolean;
   pixelTrackViewContent?: boolean;
@@ -264,7 +252,17 @@ export interface StorefrontSettings {
   pixelTrackPurchase?: boolean;
   pixelTrackSearch?: boolean;
   pixelTrackAddToWishlist?: boolean;
-  
+
+  // Mobile Bottom Navbar Settings
+  mobileBottomNavbarEnabled?: boolean;
+  mobileBottomNavbarShowHome?: boolean;
+  mobileBottomNavbarShowShop?: boolean;
+  mobileBottomNavbarShowWishlist?: boolean;
+  mobileBottomNavbarShowAccount?: boolean;
+  mobileBottomNavbarShowCompare?: boolean;
+  mobileBottomNavbarShowSearch?: boolean;
+  mobileBottomNavbarShowCart?: boolean;
+
   // Facebook Conversions API Settings
   facebookConvApiEnabled?: boolean;
   facebookConvApiToken?: string;
@@ -275,7 +273,7 @@ export interface StorefrontSettings {
   capiTrackInitiateCheckout?: boolean;
   capiTrackPurchase?: boolean;
   capiTrackSearch?: boolean;
-  
+
   // Advanced Settings
   eventDeduplicationEnabled?: boolean;
   eventMatchQualityTarget?: number;
@@ -285,7 +283,7 @@ export interface StorefrontSettings {
   lastCapiTest?: string;
   pixelStatus?: string;
   capiStatus?: string;
-  
+
   // Product Page Layout Order Settings
   productPageLayoutEnabled?: boolean;
   productPageOrder?: string; // JSON array of element IDs in order
@@ -314,7 +312,7 @@ export interface StorefrontSettings {
   productPageShowDescription?: boolean;
   productPageShowSKU?: boolean;
   productPageShowCheckoutForm?: boolean;
-  
+
   createdAt: string;
   updatedAt: string;
 }
@@ -384,16 +382,16 @@ export const storefrontSettingsService = {
         if (cached) {
           const { data, timestamp } = JSON.parse(cached);
           const now = Date.now();
-          
+
           // التحقق من أن الـ cache لم ينتهِ
           if (now - timestamp < CACHE_EXPIRY) {
             // التحقق من أن الـ cache يحتوي على جميع الحقول المطلوبة
             // إذا كان `recentlyViewedEnabled` غير موجود، نعتبر الـ cache قديماً
             const hasRecentlyViewed = 'recentlyViewedEnabled' in data && data.recentlyViewedEnabled !== undefined;
-            
+
             // التحقق من أن Facebook Pixel settings موجودة وصحيحة
             const hasValidPixelSettings = 'facebookPixelEnabled' in data && 'facebookPixelId' in data;
-            
+
             if (!hasRecentlyViewed || !hasValidPixelSettings) {
               console.warn('⚠️ [STOREFRONT-SETTINGS] Cache missing required fields, fetching fresh data', {
                 hasRecentlyViewed,
@@ -434,9 +432,9 @@ export const storefrontSettingsService = {
         companyId,
         url: settingsUrl
       });
-      
+
       const response = await fetch(settingsUrl);
-      
+
       if (!response.ok) {
         // Handle 500 errors gracefully - server might be having issues
         if (response.status === 500) {
@@ -456,7 +454,7 @@ export const storefrontSettingsService = {
           } catch (e) {
             // لا يوجد cache - نستخدم القيم الافتراضية
           }
-          
+
           // Return default disabled settings for server errors
           return {
             success: true,
@@ -475,9 +473,9 @@ export const storefrontSettingsService = {
         }
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
+
       const data = await response.json();
-      
+
       console.log('📡 [STOREFRONT-SETTINGS] API response received:', {
         success: data.success,
         hasData: !!data.data,
@@ -486,7 +484,7 @@ export const storefrontSettingsService = {
         facebookConvApiEnabled: data.data?.facebookConvApiEnabled,
         hasConvApiToken: !!data.data?.facebookConvApiToken
       });
-      
+
       // التحقق من أن البيانات موجودة وصحيحة
       if (data.success && data.data) {
         // Debug logging for Facebook Pixel
@@ -496,7 +494,7 @@ export const storefrontSettingsService = {
           pixelStatus: data.data.pixelStatus,
           pixelTrackPageView: data.data.pixelTrackPageView
         });
-        
+
         // حفظ البيانات في Cache
         try {
           localStorage.setItem(CACHE_KEY, JSON.stringify({
@@ -512,7 +510,7 @@ export const storefrontSettingsService = {
             console.warn('⚠️ [STOREFRONT-SETTINGS] Failed to cache settings');
           }
         }
-        
+
         if (isDevelopment) {
           console.log('✅ [STOREFRONT-SETTINGS] Settings loaded successfully:', {
             quickViewEnabled: data.data.quickViewEnabled,
@@ -531,7 +529,7 @@ export const storefrontSettingsService = {
     } catch (error: any) {
       // Only log non-500 errors (500 is server issue, expected)
       const status = error?.status || error?.response?.status;
-      
+
       // محاولة استخدام الـ cache القديم في حالة خطأ
       try {
         const cached = localStorage.getItem(CACHE_KEY);
@@ -548,11 +546,11 @@ export const storefrontSettingsService = {
       } catch (e) {
         // لا يوجد cache
       }
-      
+
       if (status !== 500 && isDevelopment) {
         console.error('❌ [STOREFRONT-SETTINGS] Error fetching public storefront settings:', error);
       }
-      
+
       // إرجاع القيم الافتراضية (كلها false) في حالة الخطأ لتجنب عرض المزايا عند فشل الجلب
       // هذا يضمن أن المزايا لن تظهر إذا فشل جلب الإعدادات
       return {

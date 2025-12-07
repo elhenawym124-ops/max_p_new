@@ -1538,6 +1538,73 @@ const deleteProductVariant = async (req, res) => {
   }
 };
 
+// Delete all products for a company
+const deleteAllProducts = async (req, res) => {
+  try {
+    console.log(`🗑️ [DELETE-ALL] Route called - Method: ${req.method}, Path: ${req.path}`);
+    
+    const companyId = req.user?.companyId;
+    
+    if (!companyId) {
+      console.log(`❌ [DELETE-ALL] No companyId found`);
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+      });
+    }
+
+    console.log(`🗑️ [DELETE-ALL] Deleting all products for company: ${companyId}`);
+
+    const prisma = getSharedPrismaClient();
+
+    // First, get all products for this company
+    const productsToDelete = await prisma.product.findMany({
+      where: { companyId },
+      select: { id: true }
+    });
+
+    const productIds = productsToDelete.map(p => p.id);
+    let deletedVariantsCount = 0;
+
+    // Delete all variants first (if there are any products)
+    if (productIds.length > 0) {
+      const deletedVariants = await prisma.productVariant.deleteMany({
+        where: {
+          productId: { in: productIds }
+        }
+      });
+      deletedVariantsCount = deletedVariants.count;
+      console.log(`   ✅ Deleted ${deletedVariantsCount} variants`);
+    }
+
+    // Now delete all products
+    const deletedProducts = await prisma.product.deleteMany({
+      where: { companyId }
+    });
+
+    console.log(`   ✅ Deleted ${deletedProducts.count} products`);
+
+    res.json({
+      success: true,
+      message: `تم حذف ${deletedProducts.count} منتج و ${deletedVariantsCount} متغير بنجاح`,
+      data: {
+        deletedProductsCount: deletedProducts.count,
+        deletedVariantsCount: deletedVariantsCount
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ [DELETE-ALL] Error deleting all products:', error);
+    console.error('❌ [DELETE-ALL] Error stack:', error.stack);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في حذف المنتجات',
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+};
+
 // Get product variants
 const getProductVariants = async (req, res) => {
   try {
@@ -1601,6 +1668,7 @@ module.exports = {
   getSingleProduct, 
   updateSingleProduct, 
   deleteSingleProduct, 
+  deleteAllProducts,
   createProduct, 
   deleteImageFromOneProduct, 
   uploadProductImages,

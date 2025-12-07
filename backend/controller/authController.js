@@ -78,6 +78,34 @@ const register = async (req, res) => {
       }
     });
 
+    // Auto-create employee record for the new user
+    try {
+      const employeeCount = await getSharedPrismaClient().employee.count({ 
+        where: { companyId: company.id } 
+      });
+      const employeeNumber = `EMP${String(employeeCount + 1).padStart(5, '0')}`;
+      
+      await getSharedPrismaClient().employee.create({
+        data: {
+          companyId: company.id,
+          userId: user.id,
+          employeeNumber,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          phone: phone || null,
+          hireDate: new Date(),
+          status: 'ACTIVE',
+          contractType: 'FULL_TIME'
+        }
+      });
+      
+      console.log('✅ [REGISTER] Employee record created for user:', user.email);
+    } catch (error) {
+      console.error('⚠️ [REGISTER] Failed to create employee record:', error);
+      // Don't fail registration if employee creation fails
+    }
+
     // Generate JWT token
     const token = jwt.sign(
       {

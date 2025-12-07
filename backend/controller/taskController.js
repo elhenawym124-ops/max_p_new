@@ -1816,6 +1816,326 @@ getAllTasks: async (req, res) => {
       console.error('Error deleting category:', error);
       res.status(500).json({ success: false, error: 'فشل في حذف القسم' });
     }
+  },
+
+  // ==================== Templates ====================
+  
+  // جلب جميع القوالب
+  getTemplates: async (req, res) => {
+    try {
+      const companyId = req.user.companyId;
+      const templates = await getSharedPrismaClient().taskTemplate.findMany({
+        where: { companyId },
+        include: {
+          createdByUser: {
+            select: { id: true, firstName: true, lastName: true }
+          }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+      res.json({ success: true, data: templates });
+    } catch (error) {
+      console.error('Error fetching templates:', error);
+      res.status(500).json({ success: false, error: 'فشل في جلب القوالب' });
+    }
+  },
+
+  // إنشاء قالب جديد
+  createTemplate: async (req, res) => {
+    try {
+      const companyId = req.user.companyId;
+      const userId = req.user.id;
+      const { name, description, defaultPriority, type, estimatedHours, tags, checklist, isPublic } = req.body;
+
+      const template = await getSharedPrismaClient().taskTemplate.create({
+        data: {
+          name,
+          description,
+          defaultPriority: normalizePriority(defaultPriority),
+          type: type || 'general',
+          estimatedHours: estimatedHours || 0,
+          tags: tags || [],
+          checklist: checklist || [],
+          isPublic: isPublic || false,
+          createdBy: userId,
+          companyId
+        }
+      });
+      res.json({ success: true, data: template });
+    } catch (error) {
+      console.error('Error creating template:', error);
+      res.status(500).json({ success: false, error: 'فشل في إنشاء القالب' });
+    }
+  },
+
+  // تحديث قالب
+  updateTemplate: async (req, res) => {
+    try {
+      const companyId = req.user.companyId;
+      const { id } = req.params;
+      const { name, description, defaultPriority, type, estimatedHours, tags, checklist, isPublic } = req.body;
+
+      const template = await getSharedPrismaClient().taskTemplate.updateMany({
+        where: { id, companyId },
+        data: {
+          name,
+          description,
+          defaultPriority: normalizePriority(defaultPriority),
+          type,
+          estimatedHours,
+          tags,
+          checklist,
+          isPublic
+        }
+      });
+      res.json({ success: true, data: template });
+    } catch (error) {
+      console.error('Error updating template:', error);
+      res.status(500).json({ success: false, error: 'فشل في تحديث القالب' });
+    }
+  },
+
+  // حذف قالب
+  deleteTemplate: async (req, res) => {
+    try {
+      const companyId = req.user.companyId;
+      const { id } = req.params;
+
+      await getSharedPrismaClient().taskTemplate.deleteMany({
+        where: { id, companyId }
+      });
+      res.json({ success: true, message: 'تم حذف القالب بنجاح' });
+    } catch (error) {
+      console.error('Error deleting template:', error);
+      res.status(500).json({ success: false, error: 'فشل في حذف القالب' });
+    }
+  },
+
+  // ==================== Checklists ====================
+  
+  // جلب قوائم التحقق للمهمة
+  getChecklists: async (req, res) => {
+    try {
+      const companyId = req.user.companyId;
+      const { taskId } = req.params;
+
+      const checklists = await getSharedPrismaClient().taskChecklist.findMany({
+        where: { taskId, companyId },
+        include: {
+          items: {
+            orderBy: { position: 'asc' },
+            include: {
+              completedUser: {
+                select: { id: true, firstName: true, lastName: true }
+              }
+            }
+          }
+        },
+        orderBy: { position: 'asc' }
+      });
+      res.json({ success: true, data: checklists });
+    } catch (error) {
+      console.error('Error fetching checklists:', error);
+      res.status(500).json({ success: false, error: 'فشل في جلب قوائم التحقق' });
+    }
+  },
+
+  // إنشاء قائمة تحقق
+  createChecklist: async (req, res) => {
+    try {
+      const companyId = req.user.companyId;
+      const { taskId } = req.params;
+      const { title } = req.body;
+
+      // Get max position
+      const maxPosition = await getSharedPrismaClient().taskChecklist.aggregate({
+        where: { taskId, companyId },
+        _max: { position: true }
+      });
+
+      const checklist = await getSharedPrismaClient().taskChecklist.create({
+        data: {
+          taskId,
+          title,
+          position: (maxPosition._max.position || 0) + 1,
+          companyId
+        },
+        include: { items: true }
+      });
+      res.json({ success: true, data: checklist });
+    } catch (error) {
+      console.error('Error creating checklist:', error);
+      res.status(500).json({ success: false, error: 'فشل في إنشاء قائمة التحقق' });
+    }
+  },
+
+  // حذف قائمة تحقق
+  deleteChecklist: async (req, res) => {
+    try {
+      const companyId = req.user.companyId;
+      const { checklistId } = req.params;
+
+      await getSharedPrismaClient().taskChecklist.deleteMany({
+        where: { id: checklistId, companyId }
+      });
+      res.json({ success: true, message: 'تم حذف قائمة التحقق' });
+    } catch (error) {
+      console.error('Error deleting checklist:', error);
+      res.status(500).json({ success: false, error: 'فشل في حذف قائمة التحقق' });
+    }
+  },
+
+  // إضافة عنصر لقائمة التحقق
+  addChecklistItem: async (req, res) => {
+    try {
+      const { checklistId } = req.params;
+      const { content } = req.body;
+
+      // Get max position
+      const maxPosition = await getSharedPrismaClient().taskChecklistItem.aggregate({
+        where: { checklistId },
+        _max: { position: true }
+      });
+
+      const item = await getSharedPrismaClient().taskChecklistItem.create({
+        data: {
+          checklistId,
+          content,
+          position: (maxPosition._max.position || 0) + 1
+        }
+      });
+      res.json({ success: true, data: item });
+    } catch (error) {
+      console.error('Error adding checklist item:', error);
+      res.status(500).json({ success: false, error: 'فشل في إضافة العنصر' });
+    }
+  },
+
+  // تحديث عنصر قائمة التحقق
+  updateChecklistItem: async (req, res) => {
+    try {
+      const { itemId } = req.params;
+      const { content, isCompleted } = req.body;
+      const userId = req.user.id;
+
+      const updateData = {};
+      if (content !== undefined) updateData.content = content;
+      if (isCompleted !== undefined) {
+        updateData.isCompleted = isCompleted;
+        updateData.completedAt = isCompleted ? new Date() : null;
+        updateData.completedBy = isCompleted ? userId : null;
+      }
+
+      const item = await getSharedPrismaClient().taskChecklistItem.update({
+        where: { id: itemId },
+        data: updateData
+      });
+      res.json({ success: true, data: item });
+    } catch (error) {
+      console.error('Error updating checklist item:', error);
+      res.status(500).json({ success: false, error: 'فشل في تحديث العنصر' });
+    }
+  },
+
+  // حذف عنصر قائمة التحقق
+  deleteChecklistItem: async (req, res) => {
+    try {
+      const { itemId } = req.params;
+
+      await getSharedPrismaClient().taskChecklistItem.delete({
+        where: { id: itemId }
+      });
+      res.json({ success: true, message: 'تم حذف العنصر' });
+    } catch (error) {
+      console.error('Error deleting checklist item:', error);
+      res.status(500).json({ success: false, error: 'فشل في حذف العنصر' });
+    }
+  },
+
+  // ==================== Dependencies ====================
+  
+  // جلب تبعيات المهمة
+  getDependencies: async (req, res) => {
+    try {
+      const companyId = req.user.companyId;
+      const { taskId } = req.params;
+
+      const dependencies = await getSharedPrismaClient().taskDependency.findMany({
+        where: { 
+          OR: [
+            { taskId, companyId },
+            { dependsOnId: taskId, companyId }
+          ]
+        },
+        include: {
+          task: {
+            select: { id: true, title: true, status: true, priority: true }
+          },
+          dependsOn: {
+            select: { id: true, title: true, status: true, priority: true }
+          }
+        }
+      });
+      res.json({ success: true, data: dependencies });
+    } catch (error) {
+      console.error('Error fetching dependencies:', error);
+      res.status(500).json({ success: false, error: 'فشل في جلب التبعيات' });
+    }
+  },
+
+  // إضافة تبعية
+  addDependency: async (req, res) => {
+    try {
+      const companyId = req.user.companyId;
+      const { taskId } = req.params;
+      const { dependsOnId, type } = req.body;
+
+      // Check if dependency already exists
+      const existing = await getSharedPrismaClient().taskDependency.findFirst({
+        where: { taskId, dependsOnId, companyId }
+      });
+
+      if (existing) {
+        return res.status(400).json({ success: false, error: 'التبعية موجودة بالفعل' });
+      }
+
+      const dependency = await getSharedPrismaClient().taskDependency.create({
+        data: {
+          taskId,
+          dependsOnId,
+          type: type || 'blocked_by',
+          companyId
+        },
+        include: {
+          task: {
+            select: { id: true, title: true, status: true, priority: true }
+          },
+          dependsOn: {
+            select: { id: true, title: true, status: true, priority: true }
+          }
+        }
+      });
+      res.json({ success: true, data: dependency });
+    } catch (error) {
+      console.error('Error adding dependency:', error);
+      res.status(500).json({ success: false, error: 'فشل في إضافة التبعية' });
+    }
+  },
+
+  // حذف تبعية
+  removeDependency: async (req, res) => {
+    try {
+      const companyId = req.user.companyId;
+      const { dependencyId } = req.params;
+
+      await getSharedPrismaClient().taskDependency.deleteMany({
+        where: { id: dependencyId, companyId }
+      });
+      res.json({ success: true, message: 'تم حذف التبعية' });
+    } catch (error) {
+      console.error('Error removing dependency:', error);
+      res.status(500).json({ success: false, error: 'فشل في حذف التبعية' });
+    }
   }
 };
 

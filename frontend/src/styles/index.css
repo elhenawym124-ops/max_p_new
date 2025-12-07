@@ -502,3 +502,49 @@ select {
 .animate-shake {
   animation: shake 0.5s ease-in-out;
 }
+
+/* Product Description Styles - Ensure images display correctly */
+.product-description {
+  direction: rtl;
+  text-align: right;
+}
+
+.product-description img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 1rem auto;
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.product-description p {
+  margin-bottom: 1rem;
+  line-height: 1.7;
+}
+
+.product-description h1,
+.product-description h2,
+.product-description h3,
+.product-description h4,
+.product-description h5,
+.product-description h6 {
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+
+.product-description ul,
+.product-description ol {
+  margin-right: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.product-description a {
+  color: #3b82f6;
+  text-decoration: underline;
+}
+
+.product-description a:hover {
+  color: #2563eb;
+}

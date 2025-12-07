@@ -78,7 +78,7 @@ const RelatedProducts: React.FC<RelatedProductsProps> = ({ productId, companyId,
   };
 
   const handleProductClick = (id: string) => {
-    navigate(`/shop/product/${id}?companyId=${companyId}`);
+    navigate(`/shop/products/${id}?companyId=${companyId}`);
     window.scrollTo(0, 0);
   };
 

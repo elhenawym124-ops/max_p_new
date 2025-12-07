@@ -20,7 +20,7 @@ const ModernLogin: React.FC = () => {
     rememberMe: false,
   });
 
-  const { login } = useAuth();
+  const { login, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -64,11 +64,24 @@ const ModernLogin: React.FC = () => {
       setError('');
       setSuccess('جاري تسجيل الدخول...');
 
-      await login(formData);
+      const userData = await login(formData);
       setSuccess('تم تسجيل الدخول بنجاح! جاري التوجيه...');
 
+      // Determine redirect path based on user role
+      let redirectPath = from;
+
+      if (userData) {
+        // Check user role and redirect accordingly
+        if (userData.role === 'SUPER_ADMIN') {
+          redirectPath = '/super-admin/dashboard';
+        } else {
+          // Company members go to company dashboard
+          redirectPath = '/company-dashboard';
+        }
+      }
+
       setTimeout(() => {
-        navigate(from, { replace: true });
+        navigate(redirectPath, { replace: true });
       }, 1000);
     } catch (err: any) {
       setError(err.message || 'فشل في تسجيل الدخول. يرجى التحقق من البيانات والمحاولة مرة أخرى');

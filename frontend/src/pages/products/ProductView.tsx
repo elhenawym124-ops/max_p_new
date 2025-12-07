@@ -4,6 +4,7 @@ import { authService } from '../../services/authService';
 import { useCurrency } from '../../hooks/useCurrency';
 import { buildApiUrl } from '../../utils/urlHelper';
 import { convertToPublicUrl } from '../../utils/urlConverter';
+import { useAuth } from '../../hooks/useAuthSimple';
 import {
   ArrowLeftIcon,
   PencilIcon,
@@ -16,7 +17,8 @@ import {
   CalendarIcon,
   EyeIcon,
   EyeSlashIcon,
-  ArrowPathIcon
+  ArrowPathIcon,
+  ArrowTopRightOnSquareIcon
 } from '@heroicons/react/24/outline';
 
 interface ProductVariant {
@@ -66,6 +68,7 @@ interface Product {
 
 const ProductView: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { user } = useAuth();
   const [product, setProduct] = useState<Product | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
@@ -379,6 +382,18 @@ const ProductView: React.FC = () => {
                 <PencilIcon className="h-4 w-4 ml-2" />
                 تعديل
               </Link>
+
+              {user?.companyId && (
+                <a
+                  href={`/shop/products/${product.id}?companyId=${user.companyId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center px-4 py-2 border border-indigo-300 rounded-md shadow-sm text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100"
+                >
+                  <ArrowTopRightOnSquareIcon className="h-4 w-4 ml-2" />
+                  عرض في المتجر
+                </a>
+              )}
               
               <button
                 onClick={handleToggleStatus}
@@ -460,7 +475,14 @@ const ProductView: React.FC = () => {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">الوصف</label>
-                  <p className="text-gray-900">{product.description || 'لا يوجد وصف'}</p>
+                  {product.description ? (
+                    <div 
+                      className="text-gray-900 prose prose-sm max-w-none product-description"
+                      dangerouslySetInnerHTML={{ __html: product.description }}
+                    />
+                  ) : (
+                    <p className="text-gray-500">لا يوجد وصف</p>
+                  )}
                 </div>
                 
                 <div>

@@ -51,3 +51,29 @@ export const CardTitle: React.FC<CardTitleProps> = ({ children, className = '' }
     </h3>
   );
 };
+
+interface CardDescriptionProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+export const CardDescription: React.FC<CardDescriptionProps> = ({ children, className = '' }) => {
+  return (
+    <p className={`text-sm text-gray-500 ${className}`}>
+      {children}
+    </p>
+  );
+};
+
+interface CardFooterProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+export const CardFooter: React.FC<CardFooterProps> = ({ children, className = '' }) => {
+  return (
+    <div className={`px-6 py-4 border-t border-gray-200 ${className}`}>
+      {children}
+    </div>
+  );
+};

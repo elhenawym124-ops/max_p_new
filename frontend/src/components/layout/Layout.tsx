@@ -5,6 +5,7 @@ import { buildStoreUrl } from '../../utils/storeUrl';
 import { useAuth } from '../../hooks/useAuthSimple';
 import NotificationDropdown from '../notifications/NotificationDropdown';
 import LanguageSwitcher from '../common/LanguageSwitcher';
+import ThemeToggle from '../ui/theme-toggle';
 import {
   UserCircleIcon,
   ArrowRightOnRectangleIcon,
@@ -141,6 +142,21 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       ]
     },
     {
+      id: 'hr',
+      title: 'الموارد البشرية',
+      icon: '👥',
+      items: [
+        { to: '/hr', icon: <ChartBarIcon className="h-5 w-5" />, label: 'لوحة التحكم', badge: 'جديد' },
+        { to: '/hr/employees', icon: <UsersIcon className="h-5 w-5" />, label: 'الموظفين' },
+        { to: '/hr/departments', icon: <BuildingOfficeIcon className="h-5 w-5" />, label: 'الأقسام' },
+        { to: '/hr/attendance', icon: <CheckCircleIcon className="h-5 w-5" />, label: 'الحضور والانصراف' },
+        { to: '/hr/leaves', icon: <CalendarIcon className="h-5 w-5" />, label: 'الإجازات' },
+        { to: '/hr/payroll', icon: <BanknotesIcon className="h-5 w-5" />, label: 'الرواتب' },
+        { to: '/hr/reports', icon: <DocumentTextIcon className="h-5 w-5" />, label: 'التقارير' },
+        { to: '/hr/settings', icon: <Cog6ToothIcon className="h-5 w-5" />, label: 'الإعدادات' },
+      ]
+    },
+    {
       id: 'marketing',
       title: t('sidebar.marketingSection'),
       icon: '📢',
@@ -254,11 +270,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   // فلترة القوائم حسب البحث
   const filteredSections = useMemo(() => {
     if (!searchQuery.trim()) return menuSections;
-    
+
     const query = searchQuery.toLowerCase();
     return menuSections.map(section => ({
       ...section,
-      items: section.items.filter(item => 
+      items: section.items.filter(item =>
         item.label.toLowerCase().includes(query) ||
         section.title.toLowerCase().includes(query)
       )
@@ -281,7 +297,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       // إذا كان slug غير موجود، استخدم companyId في query parameter كـ fallback
       const slug = user?.company?.slug;
       const companyId = user?.companyId;
-      
+
       // Debug logging
       console.log('🔍 [LAYOUT] Building shop URL:', {
         slug,
@@ -289,7 +305,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         hasSlug: !!slug,
         path: to
       });
-      
+
       let shopUrl: string;
       if (slug && slug.trim().length > 0) {
         // ✅ استخدم slug لبناء subdomain URL
@@ -304,7 +320,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         shopUrl = to;
         console.error('❌ [LAYOUT] No slug or companyId found!');
       }
-      
+
       return (
         <a
           href={shopUrl}
@@ -333,11 +349,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     return (
       <Link
         to={to}
-        className={`flex items-center px-3 py-2.5 rounded-lg transition-all duration-200 group ${
-          isActive
-            ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md'
-            : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50'
-        }`}
+        className={`flex items-center px-3 py-2.5 rounded-lg transition-all duration-200 group ${isActive
+          ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md'
+          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50'
+          }`}
         title={isSidebarCollapsed ? children as string : undefined}
       >
         <span className={`${isActive ? 'text-white' : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-300'} transition-colors ${isSidebarCollapsed ? 'mr-0' : 'mr-3'}`}>
@@ -361,11 +376,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       <div className="mb-4">
         <button
           onClick={() => toggleSection(section.id)}
-          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 group ${
-            hasActiveItem && !isSidebarCollapsed
-              ? 'bg-blue-50 dark:bg-blue-900/20'
-              : 'hover:bg-gray-100 dark:hover:bg-gray-700/50'
-          }`}
+          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 group ${hasActiveItem && !isSidebarCollapsed
+            ? 'bg-blue-50 dark:bg-blue-900/20'
+            : 'hover:bg-gray-100 dark:hover:bg-gray-700/50'
+            }`}
         >
           <div className="flex items-center">
             <span className="text-xl mr-2">{section.icon}</span>
@@ -377,18 +391,17 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           </div>
           {!isSidebarCollapsed && (
             <ChevronRightIcon
-              className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${
-                isCollapsed ? '' : 'rotate-90'
-              }`}
+              className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${isCollapsed ? '' : 'rotate-90'
+                }`}
             />
           )}
         </button>
         {(!isCollapsed || isSidebarCollapsed) && (
           <div className={`mt-1 space-y-1 ${isSidebarCollapsed ? 'mt-2' : ''}`}>
             {section.items.map((item) => (
-              <NavLink 
-                key={item.to} 
-                to={item.to} 
+              <NavLink
+                key={item.to}
+                to={item.to}
                 icon={item.icon}
                 external={(item as any).external}
                 badge={(item as any).badge}
@@ -406,10 +419,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     <div className="h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
       <div className="flex h-screen">
         {/* Sidebar */}
-        <div 
-          className={`${
-            isSidebarCollapsed ? 'w-20' : 'w-72'
-          } h-full bg-white dark:bg-gray-800 shadow-xl flex flex-col overflow-hidden transition-all duration-300 ease-in-out border-l border-gray-200 dark:border-gray-700`}
+        <div
+          className={`${isSidebarCollapsed ? 'w-20' : 'w-72'
+            } h-full bg-white dark:bg-gray-800 shadow-xl flex flex-col overflow-hidden transition-all duration-300 ease-in-out border-l border-gray-200 dark:border-gray-700`}
         >
           {/* Header */}
           <div className="flex-shrink-0 p-4 border-b border-gray-200 dark:border-gray-700">
@@ -519,9 +531,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   {t('sidebar.welcome')}
                 </h2>
                 <div className="flex items-center space-x-4 space-x-reverse">
-                  {/* Language Switcher */}
+                  <ThemeToggle />
                   <LanguageSwitcher />
-                  
+
                   {/* Notifications */}
                   <NotificationDropdown />
 

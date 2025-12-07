@@ -6,7 +6,6 @@ import {
   ClockIcon,
   CalendarIcon,
   UserCircleIcon,
-  ChatBubbleLeftIcon,
   PaperClipIcon,
   PlusIcon,
   PlayIcon,
@@ -14,12 +13,14 @@ import {
   PencilIcon,
   TrashIcon,
   CheckIcon,
-  XMarkIcon,
   EyeIcon,
-  BellIcon,
   FolderIcon,
-  ChartBarIcon,
+  LinkIcon,
+  ListBulletIcon,
 } from '@heroicons/react/24/outline';
+import TaskChecklist from '../../components/tasks/TaskChecklist';
+import TaskDependencies from '../../components/tasks/TaskDependencies';
+import MentionInput, { renderWithMentions } from '../../components/tasks/MentionInput';
 
 interface TaskDetails {
   id: string;
@@ -57,7 +58,7 @@ const TaskDetailsPage: React.FC = () => {
   const navigate = useNavigate();
   const [task, setTask] = useState<TaskDetails | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'subtasks' | 'comments' | 'time' | 'activity' | 'attachments'>('subtasks');
+  const [activeTab, setActiveTab] = useState<'subtasks' | 'checklists' | 'dependencies' | 'comments' | 'time' | 'activity' | 'attachments'>('subtasks');
   const [newComment, setNewComment] = useState('');
   const [newSubtask, setNewSubtask] = useState({ title: '', description: '' });
   const [showSubtaskForm, setShowSubtaskForm] = useState(false);
@@ -67,9 +68,6 @@ const TaskDetailsPage: React.FC = () => {
   const [editCommentContent, setEditCommentContent] = useState('');
   const [showManualTimeForm, setShowManualTimeForm] = useState(false);
   const [manualTimeEntry, setManualTimeEntry] = useState({ hours: 0, minutes: 0, description: '' });
-  const [showQuickEdit, setShowQuickEdit] = useState(false);
-  const [quickEditData, setQuickEditData] = useState({ status: '', priority: '', assignedTo: '', dueDate: '', progress: 0 });
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
@@ -384,7 +382,6 @@ const TaskDetailsPage: React.FC = () => {
       const data = await response.json();
       if (data.success) {
         fetchTaskDetails();
-        setShowQuickEdit(false);
       } else {
         alert(data.error || 'فشل في تحديث المهمة');
       }
@@ -768,6 +765,8 @@ const TaskDetailsPage: React.FC = () => {
               <nav className="flex -mb-px">
                 {[
                   { id: 'subtasks', label: 'المهام الفرعية', count: task.subtasks.length },
+                  { id: 'checklists', label: 'قوائم التحقق', count: 0, icon: ListBulletIcon },
+                  { id: 'dependencies', label: 'التبعيات', count: 0, icon: LinkIcon },
                   { id: 'comments', label: 'التعليقات', count: task.comments.length },
                   { id: 'time', label: 'سجل الوقت', count: task.timeEntries.length },
                   { id: 'attachments', label: 'المرفقات', count: task.attachments.length },
@@ -889,15 +888,30 @@ const TaskDetailsPage: React.FC = () => {
                 </div>
               )}
 
+              {/* Checklists Tab */}
+              {activeTab === 'checklists' && id && (
+                <TaskChecklist 
+                  taskId={id} 
+                  onUpdate={fetchTaskDetails}
+                />
+              )}
+
+              {/* Dependencies Tab */}
+              {activeTab === 'dependencies' && id && (
+                <TaskDependencies 
+                  taskId={id} 
+                  onUpdate={fetchTaskDetails}
+                />
+              )}
+
               {/* Comments Tab */}
               {activeTab === 'comments' && (
                 <div>
                   <div className="mb-4">
-                    <textarea
-                      placeholder="أضف تعليقاً..."
+                    <MentionInput
                       value={newComment}
-                      onChange={(e) => setNewComment(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      onChange={setNewComment}
+                      placeholder="أضف تعليقاً... استخدم @ للإشارة لشخص"
                       rows={3}
                     />
                     <div className="flex justify-end mt-2">
@@ -980,7 +994,7 @@ const TaskDetailsPage: React.FC = () => {
                                 </div>
                               </div>
                             ) : (
-                              <p className="text-gray-600 mt-1 whitespace-pre-wrap">{comment.content}</p>
+                              <p className="text-gray-600 mt-1 whitespace-pre-wrap">{renderWithMentions(comment.content)}</p>
                             )}
                           </div>
                         </div>

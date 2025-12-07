@@ -33,7 +33,7 @@ const HomepageSettings: React.FC = () => {
       const response = await homepageService.getTemplates();
       const templatesData = response.data.data || [];
       setTemplates(templatesData);
-      
+
       // Find active template
       const active = templatesData.find((t: HomepageTemplate) => t.isActive);
       setActiveTemplate(active || null);
@@ -109,7 +109,7 @@ const HomepageSettings: React.FC = () => {
     // بناء رابط المتجر
     const slug = user?.company?.slug || user.companyId;
     const storeUrl = buildStoreUrl(slug, '/home');
-    
+
     // فتح المتجر في تبويب جديد
     window.open(storeUrl, '_blank');
   };
@@ -237,9 +237,8 @@ const HomepageSettings: React.FC = () => {
           {templates.map((template) => (
             <div
               key={template.id}
-              className={`bg-white rounded-lg shadow-md overflow-hidden transition-all hover:shadow-lg ${
-                template.isActive ? 'ring-2 ring-green-500' : ''
-              }`}
+              className={`bg-white rounded-lg shadow-md overflow-hidden transition-all hover:shadow-lg ${template.isActive ? 'ring-2 ring-green-500' : ''
+                }`}
             >
               {/* Thumbnail */}
               <div className="relative h-48 bg-gradient-to-br from-indigo-100 to-purple-100">
@@ -323,6 +322,19 @@ const HomepageSettings: React.FC = () => {
         </div>
       )}
 
+      {/* System Templates Library */}
+      <div className="mt-12 mb-8">
+        <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+          <SparklesIcon className="h-6 w-6 text-indigo-600" />
+          مكتبة القوالب الجاهزة
+        </h2>
+        <p className="text-gray-600 mb-6">
+          اختر من مجموعة القوالب الجاهزة والمصممة بعناية لتبدأ متجرك بشكل احترافي.
+        </p>
+
+        <SystemTemplatesList onImport={() => loadTemplates()} />
+      </div>
+
       {/* Info Box */}
       <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-6">
         <div className="flex">
@@ -352,6 +364,70 @@ const HomepageSettings: React.FC = () => {
           </div>
         </div>
       </div>
+    </div>
+  );
+};
+
+// Sub-component for System Templates List
+const SystemTemplatesList: React.FC<{ onImport: () => void }> = ({ onImport }) => {
+  const [templates, setTemplates] = useState<HomepageTemplate[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await homepageService.getSystemTemplates();
+        setTemplates(res.data);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    load();
+  }, []);
+
+  const handleImport = async (templateId: string, name: string) => {
+    if (!confirm(`هل تود استيراد قالب "${name}" إلى متجرك؟`)) return;
+
+    try {
+      setLoading(true);
+      await homepageService.importSystemTemplate(templateId);
+      toast.success('تم استيراد القالب بنجاح');
+      onImport(); // Refresh user templates
+    } catch (err) {
+      toast.error('فشل الاستيراد');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (templates.length === 0) return null;
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {templates.map(template => (
+        <div key={template.id} className="bg-gradient-to-br from-indigo-50 to-white border border-indigo-100 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all group">
+          <div className="relative h-40 bg-gray-200 overflow-hidden">
+            <img
+              src={template.thumbnail || 'https://via.placeholder.com/400x200'}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+              alt={template.name}
+            />
+            <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={() => handleImport(template.id, template.name)}
+                className="bg-white text-indigo-600 px-4 py-2 rounded-full font-bold shadow-lg transform translate-y-2 group-hover:translate-y-0 transition-all"
+                disabled={loading}
+              >
+                استخدم القالب
+              </button>
+            </div>
+          </div>
+          <div className="p-4">
+            <h4 className="font-bold text-gray-900">{template.name}</h4>
+            <p className="text-sm text-gray-500 mt-1 line-clamp-2">{template.description}</p>
+          </div>
+        </div>
+      ))}
     </div>
   );
 };

@@ -25,6 +25,7 @@ import {
   FireIcon,
   TruckIcon,
   ArrowsUpDownIcon,
+  DevicePhoneMobileIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { storefrontSettingsService, StorefrontSettings, StorefrontSettingsUpdate } from '../../services/storefrontSettingsService';
@@ -56,15 +57,15 @@ const StorefrontFeaturesSettings: React.FC = () => {
       console.error('❌ [STOREFRONT-SETTINGS] Error loading settings:', error);
       console.error('❌ [STOREFRONT-SETTINGS] Error response:', error.response?.data);
       console.error('❌ [STOREFRONT-SETTINGS] Error status:', error.response?.status);
-      
+
       // عرض رسالة خطأ أكثر تفصيلاً
-      const errorMessage = error.response?.data?.message || 
-                          error.response?.data?.error || 
-                          error.message || 
-                          'فشل تحميل الإعدادات';
-      
+      const errorMessage = error.response?.data?.message ||
+        error.response?.data?.error ||
+        error.message ||
+        'فشل تحميل الإعدادات';
+
       toast.error(errorMessage);
-      
+
       // في development mode، عرض تفاصيل أكثر
       if (process.env.NODE_ENV === 'development') {
         console.error('❌ [STOREFRONT-SETTINGS] Full error details:', {
@@ -85,12 +86,12 @@ const StorefrontFeaturesSettings: React.FC = () => {
 
     try {
       setSaving(true);
-      
+
       // Remove undefined values and ensure String fields have proper defaults
       const cleanSettings = Object.fromEntries(
         Object.entries(settings).filter(([_, value]) => value !== undefined)
       ) as StorefrontSettings;
-      
+
       // Ensure String fields have proper defaults (not undefined/null)
       if (!cleanSettings.estimatedDeliveryDefaultText || typeof cleanSettings.estimatedDeliveryDefaultText !== 'string') {
         cleanSettings.estimatedDeliveryDefaultText = 'التوصيل خلال {time}';
@@ -102,12 +103,12 @@ const StorefrontFeaturesSettings: React.FC = () => {
         cleanSettings.fomoTrigger = 'time';
       }
       // fomoMessage can be null/empty, so we keep it as is
-      
-      const updateData: StorefrontSettingsUpdate = { 
+
+      const updateData: StorefrontSettingsUpdate = {
         ...cleanSettings,
         // Ensure supportedLanguages is always an array
-        supportedLanguages: Array.isArray(cleanSettings.supportedLanguages) 
-          ? cleanSettings.supportedLanguages 
+        supportedLanguages: Array.isArray(cleanSettings.supportedLanguages)
+          ? cleanSettings.supportedLanguages
           : (cleanSettings.supportedLanguages ? [cleanSettings.supportedLanguages] : ['ar'])
       };
       await storefrontSettingsService.updateSettings(updateData);
@@ -598,6 +599,59 @@ const StorefrontFeaturesSettings: React.FC = () => {
           </p>
         </SettingsSection>
 
+        {/* Mobile Bottom Navbar Section */}
+        <SettingsSection
+          title="شريط التنقل السفلي للموبايل"
+          icon={DevicePhoneMobileIcon}
+          enabled={settings.mobileBottomNavbarEnabled !== false}
+          onToggle={(enabled) => updateSetting('mobileBottomNavbarEnabled', enabled)}
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <ToggleSetting
+              label="إظهار الرئيسية"
+              value={settings.mobileBottomNavbarShowHome !== false}
+              onChange={(value) => updateSetting('mobileBottomNavbarShowHome', value)}
+              disabled={settings.mobileBottomNavbarEnabled === false}
+            />
+            <ToggleSetting
+              label="إظهار المتجر (Shop)"
+              value={settings.mobileBottomNavbarShowShop !== false}
+              onChange={(value) => updateSetting('mobileBottomNavbarShowShop', value)}
+              disabled={settings.mobileBottomNavbarEnabled === false}
+            />
+            <ToggleSetting
+              label="إظهار المفضلة"
+              value={settings.mobileBottomNavbarShowWishlist !== false}
+              onChange={(value) => updateSetting('mobileBottomNavbarShowWishlist', value)}
+              disabled={settings.mobileBottomNavbarEnabled === false}
+            />
+            <ToggleSetting
+              label="إظهار حسابي"
+              value={settings.mobileBottomNavbarShowAccount !== false}
+              onChange={(value) => updateSetting('mobileBottomNavbarShowAccount', value)}
+              disabled={settings.mobileBottomNavbarEnabled === false}
+            />
+            <ToggleSetting
+              label="إظهار زر المقارنة"
+              value={settings.mobileBottomNavbarShowCompare !== false}
+              onChange={(value) => updateSetting('mobileBottomNavbarShowCompare', value)}
+              disabled={settings.mobileBottomNavbarEnabled === false}
+            />
+            <ToggleSetting
+              label="إظهار زر البحث"
+              value={settings.mobileBottomNavbarShowSearch === true}
+              onChange={(value) => updateSetting('mobileBottomNavbarShowSearch', value)}
+              disabled={settings.mobileBottomNavbarEnabled === false}
+            />
+            <ToggleSetting
+              label="إظهار زر السلة"
+              value={settings.mobileBottomNavbarShowCart === true}
+              onChange={(value) => updateSetting('mobileBottomNavbarShowCart', value)}
+              disabled={settings.mobileBottomNavbarEnabled === false}
+            />
+          </div>
+        </SettingsSection>
+
         {/* Product Navigation Section */}
         <SettingsSection
           title="التنقل بين المنتجات"
@@ -696,7 +750,7 @@ const StorefrontFeaturesSettings: React.FC = () => {
           title="أنماط المتغيرات"
           icon={PaintBrushIcon}
           enabled={true}
-          onToggle={() => {}}
+          onToggle={() => { }}
         >
           <div className="space-y-4">
             <div>
@@ -1205,8 +1259,8 @@ const StorefrontFeaturesSettings: React.FC = () => {
             let currentOrder: string[] = defaultOrder;
             try {
               if (settings.productPageOrder) {
-                const parsed = typeof settings.productPageOrder === 'string' 
-                  ? JSON.parse(settings.productPageOrder) 
+                const parsed = typeof settings.productPageOrder === 'string'
+                  ? JSON.parse(settings.productPageOrder)
                   : settings.productPageOrder;
                 if (Array.isArray(parsed) && parsed.length > 0) {
                   currentOrder = parsed;
@@ -1463,9 +1517,8 @@ const NumberSetting: React.FC<NumberSettingProps> = ({ label, value, onChange, m
         min={min}
         max={max}
         disabled={disabled}
-        className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-          disabled ? 'opacity-50 cursor-not-allowed' : ''
-        }`}
+        className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 ${disabled ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
       />
     </div>
   );
@@ -1491,9 +1544,8 @@ const SelectSetting: React.FC<SelectSettingProps> = ({ label, value, onChange, o
         value={stringValue}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-          disabled ? 'opacity-50 cursor-not-allowed' : ''
-        }`}
+        className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 ${disabled ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>

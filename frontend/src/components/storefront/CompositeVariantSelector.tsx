@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import VariantSelector from './VariantSelector';
 
 interface Variant {
   id: string;
@@ -13,12 +14,19 @@ interface CompositeVariantSelectorProps {
   variants: Variant[];
   onSelect: (variantId: string) => void;
   selectedVariantId?: string | null;
+  productPrice?: number;
+  variantSettings?: {
+    styles?: { [key: string]: 'buttons' | 'circles' | 'dropdown' | 'thumbnails' | 'radio' };
+    attributeImages?: { [key: string]: { [value: string]: string } };
+  };
 }
 
 const CompositeVariantSelector: React.FC<CompositeVariantSelectorProps> = ({
   variants,
   onSelect,
-  selectedVariantId
+  selectedVariantId,
+  productPrice,
+  variantSettings
 }) => {
   // استخراج الألوان والمقاسات من أسماء المتغيرات المركبة
   const extractAttributes = () => {
@@ -27,14 +35,14 @@ const CompositeVariantSelector: React.FC<CompositeVariantSelectorProps> = ({
     const sizePatterns = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', '2XL', '3XL', '4XL', '5XL'];
     const arabicSizePatterns = ['صغير', 'وسط', 'كبير', 'كبير جداً'];
     const numericSizePattern = /^\d{2,3}$/; // مقاسات رقمية مثل 38, 39, 40
-    
+
     variants.forEach(v => {
       const parts = v.name.split(' - ').map(p => p.trim());
       parts.forEach(part => {
         const upperPart = part.toUpperCase();
         if (
-          sizePatterns.includes(upperPart) || 
-          arabicSizePatterns.includes(part) || 
+          sizePatterns.includes(upperPart) ||
+          arabicSizePatterns.includes(part) ||
           numericSizePattern.test(part)
         ) {
           sizes.add(part);
@@ -43,9 +51,9 @@ const CompositeVariantSelector: React.FC<CompositeVariantSelectorProps> = ({
         }
       });
     });
-    
-    return { 
-      colors: Array.from(colors), 
+
+    return {
+      colors: Array.from(colors),
       sizes: Array.from(sizes).sort((a, b) => {
         // ترتيب المقاسات
         const sizeOrder = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', '2XL', '3XL', '4XL', '5XL'];
@@ -64,7 +72,7 @@ const CompositeVariantSelector: React.FC<CompositeVariantSelectorProps> = ({
   };
 
   const { colors, sizes } = extractAttributes();
-  
+
   // تحديد القيم الافتراضية من المتغير المحدد حالياً
   const getInitialSelections = () => {
     if (selectedVariantId) {
@@ -73,16 +81,16 @@ const CompositeVariantSelector: React.FC<CompositeVariantSelectorProps> = ({
         const parts = selectedVariant.name.split(' - ').map(p => p.trim());
         let initialColor = null;
         let initialSize = null;
-        
+
         parts.forEach(part => {
           if (colors.includes(part)) initialColor = part;
           if (sizes.includes(part)) initialSize = part;
         });
-        
+
         return { initialColor, initialSize };
       }
     }
-    
+
     // إيجاد أول توليفة متوفرة
     for (const color of colors) {
       for (const size of sizes) {
@@ -93,7 +101,7 @@ const CompositeVariantSelector: React.FC<CompositeVariantSelectorProps> = ({
         }
       }
     }
-    
+
     return { initialColor: colors[0] || null, initialSize: sizes[0] || null };
   };
 
@@ -104,7 +112,7 @@ const CompositeVariantSelector: React.FC<CompositeVariantSelectorProps> = ({
   // استدعاء onSelect عند التحميل الأول إذا كان هناك اختيار افتراضي
   useEffect(() => {
     if (initialColor && initialSize) {
-      const matchingVariant = variants.find(v => 
+      const matchingVariant = variants.find(v =>
         v.name.includes(initialColor) && v.name.includes(initialSize)
       );
       if (matchingVariant) {
@@ -116,7 +124,7 @@ const CompositeVariantSelector: React.FC<CompositeVariantSelectorProps> = ({
   // تحديث المتغير المحدد عند تغيير اللون أو المقاس
   useEffect(() => {
     if (selectedColor && selectedSize) {
-      const matchingVariant = variants.find(v => 
+      const matchingVariant = variants.find(v =>
         v.name.includes(selectedColor) && v.name.includes(selectedSize)
       );
       if (matchingVariant) {
@@ -133,7 +141,7 @@ const CompositeVariantSelector: React.FC<CompositeVariantSelectorProps> = ({
 
   // التحقق من توفر التوليفة
   const isComboAvailable = (color: string, size: string) => {
-    const variant = variants.find(v => 
+    const variant = variants.find(v =>
       v.name.includes(color) && v.name.includes(size)
     );
     // متوفر إذا: لا يتتبع المخزون أو لديه مخزون
@@ -156,33 +164,163 @@ const CompositeVariantSelector: React.FC<CompositeVariantSelectorProps> = ({
     return variants.some(v => v.name.includes(size) && (v.trackInventory === false || v.stock > 0));
   };
 
+  // إنشاء متغيرات وهمية للألوان والمقاسات للاستخدام مع VariantSelector
+  const createColorVariants = () => {
+    return colors.map(color => {
+      // البحث عن متغير يحتوي على هذا اللون
+      const matchingVariant = variants.find(v => {
+        const parts = v.name.split(' - ').map(p => p.trim());
+        return parts.includes(color);
+      });
+      
+      // البحث عن صورة لهذا اللون من المتغيرات
+      let colorImage: string | undefined;
+      for (const v of variants) {
+        const parts = v.name.split(' - ').map(p => p.trim());
+        if (parts.includes(color)) {
+          // محاولة استخراج الصور من المتغير
+          if (v.images && Array.isArray(v.images) && v.images.length > 0) {
+            colorImage = v.images[0];
+            break;
+          } else if (typeof v.images === 'string') {
+            try {
+              const parsedImages = JSON.parse(v.images);
+              if (Array.isArray(parsedImages) && parsedImages.length > 0) {
+                colorImage = parsedImages[0];
+                break;
+              }
+            } catch (e) {
+              // ignore
+            }
+          }
+        }
+      }
+      
+      // حساب المخزون الإجمالي لهذا اللون (من جميع المقاسات)
+      let totalStock = 0;
+      let hasAvailableStock = false;
+      variants.forEach(v => {
+        const parts = v.name.split(' - ').map(p => p.trim());
+        if (parts.includes(color)) {
+          if (v.trackInventory === false || v.stock > 0) {
+            hasAvailableStock = true;
+            totalStock += v.stock || 0;
+          }
+        }
+      });
+      
+      return {
+        id: `color-${color}`,
+        name: color,
+        type: 'color',
+        stock: hasAvailableStock ? totalStock : 0,
+        price: matchingVariant?.price,
+        trackInventory: matchingVariant?.trackInventory !== false,
+        images: colorImage ? [colorImage] : []
+      };
+    });
+  };
+
+  const createSizeVariants = () => {
+    return sizes.map(size => {
+      // البحث عن متغير يحتوي على هذا المقاس
+      const matchingVariant = variants.find(v => {
+        const parts = v.name.split(' - ').map(p => p.trim());
+        return parts.includes(size);
+      });
+      
+      // حساب المخزون الإجمالي لهذا المقاس (من جميع الألوان)
+      let totalStock = 0;
+      let hasAvailableStock = false;
+      variants.forEach(v => {
+        const parts = v.name.split(' - ').map(p => p.trim());
+        if (parts.includes(size)) {
+          if (v.trackInventory === false || v.stock > 0) {
+            hasAvailableStock = true;
+            totalStock += v.stock || 0;
+          }
+        }
+      });
+      
+      return {
+        id: `size-${size}`,
+        name: size,
+        type: 'size',
+        stock: hasAvailableStock ? totalStock : 0,
+        price: matchingVariant?.price,
+        trackInventory: matchingVariant?.trackInventory !== false
+      };
+    });
+  };
+
+  // الحصول على نمط العرض من الإعدادات
+  const colorStyle = variantSettings?.styles?.['اللون'] || variantSettings?.styles?.['color'] || 'thumbnails'; // تغيير الافتراضي إلى thumbnails
+  const sizeStyle = variantSettings?.styles?.['الحجم'] || variantSettings?.styles?.['size'] || 'buttons';
+  
+  // إنشاء المتغيرات مع الصور
+  const colorVariants = createColorVariants();
+  const sizeVariants = createSizeVariants();
+  
+  // دمج صور الألوان من attributeImages مع الصور من المتغيرات
+  const attributeColorImages = variantSettings?.attributeImages?.['اللون'] || variantSettings?.attributeImages?.['color'] || {};
+  
+  // إنشاء خريطة صور الألوان من المتغيرات
+  const colorImagesFromVariants: { [key: string]: string } = {};
+  colorVariants.forEach(cv => {
+    if (cv.images && cv.images.length > 0) {
+      colorImagesFromVariants[cv.name] = cv.images[0];
+    }
+  });
+  
+  // دمج الصور: attributeImages أولاً (لها الأولوية)، ثم صور المتغيرات
+  const colorImages = { ...colorImagesFromVariants, ...attributeColorImages };
+
+  // معالجة اختيار اللون
+  const handleColorSelect = (variantId: string) => {
+    const color = variantId.replace('color-', '');
+    setSelectedColor(color);
+    // إذا كان المقاس محدداً بالفعل، حدد المتغير مباشرة
+    if (selectedSize) {
+      const matchingVariant = variants.find(v =>
+        v.name.includes(color) && v.name.includes(selectedSize)
+      );
+      if (matchingVariant) {
+        onSelect(matchingVariant.id);
+      }
+    }
+  };
+
+  // معالجة اختيار المقاس
+  const handleSizeSelect = (variantId: string) => {
+    const size = variantId.replace('size-', '');
+    setSelectedSize(size);
+    // إذا كان اللون محدداً بالفعل، حدد المتغير مباشرة
+    if (selectedColor) {
+      const matchingVariant = variants.find(v =>
+        v.name.includes(selectedColor) && v.name.includes(size)
+      );
+      if (matchingVariant) {
+        onSelect(matchingVariant.id);
+      }
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* اختيار اللون */}
       {colors.length > 0 && (
         <div>
           <h3 className="font-semibold text-gray-900 mb-3">اللون:</h3>
-          <div className="flex flex-wrap gap-2">
-            {colors.map((color) => {
-              const available = isColorAvailable(color);
-              return (
-                <button
-                  key={color}
-                  onClick={() => setSelectedColor(color)}
-                  disabled={!available}
-                  className={`px-4 py-2 border-2 rounded-lg font-medium transition-colors ${
-                    selectedColor === color
-                      ? 'border-blue-600 bg-blue-50 text-blue-600'
-                      : !available
-                      ? 'border-gray-300 bg-gray-100 text-gray-400 cursor-not-allowed line-through'
-                      : 'border-gray-300 hover:border-blue-600'
-                  }`}
-                >
-                  {color}
-                </button>
-              );
-            })}
-          </div>
+          <VariantSelector
+            variants={colorVariants}
+            selectedVariant={selectedColor ? `color-${selectedColor}` : null}
+            onSelect={handleColorSelect}
+            style={colorStyle as any}
+            variantType="color"
+            productPrice={productPrice}
+            showStock={false}
+            attributeImages={colorImages}
+          />
         </div>
       )}
 
@@ -190,40 +328,36 @@ const CompositeVariantSelector: React.FC<CompositeVariantSelectorProps> = ({
       {sizes.length > 0 && (
         <div>
           <h3 className="font-semibold text-gray-900 mb-3">المقاس:</h3>
-          <div className="flex flex-wrap gap-2">
-            {sizes.map((size) => {
-              const available = isSizeAvailable(size);
-              return (
-                <button
-                  key={size}
-                  onClick={() => setSelectedSize(size)}
-                  disabled={!available}
-                  className={`px-4 py-2 border-2 rounded-lg font-medium transition-colors ${
-                    selectedSize === size
-                      ? 'border-blue-600 bg-blue-50 text-blue-600'
-                      : !available
-                      ? 'border-gray-300 bg-gray-100 text-gray-400 cursor-not-allowed line-through'
-                      : 'border-gray-300 hover:border-blue-600'
-                  }`}
-                >
-                  {size}
-                </button>
-              );
-            })}
-          </div>
+          <VariantSelector
+            variants={sizeVariants}
+            selectedVariant={selectedSize ? `size-${selectedSize}` : null}
+            onSelect={handleSizeSelect}
+            style={sizeStyle as any}
+            variantType="size"
+            productPrice={productPrice}
+            showStock={true}
+          />
         </div>
       )}
 
-      {/* عرض التوليفة المحددة */}
+      {/* عرض التوليفة المحددة - مع فرق السعر */}
       {selectedColor && selectedSize && (
         <div className="text-sm text-gray-600 mt-2">
           الاختيار: <span className="font-medium">{selectedColor} - {selectedSize}</span>
           {(() => {
-            const variant = variants.find(v => 
+            const variant = variants.find(v =>
               v.name.includes(selectedColor) && v.name.includes(selectedSize)
             );
-            if (variant && variant.stock === 0) {
-              return <span className="text-red-500 mr-2">(غير متوفر)</span>;
+            if (variant) {
+              const diff = (variant.price && productPrice) ? variant.price - productPrice : 0;
+              const priceDiffText = diff > 0.1 ? ` (+${diff})` : diff < -0.1 ? ` (${diff})` : '';
+
+              return (
+                <span>
+                  {priceDiffText && <span className="text-green-600 font-bold mx-2">{priceDiffText}</span>}
+                  {variant.stock === 0 && <span className="text-red-500 mr-2">(غير متوفر)</span>}
+                </span>
+              );
             }
             return null;
           })()}
