@@ -104,7 +104,7 @@ export default defineConfig({
       'react',
       'react-dom',
       'react-router-dom',
-      'react-query',
+      '@tanstack/react-query',
       'axios',
       'socket.io-client',
       'chart.js',

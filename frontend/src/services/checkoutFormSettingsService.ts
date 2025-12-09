@@ -7,7 +7,7 @@ import { apiClient } from './apiClient';
 export interface CheckoutFormSettings {
   id: string;
   companyId: string;
-  
+
   // حقول معلومات العميل
   showGuestName: boolean;
   requireGuestName: boolean;
@@ -15,17 +15,17 @@ export interface CheckoutFormSettings {
   requireGuestPhone: boolean;
   showGuestEmail: boolean;
   requireGuestEmail: boolean;
-  
+
   // حقول عنوان الشحن
   showCity: boolean;
   requireCity: boolean;
   showShippingAddress: boolean;
   requireShippingAddress: boolean;
-  
+
   // حقول إضافية
   showPaymentMethod: boolean;
   showNotes: boolean;
-  
+
   createdAt: string;
   updatedAt: string;
 }
@@ -72,7 +72,7 @@ export const checkoutFormSettingsService = {
    */
   getPublicSettings: async (companyId: string) => {
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/v1/public/checkout-form-settings/${companyId}`);
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3007'}/api/v1/public/checkout-form-settings/${companyId}`);
       const data = await response.json();
       return data;
     } catch (error) {

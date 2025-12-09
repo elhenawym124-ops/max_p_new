@@ -516,7 +516,7 @@ const IntegrationSettings: React.FC = () => {
           { name: 'WhatsApp Business', status: 'غير متصل', color: 'red', link: '#', icon: '💬' },
           { name: 'Google Analytics', status: 'متصل', color: 'green', link: '#', icon: '📊' },
           { name: 'Stripe Payments', status: 'غير متصل', color: 'red', link: '#', icon: '💳' },
-          { name: 'Telegram Bot', status: 'غير متصل', color: 'red', link: '#', icon: '✈️' },
+          { name: 'Telegram Bot', status: 'إعدادات', color: 'blue', link: '/settings/telegram', icon: '✈️' },
         ].map((integration) => (
           <div key={integration.name} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
             <div className="flex items-center">

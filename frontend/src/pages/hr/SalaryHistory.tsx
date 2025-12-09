@@ -140,3 +140,7 @@ const SalaryHistory: React.FC = () => {
 
 export default SalaryHistory;
 
+
+
+
+

@@ -75,6 +75,7 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const companyDashboardRoutes = require('./routes/companyDashboardRoutes');
 const invitationRoutes = require('./routes/invitationRoutes');
 const supportRoutes = require('./routes/supportRoutes'); // 🎫 Support System
+const activityLogRoutes = require('./routes/activityLogRoutes'); // 📊 Activity Log System
 
 const adminAnalyticsRoutes = require('./routes/adminAnalyticsRoutes');
 const adminPlansRoutes = require('./routes/adminPlansRoutes');
@@ -123,14 +124,21 @@ const { simpleMonitor } = require('./services/simpleMonitor');
 const monitoringRoutes = require('./routes/monitoringRoutes');
 const databaseMonitorRoutes = require('./routes/databaseMonitorRoutes');
 
-// Import Auto Pattern Detection Service - التحميل المؤجل
+// Import autoPatternDetectionService - Deferred loading
 let autoPatternService;
+// Telegram Bot Service Integration
+const telegramBotService = require('./services/TelegramBotService');
+const telegramRoutes = require('./routes/telegramRoutes');
+
 if (!shouldLazyLoad) {
   autoPatternService = require('./services/autoPatternDetectionService');
   //console.log('✅ [PERFORMANCE] Pattern detection service loaded immediately');
 } else {
-  //console.log('⏳ [PERFORMANCE] Pattern detection service will be loaded later');
+  //console.log('⏳ [PERFORMANCE] AI services will be loaded later');
 }
+
+// Initialize Telegram Bot (Always)
+telegramBotService.initialize();
 
 // Import Global Security Middleware
 const { globalSecurity, clearIPBlocks } = require('./middleware/globalSecurity');
@@ -490,15 +498,9 @@ app.use("/api/v1/public", (req, res, next) => {
 app.use("/api/v1/homepage", homepageRoutes); // قوالب الصفحة الرئيسية (public + protected)
 console.log('✅ [SERVER] Public storefront routes registered');
 
-// Apply Global Security Middleware to all routes AFTER public routes
-//console.log('🛡️ Applying Global Security Middleware...');
-app.use(globalSecurity);
-
-app.use("/api/v1/whatsapp", whatsappRoutes) // 📱 WhatsApp Integration
-app.use("/api/v1/hr", hrRoutes); // 👥 HR Module
-
-// Protected routes (require authentication)
-app.use("/api/v1/reviews", productReviewRoutes); // ⭐ إدارة التقييمات (Protected)
+// 🔔 WooCommerce Webhook - MUST be before globalSecurity (public endpoint)
+app.post("/api/v1/woocommerce/webhook/:companyId", require('./controller/wooCommerceWebhookController').handleWooCommerceWebhook);
+console.log('✅ [SERVER] WooCommerce webhook route registered (public)');
 
 
 
@@ -572,6 +574,9 @@ app.use("/api/v1/comments/", commentRoutes)
 app.use("/api/v1/user/image-gallery", imageGalleryRoutes) // 🖼️ حافظة الصور
 app.use("/api/v1/user/text-gallery", textGalleryRoutes) // 📝 حافظة النصوص
 app.use("/api/v1/support", supportRoutes) // 🎫 Support System
+app.use("/api/v1/activity", activityLogRoutes) // 📊 Activity Log System
+app.use("/api/v1/test-chat", require('./routes/testChatRoutes')) // 🧪 Test Chat for AI Testing
+app.use('/api/userbot', require('./routes/userbotRoutes')); // 🤖 Telegram System 2 (Userbot)
 
 // Homepage routes moved before globalSecurity middleware (line 434)
 
@@ -1891,7 +1896,7 @@ app.get('/api/v1/conversations/:id',
       }
 
       // تنسيق البيانات
-      const customerName = conversation.customer 
+      const customerName = conversation.customer
         ? `${conversation.customer.firstName || ''} ${conversation.customer.lastName || ''}`.trim() || conversation.customerId
         : conversation.customerId || 'عميل غير معروف';
 
@@ -2851,6 +2856,16 @@ async function startServer() {
       await WhatsAppManager.restoreAllSessions();
     } catch (error) {
       console.error('❌ Failed to restore WhatsApp sessions:', error);
+    }
+
+    // 🔄 Start WooCommerce Auto Sync Scheduler (Polling-based - works on localhost)
+    try {
+      const { getWooCommerceAutoSyncScheduler } = require('./services/wooCommerceAutoSyncScheduler');
+      const wooSyncScheduler = getWooCommerceAutoSyncScheduler();
+      wooSyncScheduler.start();
+      console.log('✅ [WOOCOMMERCE] Auto sync scheduler started (Polling mode)');
+    } catch (error) {
+      console.error('⚠️ Failed to start WooCommerce auto sync scheduler:', error.message);
     }
   });
 }

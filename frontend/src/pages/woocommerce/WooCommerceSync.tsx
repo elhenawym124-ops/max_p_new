@@ -177,6 +177,18 @@ const WooCommerceSync: React.FC = () => {
   const [selectedLocalOrders, setSelectedLocalOrders] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
   
+  // Webhook/ngrok State - يتم حفظه في localStorage
+  const [ngrokUrl, setNgrokUrl] = useState(() => {
+    return localStorage.getItem('woocommerce_ngrok_url') || '';
+  });
+  
+  // حفظ ngrok URL عند تغييره
+  useEffect(() => {
+    if (ngrokUrl) {
+      localStorage.setItem('woocommerce_ngrok_url', ngrokUrl);
+    }
+  }, [ngrokUrl]);
+  
   // Settings State
   const [settingsForm, setSettingsForm] = useState({
     storeUrl: '',
@@ -1151,19 +1163,32 @@ const WooCommerceSync: React.FC = () => {
     }
   };
 
-  const setupWebhooks = async () => {
+  const setupWebhooks = async (customNgrokUrl?: string) => {
+    const urlToUse = customNgrokUrl || ngrokUrl;
+    
+    // التحقق من وجود ngrok URL على localhost
+    if (window.location.hostname === 'localhost' && !urlToUse) {
+      toast.error('يرجى إدخال ngrok URL للاختبار على localhost');
+      return;
+    }
+    
     setLoading(true);
     try {
       const response = await fetch('/api/v1/woocommerce/webhooks/setup', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-        }
+          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ ngrokUrl: urlToUse || undefined })
       });
 
       const data = await response.json();
       if (data.success) {
         toast.success(data.message);
+        if (data.data?.webhookUrl) {
+          toast.success(`Webhook URL: ${data.data.webhookUrl}`, { duration: 5000 });
+        }
         loadSettings();
       } else {
         toast.error(data.message);
@@ -1184,7 +1209,8 @@ const WooCommerceSync: React.FC = () => {
 
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/woocommerce/auto-sync', {
+      // استخدام الـ Polling Scheduler الجديد (يعمل على localhost)
+      const response = await fetch('/api/v1/woocommerce/scheduler/sync-now', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
@@ -1194,7 +1220,7 @@ const WooCommerceSync: React.FC = () => {
       const data = await response.json();
       if (data.success) {
         const results = data.data?.results;
-        toast.success(`تمت المزامنة! استيراد: ${results?.imported || 0}, تصدير: ${results?.exported || 0}`);
+        toast.success(`تمت المزامنة! استيراد: ${results?.imported || 0}, تحديث: ${results?.updated || 0}`);
         loadSyncLogs();
       } else {
         toast.error(data.message || 'فشلت المزامنة');
@@ -2308,36 +2334,77 @@ const WooCommerceSync: React.FC = () => {
                     <div className="mt-8 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                       <h3 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
                         <BellAlertIcon className="h-5 w-5" />
-                        إعداد Webhooks (للمزامنة التلقائية)
+                        إعداد Webhooks (للمزامنة الفورية)
                       </h3>
                       <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                        عند تفعيل Webhooks، ستصل الطلبات الجديدة من WooCommerce تلقائياً
+                        عند تفعيل Webhooks، ستصل الطلبات الجديدة من WooCommerce فوراً
                       </p>
                       
-                      {settings.webhookEnabled ? (
-                        <div className="flex items-center gap-2 text-green-600">
+                      {/* حالة Webhooks */}
+                      {settings.webhookEnabled && (
+                        <div className="flex items-center gap-2 text-green-600 mb-4">
                           <CheckCircleSolid className="h-5 w-5" />
                           <span>Webhooks مفعّلة</span>
                         </div>
-                      ) : (
-                        <button
-                          onClick={setupWebhooks}
-                          disabled={loading}
-                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-2 disabled:opacity-50"
-                        >
-                          <LinkIcon className="h-5 w-5" />
-                          إعداد Webhooks
-                        </button>
                       )}
+
+                      {/* ngrok URL Input - للاختبار على localhost (يظهر دائماً على localhost) */}
+                      {window.location.hostname === 'localhost' && (
+                        <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg mb-4">
+                          <p className="text-sm text-yellow-800 dark:text-yellow-200 mb-2 font-medium">
+                            ⚠️ أنت على localhost - تحتاج ngrok للاختبار
+                          </p>
+                          <p className="text-xs text-yellow-700 dark:text-yellow-300 mb-3">
+                            شغّل: <code className="bg-yellow-100 dark:bg-yellow-800 px-1 rounded">ngrok http 3007</code> ثم الصق الـ URL هنا
+                          </p>
+                          <input
+                            type="text"
+                            value={ngrokUrl}
+                            onChange={(e) => setNgrokUrl(e.target.value)}
+                            placeholder="https://xxxx.ngrok-free.dev"
+                            className="w-full px-3 py-2 border border-yellow-300 dark:border-yellow-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+                          />
+                        </div>
+                      )}
+                      
+                      <button
+                        onClick={() => setupWebhooks()}
+                        disabled={loading || (window.location.hostname === 'localhost' && !ngrokUrl)}
+                        className={`px-4 py-2 ${settings.webhookEnabled ? 'bg-gray-600 hover:bg-gray-700' : 'bg-blue-600 hover:bg-blue-700'} text-white rounded-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        {loading ? (
+                          <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                        ) : (
+                          <LinkIcon className="h-5 w-5" />
+                        )}
+                        {settings.webhookEnabled ? 'إعادة إعداد Webhooks' : 'إعداد Webhooks تلقائياً'}
+                      </button>
 
                       {settings.webhookUrl && (
                         <div className="mt-3">
                           <p className="text-xs text-gray-500 mb-1">Webhook URL:</p>
-                          <code className="text-xs bg-gray-200 dark:bg-gray-600 px-2 py-1 rounded break-all">
+                          <code className="text-xs bg-gray-200 dark:bg-gray-600 px-2 py-1 rounded break-all block">
                             {settings.webhookUrl}
                           </code>
                         </div>
                       )}
+                      
+                      {/* عرض آخر ngrok URL محفوظ */}
+                      {ngrokUrl && (
+                        <div className="mt-3 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded">
+                          <p className="text-xs text-green-700 dark:text-green-300">
+                            ✅ آخر ngrok URL محفوظ: <code className="bg-green-100 dark:bg-green-800 px-1 rounded">{ngrokUrl}</code>
+                          </p>
+                        </div>
+                      )}
+                      
+                      {/* ملاحظة عن Polling */}
+                      <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                        <p className="text-sm text-blue-800 dark:text-blue-200">
+                          💡 <strong>بديل:</strong> المزامنة التلقائية بالـ Polling تعمل بدون Webhooks! 
+                          فعّل "استيراد تلقائي" أعلاه وسيتم جلب الطلبات كل بضع دقائق.
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>

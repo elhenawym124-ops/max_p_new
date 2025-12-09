@@ -1,12 +1,13 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from 'react-query';
-import { ReactQueryDevtools } from 'react-query/devtools';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Toaster } from 'react-hot-toast';
 
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
+import { queryClient } from './config/queryClient';
 
 // Import i18n configuration
 import './i18n/config';
@@ -21,27 +22,10 @@ import './styles/index.css';
  *
  * Development Tools:
  * - Install React DevTools browser extension for better debugging
- * - React Query DevTools are enabled in development mode
+ * - TanStack Query DevTools are enabled in development mode
  * - Hot Module Replacement (HMR) is enabled for fast development
+ * - IndexedDB persistence for large-scale data (10K+ conversations)
  */
-
-// Create React Query client
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 3,
-      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      cacheTime: 10 * 60 * 1000, // 10 minutes
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: true,
-    },
-    mutations: {
-      retry: 1,
-      retryDelay: 1000,
-    },
-  },
-});
 
 // Get root element
 const rootElement = document.getElementById('root');

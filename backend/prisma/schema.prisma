@@ -139,7 +139,33 @@ model Company {
   // 🎫 Support System
   supportTickets         SupportTicket[] // 🎫 تذاكر الدعم
 
+  // ✈️ Telegram Integration
+  telegramConfigs        TelegramConfig[] // ⚙️ إعدادات تيليجرام (Multi-Bot)
+
   @@map("companies")
+}
+
+model TelegramConfig {
+  id              String   @id @default(cuid())
+  companyId       String   //Removed @unique for multi-bot support
+  
+  // Bot Settings
+  label           String   @default("Official Bot") // Friendly Name
+  botToken        String?  @db.Text // Encrypted Token
+  botName         String?
+  botUsername     String?
+  isActive        Boolean  @default(false)
+  
+  // Client Settings (Future Phase)
+  clientSession   String?  @db.Text
+  clientPhone     String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  @@map("telegram_configs")
 }
 
 model User {

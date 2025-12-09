@@ -75,30 +75,35 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ className =
 
     const token = getToken();
     if (!token) {
-      console.log('🔐 No access token found');
       return;
     }
 
     try {
+      // ✅ إضافة timeout أقصر (5 ثواني بدل 30)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
       const response = await fetch(buildApiUrl('notifications/recent'), {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        }
+        },
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       if (response.ok) {
         const data = await response.json();
         setNotifications(data.notifications || []);
       } else if (response.status === 401) {
-        console.log('🔐 User not authenticated for notifications');
         setNotifications([]);
       } else {
-        console.log('❌ [NotificationDropdown] API error:', response.status, response.statusText);
+        // ✅ Silent fail - don't spam console
         setNotifications([]);
       }
     } catch (error) {
-      console.error('❌ [NotificationDropdown] Error fetching notifications:', error);
+      // ✅ Silent fail - don't spam console when backend is down
       setNotifications([]);
     }
   };

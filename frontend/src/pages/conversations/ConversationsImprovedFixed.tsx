@@ -65,6 +65,7 @@ interface Conversation {
   unreadCount: number;
   isOnline?: boolean;
   platform: 'facebook' | 'whatsapp' | 'telegram' | 'unknown';
+  channel?: string; // For backend compatibility
   messages: Message[];
   aiEnabled?: boolean; // حالة الذكاء الاصطناعي
   pageName?: string; // اسم صفحة الفيسبوك
@@ -104,15 +105,15 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   // حالات البحث والفلترة
   const [searchQuery, setSearchQuery] = useState('');
   // tabs: all | unread (أي محادثة بها رسائل غير مقروءة) | unreplied (آخر رسالة من العميل ولم يتم الرد عليها)
-  const [conversationFilter, setConversationFilter] = useState<'all' | 'unread' | 'unreplied'>('all');
-  
+  const [conversationFilter, setConversationFilter] = useState<'all' | 'unread' | 'unreplied' | 'telegram'>('all');
+
   // حالة الرسالة الجديدة
   const [newMessage, setNewMessage] = useState('');
-  
+
   // Socket.IO للرسائل الفورية
   const { socket, isConnected, isReconnecting, emit, on, off } = useSocket();
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
@@ -126,7 +127,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   const [loadingOldMessages, setLoadingOldMessages] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [messagesPage, setMessagesPage] = useState(1);
-  
+
   // حالات pagination للمحادثات
   const [loadingMoreConversations, setLoadingMoreConversations] = useState(false);
   const [conversationsPage, setConversationsPage] = useState(1);
@@ -134,7 +135,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   const [totalConversations, setTotalConversations] = useState(0);
   // ⬆️ زيادة عدد المحادثات في كل صفحة إلى 200 بدلاً من 50
   const conversationsLimit = 200; // عدد المحادثات في كل صفحة
-  
+
   const [uploadingFile, setUploadingFile] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [filePreviews, setFilePreviews] = useState<string[]>([]);
@@ -200,7 +201,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   // حالة الصور المختارة للإرسال المتعدد
   const [selectedImagesForSend, setSelectedImagesForSend] = useState<Set<string>>(new Set());
   const [sendingMultipleImages, setSendingMultipleImages] = useState(false);
-  
+
   // حالة إرسال الرسالة
   const [sending, setSending] = useState(false);
 
@@ -269,7 +270,8 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       // استخدام Company-Aware API مع pagination
       const response = await companyAwareApi.getConversations({
         page: page,
-        limit: conversationsLimit
+        limit: conversationsLimit,
+        platform: 'facebook' // ✅ FIX: Enforce Facebook only
       });
 
       if (!response.data) {
@@ -383,13 +385,13 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           // لكن فقط إذا كانت المحادثة المختارة حالياً (للمحافظة على الرسائل المحملة)
           const merged = formattedConversations.map(newConv => {
             const existing = validPrevConversations.find(c => c.id === newConv.id);
-            
+
             if (existing) {
               // ✅ FIX: مقارنة الوقت - إذا كانت البيانات الموجودة أحدث من السيرفر، نحتفظ بها
               const existingTime = existing.lastMessageTime ? new Date(existing.lastMessageTime).getTime() : 0;
               const newTime = new Date(newConv.lastMessageTime).getTime();
               const existingIsNewer = existingTime > newTime;
-              
+
               if (!silent && existingIsNewer) {
                 console.log(`🔄 [REFRESH-MERGE] Conv ${newConv.id}: Keeping newer data from Socket.IO`, {
                   existingTime: new Date(existingTime).toISOString(),
@@ -398,7 +400,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                   newIsFromCustomer: newConv.lastMessageIsFromCustomer
                 });
               }
-              
+
               return {
                 ...newConv,
                 messages: existing.messages && existing.messages.length > 0 ? existing.messages : newConv.messages,
@@ -465,7 +467,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       }
 
       console.log('🔄 Loading specific conversation:', conversationId);
-      
+
       // ✅ FIX: جلب المحادثة والرسائل معاً في parallel
       const [conversationResponse, messagesResponse] = await Promise.all([
         fetch(buildApiUrl(`conversations/${conversationId}`), {
@@ -512,7 +514,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         if (messagesResponse.ok) {
           const messagesResult = await messagesResponse.json();
           const messagesData = messagesResult.data || messagesResult || [];
-          
+
           messages = messagesData.map((msg: any) => {
             let isAiGenerated = false;
             if (msg.metadata) {
@@ -557,7 +559,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
               replyToFacebookMessageId: msg.replyToFacebookMessageId
             };
           });
-          
+
           console.log(`✅ Loaded ${messages.length} messages for conversation ${conversationId}`);
         } else {
           console.warn('⚠️ Failed to load messages, conversation will be added without messages');
@@ -565,15 +567,15 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
         // ✅ FIX: استخدام آخر رسالة من الرسائل المحملة إذا كان lastMessage فارغ
         const lastLoadedMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-        const actualLastMessage = conv.lastMessage || 
+        const actualLastMessage = conv.lastMessage ||
           (lastLoadedMessage ? lastLoadedMessage.content : 'لا توجد رسائل');
-        
+
         // ✅ FIX: استخدام isFromCustomer من آخر رسالة محملة بدلاً من السيرفر
         // لأن السيرفر أحياناً يرجع قيمة قديمة أو خاطئة
-        const actualLastMessageIsFromCustomer = lastLoadedMessage 
-          ? lastLoadedMessage.isFromCustomer 
+        const actualLastMessageIsFromCustomer = lastLoadedMessage
+          ? lastLoadedMessage.isFromCustomer
           : (conv.lastMessageIsFromCustomer || false);
-        
+
         // ✅ FIX: حساب lastCustomerMessageIsUnread بناءً على الرسائل المحملة
         // إذا كان آخر رسالة من العميل، فهذا يعني أنه لم يتم الرد عليها بعد
         // إذا كان آخر رسالة من الموظف، فهذا يعني أنه تم الرد
@@ -585,7 +587,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           // إذا لم تكن هناك رسائل محملة، نعتمد على القيمة من الـ API أو lastMessageIsFromCustomer
           calculatedLastCustomerMessageIsUnread = actualLastMessageIsFromCustomer === true;
         }
-        
+
         // ✅ FIX: نعتمد على lastCustomerMessageIsUnread من الـ API إذا كان محدداً
         // لكن إذا كان actualLastMessageIsFromCustomer = true، نعتبر lastCustomerMessageIsUnread = true
         // (بغض النظر عن unreadCount - لأن المحادثة قد تكون مفتوحة وقرأناها لكن لم نرد عليها)
@@ -593,7 +595,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         const finalLastCustomerMessageIsUnread = (actualLastMessageIsFromCustomer === true)
           ? true  // إذا كان آخر رسالة من العميل، فهي غير م replied عليها حتى لو كان الـ API يقول غير ذلك
           : (conv.lastCustomerMessageIsUnread === true); // إذا كان آخر رسالة من الموظف، نعتمد على الـ API
-        
+
         console.log(`🔍 [LOAD-SPECIFIC] Conv ${conversationId}:`, {
           serverIsFromCustomer: conv.lastMessageIsFromCustomer,
           lastLoadedMsgIsFromCustomer: lastLoadedMessage?.isFromCustomer,
@@ -647,23 +649,23 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             return prev.map(c => {
               if (c.id === conversationId) {
                 // ✅ FIX: الحفاظ على lastMessage الموجود إذا كان السيرفر يرجع "لا توجد رسائل"
-                const shouldKeepExistingLastMessage = 
-                  formattedConversation.lastMessage === 'لا توجد رسائل' && 
-                  c.lastMessage && 
+                const shouldKeepExistingLastMessage =
+                  formattedConversation.lastMessage === 'لا توجد رسائل' &&
+                  c.lastMessage &&
                   c.lastMessage !== 'لا توجد رسائل';
-                
+
                 // ✅ FIX: الحفاظ على lastMessageIsFromCustomer من Socket.IO إذا كانت أحدث أو متساوية
                 const existingTime = c.lastMessageTime ? new Date(c.lastMessageTime).getTime() : 0;
                 const newTime = new Date(formattedConversation.lastMessageTime).getTime();
-                const shouldKeepExistingIsFromCustomer = 
-                  c.lastMessage && 
+                const shouldKeepExistingIsFromCustomer =
+                  c.lastMessage &&
                   c.lastMessage !== 'لا توجد رسائل' &&
                   existingTime >= newTime;  // ✅ FIX: >= بدلاً من > للحفاظ على البيانات حتى لو الوقت متساوي
-                
+
                 // ✅ FIX: الحفاظ على unreadCount من Socket.IO دائماً إذا كان موجود
                 // لأن السيرفر دائماً بيرجع 0 (قديمة)
                 const shouldKeepUnreadCount = (c.unreadCount !== undefined && c.unreadCount > 0);
-                
+
                 console.log(`🔄 [LOAD-SPECIFIC-UPDATE] Conv ${conversationId}:`, {
                   existingMsg: c.lastMessage?.substring(0, 30),
                   existingIsFromCustomer: c.lastMessageIsFromCustomer,
@@ -677,7 +679,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                   shouldKeepIsFromCustomer: shouldKeepExistingIsFromCustomer,
                   shouldKeepUnreadCount: shouldKeepUnreadCount
                 });
-                
+
                 return {
                   ...formattedConversation,
                   lastMessage: shouldKeepExistingLastMessage ? c.lastMessage : formattedConversation.lastMessage,
@@ -1173,31 +1175,19 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   const fetchPostDetails = async (conversationId: string) => {
     try {
       console.log('📌 [POST-REF] Fetching post details for conversation:', conversationId);
-      const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
-      if (!token) {
-        console.warn('⚠️ [POST-REF] No token found, cannot fetch post details');
-        return;
-      }
+      const response = await companyAwareApi.get(`conversations/${conversationId}/post-details`);
 
-      const response = await fetch(buildApiUrl(`conversations/${conversationId}/post-details`), {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
+      if (response.status !== 200) {
         // Not an error if post details don't exist
         if (response.status === 404) {
           console.log('ℹ️ [POST-REF] Post details not found (404) - conversation may not have postId');
           return;
         }
-        const errorText = await response.text();
-        console.error('❌ [POST-REF] Error fetching post details:', response.status, errorText);
+        console.error('❌ [POST-REF] Error fetching post details:', response.status);
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const result = await response.json();
+      const result = response.data;
       console.log('✅ [POST-REF] Post details received:', result);
       if (result.success && result.data) {
         // Update the selected conversation with post details
@@ -1322,20 +1312,20 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       newUrl.searchParams.set('conversationId', conversationId);
       window.history.replaceState({}, '', newUrl.toString());
 
-        // ✅ عند فتح المحادثة نضعها كمقروءة (إزالة من تبويب "غير مقروءة")
-        if (selectedConversation?.id === conversationId || conversation.unreadCount > 0) {
-          // تحديث الـ frontend فوراً
-          setConversations(prev => prev.map(conv =>
-            conv.id === conversationId
-              ? { ...conv, unreadCount: 0 }
-              : conv
-          ));
-          setSelectedConversation(prev =>
-            prev && prev.id === conversationId ? { ...prev, unreadCount: 0 } : prev
-          );
-          // استدعاء الـ API لتحديث حالة القراءة في الـ backend
-          markConversationAsRead(conversationId);
-        }
+      // ✅ عند فتح المحادثة نضعها كمقروءة (إزالة من تبويب "غير مقروءة")
+      if (selectedConversation?.id === conversationId || conversation.unreadCount > 0) {
+        // تحديث الـ frontend فوراً
+        setConversations(prev => prev.map(conv =>
+          conv.id === conversationId
+            ? { ...conv, unreadCount: 0 }
+            : conv
+        ));
+        setSelectedConversation(prev =>
+          prev && prev.id === conversationId ? { ...prev, unreadCount: 0 } : prev
+        );
+        // استدعاء الـ API لتحديث حالة القراءة في الـ backend
+        markConversationAsRead(conversationId);
+      }
     } else {
       console.warn('❌ Conversation not found in selectConversation:', conversationId);
       console.log('📝 Available conversation IDs:', conversations.map(c => c.id));
@@ -1345,22 +1335,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   // 🔧 FIX: تحديد المحادثة كمقروءة في Backend
   const markConversationAsRead = async (conversationId: string) => {
     try {
-      const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
-      if (!token) {
-        console.warn('⚠️ [MARK-READ] No token found, skipping backend update');
-        return;
-      }
+      const response = await companyAwareApi.post(`conversations/${conversationId}/read`, {});
 
-      const response = await fetch(buildApiUrl(`conversations/${conversationId}/read`), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
+      if (response.status === 200) {
+        const data = response.data;
         console.log(`✅ [MARK-READ] Marked conversation ${conversationId} as read - ${data.markedCount || 0} messages`);
       } else {
         console.warn(`⚠️ [MARK-READ] Failed to mark conversation as read:`, response.status);
@@ -1372,17 +1350,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
   const refreshLastMessageFromServer = async (conversationId: string) => {
     try {
-      const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
-      if (!token) return;
-
-      const resp = await fetch(buildApiUrl(`conversations/${conversationId}/messages`), {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      if (!resp.ok) return;
-      const result = await resp.json();
+      // use companyAwareApi
+      const resp = await companyAwareApi.get(`conversations/${conversationId}/messages`);
+      if (resp.status !== 200) return;
+      const result = resp.data;
       const arr = result.data || result || [];
       if (!Array.isArray(arr) || arr.length === 0) return;
 
@@ -1489,43 +1460,16 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       }
 
       // إرسال عبر API فقط (لتجنب التضارب)
-      const url = buildApiUrl(`conversations/${selectedConversation.id}/messages`);
       const payload: any = { message: messageContent };
       if (imageUrls.length > 0) {
         payload.imageUrls = imageUrls;
       }
-
-      console.log('🚀 Sending message to:', url);
-      console.log('📦 Payload:', payload);
-
-      // البحث عن token بأسماء مختلفة
-      const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
-      if (!token) {
-        throw new Error('رمز المصادقة غير موجود. يرجى تسجيل الدخول مرة أخرى.');
-      }
-
-      console.log('🔑 Using token:', token ? `${token.substring(0, 20)}...` : 'No token');
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
+      console.log('🚀 Sending message via companyAwareApi');
+      const response = await companyAwareApi.post(`conversations/${selectedConversation.id}/messages`, payload);
 
       console.log('📡 Response status:', response.status);
 
-      if (response.status === 401) {
-        // خطأ مصادقة - إعادة توجيه لتسجيل الدخول
-        localStorage.removeItem('token');
-        alert('انتهت صلاحية جلسة العمل. يرجى تسجيل الدخول مرة أخرى.');
-        window.location.href = '/login';
-        return;
-      }
-
-      const data = await response.json();
+      const data = response.data;
       console.log('📤 API Response:', data);
 
       if (data.success) {
@@ -2783,7 +2727,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   // دالة لتثبيت/إلغاء تثبيت نص
   const togglePinText = async (textId: string, currentPinStatus: boolean, event: React.MouseEvent) => {
     event.stopPropagation();
-    
+
     try {
       setPinningTextId(textId);
       const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
@@ -2995,6 +2939,17 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
     // استقبال رسالة جديدة
     const handleNewMessage = (data: any) => {
+      // ✅ FIX: تجاهل رسائل المنصات الأخرى (مثل Telegram)
+      if (data.platform && data.platform.toLowerCase() !== 'facebook') {
+        console.log('🔕 [SOCKET] Ignoring message from different platform:', data.platform);
+        return;
+      }
+      // ✅ FIX: تجاهل رسائل Telegram إذا لم يكن platform محدد لكن channel موجود
+      if (data.channel && data.channel.toLowerCase() !== 'facebook') {
+        console.log('🔕 [SOCKET] Ignoring message from different channel:', data.channel);
+        return;
+      }
+
       console.log('📨 [SOCKET] New message received:', data);
       console.log('📨 [SOCKET] Message ID:', data.id);
       console.log('📨 [SOCKET] isFromCustomer:', data.isFromCustomer);
@@ -3191,7 +3146,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                     // ✅ FIX: الحفاظ على unreadCount من Socket.IO (المحادثة المؤقتة)
                     // لأن السيرفر بيرجع unreadCount = 0 (قديمة)
                     const socketUnreadCount = data.isFromCustomer ? 1 : 0;
-                    
+
                     const updatedConv = {
                       ...conv,
                       messages: updatedMessages,
@@ -3227,15 +3182,15 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                   } else {
                     // ✅ FIX: حتى لو كانت الرسالة موجودة، تأكد من تحديث lastMessage
                     // لأن السيرفر قد يكون أرجع قيمة قديمة أو فارغة
-                    const shouldUpdateLastMessage = 
-                      conv.lastMessage === 'لا توجد رسائل' || 
+                    const shouldUpdateLastMessage =
+                      conv.lastMessage === 'لا توجد رسائل' ||
                       !conv.lastMessage ||
                       new Date(data.timestamp).getTime() > new Date(conv.lastMessageTime).getTime();
-                    
+
                     if (shouldUpdateLastMessage) {
                       // ✅ FIX: استخدام unreadCount من Socket.IO
                       const socketUnreadCount = data.isFromCustomer ? 1 : 0;
-                      
+
                       return {
                         ...conv,
                         lastMessage: data.content,
@@ -3284,17 +3239,17 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             // فقط نصفّر العداد إذا كانت المحادثة مفتوحة فعلاً وكانت رسالة من عميل
             const newUnreadCount = isCurrentConversation && data.isFromCustomer
               ? 0  // المحادثة مفتوحة ورسالة من عميل → نصفّر العداد
-              : data.isFromCustomer 
+              : data.isFromCustomer
                 ? (conv.unreadCount || 0) + 1  // رسالة من عميل → نزيد العداد
                 : conv.unreadCount;  // رسالة من موظف → نحتفظ بالعداد
-            
+
             console.log(`🔢 [UNREAD-COUNT] Conv ${conv.id}:`, {
               isCurrentConversation,
               isFromCustomer: data.isFromCustomer,
               oldCount: conv.unreadCount,
               newCount: newUnreadCount
             });
-            
+
             return {
               ...conv,
               messages: messageExists ? existingMessages : [...existingMessages, newMessage],
@@ -3459,6 +3414,16 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
     // استقبال محادثة جديدة
     const handleConversationCreated = (data: any) => {
+      // ✅ FIX: تجاهل محادثات المنصات الأخرى
+      if (data.platform && data.platform.toLowerCase() !== 'facebook') {
+        console.log('🔕 [SOCKET] Ignoring new conversation from different platform:', data.platform);
+        return;
+      }
+      if (data.channel && data.channel.toLowerCase() !== 'facebook') {
+        console.log('🔕 [SOCKET] Ignoring new conversation from different channel:', data.channel);
+        return;
+      }
+
       console.log('🆕 [SOCKET] New conversation created:', data);
 
       // ✅ FIX: التحقق من أن المحادثة تخص نفس الشركة قبل إضافتها
@@ -3496,7 +3461,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           console.log('🔄 [SOCKET] Conversation already exists, updating instead of skipping...');
           const existing = prev[existingIndex];
           const updated = [...prev];
-          
+
           // ✅ FIX: الحفاظ على unreadCount من المحادثة المؤقتة (Socket.IO)
           // لأن formattedConversation قد يحتوي على unreadCount = 0 من السيرفر
           console.log(`🔢 [CONV-NEW-UPDATE] Conv ${data.id}:`, {
@@ -3504,7 +3469,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             newUnreadCount: formattedConversation.unreadCount,
             keepingExisting: true
           });
-          
+
           // تحديث المحادثة الموجودة بالبيانات الجديدة
           updated[existingIndex] = {
             ...updated[existingIndex],
@@ -3979,6 +3944,11 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   const filteredConversations = useMemo(() => {
     return conversations
       .filter(conv => {
+        // 🚫 منع ظهور محادثات التليجرام في هذه الصفحة (مخصصة للفيسبوك فقط)
+        if (conv.platform === 'telegram' || conv.channel === 'TELEGRAM') {
+          return false;
+        }
+
         // فلترة حسب نوع المحادثة:
         // all        => كل المحادثات
         // unread     => أي محادثة بها رسائل غير مقروءة (unreadCount > 0)
@@ -3990,7 +3960,9 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             conv.lastMessageIsFromCustomer === true) ||
           (conversationFilter === 'unreplied' &&
             conv.lastMessageIsFromCustomer === true &&
-            conv.lastCustomerMessageIsUnread === true);
+            conv.lastCustomerMessageIsUnread === true) ||
+          (conversationFilter === 'telegram' &&
+            (conv.platform === 'telegram' || conv.channel === 'TELEGRAM'));
 
         // إذا لم يكن هناك بحث، نرجع النتيجة حسب الفلتر فقط
         if (!searchQuery || searchQuery.trim() === '') {
@@ -4230,6 +4202,8 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                 ).length}
               </span>
             </button>
+
+
           </div>
 
           {/* شريط البحث */}
@@ -4273,12 +4247,27 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                       onClick={() => selectConversation(conversation.id)}
                     >
                       <div className="relative">
-                        <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-semibold">
+                        <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-semibold relative">
                           {conversation.customerName.charAt(0)}
+
+                          {/* Platform Icon Badge */}
+                          <div className="absolute -bottom-1 -left-1 bg-white rounded-full p-0.5 shadow-sm z-10">
+                            {(conversation.platform === 'telegram' || conversation.channel === 'TELEGRAM') ? (
+                              <PaperAirplaneIcon className="w-4 h-4 text-sky-500 transform -rotate-45" />
+                            ) : (conversation.platform === 'whatsapp' || conversation.channel === 'WHATSAPP') ? (
+                              <div className="w-4 h-4 bg-green-500 rounded-full flex items-center justify-center">
+                                <PhoneIcon className="w-2.5 h-2.5 text-white" />
+                              </div>
+                            ) : (
+                              <div className="w-4 h-4 bg-blue-600 rounded-full flex items-center justify-center">
+                                <span className="text-white text-[10px] font-bold">f</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
                         {/* مؤشر حالة الاتصال */}
                         {onlineUsers.includes(conversation.id) && (
-                          <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+                          <div className="absolute top-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
                         )}
                       </div>
                       <div className="flex-1">
@@ -4390,14 +4379,23 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           <>
             {/* شريط علوي مع معلومات المحادثة */}
             <div className="bg-white border-b border-gray-200 p-4 flex-shrink-0">
-              {/* عرض اسم الصفحة */}
-              {selectedConversation.pageName && (
-                <div className="mb-2 px-3 py-1 bg-blue-50 border border-blue-200 rounded-lg inline-block">
+              {/* عرض اسم الصفحة / البوت */}
+              {(selectedConversation.pageName || selectedConversation.platform === 'telegram' || selectedConversation.channel === 'TELEGRAM') && (
+                <div className={`mb-2 px-3 py-1 rounded-lg inline-block ${(selectedConversation.platform === 'telegram' || selectedConversation.channel === 'TELEGRAM')
+                  ? 'bg-sky-50 border border-sky-200'
+                  : 'bg-blue-50 border border-blue-200'
+                  }`}>
                   <div className="flex items-center space-x-2 text-sm">
-                    <div className="w-4 h-4 bg-blue-600 rounded-full flex items-center justify-center">
-                      <span className="text-white text-xs font-bold">f</span>
-                    </div>
-                    <span className="text-blue-700 font-medium">{t('conversations.page', 'Page')}: {selectedConversation.pageName}</span>
+                    {(selectedConversation.platform === 'telegram' || selectedConversation.channel === 'TELEGRAM') ? (
+                      <PaperAirplaneIcon className="w-4 h-4 text-sky-600 transform -rotate-45" />
+                    ) : (
+                      <div className="w-4 h-4 bg-blue-600 rounded-full flex items-center justify-center">
+                        <span className="text-white text-xs font-bold">f</span>
+                      </div>
+                    )}
+                    <span className={`${(selectedConversation.platform === 'telegram' || selectedConversation.channel === 'TELEGRAM') ? 'text-sky-700' : 'text-blue-700'} font-medium`}>
+                      {(selectedConversation.platform === 'telegram' || selectedConversation.channel === 'TELEGRAM') ? 'Telegram Bot' : t('conversations.page', 'Page')}: {selectedConversation.pageName || 'Bot'}
+                    </span>
                   </div>
                 </div>
               )}
@@ -5869,11 +5867,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                             <button
                               onClick={(e) => togglePinText(text.id, text.isPinned || false, e)}
                               disabled={pinningTextId === text.id}
-                              className={`p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed ${
-                                text.isPinned 
-                                  ? 'text-yellow-600 hover:bg-yellow-50' 
-                                  : 'text-gray-400 hover:bg-gray-50 hover:text-yellow-600'
-                              }`}
+                              className={`p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed ${text.isPinned
+                                ? 'text-yellow-600 hover:bg-yellow-50'
+                                : 'text-gray-400 hover:bg-gray-50 hover:text-yellow-600'
+                                }`}
                               title={text.isPinned ? 'إلغاء تثبيت النص' : 'تثبيت النص'}
                             >
                               {pinningTextId === text.id ? (

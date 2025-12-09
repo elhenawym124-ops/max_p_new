@@ -47,10 +47,10 @@ const conversationUpload = multer({
 
 router.delete('/:id', conversationController.deleteConverstation);
 router.post('/:id/messages', conversationController.postMessageConverstation);
-router.post('/:id/upload',verifyToken.authenticateToken ,conversationUpload.array('files', 10) ,conversationController.uploadFile);
+router.post('/:id/upload', verifyToken.authenticateToken, conversationUpload.array('files', 10), conversationController.uploadFile);
 router.post('/:id/send-existing-image', verifyToken.authenticateToken, conversationController.sendExistingImage);
-router.post('/:id/reply' ,conversationController.postReply);
-router.get('/:id/health-check' ,conversationController.checkHealth);
+router.post('/:id/reply', conversationController.postReply);
+router.get('/:id/health-check', conversationController.checkHealth);
 router.post('/:id/read', verifyToken.authenticateToken, conversationController.markConversationAsRead);
 router.put('/:id/mark-unread', verifyToken.authenticateToken, conversationController.markConversationAsUnread);
 // Posts routes (must be before /:id routes to avoid conflicts)
@@ -60,5 +60,10 @@ router.put('/posts/:postId/featured-product', verifyToken.authenticateToken, con
 
 // Conversation routes
 router.get('/:id/post-details', verifyToken.authenticateToken, conversationController.getConversationPostDetails); // 🆕 Get post details (lazy loading)
+
+// 🆕 New GET routes
+router.get('/', verifyToken.authenticateToken, conversationController.getConversations);
+router.get('/:id', verifyToken.authenticateToken, conversationController.getConversation);
+router.get('/:id/messages', verifyToken.authenticateToken, conversationController.getMessages);
 
 module.exports = router;

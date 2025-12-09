@@ -152,12 +152,46 @@ router.get('/simple', async (req, res) => {
         }
       } catch (e) { }
 
+      // PRIORITY: Use order.customerName from WooCommerce first
+      // This ensures each order shows the actual customer name from WooCommerce
+      let finalCustomerName = '';
+      
+      // First: Try order.customerName (from WooCommerce)
+      if (order.customerName && order.customerName.trim()) {
+        finalCustomerName = order.customerName.trim();
+      }
+      // Second: Fallback to Customer relation if customerName is empty
+      else if (order.customer) {
+        const firstName = order.customer.firstName || '';
+        const lastName = order.customer.lastName || '';
+        finalCustomerName = `${firstName} ${lastName}`.trim();
+      }
+      // Final fallback: empty string
+      else {
+        finalCustomerName = '';
+      }
+      
+      // Debug logging for all orders to help diagnose the issue
+      const orderIndex = regularOrders.indexOf(order);
+      if (orderIndex < 5) {
+        console.log(`📦 [ORDER-API] Order #${orderIndex + 1} - ${order.orderNumber}:`, {
+          hasCustomer: !!order.customer,
+          customerId: order.customerId,
+          customerFirstName: order.customer?.firstName || 'N/A',
+          customerLastName: order.customer?.lastName || 'N/A',
+          storedCustomerName: order.customerName || 'N/A',
+          finalCustomerName: finalCustomerName || 'EMPTY'
+        });
+      }
+
       return {
         id: order.orderNumber,
         orderNumber: order.orderNumber,
-        customerName: order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : '',
+        customerName: finalCustomerName,
         customerPhone: order.customerPhone || order.customer?.phone || '',
-        customerEmail: order.customer?.email || '',
+        customerEmail: order.customerEmail || order.customer?.email || '',
+        customerAddress: order.customerAddress || '',
+        city: order.city || '',
         total: order.total,
         subtotal: order.subtotal,
         tax: order.tax,
@@ -592,12 +626,32 @@ router.get('/simple/:orderNumber', async (req, res) => {
     }
 
     // تحويل البيانات للصيغة المتوافقة مع الـ frontend
+    // PRIORITY: Use order.customerName from WooCommerce first
+    let finalCustomerName = '';
+    
+    // First: Try order.customerName (from WooCommerce)
+    if (order.customerName && order.customerName.trim()) {
+      finalCustomerName = order.customerName.trim();
+    }
+    // Second: Fallback to Customer relation if customerName is empty
+    else if (order.customer) {
+      const firstName = order.customer.firstName || '';
+      const lastName = order.customer.lastName || '';
+      finalCustomerName = `${firstName} ${lastName}`.trim();
+    }
+    // Final fallback: empty string
+    else {
+      finalCustomerName = '';
+    }
+    
     const formattedOrder = {
       id: order.orderNumber,
       orderNumber: order.orderNumber,
-      customerName: order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : '',
+      customerName: finalCustomerName,
       customerPhone: order.customerPhone || order.customer?.phone || '',
-      customerEmail: order.customer?.email || '',
+      customerEmail: order.customerEmail || order.customer?.email || '',
+      customerAddress: order.customerAddress || '',
+      city: order.city || '',
       total: order.total,
       subtotal: order.subtotal,
       tax: order.tax,

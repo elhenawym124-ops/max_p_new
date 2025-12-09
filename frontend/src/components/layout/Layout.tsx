@@ -52,6 +52,7 @@ import {
   QuestionMarkCircleIcon,
   RocketLaunchIcon,
   StarIcon,
+  PaperAirplaneIcon,
 } from '@heroicons/react/24/outline';
 
 interface LayoutProps {
@@ -112,6 +113,17 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         { to: '/whatsapp', icon: <ChatBubbleLeftRightIcon className="h-5 w-5" />, label: 'واتساب', badge: 'جديد' },
         { to: '/whatsapp/settings', icon: <Cog6ToothIcon className="h-5 w-5" />, label: 'إعدادات واتساب' },
         { to: '/customers', icon: <UsersIcon className="h-5 w-5" />, label: t('sidebar.customers') },
+      ]
+    },
+    {
+      id: 'telegram',
+      title: 'Telegram',
+      icon: '✈️',
+      items: [
+        { to: '/telegram/conversations', icon: <PaperAirplaneIcon className="h-5 w-5" />, label: 'Telegram Bot' },
+        { to: '/telegram/pro', icon: <SparklesIcon className="h-5 w-5" />, label: 'Telegram Pro', badge: 'جديد' },
+        { to: '/telegram-userbot', icon: <UserCircleIcon className="h-5 w-5" />, label: 'Telegram Userbot', badge: 'جديد' }, // System 2
+        { to: '/settings/telegram', icon: <Cog6ToothIcon className="h-5 w-5" />, label: 'Telegram Settings' },
       ]
     },
     {
@@ -228,6 +240,17 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         { to: '/support/faq', icon: <QuestionMarkCircleIcon className="h-5 w-5" />, label: 'الأسئلة الشائعة' },
         ...(user?.role === 'SUPER_ADMIN' || user?.role === 'COMPANY_ADMIN' ? [
           { to: '/admin/support', icon: <WrenchScrewdriverIcon className="h-5 w-5" />, label: 'إدارة الدعم' }
+        ] : [])
+      ]
+    },
+    {
+      id: 'activity',
+      title: 'سجل النشاطات',
+      icon: '📊',
+      items: [
+        { to: '/my-activity', icon: <ClipboardDocumentListIcon className="h-5 w-5" />, label: 'نشاطاتي', badge: 'جديد' },
+        ...(user?.role === 'SUPER_ADMIN' || user?.role === 'COMPANY_ADMIN' ? [
+          { to: '/company/activity', icon: <ChartBarIcon className="h-5 w-5" />, label: 'نشاطات الشركة' }
         ] : [])
       ]
     },

@@ -36,6 +36,7 @@ import PostComments from './pages/comments/PostComments';
 import PostAITracking from './pages/posts/PostAITracking';
 import ConversationsSimple from './pages/conversations/ConversationsSimple';
 import ConversationsImprovedFixed from './pages/conversations/ConversationsImprovedFixed';
+import TelegramConversations from './pages/conversations/TelegramConversations';
 import ConversationsDashboard from './pages/conversations/ConversationsDashboard';
 import ConversationsTest from './pages/conversations/ConversationsTest';
 import ConversationsSimpleTest from './pages/conversations/ConversationsSimpleTest';
@@ -55,6 +56,9 @@ import Reports from './pages/reports/Reports';
 import Settings from './pages/settings/Settings';
 import CompanySettings from './pages/settings/CompanySettings';
 import FacebookSettings from './pages/settings/FacebookSettings';
+import TelegramSettings from './pages/settings/TelegramSettings';
+import TelegramConversationsPro from './pages/conversations/TelegramConversationsPro';
+import TelegramUserbot from './pages/telegram/TelegramUserbot'; // System 2
 import StoreSettings from './pages/settings/StoreSettings';
 import StorePages from './pages/settings/StorePages';
 import StorefrontFeaturesSettings from './pages/settings/StorefrontFeaturesSettings';
@@ -147,6 +151,10 @@ import TicketDetails from './pages/support/TicketDetails';
 import FAQ from './pages/support/FAQ';
 import SupportAdmin from './pages/admin/SupportAdmin';
 
+// Activity Log System
+import MyActivity from './pages/MyActivity';
+import CompanyActivity from './pages/CompanyActivity';
+
 import { BroadcastDashboard } from './pages/broadcast';
 import Reminders from './pages/Reminders';
 import NotificationSettings from './pages/NotificationSettings';
@@ -203,10 +211,10 @@ import LandingPageList from './pages/LandingPageList';
 import { WhatsAppSettings, WhatsAppChat } from './pages/whatsapp';
 
 // HR Module
-import { 
-  HRDashboard, Employees, EmployeeDetails, Departments, Attendance, Leaves, Payroll, 
-  HRSettings, HRReports, Documents, SalaryHistory, PerformanceReviews, Training, 
-  Warnings, Shifts, Benefits, Goals, Feedback, Resignations 
+import {
+  HRDashboard, Employees, EmployeeDetails, Departments, Attendance, Leaves, Payroll,
+  HRSettings, HRReports, Documents, SalaryHistory, PerformanceReviews, Training,
+  Warnings, Shifts, Benefits, Goals, Feedback, Resignations
 } from './pages/hr';
 
 import { useAuth } from './hooks/useAuthSimple';
@@ -472,6 +480,10 @@ const AppContent = () => {
               <Route path="/preview/homepage/:id" element={<HomepagePreview />} />
               <Route path="/settings/facebook" element={<Layout><FacebookSettings /></Layout>} />
               <Route path="/settings/facebook-oauth" element={<Layout><FacebookOAuth /></Layout>} />
+              <Route path="/settings/telegram" element={<Layout><TelegramSettings /></Layout>} />
+              <Route path="/telegram/conversations" element={<Layout><TelegramConversations /></Layout>} />
+              <Route path="/telegram/pro" element={<Layout><TelegramConversationsPro /></Layout>} />
+              <Route path="/telegram-userbot" element={<Layout><TelegramUserbot /></Layout>} /> {/* System 2 */}
               <Route path="/terms" element={<Layout><TermsOfService /></Layout>} />
               <Route path="/privacy" element={<Layout><PrivacyPolicy /></Layout>} />
 
@@ -516,7 +528,11 @@ const AppContent = () => {
               <Route path="/support/tickets/new" element={<Layout><CreateTicket /></Layout>} />
               <Route path="/support/tickets/:ticketId" element={<Layout><TicketDetails /></Layout>} />
               <Route path="/support/faq" element={<Layout><FAQ /></Layout>} />
-              
+
+              {/* Activity Log Routes */}
+              <Route path="/my-activity" element={<Layout><MyActivity /></Layout>} />
+              <Route path="/company/activity" element={<Layout><CompanyActivity /></Layout>} />
+
               {/* Admin Support Routes */}
               <Route path="/admin/support" element={<Layout><SupportAdmin /></Layout>} />
 

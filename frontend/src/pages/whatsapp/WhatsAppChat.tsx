@@ -3,7 +3,7 @@
  * صفحة دردشة WhatsApp
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Box, Paper, Typography, TextField, IconButton, Avatar, Badge, List, ListItem,
   ListItemAvatar, ListItemText, Divider, CircularProgress, Chip, Menu, MenuItem,
@@ -33,6 +33,7 @@ import {
 import { useSnackbar } from 'notistack';
 import { format, isToday, isYesterday } from 'date-fns';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { apiClient as api } from '../../services/apiClient';
 import useSocket from '../../hooks/useSocket';
 import CreateGroupDialog from '../../components/whatsapp/CreateGroupDialog';
@@ -46,98 +47,51 @@ import BusinessProfileDialog from '../../components/whatsapp/BusinessProfileDial
 import AudioRecorder from './components/AudioRecorder';
 import { useAuth } from '../../hooks/useAuthSimple';
 import { config } from '../../config';
+import {
+  useWhatsAppSessions,
+  useWhatsAppConversations,
+  useWhatsAppMessages,
+  useWhatsAppQuickReplies,
+  type Session,
+  type Contact,
+  type Message,
+  type QuickReply
+} from '../../hooks/useWhatsAppQueries';
+import {
+  useSendMessage,
+  useSendMedia,
+  useMarkAsRead,
+  useDeleteConversation,
+  useArchiveConversation
+} from '../../hooks/useWhatsAppMutations';
+import {
+  useVirtualConversations,
+  useVirtualMessages,
+  useInfiniteScroll
+} from '../../hooks/useVirtualScroll';
 
-interface Contact {
-  id: string;
-  sessionId: string;
-  jid: string;
-  phoneNumber: string;
-  name: string | null;
-  pushName: string | null;
-  profilePicUrl: string | null;
-  isGroup: boolean;
-  category: string | null;
-  labels?: string[]; // Add labels support
-  unreadCount: number;
-  lastMessageAt: string | null;
-  isArchived: boolean;
-  isPinned: boolean;
-  isMuted: boolean;
-  isBlocked?: boolean;
-  session: {
-    name: string;
-    phoneNumber: string | null;
-  };
-  customer: {
-    firstName: string;
-    lastName: string;
-    status: string;
-  } | null;
-  lastMessage?: {
-    content: string | null;
-    messageType: string;
-    fromMe: boolean;
-    timestamp: string;
-  };
-}
-
-interface Message {
-  id: string;
-  messageId: string;
-  remoteJid: string;
-  fromMe: boolean;
-  messageType: string;
-  content: string | null;
-  mediaUrl: string | null;
-  mediaType: string | null;
-  mediaFileName: string | null;
-  quotedMessageId: string | null;
-  quotedContent: string | null;
-  status: string;
-  timestamp: string;
-  isAIResponse: boolean;
-  aiConfidence: number | null;
-  senderId?: string;
-  senderName?: string; // For display
-  participant?: string; // Group participant
-}
-
-interface Session {
-  id: string;
-  name: string;
-  phoneNumber: string | null;
-  status: string;
-  liveStatus: string;
-}
-
-interface QuickReply {
-  id: string;
-  title: string;
-  shortcut: string | null;
-  content: string;
-  category: string;
-}
+// Types are now imported from useWhatsAppQueries
 
 const WhatsAppChat: React.FC = () => {
-  const { user } = useAuth();
+  const { user, isLoading: authLoading, isAuthenticated } = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { socket } = useSocket();
+  const queryClient = useQueryClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const conversationsListRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
-  // State
-  const [loading, setLoading] = useState(true);
-  const [sessions, setSessions] = useState<Session[]>([]);
+  // Session state
   const [selectedSession, setSelectedSession] = useState<string>('');
-  const [contacts, setContacts] = useState<Contact[]>([]);
+  
+  // Contact state
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loadingMessages, setLoadingMessages] = useState(false);
+  
+  // UI State
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [newMessage, setNewMessage] = useState('');
-  const [sending, setSending] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [contactMenuAnchor, setContactMenuAnchor] = useState<null | HTMLElement>(null);
   const [showContactInfo, setShowContactInfo] = useState(false);
@@ -213,10 +167,101 @@ const WhatsAppChat: React.FC = () => {
   const [createGroupDialogOpen, setCreateGroupDialogOpen] = useState(false);
   const [currentUserProfile, setCurrentUserProfile] = useState<{ name: string; status: string; profilePicUrl: string } | null>(null);
 
-  // Pagination State
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingContacts, setLoadingContacts] = useState(false);
+  // TanStack Query Hooks
+  const { data: sessions = [], isLoading: loadingSessions } = useWhatsAppSessions();
+  const { 
+    data: conversationsData, 
+    isLoading: loadingConversations,
+    fetchNextPage: fetchNextConversationsPage,
+    hasNextPage: hasMoreConversations
+  } = useWhatsAppConversations(selectedSession || 'all', 30);
+  
+  const conversations = useMemo(() => {
+    if (!conversationsData) return [];
+    return conversationsData.pages.flatMap(page => page.conversations || []);
+  }, [conversationsData]);
+
+  const targetSessionId = useMemo(() => {
+    if (!selectedContact || !selectedSession) return null;
+    return selectedContact.sessionId || (selectedSession === 'all' ? null : selectedSession);
+  }, [selectedContact, selectedSession]);
+
+  const { 
+    data: messagesData,
+    isLoading: loadingMessages,
+    fetchNextPage: fetchNextMessagesPage,
+    hasNextPage: hasMoreMessages
+  } = useWhatsAppMessages(selectedContact?.jid || null, targetSessionId);
+
+  const messages = useMemo(() => {
+    if (!messagesData) return [];
+    return messagesData.pages.flatMap(page => page.messages || []);
+  }, [messagesData]);
+
+  const { data: quickReplies = [] } = useWhatsAppQuickReplies();
+
+  // Mutations
+  const sendMessageMutation = useSendMessage();
+  const sendMediaMutation = useSendMedia();
+  const markAsReadMutation = useMarkAsRead();
+  const deleteConversationMutation = useDeleteConversation();
+  const archiveConversationMutation = useArchiveConversation();
+
+  // Helper functions
+  const getContactName = useCallback((contact: Contact) => {
+    if (contact.customer && (contact.customer.firstName || contact.customer.lastName)) {
+      return `${contact.customer.firstName} ${contact.customer.lastName}`.trim();
+    }
+    return contact.name || contact.pushName || contact.phoneNumber;
+  }, []);
+
+  // Memoize filtered contacts to avoid unnecessary recalculations
+  const filteredContacts = React.useMemo(() => {
+    return conversations.filter(c => {
+      if (chatFilter === 'unread' && c.unreadCount === 0) return false;
+      if (chatFilter === 'groups' && !c.isGroup) return false;
+
+      if (searchQuery === 'individual:') return !c.jid.endsWith('@g.us');
+      if (searchQuery === 'group:') return c.jid.endsWith('@g.us');
+      if (!searchQuery) return true;
+      const displayName = getContactName(c);
+      return (displayName || c.phoneNumber).toLowerCase().includes(searchQuery.toLowerCase());
+    });
+  }, [conversations, chatFilter, searchQuery, getContactName]);
+
+  // Virtual Scrolling - must use filteredContacts for correct indexing
+  const conversationsVirtualizer = useVirtualConversations(
+    filteredContacts,
+    conversationsListRef,
+    { estimateSize: 80, overscan: 5 }
+  );
+
+  const {
+    virtualizer: messagesVirtualizer,
+    isAtBottom,
+    scrollToBottom: scrollToBottomFn,
+    scrollToTop: scrollToTopFn
+  } = useVirtualMessages(
+    messages,
+    messagesContainerRef,
+    { 
+      estimateSize: 60, 
+      overscan: 10,
+      scrollToBottom: true,
+      reverse: false
+    }
+  );
+
+  // Infinite scroll for loading older messages
+  useInfiniteScroll(
+    messagesContainerRef,
+    () => {
+      if (hasMoreMessages && !loadingMessages) {
+        fetchNextMessagesPage();
+      }
+    },
+    { threshold: 200, enabled: !!selectedContact }
+  );
 
   const fetchUserProfile = async () => {
     if (!selectedSession || selectedSession === 'all') return;
@@ -251,142 +296,32 @@ const WhatsAppChat: React.FC = () => {
     return format(date, 'dd/MM/yyyy');
   };
 
-  // Load Sessions
-  const loadSessions = async () => {
-    try {
-      const response = await api.get('/whatsapp/sessions');
-      // Add "All Sessions" option if there are sessions
-      const fetchedSessions = response.data.sessions || [];
-      if (fetchedSessions.length > 0) {
-        // Check if "All Sessions" already exists to avoid duplication
-        const allSessionsExists = fetchedSessions.some((s: Session) => s.id === 'all');
-        if (!allSessionsExists) {
-          fetchedSessions.unshift({
-            id: 'all',
-            name: 'كل الجلسات',
-            phoneNumber: null,
-            status: 'connected',
-            liveStatus: 'connected'
-          });
-        }
-      }
-      setSessions(fetchedSessions);
-
-      if (fetchedSessions.length > 0 && !selectedSession) {
-        setSelectedSession(fetchedSessions[0].id);
-      }
-    } catch (error) {
-      console.error('Error fetching sessions:', error);
-      enqueueSnackbar('فشل في جلب الجلسات', { variant: 'error' });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadMessages = async () => {
-    if (!selectedContact || !selectedSession) return;
-    setLoadingMessages(true);
-    try {
-      // Use the contact's session ID if available, otherwise fallback to selectedSession (unless it's 'all')
-      const targetSessionId = selectedContact.sessionId || (selectedSession === 'all' ? null : selectedSession);
-
-      if (!targetSessionId) {
-        console.error('No valid session ID for loading messages');
-        return;
-      }
-
-      const res = await api.get(`/whatsapp/conversations/${encodeURIComponent(selectedContact.jid)}/messages`, {
-        params: { sessionId: targetSessionId }
-      });
-      setMessages(res.data.messages || []);
-    } catch (error) {
-      enqueueSnackbar('حدث خطأ أثناء تحميل الرسائل', { variant: 'error' });
-    } finally {
-      setLoadingMessages(false);
-    }
-  };
-
-  const markAsRead = async () => {
-    if (!selectedContact || !selectedSession) return;
-    const targetSessionId = selectedContact.sessionId || (selectedSession === 'all' ? null : selectedSession);
-    if (!targetSessionId) return;
-
-    try {
-      await api.post('/whatsapp/messages/read', { sessionId: targetSessionId, remoteJid: selectedContact.jid });
-    } catch (error) { console.error(error); }
-  };
-
-  // Load initial data
+  // Auto-select first session when sessions load
   useEffect(() => {
-    loadSessions();
-    loadQuickReplies();
+    if (sessions.length > 0 && !selectedSession) {
+      setSelectedSession(sessions[0].id);
+    }
+  }, [sessions, selectedSession]);
+
+  // Load initial data (notification settings)
+  useEffect(() => {
     loadNotificationSettings();
     requestNotificationPermission();
   }, []);
 
-  // Load from cache on session change
+  // Debounced version to avoid excessive API calls - now handled inline in socket handlers
+
+  // Socket Listeners - Using refs to avoid stale closures
+  const selectedContactRef = useRef(selectedContact);
+  const selectedSessionRef = useRef(selectedSession);
+  const notificationSettingsRef = useRef(notificationSettings);
+
+  // Update refs when values change
   useEffect(() => {
-    if (!selectedSession) return;
-    const cached = localStorage.getItem(`whatsapp_contacts_${selectedSession}`);
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setContacts(parsed);
-        }
-      } catch (e) {
-        console.error('Failed to load contacts from cache', e);
-      }
-    }
-  }, [selectedSession]);
-
-  const loadContacts = useCallback(async (pageNum = 1, reset = false) => {
-    if (!selectedSession) return;
-    // If loading, don't trigger again unless it's a reset (search/filter change)
-    if (loadingContacts && !reset) return;
-
-    setLoadingContacts(true);
-    try {
-      const res = await api.get('/whatsapp/conversations', {
-        params: {
-          sessionId: selectedSession,
-          page: pageNum,
-          limit: 15 // Reduced initial load
-        }
-      });
-      const newContacts = res.data.conversations || [];
-      const pagination = res.data.pagination;
-
-      setContacts(prev => {
-        if (reset) {
-          // Cache the first page for instant load next time
-          localStorage.setItem(`whatsapp_contacts_${selectedSession}`, JSON.stringify(newContacts));
-          return newContacts;
-        }
-        // Filter out duplicates just in case
-        const existingIds = new Set(prev.map(c => c.id));
-        const uniqueNewContacts = newContacts.filter((c: Contact) => !existingIds.has(c.id));
-        return [...prev, ...uniqueNewContacts];
-      });
-
-      setHasMore(pagination ? pagination.page < pagination.totalPages : newContacts.length === 15);
-      setPage(pageNum);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoadingContacts(false);
-    }
-  }, [selectedSession, loadingContacts]);
-
-  // Debounced version to avoid excessive API calls
-  const debouncedLoadContacts = useCallback(() => {
-    if (loadContactsTimeoutRef.current) {
-      clearTimeout(loadContactsTimeoutRef.current);
-    }
-    loadContactsTimeoutRef.current = setTimeout(() => {
-      loadContacts(1, true);
-    }, 500);
-  }, [loadContacts]);
+    selectedContactRef.current = selectedContact;
+    selectedSessionRef.current = selectedSession;
+    notificationSettingsRef.current = notificationSettings;
+  }, [selectedContact, selectedSession, notificationSettings]);
 
   // Socket Listeners
   useEffect(() => {
@@ -406,31 +341,57 @@ const WhatsAppChat: React.FC = () => {
 
       // Normalize JIDs for comparison
       const msgJid = normalizeJid(message.remoteJid);
-      const currentJid = selectedContact ? normalizeJid(selectedContact.jid) : '';
+      const currentContact = selectedContactRef.current;
+      const currentSession = selectedSessionRef.current;
+      const currentJid = currentContact ? normalizeJid(currentContact.jid) : '';
 
       // Only process incoming messages (not sent by us)
       if (message.fromMe) {
         return;
       }
 
-      const isCurrentChat = selectedContact && msgJid === currentJid && (selectedSession === 'all' || sessionId === selectedSession);
+      const isCurrentChat = currentContact && msgJid === currentJid && (currentSession === 'all' || sessionId === currentSession);
 
       if (isCurrentChat) {
-        setMessages(prev => {
-          // Prevent duplicates
-          if (prev.some(m => m.messageId === message.messageId)) return prev;
-          return [...prev, message];
+        // Update messages cache using queryClient
+        queryClient.setQueryData(['whatsapp', 'messages', message.remoteJid, sessionId], (old: any) => {
+          if (!old) return old;
+          const lastPage = old.pages[old.pages.length - 1];
+          // Check for duplicates
+          if (lastPage.messages.some((m: Message) => m.messageId === message.messageId)) {
+            return old;
+          }
+          const newPages = [...old.pages];
+          newPages[newPages.length - 1] = {
+            ...lastPage,
+            messages: [...lastPage.messages, message]
+          };
+          return { ...old, pages: newPages };
         });
-        markAsRead();
+        
+        // Mark as read
+        if (currentContact) {
+          const targetSessionId = currentContact.sessionId || (currentSession === 'all' ? null : currentSession);
+          if (targetSessionId) {
+            markAsReadMutation.mutate({
+              sessionId: targetSessionId,
+              remoteJid: currentContact.jid
+            });
+          }
+        }
         // Play sound if enabled and chat is open (quieter notification)
-        if (notificationSettings.notificationSound) {
+        if (notificationSettingsRef.current.notificationSound) {
           playNotificationSound();
         }
       } else {
         // Show notification if chat is not open or different contact
-        if (selectedSession === 'all' || sessionId === selectedSession) {
-          const contactName = contacts.find(c => normalizeJid(c.jid) === msgJid)?.name ||
-            contacts.find(c => normalizeJid(c.jid) === msgJid)?.pushName ||
+        if (currentSession === 'all' || sessionId === currentSession) {
+          // Get contact name from cache
+          const sessionKey = currentSession === 'all' ? 'all' : currentSession;
+          const conversationsQuery = queryClient.getQueryData(['whatsapp', 'conversations', sessionKey, 30]) as any;
+          const currentContacts = conversationsQuery?.pages?.[0]?.conversations || [];
+          const contactName = currentContacts.find((c: Contact) => normalizeJid(c.jid) === msgJid)?.name ||
+            currentContacts.find((c: Contact) => normalizeJid(c.jid) === msgJid)?.pushName ||
             message.remoteJid.split('@')[0];
           const messageText = message.content
             ? (message.content.length > 50 ? message.content.substring(0, 50) + '...' : message.content)
@@ -453,8 +414,11 @@ const WhatsAppChat: React.FC = () => {
                 <Button
                   size="small"
                   onClick={() => {
-                    // Find and select the contact
-                    const contact = contacts.find(c => normalizeJid(c.jid) === msgJid);
+                    // Find and select the contact from cache
+                    const sessionKey = currentSession === 'all' ? 'all' : currentSession;
+                    const conversationsQuery = queryClient.getQueryData(['whatsapp', 'conversations', sessionKey, 30]) as any;
+                    const currentContacts = conversationsQuery?.pages?.[0]?.conversations || [];
+                    const contact = currentContacts.find((c: Contact) => normalizeJid(c.jid) === msgJid);
                     if (contact) {
                       setSelectedContact(contact);
                     }
@@ -467,12 +431,12 @@ const WhatsAppChat: React.FC = () => {
           );
 
           // Play sound if enabled
-          if (notificationSettings.notificationSound) {
+          if (notificationSettingsRef.current.notificationSound) {
             playNotificationSound();
           }
 
           // Show browser notification if enabled
-          if (notificationSettings.browserNotifications) {
+          if (notificationSettingsRef.current.browserNotifications) {
             showBrowserNotification(
               `رسالة جديدة من ${contactName}`,
               messageText
@@ -480,34 +444,62 @@ const WhatsAppChat: React.FC = () => {
           }
         }
       }
-      // Update contact list immediately
-      setContacts(prev => {
-        const contactIndex = prev.findIndex(c => normalizeJid(c.jid) === msgJid);
+      // Update conversations cache immediately
+      const sessionKey = currentSession === 'all' ? 'all' : currentSession;
+      queryClient.setQueryData(['whatsapp', 'conversations', sessionKey, 30], (old: any) => {
+        if (!old || !old.pages || old.pages.length === 0) return old;
+        // Update first page (most recent conversations)
+        const firstPage = old.pages[0];
+        const contactIndex = firstPage.conversations.findIndex((c: Contact) => normalizeJid(c.jid) === msgJid);
         if (contactIndex > -1) {
-          const contact = prev[contactIndex];
+          const contact = firstPage.conversations[contactIndex];
           const updatedContact = {
             ...contact,
-            lastMessage: message,
+            lastMessage: {
+              content: message.content,
+              messageType: message.messageType,
+              fromMe: message.fromMe,
+              timestamp: message.timestamp
+            },
             lastMessageAt: message.timestamp,
             unreadCount: isCurrentChat ? 0 : (contact.unreadCount || 0) + 1
           };
-          const newContacts = [...prev];
+          const newContacts = [...firstPage.conversations];
           newContacts.splice(contactIndex, 1);
-          const pinned = newContacts.filter(c => c.isPinned);
-          const unpinned = newContacts.filter(c => !c.isPinned);
+          const pinned = newContacts.filter((c: Contact) => c.isPinned);
+          const unpinned = newContacts.filter((c: Contact) => !c.isPinned);
           if (updatedContact.isPinned) pinned.unshift(updatedContact);
           else unpinned.unshift(updatedContact);
-          return [...pinned, ...unpinned];
+          return {
+            ...old,
+            pages: [{
+              ...firstPage,
+              conversations: [...pinned, ...unpinned]
+            }, ...old.pages.slice(1)]
+          };
         }
-        return prev;
+        return old;
       });
 
-      // Update contact list with debouncing
-      debouncedLoadContacts();
+      // Invalidate conversations query to refetch in background (debounced)
+      if (loadContactsTimeoutRef.current) {
+        clearTimeout(loadContactsTimeoutRef.current);
+      }
+      loadContactsTimeoutRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({ 
+          queryKey: ['whatsapp', 'conversations', sessionKey],
+          refetchType: 'none' // Don't refetch immediately, just mark as stale
+        });
+      }, 500);
     };
 
     const handleNotification = (data: any) => {
       const { contactName, message, messageType, soundEnabled, notificationsEnabled, sessionId } = data;
+      const currentSession = selectedSessionRef.current;
+      const sessionKey = currentSession === 'all' ? 'all' : currentSession;
+      const conversationsQuery = queryClient.getQueryData(['whatsapp', 'conversations', sessionKey, 30]) as any;
+      const currentContacts = conversationsQuery?.pages?.[0]?.conversations || [];
+      const currentNotificationSettings = notificationSettingsRef.current;
 
       // console.log('🔔 [NOTIFICATION] Received notification:', { contactName, messageType, soundEnabled, notificationsEnabled });
 
@@ -533,11 +525,11 @@ const WhatsAppChat: React.FC = () => {
               size="small"
               onClick={() => {
                 // Navigate to the chat if not already there
-                if (sessionId && sessionId !== selectedSession) {
+                if (sessionId && sessionId !== currentSession) {
                   setSelectedSession(sessionId);
                 }
-                // Find and select the contact
-                const contact = contacts.find(c =>
+                // Find and select the contact from cache
+                const contact = currentContacts.find((c: Contact) =>
                   c.name === contactName || c.pushName === contactName
                 );
                 if (contact) {
@@ -552,7 +544,7 @@ const WhatsAppChat: React.FC = () => {
       );
 
       // Show browser notification if enabled (use data from server or local settings)
-      const shouldShowNotification = notificationsEnabled !== undefined ? notificationsEnabled : notificationSettings.browserNotifications;
+      const shouldShowNotification = notificationsEnabled !== undefined ? notificationsEnabled : currentNotificationSettings.browserNotifications;
       if (shouldShowNotification) {
         showBrowserNotification(
           `رسالة جديدة من ${contactName}`,
@@ -561,64 +553,123 @@ const WhatsAppChat: React.FC = () => {
       }
 
       // Play sound if enabled (use data from server or local settings)
-      const shouldPlaySound = soundEnabled !== undefined ? soundEnabled : notificationSettings.notificationSound;
+      const shouldPlaySound = soundEnabled !== undefined ? soundEnabled : currentNotificationSettings.notificationSound;
       if (shouldPlaySound) {
         playNotificationSound();
       }
     };
 
     const handleMessageStatus = (data: any) => {
-      const { messageId, status } = data;
-      setMessages(prev => prev.map(m => m.messageId === messageId ? { ...m, status } : m));
+      const { messageId, status, remoteJid, sessionId } = data;
+      // Update message status in cache
+      queryClient.setQueryData(['whatsapp', 'messages', remoteJid, sessionId], (old: any) => {
+        if (!old) return old;
+        const newPages = old.pages.map((page: any) => ({
+          ...page,
+          messages: page.messages.map((m: Message) => 
+            m.messageId === messageId ? { ...m, status } : m
+          )
+        }));
+        return { ...old, pages: newPages };
+      });
     };
 
     const handleMessageSent = (data: any) => {
       // console.log('🔔 [FRONTEND] Received whatsapp:message:sent:', data);
       const { sessionId, message } = data;
+      const currentContact = selectedContactRef.current;
+      const currentSession = selectedSessionRef.current;
 
       const msgJid = normalizeJid(message.remoteJid);
-      const currentJid = selectedContact ? normalizeJid(selectedContact.jid) : '';
+      const currentJid = currentContact ? normalizeJid(currentContact.jid) : '';
 
-      if (selectedContact && msgJid === currentJid && (selectedSession === 'all' || sessionId === selectedSession)) {
-        // Only add if not already present (to avoid duplicates)
-        setMessages(prev => {
-          if (prev.some(m => m.messageId === message.messageId)) return prev;
-          return [...prev, message];
+      if (currentContact && msgJid === currentJid && (currentSession === 'all' || sessionId === currentSession)) {
+        // Update messages cache
+        queryClient.setQueryData(['whatsapp', 'messages', message.remoteJid, sessionId], (old: any) => {
+          if (!old) return old;
+          const lastPage = old.pages[old.pages.length - 1];
+          // Check for duplicates
+          if (lastPage.messages.some((m: Message) => m.messageId === message.messageId)) {
+            return old;
+          }
+          const newPages = [...old.pages];
+          newPages[newPages.length - 1] = {
+            ...lastPage,
+            messages: [...lastPage.messages, message]
+          };
+          return { ...old, pages: newPages };
         });
       }
-      // Update contact list immediately
-      setContacts(prev => {
-        const msgJid = normalizeJid(message.remoteJid);
-        const contactIndex = prev.findIndex(c => normalizeJid(c.jid) === msgJid);
+      
+      // Update conversations cache
+      const sessionKey = currentSession === 'all' ? 'all' : currentSession;
+      queryClient.setQueryData(['whatsapp', 'conversations', sessionKey, 30], (old: any) => {
+        if (!old || !old.pages || old.pages.length === 0) return old;
+        // Update first page (most recent conversations)
+        const firstPage = old.pages[0];
+        const contactIndex = firstPage.conversations.findIndex((c: Contact) => normalizeJid(c.jid) === msgJid);
         if (contactIndex > -1) {
-          const contact = prev[contactIndex];
+          const contact = firstPage.conversations[contactIndex];
           const updatedContact = {
             ...contact,
-            lastMessage: message,
+            lastMessage: {
+              content: message.content,
+              messageType: message.messageType,
+              fromMe: message.fromMe,
+              timestamp: message.timestamp
+            },
             lastMessageAt: message.timestamp
           };
-          const newContacts = [...prev];
+          const newContacts = [...firstPage.conversations];
           newContacts.splice(contactIndex, 1);
-          const pinned = newContacts.filter(c => c.isPinned);
-          const unpinned = newContacts.filter(c => !c.isPinned);
+          const pinned = newContacts.filter((c: Contact) => c.isPinned);
+          const unpinned = newContacts.filter((c: Contact) => !c.isPinned);
           if (updatedContact.isPinned) pinned.unshift(updatedContact);
           else unpinned.unshift(updatedContact);
-          return [...pinned, ...unpinned];
+          return {
+            ...old,
+            pages: [{
+              ...firstPage,
+              conversations: [...pinned, ...unpinned]
+            }, ...old.pages.slice(1)]
+          };
         }
-        return prev;
+        return old;
       });
 
-      // Update contact list with debouncing
-      debouncedLoadContacts();
+      // Invalidate conversations query in background (debounced)
+      if (loadContactsTimeoutRef.current) {
+        clearTimeout(loadContactsTimeoutRef.current);
+      }
+      loadContactsTimeoutRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({ 
+          queryKey: ['whatsapp', 'conversations', sessionKey],
+          refetchType: 'none'
+        });
+      }, 500);
+    };
+
+    const handleUserTyping = (data: any) => {
+      const currentContact = selectedContactRef.current;
+      if (currentContact && data.jid === currentContact.jid) {
+        setTypingUsers(prev => new Set(prev).add(data.jid));
+      }
+    };
+
+    const handleUserStoppedTyping = (data: any) => {
+      if (data.jid) {
+        setTypingUsers(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(data.jid);
+          return newSet;
+        });
+      }
     };
 
     socket.on('whatsapp:message:new', handleNewMessage);
     socket.on('whatsapp:message:status', handleMessageStatus);
     socket.on('whatsapp:message:sent', handleMessageSent);
-    socket.on('whatsapp:notification:new', (data) => {
-      // console.log('🔔 [FRONTEND] Received whatsapp:notification:new event:', data);
-      handleNotification(data);
-    });
+    socket.on('whatsapp:notification:new', handleNotification);
     socket.on('user_typing', handleUserTyping);
     socket.on('user_stopped_typing', handleUserStoppedTyping);
 
@@ -629,49 +680,39 @@ const WhatsAppChat: React.FC = () => {
       socket.off('whatsapp:notification:new', handleNotification);
       socket.off('user_typing', handleUserTyping);
       socket.off('user_stopped_typing', handleUserStoppedTyping);
+      // Cleanup timeout
+      if (loadContactsTimeoutRef.current) {
+        clearTimeout(loadContactsTimeoutRef.current);
+        loadContactsTimeoutRef.current = null;
+      }
     };
+  }, [socket, enqueueSnackbar, queryClient, markAsReadMutation]);
 
-    function handleUserTyping(data: any) {
-      if (selectedContact && data.jid === selectedContact.jid) {
-        setTypingUsers(prev => new Set(prev).add(data.jid));
-      }
-    }
-
-    function handleUserStoppedTyping(data: any) {
-      if (data.jid) {
-        setTypingUsers(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(data.jid);
-          return newSet;
-        });
-      }
-    }
-  }, [socket, selectedContact, selectedSession, notificationSettings, contacts, debouncedLoadContacts]);
-
-  // Load contacts when session changes
+  // Mark as read when contact is selected
   useEffect(() => {
-    if (selectedSession) {
-      loadContacts();
+    if (selectedContact && targetSessionId) {
+      markAsReadMutation.mutate({
+        sessionId: targetSessionId,
+        remoteJid: selectedContact.jid
+      });
     }
-  }, [selectedSession, loadContacts]);
+  }, [selectedContact?.jid, targetSessionId, markAsReadMutation]);
 
-  // Load messages when contact changes
+  // Auto scroll to bottom when new messages arrive
   useEffect(() => {
-    if (selectedContact && selectedSession) {
-      loadMessages();
-      markAsRead();
+    if (isAtBottom && messages.length > 0) {
+      scrollToBottomFn();
     }
-  }, [selectedContact]);
-
-  // Scroll to bottom when messages change
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, typingUsers]);
+  }, [messages.length, isAtBottom, scrollToBottomFn]);
 
   const getMediaUrl = (path: string | null) => {
     if (!path) return '';
     if (path.startsWith('http')) return path;
-    return `https://mokhtarelhenawy.online${path}`;
+    // Use config API URL or fallback to current origin
+    const baseUrl = config.apiUrl || window.location.origin;
+    // Remove /api/v1 if present in baseUrl
+    const cleanBaseUrl = baseUrl.replace(/\/api\/v1$/, '');
+    return `${cleanBaseUrl}${path}`;
   };
   const renderMessageContent = (message: Message) => {
     const senderName = message.fromMe && message.senderName ? message.senderName : null;
@@ -762,7 +803,13 @@ const WhatsAppChat: React.FC = () => {
   };
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !selectedContact || !selectedSession || sending) return;
+    if (!newMessage.trim() || !selectedContact || !selectedSession || sendMessageMutation.isPending) return;
+    
+    // Check authentication
+    if (!user?.id) {
+      enqueueSnackbar('يجب تسجيل الدخول لإرسال الرسائل', { variant: 'error' });
+      return;
+    }
 
     const targetSessionId = selectedContact.sessionId || (selectedSession === 'all' ? null : selectedSession);
     if (!targetSessionId) {
@@ -770,22 +817,21 @@ const WhatsAppChat: React.FC = () => {
       return;
     }
 
-    setSending(true);
-    try {
-      await api.post('/whatsapp/messages/send', {
-        sessionId: targetSessionId,
-        to: selectedContact.jid,
-        text: newMessage,
-        quotedMessageId: replyingTo?.messageId,
-        userId: user?.id
-      });
-      setNewMessage('');
-      setReplyingTo(null);
-    } catch (error: any) {
-      enqueueSnackbar(error.response?.data?.error || 'حدث خطأ أثناء الإرسال', { variant: 'error' });
-    } finally {
-      setSending(false);
-    }
+    sendMessageMutation.mutate({
+      sessionId: targetSessionId,
+      to: selectedContact.jid,
+      text: newMessage,
+      quotedMessageId: replyingTo?.messageId,
+      userId: user?.id
+    }, {
+      onSuccess: () => {
+        setNewMessage('');
+        setReplyingTo(null);
+      },
+      onError: (error: any) => {
+        enqueueSnackbar(error.response?.data?.error || error.message || 'حدث خطأ أثناء الإرسال', { variant: 'error' });
+      }
+    });
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -800,23 +846,19 @@ const WhatsAppChat: React.FC = () => {
 
     const file = files[0];
     if (!file) return;
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('sessionId', targetSessionId);
-    formData.append('to', selectedContact.jid);
-    if (user?.id) formData.append('userId', user.id);
 
-    try {
-      await api.post('/whatsapp/messages/upload-send', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-    } catch (error: any) {
-      enqueueSnackbar(error.response?.data?.error || 'حدث خطأ أثناء رفع الملف', { variant: 'error' });
-    }
+    sendMediaMutation.mutate({
+      sessionId: targetSessionId,
+      to: selectedContact.jid,
+      file,
+      userId: user?.id
+    }, {
+      onError: (error: any) => {
+        enqueueSnackbar(error.response?.data?.error || 'حدث خطأ أثناء رفع الملف', { variant: 'error' });
+      }
+    });
+    
     if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
 
@@ -826,8 +868,15 @@ const WhatsAppChat: React.FC = () => {
     try {
       await api.post(`/whatsapp/conversations/${contact.jid}/clear`, { sessionId: selectedSession });
       enqueueSnackbar('تم مسح المحادثة', { variant: 'success' });
-      if (selectedContact?.jid === contact.jid) {
-        setMessages([]);
+      if (selectedContact?.jid === contact.jid && targetSessionId) {
+        // Clear messages cache
+        queryClient.setQueryData(['whatsapp', 'messages', contact.jid, targetSessionId], (old: any) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: [{ messages: [], pagination: { page: 1, limit: 50, total: 0, totalPages: 0 } }]
+          };
+        });
       }
     } catch (error) {
       enqueueSnackbar('فشل مسح المحادثة', { variant: 'error' });
@@ -837,31 +886,28 @@ const WhatsAppChat: React.FC = () => {
   const handleDeleteChat = async (contact: Contact) => {
     if (!selectedSession) return;
     if (!window.confirm('هل أنت متأكد من حذف المحادثة؟')) return;
-    try {
-      await api.delete(`/whatsapp/conversations/${contact.jid}`, { data: { sessionId: selectedSession } });
-      enqueueSnackbar('تم حذف المحادثة', { variant: 'success' });
-      if (selectedContact?.jid === contact.jid) {
-        setSelectedContact(null);
-        setMessages([]);
+    
+    deleteConversationMutation.mutate({
+      conversationId: contact.id,
+      jid: contact.jid,
+      sessionId: selectedSession
+    }, {
+      onSuccess: () => {
+        if (selectedContact?.jid === contact.jid) {
+          setSelectedContact(null);
+        }
       }
-      loadContacts();
-    } catch (error) {
-      enqueueSnackbar('فشل حذف المحادثة', { variant: 'error' });
-    }
+    });
   };
 
   const handleArchiveChat = async (contact: Contact) => {
     if (!selectedSession) return;
-    try {
-      await api.post(`/whatsapp/conversations/${contact.jid}/archive`, {
-        sessionId: selectedSession,
-        archive: !contact.isArchived
-      });
-      enqueueSnackbar(contact.isArchived ? 'تم إلغاء الأرشفة' : 'تمت الأرشفة', { variant: 'success' });
-      loadContacts();
-    } catch (error) {
-      enqueueSnackbar('فشل تحديث حالة الأرشفة', { variant: 'error' });
-    }
+    
+    archiveConversationMutation.mutate({
+      jid: contact.jid,
+      sessionId: selectedSession,
+      isArchived: !contact.isArchived
+    });
   };
 
   const handlePinChat = async (contact: Contact) => {
@@ -872,7 +918,7 @@ const WhatsAppChat: React.FC = () => {
         pin: !contact.isPinned
       });
       enqueueSnackbar(contact.isPinned ? 'تم إلغاء التثبيت' : 'تم التثبيت', { variant: 'success' });
-      loadContacts();
+      queryClient.invalidateQueries({ queryKey: ['whatsapp', 'conversations', selectedSession] });
     } catch (error) {
       enqueueSnackbar('فشل تحديث حالة التثبيت', { variant: 'error' });
     }
@@ -886,7 +932,7 @@ const WhatsAppChat: React.FC = () => {
         mute: !contact.isMuted
       });
       enqueueSnackbar(contact.isMuted ? 'تم إلغاء الكتم' : 'تم الكتم', { variant: 'success' });
-      loadContacts();
+      queryClient.invalidateQueries({ queryKey: ['whatsapp', 'conversations', selectedSession] });
     } catch (error) {
       enqueueSnackbar('فشل تحديث حالة الكتم', { variant: 'error' });
     }
@@ -897,7 +943,7 @@ const WhatsAppChat: React.FC = () => {
     try {
       await api.post(`/whatsapp/conversations/${contact.jid}/mark-unread`, { sessionId: selectedSession });
       enqueueSnackbar('تم تمييز المحادثة كغير مقروءة', { variant: 'success' });
-      loadContacts();
+      queryClient.invalidateQueries({ queryKey: ['whatsapp', 'conversations', selectedSession] });
     } catch (error) {
       enqueueSnackbar('فشل تحديث حالة القراءة', { variant: 'error' });
     }
@@ -924,7 +970,7 @@ const WhatsAppChat: React.FC = () => {
   };
 
   const handleDeleteMessage = async () => {
-    if (!selectedSession || !selectedMessageForMenu) return;
+    if (!selectedSession || !selectedMessageForMenu || !selectedContact) return;
     if (!window.confirm('هل أنت متأكد من حذف هذه الرسالة؟')) return;
 
     try {
@@ -936,7 +982,17 @@ const WhatsAppChat: React.FC = () => {
         }
       });
       enqueueSnackbar('تم حذف الرسالة', { variant: 'success' });
-      setMessages(prev => prev.filter(m => m.messageId !== selectedMessageForMenu?.messageId));
+      
+      // Update messages cache
+      queryClient.setQueryData(['whatsapp', 'messages', selectedContact.jid, targetSessionId], (old: any) => {
+        if (!old) return old;
+        const newPages = old.pages.map((page: any) => ({
+          ...page,
+          messages: page.messages.filter((m: Message) => m.messageId !== selectedMessageForMenu.messageId)
+        }));
+        return { ...old, pages: newPages };
+      });
+      
       setMessageMenuAnchor(null);
       setSelectedMessageForMenu(null);
     } catch (error) {
@@ -980,12 +1036,6 @@ const WhatsAppChat: React.FC = () => {
     setSelectedMessageForMenu(message);
   };
 
-  const loadQuickReplies = async () => {
-    try {
-      const res = await api.get('/whatsapp/quick-replies');
-      setQuickReplies(res.data.quickReplies || []);
-    } catch (e) { }
-  };
 
   const loadNotificationSettings = async () => {
     try {
@@ -1329,7 +1379,7 @@ const WhatsAppChat: React.FC = () => {
     try {
       await api.post('/whatsapp/contacts/block', { sessionId: selectedSession, jid: contact.jid });
       enqueueSnackbar('تم حظر جهة الاتصال', { variant: 'success' });
-      loadContacts();
+      queryClient.invalidateQueries({ queryKey: ['whatsapp', 'conversations', selectedSession] });
       setShowContactInfo(false);
     } catch (error) {
       enqueueSnackbar('فشل حظر جهة الاتصال', { variant: 'error' });
@@ -1340,7 +1390,7 @@ const WhatsAppChat: React.FC = () => {
     try {
       await api.post('/whatsapp/contacts/unblock', { sessionId: selectedSession, jid: contact.jid });
       enqueueSnackbar('تم إلغاء حظر جهة الاتصال', { variant: 'success' });
-      loadContacts();
+      queryClient.invalidateQueries({ queryKey: ['whatsapp', 'conversations', selectedSession] });
       setShowContactInfo(false);
     } catch (error) {
       enqueueSnackbar('فشل إلغاء حظر جهة الاتصال', { variant: 'error' });
@@ -1386,7 +1436,7 @@ const WhatsAppChat: React.FC = () => {
         inviteCode
       });
       enqueueSnackbar('تم قبول الدعوة والانضمام للمجموعة', { variant: 'success' });
-      loadContacts();
+      queryClient.invalidateQueries({ queryKey: ['whatsapp', 'conversations', selectedSession] });
     } catch (error) {
       enqueueSnackbar('فشل قبول الدعوة', { variant: 'error' });
     }
@@ -1478,35 +1528,35 @@ const WhatsAppChat: React.FC = () => {
     }
   };
 
-  const getContactName = (contact: Contact) => {
-    if (contact.customer && (contact.customer.firstName || contact.customer.lastName)) {
-      return `${contact.customer.firstName} ${contact.customer.lastName}`.trim();
-    }
-    return contact.name || contact.pushName || contact.phoneNumber;
-  };
 
   const getParticipantName = (participantJid: string) => {
     // Normalize JID for lookup
     const normalizedJid = participantJid.includes('@') ? participantJid : `${participantJid}@s.whatsapp.net`;
-    const contact = contacts.find(c => c.jid === normalizedJid || c.jid === normalizedJid.split('@')[0] + '@s.whatsapp.net');
+    const contact = conversations.find(c => c.jid === normalizedJid || c.jid === normalizedJid.split('@')[0] + '@s.whatsapp.net');
     if (contact) {
       return getContactName(contact);
     }
     return participantJid.split('@')[0];
   };
 
-  const filteredContacts = contacts.filter(c => {
-    if (chatFilter === 'unread' && c.unreadCount === 0) return false;
-    if (chatFilter === 'groups' && !c.isGroup) return false;
+  // Show loading if auth is still loading or initial data is loading
+  if (authLoading || loadingSessions) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
+        <CircularProgress />
+      </Box>
+    );
+  }
 
-    if (searchQuery === 'individual:') return !c.jid.endsWith('@g.us');
-    if (searchQuery === 'group:') return c.jid.endsWith('@g.us');
-    if (!searchQuery) return true;
-    const displayName = getContactName(c);
-    return (displayName || c.phoneNumber).toLowerCase().includes(searchQuery.toLowerCase());
-  });
-
-  if (loading) return <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh"><CircularProgress /></Box>;
+  // Redirect to login if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh" flexDirection="column" gap={2}>
+        <Typography variant="h6">يجب تسجيل الدخول للوصول إلى هذه الصفحة</Typography>
+        <Button variant="contained" href="/auth/login">تسجيل الدخول</Button>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ display: 'flex', height: 'calc(100vh - 64px)', bgcolor: 'background.default' }}>
@@ -1561,26 +1611,91 @@ const WhatsAppChat: React.FC = () => {
             </IconButton>
           </Box>
         </Box>
-        <List
-          sx={{ flex: 1, overflow: 'auto' }}
+        <Box
+          ref={conversationsListRef}
+          sx={{ flex: 1, overflow: 'auto', position: 'relative' }}
           onScroll={(e) => {
             const { scrollTop, clientHeight, scrollHeight } = e.currentTarget;
-            if (scrollHeight - scrollTop <= clientHeight + 50 && hasMore && !loadingContacts) {
-              loadContacts(page + 1, false);
+            if (scrollHeight - scrollTop <= clientHeight + 50 && hasMoreConversations && !loadingConversations) {
+              fetchNextConversationsPage();
             }
           }}
         >
-          {filteredContacts.map(contact => (
-            <ListItem key={contact.id} button selected={selectedContact?.id === contact.id} onClick={() => setSelectedContact(contact)} onContextMenu={(e) => { e.preventDefault(); setChatMenuAnchor(e.currentTarget); setSelectedChatForMenu(contact); }}>
-              <ListItemAvatar>
-                <Badge badgeContent={contact.unreadCount} color="primary">
-                  <Avatar src={contact.profilePicUrl || ''}>{getContactName(contact)[0]}</Avatar>
-                </Badge>
-              </ListItemAvatar>
-              <ListItemText primary={getContactName(contact)} secondary={contact.lastMessage?.content || '...'} />
-            </ListItem>
-          ))}
-        </List>
+          {loadingConversations && filteredContacts.length === 0 ? (
+            <Box
+              sx={{
+                p: 2,
+                '@keyframes pulse': {
+                  '0%, 100%': { opacity: 1 },
+                  '50%': { opacity: 0.5 }
+                }
+              }}
+            >
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Box key={i} sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
+                  <Box sx={{ width: 48, height: 48, borderRadius: '50%', bgcolor: 'grey.300', animation: 'pulse 1.5s ease-in-out infinite' }} />
+                  <Box sx={{ flex: 1 }}>
+                    <Box sx={{ height: 16, bgcolor: 'grey.300', borderRadius: 1, mb: 1, width: '60%', animation: 'pulse 1.5s ease-in-out infinite' }} />
+                    <Box sx={{ height: 12, bgcolor: 'grey.200', borderRadius: 1, width: '40%', animation: 'pulse 1.5s ease-in-out infinite' }} />
+                  </Box>
+                </Box>
+              ))}
+            </Box>
+          ) : (
+            <Box
+              sx={{
+                height: `${conversationsVirtualizer.getTotalSize()}px`,
+                width: '100%',
+                position: 'relative'
+              }}
+            >
+              {conversationsVirtualizer.getVirtualItems().map((virtualItem) => {
+                const contact = filteredContacts[virtualItem.index];
+                if (!contact) return null;
+                return (
+                  <Box
+                    key={virtualItem.key}
+                    sx={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: `${virtualItem.size}px`,
+                      transform: `translateY(${virtualItem.start}px)`
+                    }}
+                  >
+                    <ListItem
+                      button
+                      selected={selectedContact?.id === contact.id}
+                      onClick={() => setSelectedContact(contact)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setChatMenuAnchor(e.currentTarget);
+                        setSelectedChatForMenu(contact);
+                      }}
+                      sx={{ height: '100%' }}
+                    >
+                      <ListItemAvatar>
+                        <Badge badgeContent={contact.unreadCount} color="primary">
+                          <Avatar
+                            src={contact.profilePicUrl || ''}
+                            imgProps={{ loading: 'lazy' }}
+                          >
+                            {getContactName(contact)[0]}
+                          </Avatar>
+                        </Badge>
+                      </ListItemAvatar>
+                      <ListItemText
+                        primary={getContactName(contact)}
+                        secondary={contact.lastMessage?.content || '...'}
+                      />
+                    </ListItem>
+                  </Box>
+                );
+              })}
+            </Box>
+          )}
+        </Box>
       </Paper>
 
       {/* Chat Area */}
@@ -1597,54 +1712,93 @@ const WhatsAppChat: React.FC = () => {
               </Box>
             </Paper>
 
-            <Box sx={{ flex: 1, overflow: 'auto', p: 2, bgcolor: '#e5ddd5', backgroundImage: 'url(/whatsapp-bg.png)' }}>
-              {messages.map((message, index) => (
-                <React.Fragment key={message.id}>
-                  {/* Date Separator */}
-                  {shouldShowDateSeparator(message, messages[index - 1]) && (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', my: 2 }}>
-                      <Chip
-                        label={getDateSeparatorText(message.timestamp)}
-                        size="small"
-                        sx={{ bgcolor: 'rgba(0,0,0,0.1)', color: 'text.secondary' }}
-                      />
-                    </Box>
-                  )}
-                  {/* Message */}
-                  <Box sx={{ display: 'flex', justifyContent: message.fromMe ? 'flex-start' : 'flex-end', mb: 1 }}>
-                    <Paper
-                      sx={{ p: 1, maxWidth: '70%', bgcolor: message.fromMe ? '#d9fdd3' : '#fff', cursor: 'context-menu' }}
-                      onContextMenu={(e) => handleMessageContextMenu(e, message)}
-                    >
-                      {selectedContact?.isGroup && !message.fromMe && message.participant && (
-                        <Typography variant="caption" sx={{ display: 'block', color: 'secondary.main', fontWeight: 'bold', mb: 0.5 }}>
-                          {getParticipantName(message.participant)}
-                        </Typography>
-                      )}
-                      {message.quotedContent && (
-                        <Box sx={{ bgcolor: 'rgba(0,0,0,0.05)', borderInlineStart: '4px solid #00a884', p: 0.5, mb: 0.5, borderRadius: 0.5 }}>
-                          <Typography variant="caption" sx={{ display: 'block', color: 'primary.main' }}>رد على رسالة</Typography>
-                          <Typography variant="caption" noWrap>{message.quotedContent}</Typography>
-                        </Box>
-                      )}
-                      {renderMessageContent(message)}
-                      <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
-                        <Typography variant="caption" color="text.secondary">{format(new Date(message.timestamp), 'HH:mm')}</Typography>
-                        {message.fromMe && getStatusIcon(message.status)}
+            <Box
+              ref={messagesContainerRef}
+              sx={{ flex: 1, overflow: 'auto', p: 2, bgcolor: '#e5ddd5', backgroundImage: 'url(/whatsapp-bg.png)', position: 'relative' }}
+            >
+              {loadingMessages && messages.length === 0 ? (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                  <CircularProgress />
+                  <Typography variant="body2" color="text.secondary">جاري تحميل الرسائل...</Typography>
+                </Box>
+              ) : (
+                <Box
+                  sx={{
+                    height: `${messagesVirtualizer.getTotalSize()}px`,
+                    width: '100%',
+                    position: 'relative'
+                  }}
+                >
+                  {messagesVirtualizer.getVirtualItems().map((virtualItem) => {
+                    const message = messages[virtualItem.index];
+                    if (!message) return null;
+                    const previousMessage = messages[virtualItem.index - 1];
+                    return (
+                      <Box
+                        key={virtualItem.key}
+                        sx={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          transform: `translateY(${virtualItem.start}px)`
+                        }}
+                      >
+                        <React.Fragment>
+                          {/* Date Separator */}
+                          {shouldShowDateSeparator(message, previousMessage) && (
+                            <Box sx={{ display: 'flex', justifyContent: 'center', my: 2 }}>
+                              <Chip
+                                label={getDateSeparatorText(message.timestamp)}
+                                size="small"
+                                sx={{ bgcolor: 'rgba(0,0,0,0.1)', color: 'text.secondary' }}
+                              />
+                            </Box>
+                          )}
+                          {/* Message */}
+                          <Box sx={{ display: 'flex', justifyContent: message.fromMe ? 'flex-start' : 'flex-end', mb: 1 }}>
+                            <Paper
+                              sx={{ p: 1, maxWidth: '70%', bgcolor: message.fromMe ? '#d9fdd3' : '#fff', cursor: 'context-menu' }}
+                              onContextMenu={(e) => handleMessageContextMenu(e, message)}
+                            >
+                              {selectedContact?.isGroup && !message.fromMe && message.participant && (
+                                <Typography variant="caption" sx={{ display: 'block', color: 'secondary.main', fontWeight: 'bold', mb: 0.5 }}>
+                                  {getParticipantName(message.participant)}
+                                </Typography>
+                              )}
+                              {message.quotedContent && (
+                                <Box sx={{ bgcolor: 'rgba(0,0,0,0.05)', borderInlineStart: '4px solid #00a884', p: 0.5, mb: 0.5, borderRadius: 0.5 }}>
+                                  <Typography variant="caption" sx={{ display: 'block', color: 'primary.main' }}>رد على رسالة</Typography>
+                                  <Typography variant="caption" noWrap>{message.quotedContent}</Typography>
+                                </Box>
+                              )}
+                              {renderMessageContent(message)}
+                              <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                                <Typography variant="caption" color="text.secondary">{format(new Date(message.timestamp), 'HH:mm')}</Typography>
+                                {message.fromMe && getStatusIcon(message.status)}
+                              </Box>
+                            </Paper>
+                          </Box>
+                        </React.Fragment>
                       </Box>
-                    </Paper>
-                  </Box>
-                </React.Fragment>
-              ))}
+                    );
+                  })}
+                </Box>
+              )}
+              {/* Loading older messages indicator */}
+              {loadingMessages && messages.length > 0 && (
+                <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+                  <CircularProgress size={24} />
+                </Box>
+              )}
               {/* Typing Indicator */}
               {typingUsers.size > 0 && (
-                <Box sx={{ display: 'flex', justifyContent: 'flex-start', mb: 1 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'flex-start', mb: 1, position: 'absolute', bottom: 0, left: 0, right: 0, p: 2 }}>
                   <Paper sx={{ p: 1, bgcolor: '#fff' }}>
                     <Typography variant="caption" color="text.secondary">يكتب...</Typography>
                   </Paper>
                 </Box>
               )}
-              <div ref={messagesEndRef} />
             </Box>
 
             <Paper sx={{ p: 2, borderRadius: 0 }}>
@@ -1714,7 +1868,7 @@ const WhatsAppChat: React.FC = () => {
                   <input type="file" ref={fileInputRef} hidden onChange={handleFileUpload} />
                   <TextField fullWidth size="small" placeholder="اكتب رسالة..." value={newMessage} onChange={(e) => setNewMessage(e.target.value)} onKeyPress={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }} />
                   {newMessage.trim() ? (
-                    <IconButton color="primary" onClick={handleSendMessage} disabled={sending}>{sending ? <CircularProgress size={24} /> : <SendIcon />}</IconButton>
+                    <IconButton color="primary" onClick={handleSendMessage} disabled={sendMessageMutation.isPending}>{sendMessageMutation.isPending ? <CircularProgress size={24} /> : <SendIcon />}</IconButton>
                   ) : (
                     <IconButton color="primary" onClick={() => setIsRecording(true)}><MicIcon /></IconButton>
                   )}
@@ -1817,7 +1971,7 @@ const WhatsAppChat: React.FC = () => {
         <DialogTitle>إعادة توجيه الرسالة إلى...</DialogTitle>
         <DialogContent dividers>
           <List>
-            {contacts.map(contact => (
+            {conversations.map(contact => (
               <ListItem
                 key={contact.id}
                 button
@@ -1902,16 +2056,16 @@ const WhatsAppChat: React.FC = () => {
         onClose={() => setShowContactInfo(false)}
         sessionId={selectedContact?.sessionId || selectedSession}
         groupJid={selectedContact?.jid || ''}
-        contacts={contacts}
+        contacts={conversations}
       />
 
       <CreateGroupDialog
         open={createGroupDialogOpen}
         onClose={() => setCreateGroupDialogOpen(false)}
         sessionId={selectedSession}
-        contacts={contacts}
+        contacts={conversations}
         onGroupCreated={(group) => {
-          loadContacts();
+          queryClient.invalidateQueries({ queryKey: ['whatsapp', 'conversations', selectedSession] });
           // Optionally select the new group
           // setSelectedContact(group); 
         }}
@@ -1930,10 +2084,13 @@ const WhatsAppChat: React.FC = () => {
         onClose={() => setCheckNumberDialogOpen(false)}
         sessionId={selectedSession}
         onChatStart={(jid) => {
-          const existingContact = contacts.find(c => c.jid === jid);
+          const existingContact = conversations.find(c => c.jid === jid);
           if (existingContact) {
             setSelectedContact(existingContact);
           } else {
+            // Invalidate queries to refetch and find the new contact
+            queryClient.invalidateQueries({ queryKey: ['whatsapp', 'conversations', selectedSession] });
+            // Create temporary contact for immediate selection
             const newContact: Contact = {
               id: jid,
               sessionId: selectedSession,
@@ -1953,7 +2110,6 @@ const WhatsAppChat: React.FC = () => {
               session: { name: '', phoneNumber: '' },
               customer: null
             };
-            setContacts(prev => [newContact, ...prev]);
             setSelectedContact(newContact);
           }
         }}
@@ -2510,7 +2666,7 @@ const WhatsAppChat: React.FC = () => {
         contactJid={selectedContactForLabel?.jid}
         initialLabels={selectedContactForLabel?.labels || []}
         onLabelsUpdated={() => {
-          loadContacts(); // Refresh contacts to show new labels
+          queryClient.invalidateQueries({ queryKey: ['whatsapp', 'conversations', selectedSession] });
         }}
       />
 
@@ -2519,7 +2675,7 @@ const WhatsAppChat: React.FC = () => {
         open={broadcastDialogOpen}
         onClose={() => setBroadcastDialogOpen(false)}
         sessionId={selectedSession}
-        contacts={contacts}
+        contacts={conversations}
       />
 
       {/* Privacy Settings Dialog */}
@@ -2527,7 +2683,7 @@ const WhatsAppChat: React.FC = () => {
         open={privacyDialogOpen}
         onClose={() => setPrivacyDialogOpen(false)}
         sessionId={selectedSession}
-        contacts={contacts}
+        contacts={conversations}
       />
 
       {/* Business Profile Dialog */}

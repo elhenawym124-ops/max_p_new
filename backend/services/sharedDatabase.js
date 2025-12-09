@@ -86,7 +86,7 @@ async function guaranteeConnection() {
       await Promise.race([
         sharedPrismaInstance.$queryRaw`SELECT 1 as quick_check`,
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Quick check timeout')), 1000)
+          setTimeout(() => reject(new Error('Quick check timeout')), 5000)
         )
       ]);
       return true;

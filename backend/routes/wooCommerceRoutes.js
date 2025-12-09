@@ -154,4 +154,76 @@ router.post('/webhooks/test', verifyToken.authenticateToken, testWebhook);
  */
 router.post('/auto-sync', verifyToken.authenticateToken, triggerAutoSync);
 
+// ═══════════════════════════════════════════════════════════════
+// 🔄 Polling Scheduler Routes (Works on localhost)
+// ═══════════════════════════════════════════════════════════════
+
+const { getWooCommerceAutoSyncScheduler } = require('../services/wooCommerceAutoSyncScheduler');
+
+/**
+ * @route   GET /api/v1/woocommerce/scheduler/status
+ * @desc    الحصول على حالة المزامنة التلقائية
+ * @access  Private
+ */
+router.get('/scheduler/status', verifyToken.authenticateToken, (req, res) => {
+  try {
+    const scheduler = getWooCommerceAutoSyncScheduler();
+    res.json({
+      success: true,
+      data: scheduler.getStatus()
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * @route   POST /api/v1/woocommerce/scheduler/sync-now
+ * @desc    تشغيل المزامنة الآن (للشركة الحالية)
+ * @access  Private
+ */
+router.post('/scheduler/sync-now', verifyToken.authenticateToken, async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+    if (!companyId) {
+      return res.status(403).json({ success: false, message: 'غير مصرح' });
+    }
+
+    const scheduler = getWooCommerceAutoSyncScheduler();
+    const result = await scheduler.syncCompany(companyId);
+    
+    res.json({
+      success: result.success,
+      message: result.success ? 'تمت المزامنة بنجاح' : 'فشلت المزامنة',
+      data: result
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * @route   POST /api/v1/woocommerce/scheduler/set-interval
+ * @desc    تغيير فترة المزامنة التلقائية
+ * @access  Private
+ */
+router.post('/scheduler/set-interval', verifyToken.authenticateToken, (req, res) => {
+  try {
+    const { minutes } = req.body;
+    if (!minutes || minutes < 1) {
+      return res.status(400).json({ success: false, message: 'يجب أن تكون الفترة دقيقة واحدة على الأقل' });
+    }
+
+    const scheduler = getWooCommerceAutoSyncScheduler();
+    scheduler.setInterval(minutes);
+    
+    res.json({
+      success: true,
+      message: `تم تغيير فترة المزامنة إلى ${minutes} دقيقة`
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 module.exports = router;

@@ -1288,6 +1288,10 @@ const runAutoSync = async (companyId) => {
                 customerName,
                 customerPhone,
                 customerEmail,
+                customerAddress: (wooOrder.billing?.address_1 && wooOrder.billing.address_1.trim()) || 
+                                (wooOrder.shipping?.address_1 && wooOrder.shipping.address_1.trim()) || null,
+                city: (wooOrder.billing?.city && wooOrder.billing.city.trim()) || 
+                      (wooOrder.shipping?.city && wooOrder.shipping.city.trim()) || null,
                 shippingAddress: JSON.stringify(wooOrder.shipping),
                 billingAddress: JSON.stringify(wooOrder.billing),
                 wooCommerceId: String(wooOrder.id),
