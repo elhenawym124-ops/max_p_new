@@ -1179,8 +1179,12 @@ app.post('/api/v1/super-admin/login', async (req, res) => {
     const token = jwt.sign(
       {
         userId: user.id,
+        id: user.id, // ✅ FIX: إضافة id للتوافق
         email: user.email,
-        role: user.role
+        role: user.role,
+        firstName: user.firstName, // ✅ FIX: إضافة firstName للاستخدام في req.user
+        lastName: user.lastName, // ✅ FIX: إضافة lastName للاستخدام في req.user
+        companyId: user.companyId // ✅ FIX: إضافة companyId للاستخدام في req.user
       },
       process.env.JWT_SECRET || 'your-secret-key',
       { expiresIn: '24h' }
@@ -1969,7 +1973,10 @@ app.get('/api/v1/conversations/:id/messages',
     try {
       const { id } = req.params;
       const companyId = req.user?.companyId;
-      const { includeFacebookReplies = true } = req.query; // Add query parameter to include Facebook replies
+      const { includeFacebookReplies = true, page = 1, limit = 50 } = req.query; // Add pagination support
+      const pageNum = parseInt(page);
+      const limitNum = parseInt(limit);
+      const skip = (pageNum - 1) * limitNum;
 
       // التحقق من المصادقة والشركة
       if (!companyId) {
@@ -2000,7 +2007,19 @@ app.get('/api/v1/conversations/:id/messages',
         });
       }
 
-      // Use safe database operation with fallback
+      // Get total count for pagination
+      const totalCount = await safeDb.execute(async (prisma) => {
+        return await prisma.message.count({
+          where: {
+            conversationId: id,
+            conversation: {
+              companyId: companyId
+            }
+          }
+        });
+      }, { fallback: 0, maxRetries: 2 });
+
+      // Use safe database operation with fallback and pagination
       const messages = await safeDb.execute(async (prisma) => {
         return await prisma.message.findMany({
           where: {
@@ -2021,20 +2040,81 @@ app.get('/api/v1/conversations/:id/messages',
           },
           orderBy: {
             createdAt: 'asc'
-          }
+          },
+          skip: skip,
+          take: limitNum
         });
       }, {
         fallback: [], // Return empty array if database is unavailable
         maxRetries: 2 // Fewer retries for this endpoint
       });
 
+      // 🔍 DEBUG: Log first message to check createdAt
+      if (messages.length > 0) {
+        console.log('🔍 [DEBUG] First message from DB:', {
+          id: messages[0].id,
+          createdAt: messages[0].createdAt,
+          createdAtType: typeof messages[0].createdAt,
+          hasCreatedAt: 'createdAt' in messages[0]
+        });
+      }
+
       // Transform messages to match frontend format
       const transformedMessages = messages.map(msg => {
         try {
+          // 🔍 DEBUG: Log timestamp conversion
+          const rawCreatedAt = msg.createdAt;
+          // ✅ FIX: Ensure timestamp is always a valid ISO string
+          let convertedTimestamp;
+          if (rawCreatedAt) {
+            try {
+              const date = new Date(rawCreatedAt);
+              if (isNaN(date.getTime())) {
+                console.warn(`⚠️ [TIMESTAMP] Invalid date for message ${msg.id}: ${rawCreatedAt}, using current date`);
+                convertedTimestamp = new Date().toISOString();
+              } else {
+                convertedTimestamp = date.toISOString();
+              }
+            } catch (e) {
+              console.warn(`⚠️ [TIMESTAMP] Error parsing date for message ${msg.id}: ${e.message}, using current date`);
+              convertedTimestamp = new Date().toISOString();
+            }
+          } else {
+            console.warn(`⚠️ [TIMESTAMP] Message ${msg.id} has no createdAt!`, {
+              messageId: msg.id,
+              hasCreatedAt: 'createdAt' in msg,
+              createdAtValue: rawCreatedAt,
+              createdAtType: typeof rawCreatedAt
+            });
+            convertedTimestamp = new Date().toISOString();
+          }
+          
+          // 🔍 DEBUG: Log the converted timestamp
+          if (!convertedTimestamp || typeof convertedTimestamp !== 'string') {
+            console.error(`❌ [TIMESTAMP] Invalid convertedTimestamp for message ${msg.id}:`, convertedTimestamp);
+            convertedTimestamp = new Date().toISOString(); // Force fallback
+          }
+          
+          // 🔍 DEBUG: Log timestamp for first message
+          if (messages.indexOf(msg) === 0) {
+            console.log('🔍 [DEBUG] First message timestamp conversion:', {
+              messageId: msg.id,
+              rawCreatedAt: rawCreatedAt,
+              rawCreatedAtType: typeof rawCreatedAt,
+              convertedTimestamp: convertedTimestamp,
+              convertedTimestampType: typeof convertedTimestamp
+            });
+          }
+
           // استخراج معلومات الذكاء الصناعي من metadata
           let isAiGenerated = false;
           let isFacebookReply = false; // New flag for Facebook replies
           let facebookMessageId = null; // Store Facebook message ID if available
+          let replyToResolvedMessageId = null;
+          let replyToContentSnippet = null;
+          let replyToSenderIsCustomer = null;
+          let replyToType = null;
+          let replyToFacebookMessageId = null;
 
           if (msg.metadata) {
             try {
@@ -2049,6 +2129,13 @@ app.get('/api/v1/conversations/:id/messages',
                   isAiGenerated = metadata.isAIGenerated || metadata.isAutoGenerated || false;
                   isFacebookReply = metadata.platform === 'facebook' && !msg.isFromCustomer; // Outgoing Facebook messages
                   facebookMessageId = metadata.facebookMessageId || null; // Store Facebook message ID
+                  
+                  // استخراج معلومات الرد (reply)
+                  replyToResolvedMessageId = metadata.replyToResolvedMessageId || metadata.replyToMessageId || null;
+                  replyToContentSnippet = metadata.replyToContentSnippet || metadata.replyToContent || null;
+                  replyToSenderIsCustomer = metadata.replyToSenderIsCustomer !== undefined ? metadata.replyToSenderIsCustomer : null;
+                  replyToType = metadata.replyToType || null;
+                  replyToFacebookMessageId = metadata.replyToFacebookMessageId || metadata.replyToMid || null;
                 } else {
                   // إذا لم يكن JSON صحيح، تحقق من النص المباشر
                   isAiGenerated = cleanMetadata.includes('"isAIGenerated":true') ||
@@ -2118,11 +2205,21 @@ app.get('/api/v1/conversations/:id/messages',
           // 🆕 FIX: محاولة قراءة اسم المرسل من metadata إذا لم يكن موجود في sender
           let senderInfo = null;
           if (msg.sender) {
-            senderInfo = {
-              id: msg.sender.id,
-              name: `${msg.sender.firstName} ${msg.sender.lastName}`,
-            };
-          } else if (!msg.isFromCustomer && msg.metadata) {
+            // ✅ FIX: بناء اسم المرسل من firstName و lastName مع معالجة القيم الفارغة
+            const firstName = msg.sender.firstName || '';
+            const lastName = msg.sender.lastName || '';
+            const fullName = `${firstName} ${lastName}`.trim();
+            
+            if (fullName) {
+              senderInfo = {
+                id: msg.sender.id,
+                name: fullName,
+              };
+            }
+          }
+          
+          // إذا لم يكن هناك senderInfo من sender، جرب metadata
+          if (!senderInfo && !msg.isFromCustomer && msg.metadata) {
             // محاولة قراءة من metadata للرسائل القديمة
             try {
               const metadata = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
@@ -2131,19 +2228,47 @@ app.get('/api/v1/conversations/:id/messages',
                   id: metadata.employeeId,
                   name: metadata.employeeName,
                 };
+              } else if (metadata.employeeFirstName || metadata.employeeLastName) {
+                // محاولة بناء الاسم من firstName و lastName في metadata
+                const firstName = metadata.employeeFirstName || '';
+                const lastName = metadata.employeeLastName || '';
+                const fullName = `${firstName} ${lastName}`.trim();
+                if (fullName) {
+                  senderInfo = {
+                    id: metadata.employeeId || 'unknown',
+                    name: fullName,
+                  };
+                }
               }
             } catch (e) {
               // ignore
             }
           }
 
-          return {
+          // ✅ FIX: Ensure timestamp is always defined before returning
+          if (!convertedTimestamp || typeof convertedTimestamp !== 'string') {
+            console.error(`❌ [TIMESTAMP] convertedTimestamp is invalid before return for message ${msg.id}:`, convertedTimestamp);
+            convertedTimestamp = msg.createdAt ? new Date(msg.createdAt).toISOString() : new Date().toISOString();
+          }
+
+          // 🔍 DEBUG: Log the message object before returning (for first message only)
+          const isFirstMessage = messages.indexOf(msg) === 0;
+          if (isFirstMessage) {
+            console.log('🔍 [DEBUG] Message object before return:', {
+              id: msg.id,
+              hasConvertedTimestamp: convertedTimestamp !== undefined,
+              convertedTimestamp: convertedTimestamp,
+              convertedTimestampType: typeof convertedTimestamp
+            });
+          }
+
+          const messageObject = {
             id: msg.id,
             content: msg.type === 'IMAGE' ? (fileName || 'صورة') :
               msg.type === 'FILE' ? (fileName || msg.content) : msg.content,
-            timestamp: msg.createdAt,
+            timestamp: convertedTimestamp, // ✅ FIX: تحويل التاريخ إلى ISO string
             isFromCustomer: msg.isFromCustomer,
-            sender: senderInfo,
+            sender: senderInfo, // ✅ FIX: إرسال senderInfo حتى لو كان null (سيتم معالجته في الفرونت إند)
             type: msg.type?.toLowerCase() || 'text',
             attachments: (() => {
               try {
@@ -2180,6 +2305,11 @@ app.get('/api/v1/conversations/:id/messages',
             isAiGenerated: isAiGenerated, // إضافة معلومة الذكاء الصناعي
             isFacebookReply: isFacebookReply, // إضافة معلومة الردود من فيسبوك
             facebookMessageId: facebookMessageId, // إضافة معرف رسالة فيسبوك
+            replyToResolvedMessageId: replyToResolvedMessageId, // إضافة معرف الرسالة المرد عليها
+            replyToContentSnippet: replyToContentSnippet, // إضافة محتوى الرسالة المرد عليها
+            replyToSenderIsCustomer: replyToSenderIsCustomer, // إضافة هل المرسل عميل
+            replyToType: replyToType, // إضافة نوع الرسالة المرد عليها
+            replyToFacebookMessageId: replyToFacebookMessageId, // إضافة معرف فيسبوك للرسالة المرد عليها
             metadata: msg.metadata // إضافة metadata للتشخيص
           };
         } catch (messageError) {
@@ -2193,20 +2323,47 @@ app.get('/api/v1/conversations/:id/messages',
           });
 
           // إرجاع رسالة بسيطة في حالة الخطأ
+          // ✅ FIX: حساب timestamp حتى في حالة الخطأ
+          const errorTimestamp = msg.createdAt ? new Date(msg.createdAt).toISOString() : new Date().toISOString();
           return {
             id: msg.id,
             content: msg.content || '[رسالة معطوبة]',
             type: msg.type || 'TEXT',
-            timestamp: msg.createdAt,
+            timestamp: errorTimestamp, // ✅ FIX: تحويل التاريخ إلى ISO string
             isFromCustomer: msg.isFromCustomer,
             attachments: [],
             isAiGenerated: false,
             isFacebookReply: false, // Default to false on error
             facebookMessageId: null, // Default to null on error
+            replyToResolvedMessageId: null,
+            replyToContentSnippet: null,
+            replyToSenderIsCustomer: null,
+            replyToType: null,
+            replyToFacebookMessageId: null,
             metadata: null
           };
         }
       }).filter(Boolean); // إزالة الرسائل null
+
+      // 🔍 DEBUG: Log first transformed message to verify timestamp
+      if (transformedMessages.length > 0) {
+        const firstMsg = transformedMessages[0];
+        console.log('🔍 [DEBUG] First transformed message:', {
+          id: firstMsg.id,
+          hasTimestamp: 'timestamp' in firstMsg,
+          timestamp: firstMsg.timestamp,
+          timestampType: typeof firstMsg.timestamp,
+          allKeys: Object.keys(firstMsg),
+          // Log full message structure (excluding circular references)
+          messagePreview: {
+            id: firstMsg.id,
+            content: firstMsg.content?.substring(0, 50),
+            timestamp: firstMsg.timestamp,
+            isFromCustomer: firstMsg.isFromCustomer,
+            type: firstMsg.type
+          }
+        });
+      }
 
       // إحصائيات الرسائل
       const aiMessages = transformedMessages.filter(m => m.isAiGenerated).length;
@@ -2217,7 +2374,41 @@ app.get('/api/v1/conversations/:id/messages',
       //console.log(`✅ [SECURITY] Company ${companyId} accessed ${transformedMessages.length} messages from conversation ${id}`);
       //console.log(`📊 Message stats - AI: ${aiMessages}, Manual: ${manualMessages}, Customer: ${customerMessages}, Facebook: ${facebookReplies}`);
 
-      res.json(transformedMessages);
+      // Calculate pagination info
+      const totalPages = Math.ceil(totalCount / limitNum);
+      const hasNextPage = pageNum < totalPages;
+      const hasPrevPage = pageNum > 1;
+
+      // ✅ FIX: إلغاء cache للرسائل لضمان الحصول على أحدث البيانات
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+
+      // 🔍 DEBUG: Log response before sending
+      if (transformedMessages.length > 0) {
+        const firstResponseMsg = transformedMessages[0];
+        console.log('🔍 [DEBUG] First message in response (before JSON.stringify):', {
+          id: firstResponseMsg.id,
+          hasTimestamp: 'timestamp' in firstResponseMsg,
+          timestamp: firstResponseMsg.timestamp,
+          timestampType: typeof firstResponseMsg.timestamp,
+          allKeys: Object.keys(firstResponseMsg)
+        });
+      }
+
+      // إرجاع البيانات بتنسيق متسق مع باقي الـ endpoints
+      res.json({
+        success: true,
+        data: transformedMessages,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: totalCount,
+          totalPages: totalPages,
+          hasNextPage: hasNextPage,
+          hasPrevPage: hasPrevPage
+        }
+      });
     } catch (error) {
       console.error('❌ Error fetching real messages:', error);
 

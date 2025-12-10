@@ -59,7 +59,7 @@ const mediaUpload = multer({
 });
 
 router.delete('/:id', conversationController.deleteConverstation);
-router.post('/:id/messages', conversationController.postMessageConverstation);
+router.post('/:id/messages', verifyToken.authenticateToken, verifyToken.requireCompanyAccess, conversationController.postMessageConverstation); // ✅ FIX: إضافة middleware المصادقة
 router.post('/:id/upload', verifyToken.authenticateToken, conversationUpload.array('files', 10), conversationController.uploadFile);
 router.post('/:id/send-existing-image', verifyToken.authenticateToken, conversationController.sendExistingImage);
 router.post('/:id/reply', conversationController.postReply);

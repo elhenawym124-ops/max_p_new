@@ -199,7 +199,20 @@ const postMessageConverstation = async (req, res) => {
     //console.log(`📤 Sending message to conversation ${id}: ${message}`);
 
     // ⚡ OPTIMIZATION: Parallel DB queries to reduce latency
-    const senderId = req.user?.userId || req.user?.id;
+    // ✅ FIX: استخدام req.user.id مباشرة (verifyToken.js يضبطه من decoded.userId || decoded.id)
+    const senderId = req.user?.id;
+    
+    // ✅ FIX: Logging لتشخيص المشكلة
+    console.log(`🔍 [SENDER-DEBUG] req.user:`, {
+      hasUser: !!req.user,
+      userId: req.user?.userId,
+      id: req.user?.id,
+      email: req.user?.email,
+      firstName: req.user?.firstName,
+      lastName: req.user?.lastName,
+      allKeys: req.user ? Object.keys(req.user) : [],
+      calculatedSenderId: senderId
+    });
 
     const [conversation, user] = await Promise.all([
       getSharedPrismaClient().conversation.findUnique({
@@ -219,6 +232,15 @@ const postMessageConverstation = async (req, res) => {
         }
       }) : Promise.resolve(null)
     ]);
+    
+    // ✅ FIX: Logging لتشخيص المشكلة
+    console.log(`🔍 [SENDER-DEBUG] User from DB:`, {
+      hasUser: !!user,
+      userId: user?.id,
+      firstName: user?.firstName,
+      lastName: user?.lastName,
+      email: user?.email
+    });
 
     // ⚡ Parse metadata once and reuse
     let conversationMetadata = {};
@@ -231,25 +253,62 @@ const postMessageConverstation = async (req, res) => {
     }
 
     // 🔧 FIX: استخدام userId من JWT token
-    let senderName = 'موظف';
+    let senderName = null;
 
-    if (req.user && senderId && user) {
-      senderName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'موظف';
+    // ✅ FIX: محاولة استخدام req.user مباشرة إذا كان يحتوي على firstName و lastName
+    if (req.user && (req.user.firstName || req.user.lastName)) {
+      const firstName = req.user.firstName || '';
+      const lastName = req.user.lastName || '';
+      const fullName = `${firstName} ${lastName}`.trim();
+      
+      if (fullName) {
+        senderName = fullName;
+        console.log(`👤 [SENDER-INFO] Using name from req.user: ${senderName}`);
+      }
+    }
 
-      //console.log(`🔍 [DEBUG] req.user data:`, {
-      //   userId: req.user.userId,
-      //   id: req.user.id,
-      //   email: req.user.email,
-      //   role: req.user.role,
-      //   calculatedName: senderName
-      // });
+    // ✅ FIX: إذا لم يكن هناك اسم من req.user، جرب user من قاعدة البيانات
+    if (!senderName && req.user && senderId && user) {
+      // ✅ FIX: بناء اسم المرسل من firstName و lastName مع معالجة القيم الفارغة
+      const firstName = user.firstName || '';
+      const lastName = user.lastName || '';
+      const fullName = `${firstName} ${lastName}`.trim();
+      
+      if (fullName) {
+        senderName = fullName;
+        console.log(`👤 [SENDER-INFO] Using name from DB user: ${senderName}`);
+      } else if (user.email) {
+        senderName = user.email;
+        console.log(`👤 [SENDER-INFO] Using email from DB user: ${senderName}`);
+      }
+    }
 
+    // ✅ FIX: إذا لم يكن هناك اسم بعد، جرب req.user.email
+    if (!senderName && req.user?.email) {
+      senderName = req.user.email;
+      console.log(`👤 [SENDER-INFO] Using email from req.user: ${senderName}`);
+    }
+
+    // ✅ FIX: فقط إذا لم يكن هناك أي بيانات، استخدم "موظف"
+    if (!senderName) {
+      senderName = 'موظف';
+      console.warn(`⚠️ [SENDER-INFO] No sender name found, using default: ${senderName}`, {
+        hasReqUser: !!req.user,
+        reqUserFirstName: req.user?.firstName,
+        reqUserLastName: req.user?.lastName,
+        reqUserEmail: req.user?.email,
+        senderId: senderId,
+        hasUserRecord: !!user,
+        userFirstName: user?.firstName,
+        userLastName: user?.lastName,
+        userEmail: user?.email
+      });
+    }
+
+    if (senderId) {
       conversationMetadata.lastSenderId = senderId; // معرف الموظف اللي بعت الرسالة
       conversationMetadata.lastSenderName = senderName; // اسم الموظف
-
-      //console.log(`👤 [SENDER-INFO] Saved sender info: ${senderId} - ${senderName}`);
-    } else {
-      console.warn(`⚠️ [SENDER-INFO] req.user or senderId is missing!`, req.user);
+      console.log(`👤 [SENDER-INFO] Final sender info: ${senderId} - ${senderName}`);
     }
 
     // ⚡ OPTIMIZATION: Combine all conversation updates into one query
@@ -291,7 +350,10 @@ const postMessageConverstation = async (req, res) => {
             platform: conversation.channel ? conversation.channel.toLowerCase() : 'facebook',
             source: 'manual_reply',
             employeeId: senderId,
-            employeeName: senderName,
+            employeeName: senderName, // ✅ FIX: إرسال اسم الموظف في metadata
+            // ✅ FIX: استخدام user من DB أو req.user كـ fallback
+            employeeFirstName: user?.firstName || req.user?.firstName || null,
+            employeeLastName: user?.lastName || req.user?.lastName || null,
             isFacebookReply: conversation.channel !== 'TELEGRAM',
             isTelegramReply: conversation.channel === 'TELEGRAM',
             timestamp: new Date(),
@@ -306,16 +368,43 @@ const postMessageConverstation = async (req, res) => {
       // إرسال الرسالة فوراً للـ socket
       const io = socketService.getIO();
       if (io) {
+        // ✅ FIX: بناء sender object من user أو req.user
+        let senderObject = null;
+        if (user) {
+          senderObject = {
+            id: user.id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            name: senderName
+          };
+        } else if (req.user && (req.user.firstName || req.user.lastName)) {
+          // ✅ FIX: استخدام req.user مباشرة إذا كان user غير موجود
+          senderObject = {
+            id: req.user.id || req.user.userId || senderId,
+            firstName: req.user.firstName,
+            lastName: req.user.lastName,
+            name: senderName
+          };
+        }
+
+        // ✅ FIX: تحويل timestamp إلى ISO string لضمان التنسيق الصحيح
+        const messageTimestamp = savedMessage.createdAt 
+          ? (savedMessage.createdAt instanceof Date 
+              ? savedMessage.createdAt.toISOString() 
+              : new Date(savedMessage.createdAt).toISOString())
+          : new Date().toISOString();
+
         const socketData = {
           id: savedMessage.id,
           conversationId: savedMessage.conversationId,
           content: savedMessage.content,
           type: savedMessage.type.toLowerCase(),
           isFromCustomer: savedMessage.isFromCustomer,
-          timestamp: savedMessage.createdAt,
+          timestamp: messageTimestamp, // ✅ FIX: استخدام timestamp محول إلى ISO string
           metadata: JSON.parse(savedMessage.metadata),
           senderId: senderId,
-          senderName: senderName,
+          senderName: senderName, // ✅ FIX: إرسال اسم الموظف
+          sender: senderObject, // ✅ FIX: إضافة sender object مع firstName و lastName
           lastMessageIsFromCustomer: false,
           lastCustomerMessageIsUnread: false,
           // 🏢 Company Isolation
@@ -324,6 +413,12 @@ const postMessageConverstation = async (req, res) => {
           platform: conversation.channel === 'TELEGRAM' ? 'telegram' : (conversation.channel ? conversation.channel.toLowerCase() : 'facebook'),
           channel: conversation.channel || 'FACEBOOK'
         };
+        
+        console.log(`📤 [SOCKET-DATA] Sending message with sender info:`, {
+          senderId: senderId,
+          senderName: senderName,
+          sender: senderObject
+        });
 
         // ✅ إرسال للشركة فقط - Company Isolation
         io.to(`company_${conversation.companyId}`).emit('new_message', socketData);

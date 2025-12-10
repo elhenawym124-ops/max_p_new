@@ -21,9 +21,16 @@ const authenticateToken = (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
 
     // Map userId to id for compatibility with code that expects req.user.id
+    // ✅ FIX: التأكد من أن id موجود دائماً
     req.user = {
       ...decoded,
-      id: decoded.userId || decoded.id
+      id: decoded.userId || decoded.id || decoded.user?.id,
+      // ✅ FIX: التأكد من أن firstName و lastName موجودان
+      firstName: decoded.firstName,
+      lastName: decoded.lastName,
+      email: decoded.email,
+      role: decoded.role,
+      companyId: decoded.companyId
     };
     next();
   } catch (error) {

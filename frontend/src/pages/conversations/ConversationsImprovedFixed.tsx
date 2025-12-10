@@ -33,30 +33,13 @@ import CustomerProfile from '../../components/conversations/CustomerProfile';
 import { getImageUrl } from '../../utils/urlConverter';
 import { buildApiUrl } from '../../utils/urlHelper';
 
-// Helper to safely parse dates
-const safeDate = (date: any): Date => {
-  if (!date) return new Date();
-  try {
-    const parsed = new Date(date);
-    // Check if date is valid
-    if (isNaN(parsed.getTime())) {
-      console.warn('⚠️ [DATE-FIX] Invalid date detected, using current time:', date);
-      return new Date();
-    }
-    return parsed;
-  } catch (e) {
-    console.error('❌ [DATE-FIX] Error parsing date:', e);
-    return new Date();
-  }
-};
-
 interface Message {
   id: string;
   content: string;
   senderId: string;
-  senderName: string; // اسم المرسل (الموظف أو العميل أو الذكاء الاصطناعي)
+  senderName: string;
   timestamp: Date;
-  type: 'text' | 'image' | 'file' | 'IMAGE' | 'FILE';
+  type: 'text' | 'image' | 'file';
   isFromCustomer: boolean;
   status: 'sending' | 'sent' | 'delivered' | 'read' | 'error';
   conversationId: string;
@@ -89,7 +72,6 @@ interface Conversation {
   lastMessageIsFromCustomer?: boolean; // هل آخر رسالة من العميل
   hasUnreadMessages?: boolean; // هل فيه رسائل غير مقروءة من العميل
   lastCustomerMessageIsUnread?: boolean; // هل آخر رسالة عميل غير مقروءة
-  lastSenderName?: string; // 🆕 اسم الموظف الذي أرسل آخر رسالة
   adSource?: { // ✅ معلومات الإعلان
     type?: string;
     source?: string;
@@ -122,15 +104,15 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
+  
   // حالات البحث والفلترة
   const [searchQuery, setSearchQuery] = useState('');
   // tabs: all | unread (أي محادثة بها رسائل غير مقروءة) | unreplied (آخر رسالة من العميل ولم يتم الرد عليها)
   const [conversationFilter, setConversationFilter] = useState<'all' | 'unread' | 'unreplied'>('all');
-
+  
   // حالة الرسالة الجديدة
   const [newMessage, setNewMessage] = useState('');
-
+  
   // Socket.IO للرسائل الفورية
   const { socket, isConnected, isReconnecting, emit, on, off } = useSocket();
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
@@ -144,7 +126,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   const [loadingOldMessages, setLoadingOldMessages] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [messagesPage, setMessagesPage] = useState(1);
-
+  
   // حالات pagination للمحادثات
   const [loadingMoreConversations, setLoadingMoreConversations] = useState(false);
   const [conversationsPage, setConversationsPage] = useState(1);
@@ -152,7 +134,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   const [totalConversations, setTotalConversations] = useState(0);
   // ⬆️ زيادة عدد المحادثات في كل صفحة إلى 200 بدلاً من 50
   const conversationsLimit = 200; // عدد المحادثات في كل صفحة
-
+  
   const [uploadingFile, setUploadingFile] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [filePreviews, setFilePreviews] = useState<string[]>([]);
@@ -218,7 +200,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   // حالة الصور المختارة للإرسال المتعدد
   const [selectedImagesForSend, setSelectedImagesForSend] = useState<Set<string>>(new Set());
   const [sendingMultipleImages, setSendingMultipleImages] = useState(false);
-
+  
   // حالة إرسال الرسالة
   const [sending, setSending] = useState(false);
 
@@ -255,16 +237,6 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const currentConversationIdRef = useRef<string | null>(null); // لتتبع المحادثة الحالية ومنع race conditions
   const hasAutoSelectedRef = useRef<boolean>(false); // لتتبع ما إذا تم اختيار محادثة تلقائياً في التحميل الأولي
-  const typingTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map()); // لتتبع timeouts مؤشرات الكتابة لمنع memory leaks
-  // Refs لتخزين القيم الحالية في Socket listeners لتجنب stale closures
-  const selectedConversationRef = useRef<Conversation | null>(null);
-  const conversationsRef = useRef<Conversation[]>([]);
-  const companyIdRef = useRef<string | null>(null);
-  const userRef = useRef<any>(null);
-  const loadSpecificConversationRef = useRef<((id: string, autoSelect?: boolean) => Promise<void>) | null>(null);
-  const scrollToBottomRef = useRef<(() => void) | null>(null);
-  const playNotificationSoundRef = useRef<(() => void) | null>(null);
-  const showBrowserNotificationRef = useRef<((title: string, body: string) => void) | null>(null);
 
   // تحميل المحادثات من API مع العزل
   const loadConversations = async (page = 1, append = false, silent = false) => {
@@ -329,13 +301,15 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
       // تحويل البيانات للتنسيق المطلوب
       const formattedConversations = data.map((conv: any) => {
-
+        if (!silent) {
+          console.log('🔍 [CONVERSATION-DEBUG] Processing conversation:', conv.id, 'lastMessageIsFromCustomer:', conv.lastMessageIsFromCustomer, 'lastCustomerMessageIsUnread:', conv.lastCustomerMessageIsUnread);
+        }
         return {
           id: conv.id,
           customerId: conv.customerId || conv.id,
           customerName: conv.customerName || conv.customerId || 'عميل غير معروف',
           lastMessage: conv.lastMessage || 'لا توجد رسائل',
-          lastMessageTime: safeDate(conv.lastMessageTime || conv.lastMessageAt || Date.now()),
+          lastMessageTime: new Date(conv.lastMessageTime || conv.lastMessageAt || Date.now()),
           unreadCount: conv.unreadCount || 0,
           lastMessageIsFromCustomer: conv.lastMessageIsFromCustomer || false, // 🆕 هل آخر رسالة من العميل
           hasUnreadMessages: (conv.unreadCount || 0) > 0,
@@ -353,17 +327,24 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           pageName: conv.pageName || null, // إضافة اسم الصفحة
           pageId: conv.pageId || null, // إضافة معرف الصفحة
           adSource: conv.adSource || null, // ✅ إضافة معلومات الإعلان
-          lastSenderName: conv.lastSenderName || null, // 🆕 اسم الموظف الأخير
           // 🆕 Extract postId from metadata
           postId: (() => {
             try {
               if (conv.metadata) {
                 const metadata = typeof conv.metadata === 'string' ? JSON.parse(conv.metadata) : conv.metadata;
                 const extractedPostId = metadata?.postId || null;
-
+                if (extractedPostId && !silent) {
+                  console.log(`✅ [POST-REF] Extracted postId from conversation ${conv.id}: ${extractedPostId}`);
+                } else if (!silent) {
+                  // Log metadata structure for debugging (occasionally)
+                  if (conv.id === 'cmi0lxvdh009zjutenav64krl' || Math.random() < 0.1) {
+                    console.log(`🔍 [POST-REF] Conversation ${conv.id} metadata:`, metadata);
+                    console.log(`🔍 [POST-REF] Metadata keys:`, Object.keys(metadata));
+                  }
+                }
                 return extractedPostId;
-              } else {
-                // Metadata is null - no need to log for every conversation
+              } else if (!silent) {
+                console.log(`ℹ️ [POST-REF] Conversation ${conv.id} has no metadata`);
               }
             } catch (e) {
               console.warn('⚠️ [POST-REF] Failed to parse metadata for postId:', e);
@@ -402,13 +383,13 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           // لكن فقط إذا كانت المحادثة المختارة حالياً (للمحافظة على الرسائل المحملة)
           const merged = formattedConversations.map(newConv => {
             const existing = validPrevConversations.find(c => c.id === newConv.id);
-
+            
             if (existing) {
               // ✅ FIX: مقارنة الوقت - إذا كانت البيانات الموجودة أحدث من السيرفر، نحتفظ بها
               const existingTime = existing.lastMessageTime ? new Date(existing.lastMessageTime).getTime() : 0;
               const newTime = new Date(newConv.lastMessageTime).getTime();
               const existingIsNewer = existingTime > newTime;
-
+              
               if (!silent && existingIsNewer) {
                 console.log(`🔄 [REFRESH-MERGE] Conv ${newConv.id}: Keeping newer data from Socket.IO`, {
                   existingTime: new Date(existingTime).toISOString(),
@@ -417,7 +398,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                   newIsFromCustomer: newConv.lastMessageIsFromCustomer
                 });
               }
-
+              
               return {
                 ...newConv,
                 messages: existing.messages && existing.messages.length > 0 ? existing.messages : newConv.messages,
@@ -484,7 +465,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       }
 
       console.log('🔄 Loading specific conversation:', conversationId);
-
+      
       // ✅ FIX: جلب المحادثة والرسائل معاً في parallel
       const [conversationResponse, messagesResponse] = await Promise.all([
         fetch(buildApiUrl(`conversations/${conversationId}`), {
@@ -531,7 +512,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         if (messagesResponse.ok) {
           const messagesResult = await messagesResponse.json();
           const messagesData = messagesResult.data || messagesResult || [];
-
+          
           messages = messagesData.map((msg: any) => {
             let isAiGenerated = false;
             if (msg.metadata) {
@@ -559,7 +540,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
               content: msg.content || '',
               senderId: msg.senderId || msg.sender?.id || '',
               senderName: senderName,
-              timestamp: safeDate(msg.createdAt || msg.timestamp || Date.now()),
+              timestamp: new Date(msg.createdAt || msg.timestamp || Date.now()),
               type: (msg.type || 'text') as Message['type'],
               isFromCustomer: msg.isFromCustomer || false,
               status: (msg.status || 'sent') as Message['status'],
@@ -576,7 +557,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
               replyToFacebookMessageId: msg.replyToFacebookMessageId
             };
           });
-
+          
           console.log(`✅ Loaded ${messages.length} messages for conversation ${conversationId}`);
         } else {
           console.warn('⚠️ Failed to load messages, conversation will be added without messages');
@@ -584,15 +565,15 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
         // ✅ FIX: استخدام آخر رسالة من الرسائل المحملة إذا كان lastMessage فارغ
         const lastLoadedMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-        const actualLastMessage = conv.lastMessage ||
+        const actualLastMessage = conv.lastMessage || 
           (lastLoadedMessage ? lastLoadedMessage.content : 'لا توجد رسائل');
-
+        
         // ✅ FIX: استخدام isFromCustomer من آخر رسالة محملة بدلاً من السيرفر
         // لأن السيرفر أحياناً يرجع قيمة قديمة أو خاطئة
-        const actualLastMessageIsFromCustomer = lastLoadedMessage
-          ? lastLoadedMessage.isFromCustomer
+        const actualLastMessageIsFromCustomer = lastLoadedMessage 
+          ? lastLoadedMessage.isFromCustomer 
           : (conv.lastMessageIsFromCustomer || false);
-
+        
         // ✅ FIX: حساب lastCustomerMessageIsUnread بناءً على الرسائل المحملة
         // إذا كان آخر رسالة من العميل، فهذا يعني أنه لم يتم الرد عليها بعد
         // إذا كان آخر رسالة من الموظف، فهذا يعني أنه تم الرد
@@ -604,7 +585,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           // إذا لم تكن هناك رسائل محملة، نعتمد على القيمة من الـ API أو lastMessageIsFromCustomer
           calculatedLastCustomerMessageIsUnread = actualLastMessageIsFromCustomer === true;
         }
-
+        
         // ✅ FIX: نعتمد على lastCustomerMessageIsUnread من الـ API إذا كان محدداً
         // لكن إذا كان actualLastMessageIsFromCustomer = true، نعتبر lastCustomerMessageIsUnread = true
         // (بغض النظر عن unreadCount - لأن المحادثة قد تكون مفتوحة وقرأناها لكن لم نرد عليها)
@@ -612,7 +593,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         const finalLastCustomerMessageIsUnread = (actualLastMessageIsFromCustomer === true)
           ? true  // إذا كان آخر رسالة من العميل، فهي غير م replied عليها حتى لو كان الـ API يقول غير ذلك
           : (conv.lastCustomerMessageIsUnread === true); // إذا كان آخر رسالة من الموظف، نعتمد على الـ API
-
+        
         console.log(`🔍 [LOAD-SPECIFIC] Conv ${conversationId}:`, {
           serverIsFromCustomer: conv.lastMessageIsFromCustomer,
           lastLoadedMsgIsFromCustomer: lastLoadedMessage?.isFromCustomer,
@@ -628,7 +609,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           customerId: conv.customerId || conv.id,
           customerName: conv.customerName || conv.customerId || 'عميل غير معروف',
           lastMessage: actualLastMessage,
-          lastMessageTime: safeDate(conv.lastMessageTime || conv.lastMessageAt || Date.now()),
+          lastMessageTime: new Date(conv.lastMessageTime || conv.lastMessageAt || Date.now()),
           unreadCount: conv.unreadCount || 0,
           platform: (conv.platform || conv.channel || 'unknown') as Conversation['platform'],
           isOnline: false,
@@ -640,7 +621,6 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           pageName: conv.pageName || null,
           pageId: conv.pageId || null,
           adSource: conv.adSource || null,
-          lastSenderName: conv.lastSenderName || null, // 🆕 اسم الموظف الأخير
           postId: (() => {
             try {
               if (conv.metadata) {
@@ -667,23 +647,23 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             return prev.map(c => {
               if (c.id === conversationId) {
                 // ✅ FIX: الحفاظ على lastMessage الموجود إذا كان السيرفر يرجع "لا توجد رسائل"
-                const shouldKeepExistingLastMessage =
-                  formattedConversation.lastMessage === 'لا توجد رسائل' &&
-                  c.lastMessage &&
+                const shouldKeepExistingLastMessage = 
+                  formattedConversation.lastMessage === 'لا توجد رسائل' && 
+                  c.lastMessage && 
                   c.lastMessage !== 'لا توجد رسائل';
-
+                
                 // ✅ FIX: الحفاظ على lastMessageIsFromCustomer من Socket.IO إذا كانت أحدث أو متساوية
                 const existingTime = c.lastMessageTime ? new Date(c.lastMessageTime).getTime() : 0;
                 const newTime = new Date(formattedConversation.lastMessageTime).getTime();
-                const shouldKeepExistingIsFromCustomer =
-                  c.lastMessage &&
+                const shouldKeepExistingIsFromCustomer = 
+                  c.lastMessage && 
                   c.lastMessage !== 'لا توجد رسائل' &&
                   existingTime >= newTime;  // ✅ FIX: >= بدلاً من > للحفاظ على البيانات حتى لو الوقت متساوي
-
+                
                 // ✅ FIX: الحفاظ على unreadCount من Socket.IO دائماً إذا كان موجود
                 // لأن السيرفر دائماً بيرجع 0 (قديمة)
                 const shouldKeepUnreadCount = (c.unreadCount !== undefined && c.unreadCount > 0);
-
+                
                 console.log(`🔄 [LOAD-SPECIFIC-UPDATE] Conv ${conversationId}:`, {
                   existingMsg: c.lastMessage?.substring(0, 30),
                   existingIsFromCustomer: c.lastMessageIsFromCustomer,
@@ -697,7 +677,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                   shouldKeepIsFromCustomer: shouldKeepExistingIsFromCustomer,
                   shouldKeepUnreadCount: shouldKeepUnreadCount
                 });
-
+                
                 return {
                   ...formattedConversation,
                   lastMessage: shouldKeepExistingLastMessage ? c.lastMessage : formattedConversation.lastMessage,
@@ -768,6 +748,40 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
       const result = await response.json();
       const data = result.data || result || [];
+      
+      // ✅ FIX: Logging لعرض timestamp لكل رسالة عند التحميل
+      console.log('📅 [LOAD-MESSAGES] Raw messages from server:', data.map((msg: any) => ({
+        id: msg.id?.substring(0, 8),
+        timestamp: msg.timestamp,
+        timestampType: typeof msg.timestamp,
+        isDate: msg.timestamp instanceof Date,
+        content: msg.content?.substring(0, 30)
+      })));
+      
+      // 🔍 DEBUG: Log first message structure to see what fields are present
+      if (data && data.length > 0) {
+        const firstMsg = data[0];
+        console.log('🔍 [DEBUG] First message from server (full structure):', {
+          id: firstMsg.id,
+          hasTimestamp: 'timestamp' in firstMsg,
+          timestamp: firstMsg.timestamp,
+          timestampType: typeof firstMsg.timestamp,
+          allKeys: Object.keys(firstMsg),
+          // Log all fields to see what's actually present
+          fullMessage: {
+            id: firstMsg.id,
+            content: firstMsg.content?.substring(0, 50),
+            timestamp: firstMsg.timestamp,
+            isFromCustomer: firstMsg.isFromCustomer,
+            type: firstMsg.type,
+            sender: firstMsg.sender,
+            // Check for createdAt as fallback
+            createdAt: firstMsg.createdAt,
+            hasCreatedAt: 'createdAt' in firstMsg
+          }
+        });
+      }
+      
       const messages: Message[] = data.map((msg: any) => {
         let isAiGenerated = false;
         let md: any = null;
@@ -780,18 +794,51 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           }
         }
 
+        // تشخيص مؤقت - معطل لتقليل console logs
+        if (false && !msg.isFromCustomer && process.env.NODE_ENV === 'development') {
+          console.log(`🔍 [MESSAGE-DEBUG] Message ${msg.id}:`, {
+            content: msg.content.substring(0, 50) + '...',
+            type: msg.type,
+            isAiGenerated: isAiGenerated,
+            hasMetadata: !!msg.metadata,
+            senderName: msg.sender?.name || 'غير معروف',
+            fileUrl: msg.fileUrl,
+            fileName: msg.fileName,
+            hasAttachments: !!(msg.attachments && msg.attachments.length > 0),
+            metadata: msg.metadata ? (typeof msg.metadata === 'string' ? msg.metadata.substring(0, 100) + '...' : JSON.stringify(msg.metadata).substring(0, 100) + '...') : null
+          });
+        }
+
         // تحديد اسم المرسل بشكل صحيح
         let senderName = 'العميل';
         if (!msg.isFromCustomer) {
           if (isAiGenerated) {
             senderName = 'الذكاء الاصطناعي';
-          } else if (md?.employeeName) {
-            // استخدام اسم الموظف من metadata (الأصح)
-            senderName = md.employeeName;
-          } else if (msg.sender?.name && msg.sender.name !== 'موظف') {
-            senderName = msg.sender.name;
+          } else if (msg.sender?.name && msg.sender.name.trim()) {
+            // ✅ FIX: استخدام اسم الموظف من الخادم إذا كان موجوداً
+            senderName = msg.sender.name.trim();
+          } else if (msg.sender?.firstName || msg.sender?.lastName) {
+            // ✅ FIX: محاولة بناء الاسم من firstName و lastName
+            const firstName = msg.sender.firstName || '';
+            const lastName = msg.sender.lastName || '';
+            const fullName = `${firstName} ${lastName}`.trim();
+            if (fullName) {
+              senderName = fullName;
+            } else {
+              senderName = 'موظف'; // افتراضي إذا لم يكن هناك اسم
+            }
           } else {
-            senderName = 'موظف';
+            // ✅ FIX: محاولة قراءة من metadata كـ fallback
+            if (md?.employeeName) {
+              senderName = md.employeeName;
+            } else if (md?.employeeFirstName || md?.employeeLastName) {
+              const firstName = md.employeeFirstName || '';
+              const lastName = md.employeeLastName || '';
+              const fullName = `${firstName} ${lastName}`.trim();
+              senderName = fullName || 'موظف';
+            } else {
+              senderName = 'موظف'; // افتراضي إذا لم يكن هناك اسم
+            }
           }
         }
 
@@ -811,12 +858,88 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           }
         }
 
+        // ✅ FIX: معالجة timestamp بشكل صحيح مع الحفاظ على التاريخ الأصلي
+        // استخدام createdAt كـ fallback بدلاً من الوقت الحالي
+        let messageTimestamp: Date;
+        if (msg.timestamp) {
+          if (msg.timestamp instanceof Date) {
+            messageTimestamp = msg.timestamp;
+          } else if (typeof msg.timestamp === 'string') {
+            // إذا كان string، نحوله إلى Date
+            messageTimestamp = new Date(msg.timestamp);
+            // ✅ FIX: التحقق من صحة التاريخ - استخدام createdAt كـ fallback
+            if (isNaN(messageTimestamp.getTime())) {
+              console.warn(`⚠️ [TIMESTAMP] Invalid timestamp for message ${msg.id}: ${msg.timestamp}, trying createdAt`);
+              if (msg.createdAt) {
+                messageTimestamp = new Date(msg.createdAt);
+                if (isNaN(messageTimestamp.getTime())) {
+                  console.error(`❌ [TIMESTAMP] Invalid createdAt for message ${msg.id}, using current date as last resort`);
+                  messageTimestamp = new Date();
+                }
+              } else {
+                console.error(`❌ [TIMESTAMP] No timestamp or createdAt for message ${msg.id}, using current date as last resort`);
+                messageTimestamp = new Date();
+              }
+            }
+          } else if (typeof msg.timestamp === 'number') {
+            // إذا كان number، نحوله مباشرة
+            messageTimestamp = new Date(msg.timestamp);
+            if (isNaN(messageTimestamp.getTime())) {
+              console.warn(`⚠️ [TIMESTAMP] Invalid timestamp number for message ${msg.id}: ${msg.timestamp}, trying createdAt`);
+              if (msg.createdAt) {
+                messageTimestamp = new Date(msg.createdAt);
+                if (isNaN(messageTimestamp.getTime())) {
+                  console.error(`❌ [TIMESTAMP] Invalid createdAt for message ${msg.id}, using current date as last resort`);
+                  messageTimestamp = new Date();
+                }
+              } else {
+                console.error(`❌ [TIMESTAMP] No timestamp or createdAt for message ${msg.id}, using current date as last resort`);
+                messageTimestamp = new Date();
+              }
+            }
+          } else {
+            console.warn(`⚠️ [TIMESTAMP] Unknown timestamp type for message ${msg.id}: ${typeof msg.timestamp}, trying createdAt`);
+            if (msg.createdAt) {
+              messageTimestamp = new Date(msg.createdAt);
+              if (isNaN(messageTimestamp.getTime())) {
+                console.error(`❌ [TIMESTAMP] Invalid createdAt for message ${msg.id}, using current date as last resort`);
+                messageTimestamp = new Date();
+              }
+            } else {
+              console.error(`❌ [TIMESTAMP] No timestamp or createdAt for message ${msg.id}, using current date as last resort`);
+              messageTimestamp = new Date();
+            }
+          }
+        } else {
+          // ✅ FIX: استخدام createdAt كـ fallback بدلاً من الوقت الحالي
+          if (msg.createdAt) {
+            messageTimestamp = new Date(msg.createdAt);
+            if (isNaN(messageTimestamp.getTime())) {
+              console.error(`❌ [TIMESTAMP] Invalid createdAt for message ${msg.id}, using current date as last resort`);
+              messageTimestamp = new Date();
+            }
+          } else {
+            console.error(`❌ [TIMESTAMP] No timestamp or createdAt for message ${msg.id}, using current date as last resort`);
+            messageTimestamp = new Date();
+          }
+        }
+
+        // ✅ FIX: Logging timestamp المحول
+        console.log(`📅 [TIMESTAMP-CONVERSION] Message ${msg.id?.substring(0, 8)}:`, {
+          original: msg.timestamp,
+          originalType: typeof msg.timestamp,
+          converted: messageTimestamp,
+          convertedISO: messageTimestamp.toISOString(),
+          convertedTime: messageTimestamp.getTime(),
+          content: msg.content?.substring(0, 30)
+        });
+
         return {
           id: msg.id,
           content: msg.content,
           senderId: msg.sender?.id || 'unknown',
           senderName: senderName,
-          timestamp: safeDate(msg.timestamp),
+          timestamp: messageTimestamp, // ✅ FIX: استخدام timestamp المحول بشكل صحيح
           type: msg.type || 'text',
           isFromCustomer: msg.isFromCustomer,
           status: 'delivered',
@@ -826,11 +949,12 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           fileName: msg.fileName, // إضافة اسم الملف
           fileSize: msg.fileSize, // إضافة حجم الملف
           attachments: msg.attachments || [], // إضافة المرفقات
-          replyToResolvedMessageId: md?.replyToResolvedMessageId,
-          replyToContentSnippet: md?.replyToContentSnippet,
-          replyToSenderIsCustomer: md?.replyToSenderIsCustomer,
-          replyToType: md?.replyToType,
-          replyToFacebookMessageId: md?.replyToFacebookMessageId
+          // ✅ FIX: استخدام حقول reply مباشرة من الرسالة (من الباك إند) أو من metadata كـ fallback
+          replyToResolvedMessageId: msg.replyToResolvedMessageId || md?.replyToResolvedMessageId,
+          replyToContentSnippet: msg.replyToContentSnippet || md?.replyToContentSnippet,
+          replyToSenderIsCustomer: msg.replyToSenderIsCustomer !== undefined ? msg.replyToSenderIsCustomer : md?.replyToSenderIsCustomer,
+          replyToType: msg.replyToType || md?.replyToType,
+          replyToFacebookMessageId: msg.replyToFacebookMessageId || md?.replyToFacebookMessageId
         };
       });
 
@@ -873,28 +997,76 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           const existingMessages = prev.messages || [];
           const newMessages = messages || [];
 
-          // البحث عن الرسائل الجديدة التي لا توجد في الرسائل المحملة
-          const latestMessageFromServer = newMessages.length > 0 ? safeDate(newMessages[newMessages.length - 1].timestamp) : new Date(0);
-          const recentMessages = existingMessages.filter(msg =>
-            safeDate(msg.timestamp) > latestMessageFromServer
-          );
+          // ✅ FIX: دمج الرسائل بشكل صحيح مع الحفاظ على التواريخ الأصلية
+          // إنشاء map للرسائل الجديدة من السيرفر (keyed by id)
+          const newMessagesMap = new Map<string, Message>();
+          newMessages.forEach(msg => {
+            // ✅ FIX: التأكد من أن timestamp هو Date object صحيح
+            const timestamp = msg.timestamp instanceof Date 
+              ? msg.timestamp 
+              : (msg.timestamp ? new Date(msg.timestamp) : new Date());
+            
+            newMessagesMap.set(msg.id, {
+              ...msg,
+              timestamp: timestamp // ✅ FIX: الحفاظ على timestamp الأصلي
+            });
+          });
+
+          // دمج الرسائل: نستخدم الرسائل الجديدة من السيرفر، ونحتفظ بالرسائل القديمة التي لم تأت في الاستجابة
+          const mergedMessages: Message[] = [];
+          const processedIds = new Set<string>();
+
+          // أولاً: إضافة جميع الرسائل الجديدة من السيرفر (مع الحفاظ على timestamp الأصلي)
+          newMessages.forEach(msg => {
+            if (!processedIds.has(msg.id)) {
+              mergedMessages.push(msg);
+              processedIds.add(msg.id);
+            }
+          });
+
+          // ثانياً: إضافة الرسائل القديمة التي لم تأت في الاستجابة (مع الحفاظ على timestamp الأصلي)
+          existingMessages.forEach(msg => {
+            if (!processedIds.has(msg.id)) {
+              // ✅ FIX: الحفاظ على timestamp الأصلي للرسائل القديمة
+              mergedMessages.push({
+                ...msg,
+                timestamp: msg.timestamp instanceof Date 
+                  ? msg.timestamp 
+                  : (msg.timestamp ? new Date(msg.timestamp) : new Date())
+              });
+              processedIds.add(msg.id);
+            }
+          });
+
+          // ✅ FIX: ترتيب الرسائل حسب timestamp
+          mergedMessages.sort((a, b) => {
+            const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
+            const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
+            return timeA - timeB;
+          });
 
           console.log('🔄 [LOAD-MESSAGES] Merging messages:', {
             fromServer: newMessages.length,
             existing: existingMessages.length,
-            recent: recentMessages.length,
-            latestFromServer: latestMessageFromServer
+            merged: mergedMessages.length,
+            preservedOldMessages: existingMessages.filter(m => !newMessagesMap.has(m.id)).length
           });
 
           return {
             ...prev,
-            messages: [...newMessages, ...recentMessages]
+            messages: mergedMessages
           };
         }
       });
 
-      // تحديث حالة وجود رسائل أقدم
-      setHasMoreMessages(messages.length === 50); // إذا كان عدد الرسائل أقل من 50، فلا توجد رسائل أقدم
+      // تحديث حالة وجود رسائل أقدم - استخدام pagination من الباك إند
+      const pagination = result.pagination;
+      if (pagination) {
+        setHasMoreMessages(pagination.hasNextPage || false);
+      } else {
+        // Fallback: إذا لم يكن هناك pagination، نستخدم الطريقة القديمة
+        setHasMoreMessages(messages.length === 50);
+      }
 
       if (!append) {
         // التمرير للأسفل بعد تحميل الرسائل الجديدة فقط إذا كان المستخدم في الأسفل
@@ -953,13 +1125,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           if (!msg.isFromCustomer) {
             if (isAiGenerated) {
               senderName = 'الذكاء الاصطناعي';
-            } else if (md?.employeeName) {
-              // استخدام اسم الموظف من metadata (الأصح)
-              senderName = md.employeeName;
-            } else if (msg.sender?.name && msg.sender.name !== 'موظف') {
-              senderName = msg.sender.name;
+            } else if (msg.sender?.name) {
+              senderName = msg.sender.name; // اسم الموظف من الخادم
             } else {
-              senderName = 'موظف';
+              senderName = 'موظف'; // افتراضي إذا لم يكن هناك اسم
             }
           }
 
@@ -978,12 +1147,31 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             }
           }
 
+          // ✅ FIX: معالجة timestamp مع استخدام createdAt كـ fallback
+          let messageTimestamp: Date;
+          if (msg.timestamp) {
+            if (msg.timestamp instanceof Date) {
+              messageTimestamp = msg.timestamp;
+            } else if (typeof msg.timestamp === 'string' || typeof msg.timestamp === 'number') {
+              messageTimestamp = new Date(msg.timestamp);
+              if (isNaN(messageTimestamp.getTime())) {
+                // استخدام createdAt كـ fallback
+                messageTimestamp = msg.createdAt ? new Date(msg.createdAt) : new Date();
+              }
+            } else {
+              messageTimestamp = msg.createdAt ? new Date(msg.createdAt) : new Date();
+            }
+          } else {
+            // ✅ FIX: استخدام createdAt كـ fallback بدلاً من الوقت الحالي
+            messageTimestamp = msg.createdAt ? new Date(msg.createdAt) : new Date();
+          }
+
           return {
             id: msg.id,
             content: msg.content,
             senderId: msg.sender?.id || 'unknown',
             senderName: senderName,
-            timestamp: safeDate(msg.timestamp),
+            timestamp: messageTimestamp, // ✅ FIX: استخدام التاريخ الأصلي
             type: msg.type || 'text',
             isFromCustomer: msg.isFromCustomer,
             status: 'delivered',
@@ -1102,10 +1290,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           if (!msg.isFromCustomer) {
             if (isAiGenerated) {
               senderName = 'الذكاء الاصطناعي';
-            } else if (md?.employeeName) {
-              // استخدام اسم الموظف من metadata (الأصح)
-              senderName = md.employeeName;
-            } else if (msg.sender?.name && msg.sender.name !== 'موظف') {
+            } else if (msg.sender?.name) {
               senderName = msg.sender.name;
             } else {
               senderName = 'موظف';
@@ -1125,12 +1310,31 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             }
           }
 
+          // ✅ FIX: معالجة timestamp مع استخدام createdAt كـ fallback
+          let messageTimestamp: Date;
+          if (msg.timestamp) {
+            if (msg.timestamp instanceof Date) {
+              messageTimestamp = msg.timestamp;
+            } else if (typeof msg.timestamp === 'string' || typeof msg.timestamp === 'number') {
+              messageTimestamp = new Date(msg.timestamp);
+              if (isNaN(messageTimestamp.getTime())) {
+                // استخدام createdAt كـ fallback
+                messageTimestamp = msg.createdAt ? new Date(msg.createdAt) : new Date();
+              }
+            } else {
+              messageTimestamp = msg.createdAt ? new Date(msg.createdAt) : new Date();
+            }
+          } else {
+            // ✅ FIX: استخدام createdAt كـ fallback بدلاً من الوقت الحالي
+            messageTimestamp = msg.createdAt ? new Date(msg.createdAt) : new Date();
+          }
+
           return {
             id: msg.id,
             content: msg.content,
             senderId: msg.sender?.id || 'unknown',
             senderName: senderName,
-            timestamp: safeDate(msg.timestamp),
+            timestamp: messageTimestamp, // ✅ FIX: استخدام التاريخ الأصلي
             type: msg.type || 'text',
             isFromCustomer: msg.isFromCustomer,
             status: 'delivered',
@@ -1336,20 +1540,20 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       newUrl.searchParams.set('conversationId', conversationId);
       window.history.replaceState({}, '', newUrl.toString());
 
-      // ✅ عند فتح المحادثة نضعها كمقروءة (إزالة من تبويب "غير مقروءة")
-      if (selectedConversation?.id === conversationId || conversation.unreadCount > 0) {
-        // تحديث الـ frontend فوراً
-        setConversations(prev => prev.map(conv =>
-          conv.id === conversationId
-            ? { ...conv, unreadCount: 0 }
-            : conv
-        ));
-        setSelectedConversation(prev =>
-          prev && prev.id === conversationId ? { ...prev, unreadCount: 0 } : prev
-        );
-        // استدعاء الـ API لتحديث حالة القراءة في الـ backend
-        markConversationAsRead(conversationId);
-      }
+        // ✅ عند فتح المحادثة نضعها كمقروءة (إزالة من تبويب "غير مقروءة")
+        if (selectedConversation?.id === conversationId || conversation.unreadCount > 0) {
+          // تحديث الـ frontend فوراً
+          setConversations(prev => prev.map(conv =>
+            conv.id === conversationId
+              ? { ...conv, unreadCount: 0 }
+              : conv
+          ));
+          setSelectedConversation(prev =>
+            prev && prev.id === conversationId ? { ...prev, unreadCount: 0 } : prev
+          );
+          // استدعاء الـ API لتحديث حالة القراءة في الـ backend
+          markConversationAsRead(conversationId);
+        }
     } else {
       console.warn('❌ Conversation not found in selectConversation:', conversationId);
       console.log('📝 Available conversation IDs:', conversations.map(c => c.id));
@@ -1426,7 +1630,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       if (preview) {
         setConversations(prev => prev.map(conv =>
           conv.id === conversationId
-            ? { ...conv, lastMessage: preview as string, lastMessageTime: safeDate(time || Date.now()) }
+            ? { ...conv, lastMessage: preview as string, lastMessageTime: new Date(time || Date.now()) }
             : conv
         ));
       }
@@ -2797,7 +3001,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   // دالة لتثبيت/إلغاء تثبيت نص
   const togglePinText = async (textId: string, currentPinStatus: boolean, event: React.MouseEvent) => {
     event.stopPropagation();
-
+    
     try {
       setPinningTextId(textId);
       const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
@@ -2997,22 +3201,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   };
 
   // إعداد مستمعي أحداث Socket.IO (مُفعل للتحديث الفوري)
-  // تحديث refs عند تغيير القيم
   useEffect(() => {
-    selectedConversationRef.current = selectedConversation;
-    conversationsRef.current = conversations;
-    companyIdRef.current = companyId;
-    userRef.current = user;
-    loadSpecificConversationRef.current = loadSpecificConversation;
-    scrollToBottomRef.current = scrollToBottom;
-    playNotificationSoundRef.current = playNotificationSound;
-    showBrowserNotificationRef.current = showBrowserNotification;
-  }, [selectedConversation, conversations, companyId, user, loadSpecificConversation, scrollToBottom, playNotificationSound, showBrowserNotification]);
-
-  useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConversationsImprovedFixed.tsx:2990',message:'useEffect socket listeners setup',data:{socket:!!socket,isConnected},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     if (!socket || !isConnected) {
       console.log('❌ [SOCKET] Socket not available:', { socket: !!socket, isConnected });
       return;
@@ -3024,23 +3213,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
     // استقبال رسالة جديدة
     const handleNewMessage = (data: any) => {
-      // استخدام refs للحصول على القيم الحالية
-      const currentSelectedConversation = selectedConversationRef.current;
-      const currentConversations = conversationsRef.current;
-      const currentCompanyId = companyIdRef.current;
-      const currentUser = userRef.current;
-      const currentLoadSpecificConversation = loadSpecificConversationRef.current;
-      const currentScrollToBottom = scrollToBottomRef.current;
-      const currentPlayNotificationSound = playNotificationSoundRef.current;
-      const currentShowBrowserNotification = showBrowserNotificationRef.current;
-
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConversationsImprovedFixed.tsx:3001',message:'handleNewMessage called',data:{messageId:data.id,isFromCustomer:data.isFromCustomer,selectedConvId:currentSelectedConversation?.id,conversationsCount:currentConversations.length,companyId:currentCompanyId,userId:currentUser?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
       console.log('📨 [SOCKET] New message received:', data);
       console.log('📨 [SOCKET] Message ID:', data.id);
       console.log('📨 [SOCKET] isFromCustomer:', data.isFromCustomer);
-      console.log('📨 [SOCKET] Current conversation:', currentSelectedConversation?.id);
+      console.log('📨 [SOCKET] Current conversation:', selectedConversation?.id);
       console.log('📨 [SOCKET] Message conversation:', data.conversationId || data.message?.conversationId);
       console.log('📨 [SOCKET] Reply metadata:', {
         replyToContentSnippet: data.metadata?.replyToContentSnippet,
@@ -3051,10 +3227,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
       // ✅ FIX: التحقق من أن الرسالة تخص نفس الشركة قبل معالجتها
       const messageCompanyId = data.companyId || data.metadata?.companyId || data.conversation?.companyId;
-      if (messageCompanyId && currentCompanyId && String(messageCompanyId) !== String(currentCompanyId)) {
+      if (messageCompanyId && companyId && String(messageCompanyId) !== String(companyId)) {
         console.log('🔕 [SOCKET] Ignoring message from different company:', {
           messageCompanyId,
-          currentCompanyId: currentCompanyId,
+          currentCompanyId: companyId,
           conversationId: data.conversationId
         });
         return; // تجاهل الرسالة تماماً إذا كانت من شركة أخرى
@@ -3063,7 +3239,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       // 🔔 تشغيل صوت التنبيه للرسائل من العملاء (مع عزل الشركات)
       if (data.isFromCustomer) {
         // ✅ التحقق من أن الرسالة تخص نفس الشركة
-        if (messageCompanyId && currentCompanyId && String(messageCompanyId) === String(currentCompanyId)) {
+        if (messageCompanyId && companyId && String(messageCompanyId) === String(companyId)) {
           console.log('🔔 Playing notification sound for new customer message');
           socketService.playNotificationSound();
         } else if (!messageCompanyId) {
@@ -3071,7 +3247,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           console.log('🔔 Playing notification sound (no company isolation)');
           socketService.playNotificationSound();
         } else {
-          console.log('🔕 Skipping notification sound - different company:', { messageCompanyId, currentCompanyId: currentCompanyId });
+          console.log('🔕 Skipping notification sound - different company:', { messageCompanyId, currentCompanyId: companyId });
         }
       }
 
@@ -3089,20 +3265,29 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       if (!data.isFromCustomer) {
         if (isAiGenerated) {
           senderName = 'الذكاء الاصطناعي';
-        } else if (data.metadata?.employeeName) {
-          // الأولوية للاسم من metadata (الأدق)
-          senderName = data.metadata.employeeName;
-        } else if (data.senderName && data.senderName !== 'موظف') {
-          senderName = data.senderName; // اسم الموظف من الخادم
-        } else if (currentUser) {
-          // استخدام اسم المستخدم الحالي كـfallback
-          senderName = `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || 'موظف';
+        } else if (data.senderName && data.senderName.trim() && data.senderName !== 'موظف') {
+          // ✅ FIX: استخدام اسم الموظف من الخادم إذا كان موجوداً وصحيحاً
+          senderName = data.senderName.trim();
+        } else if (data.sender?.name && data.sender.name.trim()) {
+          // ✅ FIX: محاولة استخدام sender.name من البيانات
+          senderName = data.sender.name.trim();
+        } else if (data.sender?.firstName || data.sender?.lastName) {
+          // ✅ FIX: محاولة بناء الاسم من firstName و lastName
+          const firstName = data.sender.firstName || '';
+          const lastName = data.sender.lastName || '';
+          const fullName = `${firstName} ${lastName}`.trim();
+          if (fullName) {
+            senderName = fullName;
+          } else {
+            senderName = 'موظف'; // افتراضي إذا لم يكن هناك اسم
+          }
+        } else if (data.metadata?.employeeName && data.metadata.employeeName.trim()) {
+          // ✅ FIX: محاولة قراءة من metadata
+          senderName = data.metadata.employeeName.trim();
         } else {
           senderName = 'موظف'; // افتراضي إذا لم يكن هناك اسم
         }
       }
-
-
 
       // 🔧 Normalize image/file URLs for immediate rendering
       let normalizedFileUrl = data.fileUrl;
@@ -3115,12 +3300,32 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         }
       }
 
+      // ✅ FIX: التأكد من أن timestamp هو Date object صحيح مع استخدام createdAt كـ fallback
+      let messageTimestamp: Date;
+      if (data.timestamp) {
+        if (data.timestamp instanceof Date) {
+          messageTimestamp = data.timestamp;
+        } else if (typeof data.timestamp === 'string' || typeof data.timestamp === 'number') {
+          messageTimestamp = new Date(data.timestamp);
+          if (isNaN(messageTimestamp.getTime())) {
+            // استخدام createdAt كـ fallback
+            messageTimestamp = data.createdAt ? new Date(data.createdAt) : new Date();
+          }
+        } else {
+          // استخدام createdAt كـ fallback
+          messageTimestamp = data.createdAt ? new Date(data.createdAt) : new Date();
+        }
+      } else {
+        // ✅ FIX: استخدام createdAt كـ fallback بدلاً من الوقت الحالي
+        messageTimestamp = data.createdAt ? new Date(data.createdAt) : new Date();
+      }
+
       const newMessage: Message = {
         id: data.id,
         content: data.content,
         senderId: data.senderId,
         senderName: senderName,
-        timestamp: new Date(data.timestamp),
+        timestamp: messageTimestamp, // ✅ FIX: استخدام timestamp الصحيح
         type: data.type || 'text',
         isFromCustomer: data.isFromCustomer,
         status: 'delivered',
@@ -3139,11 +3344,8 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       };
 
       // تفاؤلياً: لو رسالة عميل وصلت للمحادثة الحالية و AI مفعّل، أظهر مؤشر كتابة
-      if (data.isFromCustomer && String(currentSelectedConversation?.id) === String(data.conversationId)) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConversationsImprovedFixed.tsx:3104',message:'Checking AI typing - stale closure check',data:{selectedConvId:currentSelectedConversation?.id,conversationsCount:currentConversations.length,conversationsIds:currentConversations.map(c=>c.id)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
-        const conv = currentConversations.find(c => String(c.id) === String(data.conversationId));
+      if (data.isFromCustomer && String(selectedConversation?.id) === String(data.conversationId)) {
+        const conv = conversations.find(c => String(c.id) === String(data.conversationId));
         if (!conv || conv.aiEnabled !== false) {
           setIsAiTyping(true);
           if (aiTypingTimeoutRef.current) clearTimeout(aiTypingTimeoutRef.current);
@@ -3152,7 +3354,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       }
 
       // إذا وصلت رسالة AI للمحادثة الحالية، أوقف مؤشر الكتابة
-      if (isAiGenerated && currentSelectedConversation?.id === data.conversationId) {
+      if (isAiGenerated && selectedConversation?.id === data.conversationId) {
         setIsAiTyping(false);
         if (aiTypingTimeoutRef.current) {
           clearTimeout(aiTypingTimeoutRef.current);
@@ -3164,16 +3366,15 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       setConversations((prev: Conversation[]) => {
         // ✅ FIX: التحقق من وجود المحادثة قبل التحديث
         const conversationExists = prev.some(conv => conv.id === data.conversationId);
-        const currentSelectedConv = selectedConversationRef.current;
 
         if (!conversationExists) {
           // ✅ FIX: التحقق مرة أخرى من companyId قبل إنشاء المحادثة المؤقتة
           // (تم التحقق في بداية handleNewMessage، لكن نتحقق مرة أخرى للتأكد)
-          if (messageCompanyId && currentCompanyId && String(messageCompanyId) !== String(currentCompanyId)) {
+          if (messageCompanyId && companyId && String(messageCompanyId) !== String(companyId)) {
             console.log(`🔕 [SOCKET] Ignoring conversation creation - different company:`, {
               conversationId: data.conversationId,
               messageCompanyId,
-              currentCompanyId: currentCompanyId
+              currentCompanyId: companyId
             });
             return prev; // لا نضيف المحادثة إذا كانت من شركة أخرى
           }
@@ -3183,9 +3384,9 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           if (!data.isFromCustomer) {
             console.log(`ℹ️ [SOCKET] Message from staff for unknown conversation ${data.conversationId}, ignoring (won't create new conversation)`);
             // نحاول تحميل المحادثة من API فقط إذا كانت مفتوحة حالياً
-            if (currentSelectedConv?.id === data.conversationId && currentLoadSpecificConversation) {
+            if (selectedConversation?.id === data.conversationId) {
               console.log(`🔄 [SOCKET] Conversation is selected, loading from API...`);
-              currentLoadSpecificConversation(data.conversationId, false).catch(err => {
+              loadSpecificConversation(data.conversationId, false).catch(err => {
                 console.error(`❌ [SOCKET] Failed to load conversation:`, err);
               });
             }
@@ -3207,15 +3408,13 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             customerId: data.customerId || data.senderId || data.conversationId,
             customerName: data.customerName || data.senderName || 'عميل جديد',
             lastMessage: data.content,
-            lastMessageTime: safeDate(data.timestamp || Date.now()),
+            lastMessageTime: new Date(data.timestamp),
             unreadCount: data.isFromCustomer ? 1 : 0,
             platform: (data.platform || 'facebook') as Conversation['platform'],
             isOnline: false,
             messages: [newMessage], // ✅ إضافة الرسالة فوراً
             lastMessageIsFromCustomer: !!data.isFromCustomer,
             lastCustomerMessageIsUnread: !!data.isFromCustomer,
-            // 🔧 FIX: Clear lastSenderName if message is from customer
-            lastSenderName: data.isFromCustomer ? null : (data.senderName || null),
             pageName: data.pageName,
             pageId: data.pageId
           };
@@ -3225,11 +3424,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
           // ✅ تحميل المحادثة الكاملة من API في الخلفية ودمجها
           // (loadSpecificConversation سيتحقق من companyId مرة أخرى)
-          const shouldAutoSelect = !currentSelectedConv || currentSelectedConv.id === data.conversationId;
+          const shouldAutoSelect = !selectedConversation || selectedConversation.id === data.conversationId;
           console.log(`🔄 [SOCKET] Loading full conversation ${data.conversationId}, autoSelect: ${shouldAutoSelect}`);
 
-          if (currentLoadSpecificConversation) {
-            currentLoadSpecificConversation(data.conversationId, shouldAutoSelect).then(() => {
+          loadSpecificConversation(data.conversationId, shouldAutoSelect).then(() => {
             // ✅ بعد تحميل المحادثة الكاملة، ندمج الرسالة الجديدة مع الرسائل المحملة
             // ✅ FIX: نحافظ على البيانات من Socket.IO (pageName, lastMessageIsFromCustomer, etc)
             setConversations((currentPrev: Conversation[]) => {
@@ -3242,24 +3440,22 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                   if (!messageExists) {
                     // إضافة الرسالة الجديدة للرسائل المحملة
                     const updatedMessages = [...existingMessages, newMessage].sort((a, b) =>
-                      safeDate(a.timestamp || Date.now()).getTime() - safeDate(b.timestamp || Date.now()).getTime()
+                      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
                     );
 
                     // ✅ FIX: الحفاظ على unreadCount من Socket.IO (المحادثة المؤقتة)
                     // لأن السيرفر بيرجع unreadCount = 0 (قديمة)
                     const socketUnreadCount = data.isFromCustomer ? 1 : 0;
-
+                    
                     const updatedConv = {
                       ...conv,
                       messages: updatedMessages,
                       lastMessage: data.content,
-                      lastMessageTime: safeDate(data.timestamp || Date.now()),
+                      lastMessageTime: new Date(data.timestamp),
                       lastMessageIsFromCustomer: !!data.isFromCustomer,
                       lastCustomerMessageIsUnread: !!data.isFromCustomer,
                       // ✅ FIX: استخدام unreadCount من Socket.IO بدلاً من السيرفر
                       unreadCount: socketUnreadCount,
-                      // 🔧 FIX: Clear lastSenderName if message is from customer
-                      lastSenderName: data.isFromCustomer ? null : (data.senderName || conv.lastSenderName),
                       // ✅ FIX: الحفاظ على pageName و pageId من Socket.IO إذا كانت موجودة
                       pageName: data.pageName || conv.pageName,
                       pageId: data.pageId || conv.pageId
@@ -3275,34 +3471,34 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                     });
 
                     // ✅ تحديث المحادثة المحددة أيضاً إذا كانت نفس المحادثة
-                    const latestSelectedConv = selectedConversationRef.current;
-                    if (latestSelectedConv?.id === data.conversationId) {
-                      setSelectedConversation(updatedConv);
-                    }
+                    setSelectedConversation((currentSelected) => {
+                      if (currentSelected?.id === data.conversationId) {
+                        return updatedConv;
+                      }
+                      return currentSelected;
+                    });
 
                     return updatedConv;
                   } else {
                     // ✅ FIX: حتى لو كانت الرسالة موجودة، تأكد من تحديث lastMessage
                     // لأن السيرفر قد يكون أرجع قيمة قديمة أو فارغة
-                    const shouldUpdateLastMessage =
-                      conv.lastMessage === 'لا توجد رسائل' ||
+                    const shouldUpdateLastMessage = 
+                      conv.lastMessage === 'لا توجد رسائل' || 
                       !conv.lastMessage ||
-                      safeDate(data.timestamp || Date.now()).getTime() > safeDate(conv.lastMessageTime).getTime();
-
+                      new Date(data.timestamp).getTime() > new Date(conv.lastMessageTime).getTime();
+                    
                     if (shouldUpdateLastMessage) {
                       // ✅ FIX: استخدام unreadCount من Socket.IO
                       const socketUnreadCount = data.isFromCustomer ? 1 : 0;
-
+                      
                       return {
                         ...conv,
                         lastMessage: data.content,
-                        lastMessageTime: safeDate(data.timestamp || Date.now()),
+                        lastMessageTime: new Date(data.timestamp),
                         lastMessageIsFromCustomer: !!data.isFromCustomer,
                         lastCustomerMessageIsUnread: !!data.isFromCustomer,
                         // ✅ FIX: استخدام unreadCount من Socket.IO بدلاً من السيرفر
                         unreadCount: socketUnreadCount,
-                        // 🔧 FIX: Clear lastSenderName if message is from customer
-                        lastSenderName: data.isFromCustomer ? null : (data.senderName || conv.lastSenderName),
                         // ✅ FIX: الحفاظ على pageName و pageId من Socket.IO
                         pageName: data.pageName || conv.pageName,
                         pageId: data.pageId || conv.pageId
@@ -3313,10 +3509,9 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                 return conv;
               });
             });
-            }).catch(error => {
-              console.error(`❌ [SOCKET] Failed to load conversation ${data.conversationId}:`, error);
-            });
-          }
+          }).catch(error => {
+            console.error(`❌ [SOCKET] Failed to load conversation ${data.conversationId}:`, error);
+          });
 
           // ✅ إرجاع القائمة مع المحادثة المؤقتة
           return updatedWithTemp;
@@ -3332,7 +3527,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
             // 🔧 FIX: لا نحدث lastMessageTime للمحادثة المفتوحة حالياً إذا كانت رسالة من موظف
             // هذا يمنع المحادثة من الصعود للأعلى
-            const isCurrentConversation = currentSelectedConv?.id === data.conversationId;
+            const isCurrentConversation = selectedConversation?.id === data.conversationId;
             const shouldUpdateTime = data.isFromCustomer || !isCurrentConversation;
 
             console.log('🔧 [UPDATE-CONV] Conversation:', conv.id);
@@ -3344,30 +3539,28 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             // فقط نصفّر العداد إذا كانت المحادثة مفتوحة فعلاً وكانت رسالة من عميل
             const newUnreadCount = isCurrentConversation && data.isFromCustomer
               ? 0  // المحادثة مفتوحة ورسالة من عميل → نصفّر العداد
-              : data.isFromCustomer
+              : data.isFromCustomer 
                 ? (conv.unreadCount || 0) + 1  // رسالة من عميل → نزيد العداد
                 : conv.unreadCount;  // رسالة من موظف → نحتفظ بالعداد
-
+            
             console.log(`🔢 [UNREAD-COUNT] Conv ${conv.id}:`, {
               isCurrentConversation,
               isFromCustomer: data.isFromCustomer,
               oldCount: conv.unreadCount,
               newCount: newUnreadCount
             });
-
+            
             return {
               ...conv,
               messages: messageExists ? existingMessages : [...existingMessages, newMessage],
               lastMessage: data.content,
               // فقط نحدث الوقت إذا كانت رسالة عميل أو محادثة مش مفتوحة
-              lastMessageTime: shouldUpdateTime ? safeDate(data.timestamp || Date.now()) : conv.lastMessageTime,
+              lastMessageTime: shouldUpdateTime ? new Date(data.timestamp) : conv.lastMessageTime,
               // ✅ FIX: استخدام العداد المحسوب بناءً على Socket.IO
               unreadCount: newUnreadCount,
               // تحديث أعلام آخر رسالة وحالة عدم القراءة
               lastMessageIsFromCustomer: !!data.isFromCustomer,
-              lastCustomerMessageIsUnread: !!data.isFromCustomer && !isCurrentConversation,
-              // 🔧 FIX: Clear lastSenderName if message is from customer
-              lastSenderName: data.isFromCustomer ? null : (data.senderName || conv.lastSenderName)
+              lastCustomerMessageIsUnread: !!data.isFromCustomer && !isCurrentConversation
             };
           }
           return conv;
@@ -3378,8 +3571,8 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         if (data.isFromCustomer) {
           console.log('📨 [SOCKET-REORDER] Customer message received, REORDERING conversations');
           return updatedConversations.sort((a: Conversation, b: Conversation) => {
-            const timeA = safeDate(a.lastMessageTime).getTime();
-            const timeB = safeDate(b.lastMessageTime).getTime();
+            const timeA = new Date(a.lastMessageTime).getTime();
+            const timeB = new Date(b.lastMessageTime).getTime();
             return timeB - timeA; // الأحدث أولاً
           });
         }
@@ -3391,7 +3584,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       });
 
       // تحديث المحادثة المختارة إذا كانت نفس المحادثة
-      if (currentSelectedConversation?.id === data.conversationId) {
+      if (selectedConversation?.id === data.conversationId) {
         setSelectedConversation((prev: Conversation | null) => {
           if (!prev) return null;
 
@@ -3408,7 +3601,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             if (msg.content === newMessage.content &&
               !msg.isFromCustomer &&
               !newMessage.isFromCustomer &&
-              Math.abs(safeDate(msg.timestamp).getTime() - safeDate(newMessage.timestamp || Date.now()).getTime()) < 2000) {
+              Math.abs(new Date(msg.timestamp).getTime() - new Date(newMessage.timestamp).getTime()) < 2000) {
               console.log('⚠️ [SOCKET] Duplicate AI message content detected:', msg.content.substring(0, 50));
               return true;
             }
@@ -3422,11 +3615,19 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           }
 
           console.log('✅ [SOCKET] Adding new message to selected conversation');
+          
+          // ✅ FIX: ترتيب الرسائل بعد إضافة الرسالة الجديدة مع الحفاظ على التواريخ الأصلية
+          const updatedMessages = [...existingMessages, newMessage].sort((a, b) => {
+            const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
+            const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
+            return timeA - timeB;
+          });
+          
           return {
             ...prev,
-            messages: [...existingMessages, newMessage],
+            messages: updatedMessages, // ✅ FIX: استخدام الرسائل المرتبة مع الحفاظ على التواريخ الأصلية
             lastMessage: data.content,
-            lastMessageTime: safeDate(data.timestamp || Date.now()),
+            lastMessageTime: newMessage.timestamp, // ✅ FIX: استخدام timestamp من الرسالة الجديدة
             lastMessageIsFromCustomer: !!data.isFromCustomer,
             lastCustomerMessageIsUnread: false
           };
@@ -3438,29 +3639,24 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
           // ✅ تشغيل صوت الإشعار فقط لرسائل نفس الشركة
           const messageCompanyId = data.companyId || data.metadata?.companyId;
-          if (!messageCompanyId || (currentCompanyId && String(messageCompanyId) === String(currentCompanyId))) {
-            if (currentPlayNotificationSound) currentPlayNotificationSound();
-            if (currentShowBrowserNotification) {
-              currentShowBrowserNotification(
-                `رسالة جديدة من ${data.senderName || 'العميل'}`,
-                data.content.length > 50 ? data.content.substring(0, 50) + '...' : data.content
-              );
-            }
+          if (!messageCompanyId || (companyId && String(messageCompanyId) === String(companyId))) {
+            playNotificationSound();
+            showBrowserNotification(
+              `رسالة جديدة من ${data.senderName || 'العميل'}`,
+              data.content.length > 50 ? data.content.substring(0, 50) + '...' : data.content
+            );
           } else {
             console.log('🔕 Skipping notification - different company');
           }
-        } else if (autoScrollEnabled && currentScrollToBottom) {
+        } else if (autoScrollEnabled) {
           // التمرير للأسفل إذا كان المستخدم في الأسفل
-          setTimeout(() => currentScrollToBottom(), 100);
+          setTimeout(() => scrollToBottom(), 100);
         }
       }
     };
 
     // مؤشر الكتابة
     const handleUserTyping = (data: any) => {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConversationsImprovedFixed.tsx:3416',message:'handleUserTyping called',data:{userId:data.userId,existingTimeouts:typingTimeoutsRef.current.size},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
       console.log('✍️ User typing:', data);
       setTypingUsers(prev => {
         if (!prev.includes(data.userId)) {
@@ -3470,14 +3666,9 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       });
 
       // إزالة مؤشر الكتابة بعد 3 ثوان
-      if (typingTimeoutsRef.current.has(data.userId)) {
-        clearTimeout(typingTimeoutsRef.current.get(data.userId)!);
-      }
-      const timeoutId = setTimeout(() => {
+      setTimeout(() => {
         setTypingUsers(prev => prev.filter(id => id !== data.userId));
-        typingTimeoutsRef.current.delete(data.userId);
       }, 3000);
-      typingTimeoutsRef.current.set(data.userId, timeoutId);
     };
 
     // إيقاف الكتابة
@@ -3488,10 +3679,9 @@ const ConversationsImprovedFixedContent: React.FC = () => {
     // مؤشر كتابة الذكاء الاصطناعي
     const handleAiTyping = (data: any) => {
       const evId = String(data?.conversationId ?? '');
-      const currentSelectedConv = selectedConversationRef.current;
-      const selId = String(currentSelectedConv?.id ?? '');
+      const selId = String(selectedConversation?.id ?? '');
       console.log('🤖 [SOCKET] ai_typing:', data, 'selected:', selId);
-      if (!currentSelectedConv || evId !== selId) return;
+      if (!selectedConversation || evId !== selId) return;
       setIsAiTyping(!!data.isTyping);
       if (data.isTyping) {
         if (aiTypingTimeoutRef.current) clearTimeout(aiTypingTimeoutRef.current);
@@ -3536,11 +3726,10 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
       // ✅ FIX: التحقق من أن المحادثة تخص نفس الشركة قبل إضافتها
       const conversationCompanyId = data.companyId;
-      const currentCompanyId = companyIdRef.current;
-      if (conversationCompanyId && currentCompanyId && String(conversationCompanyId) !== String(currentCompanyId)) {
+      if (conversationCompanyId && companyId && String(conversationCompanyId) !== String(companyId)) {
         console.log('🔕 [SOCKET] Ignoring conversation from different company:', {
           conversationCompanyId,
-          currentCompanyId: currentCompanyId,
+          currentCompanyId: companyId,
           conversationId: data.id
         });
         return; // تجاهل المحادثة تماماً إذا كانت من شركة أخرى
@@ -3551,7 +3740,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         customerId: data.customerId || data.id,
         customerName: data.customerName || 'عميل غير معروف',
         lastMessage: data.lastMessage || 'محادثة جديدة',
-        lastMessageTime: safeDate(data.lastMessageTime || Date.now()),
+        lastMessageTime: new Date(data.lastMessageTime || Date.now()),
         unreadCount: data.unreadCount || 0,
         platform: 'facebook',
         isOnline: false,
@@ -3570,7 +3759,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           console.log('🔄 [SOCKET] Conversation already exists, updating instead of skipping...');
           const existing = prev[existingIndex];
           const updated = [...prev];
-
+          
           // ✅ FIX: الحفاظ على unreadCount من المحادثة المؤقتة (Socket.IO)
           // لأن formattedConversation قد يحتوي على unreadCount = 0 من السيرفر
           console.log(`🔢 [CONV-NEW-UPDATE] Conv ${data.id}:`, {
@@ -3578,7 +3767,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
             newUnreadCount: formattedConversation.unreadCount,
             keepingExisting: true
           });
-
+          
           // تحديث المحادثة الموجودة بالبيانات الجديدة
           updated[existingIndex] = {
             ...updated[existingIndex],
@@ -3595,7 +3784,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
         }
 
         // 🔔 تشغيل صوت التنبيه للمحادثة الجديدة (مع عزل الشركات)
-        if (conversationCompanyId && currentCompanyId && String(conversationCompanyId) === String(currentCompanyId)) {
+        if (conversationCompanyId && companyId && String(conversationCompanyId) === String(companyId)) {
           console.log('🔔 Playing notification sound for new conversation');
           socketService.playNotificationSound();
         } else if (!conversationCompanyId) {
@@ -3603,7 +3792,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
           console.log('🔔 Playing notification sound (no company isolation)');
           socketService.playNotificationSound();
         } else {
-          console.log('🔕 Skipping notification - different company:', { conversationCompanyId, currentCompanyId: currentCompanyId });
+          console.log('🔕 Skipping notification - different company:', { conversationCompanyId, currentCompanyId: companyId });
         }
 
         console.log('✅ [SOCKET] Adding new conversation to frontend list');
@@ -3626,10 +3815,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
     // تنظيف المستمعين عند إلغاء التحميل
     return () => {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConversationsImprovedFixed.tsx:3574',message:'Socket listeners cleanup',data:{timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
-      // Cleanup listeners
+      console.log('🧹 [SOCKET] Cleaning up event listeners...');
       off('new_message', handleNewMessage);
       off('user_typing', handleUserTyping);
       off('user_stopped_typing', handleUserStoppedTyping);
@@ -3637,18 +3823,12 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       off('user_offline', handleUserOffline);
       off('conversation:new', handleConversationCreated);
       off('ai_typing', handleAiTyping);
-      // Cleanup typing timeouts
-      typingTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
-      typingTimeoutsRef.current.clear();
-
+      console.log('✅ [SOCKET] Event listeners cleaned up');
     };
-  }, [socket, isConnected, on, off]);
+  }, [socket, isConnected, selectedConversation, on, off]);
 
   // ✅ آلية refresh دورية صامتة كل 20 ثانية
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConversationsImprovedFixed.tsx:3612',message:'Refresh interval setup - missing dependency check',data:{isConnected,loading,loadingMoreConversations},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
     // لا نبدأ refresh إذا كان socket غير متصل أو أثناء loading
     if (!isConnected || loading || loadingMoreConversations) {
       return;
@@ -3656,9 +3836,6 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
     // refresh كل 20 ثانية بشكل صامت (silent)
     const refreshInterval = setInterval(() => {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConversationsImprovedFixed.tsx:3619',message:'Refresh interval triggered',data:{timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
       // التحقق مرة أخرى قبل refresh
       if (!isConnected || loading || loadingMoreConversations) {
         return;
@@ -3671,12 +3848,9 @@ const ConversationsImprovedFixedContent: React.FC = () => {
     }, 20000); // 20 ثانية
 
     return () => {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConversationsImprovedFixed.tsx:3631',message:'Refresh interval cleanup',data:{timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
       clearInterval(refreshInterval);
     };
-  }, [isConnected, loading, loadingMoreConversations]);
+  }, [isConnected, loading, loadingMoreConversations, loadConversations]);
 
   // تفعيل الصوت عند أول user interaction
   useEffect(() => {
@@ -3786,21 +3960,19 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   }, [conversations.length]); // ✅ FIX: الاعتماد على conversations.length فقط
 
   // مزامنة الرسائل بين selectedConversation و conversations
-  // ✅ FIX: إزالة هذا useEffect لأنه يسبب unnecessary re-renders
-  // الرسائل يتم تحديثها بالفعل من خلال Socket.IO و loadSpecificConversation
-  // useEffect(() => {
-  //   if (selectedConversation && selectedConversation.messages && selectedConversation.messages.length > 0) {
-  //     setConversations(prev => prev.map(conv => {
-  //       if (conv.id === selectedConversation.id) {
-  //         return {
-  //           ...conv,
-  //           messages: selectedConversation.messages
-  //         };
-  //       }
-  //       return conv;
-  //     }));
-  //   }
-  // }, [selectedConversation?.messages?.length]);
+  useEffect(() => {
+    if (selectedConversation && selectedConversation.messages && selectedConversation.messages.length > 0) {
+      setConversations(prev => prev.map(conv => {
+        if (conv.id === selectedConversation.id) {
+          return {
+            ...conv,
+            messages: selectedConversation.messages
+          };
+        }
+        return conv;
+      }));
+    }
+  }, [selectedConversation?.messages?.length]); // فقط عندما يتغير عدد الرسائل
 
   // الاستماع لتغييرات URL
   useEffect(() => {
@@ -3858,27 +4030,14 @@ const ConversationsImprovedFixedContent: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery, conversations.length]); // يعمل عند تغيير البحث أو عدد المحادثات
 
-  // ✅ FIX: تحديث عرض الوقت تلقائياً كل دقيقة باستخدام state منفصل
-  // بدلاً من إعادة رسم جميع المحادثات، نستخدم state منفصل لتحديث الوقت
-  const [timeUpdateKey, setTimeUpdateKey] = useState(0);
+  // تحديث عرض الوقت تلقائياً كل دقيقة
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConversationsImprovedFixed.tsx:3791',message:'Time update interval setup - performance issue fixed',data:{timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
     const intervalId = setInterval(() => {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConversationsImprovedFixed.tsx:3792',message:'Time update interval triggered - using state update',data:{timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
-      // ✅ FIX: استخدام state منفصل لتحديث الوقت بدلاً من إعادة رسم جميع المحادثات
-      setTimeUpdateKey(prev => prev + 1);
+      // إجبار React على إعادة الرسم لتحديث عرض الوقت
+      setConversations((prev: Conversation[]) => [...prev]);
     }, 60000); // كل دقيقة
 
-    return () => {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConversationsImprovedFixed.tsx:3797',message:'Time update interval cleanup',data:{timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
-      clearInterval(intervalId);
-    };
+    return () => clearInterval(intervalId);
   }, []);
 
   // ✅ FIX: منع scroll تلقائي عند focus على input في الموبايل
@@ -3933,22 +4092,27 @@ const ConversationsImprovedFixedContent: React.FC = () => {
 
   // دالة لإزالة الرسائل المكررة
   const removeDuplicateMessages = (messages: Message[]): Message[] => {
-
+    // تعطيل console logs المفرطة في production
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔄 [DEDUP] Processing', messages.length, 'messages for deduplication');
+    }
 
     const seen = new Set<string>();
     const uniqueMessages: Message[] = [];
 
     // ترتيب الرسائل حسب الوقت أولاً لضمان الترتيب الصحيح
     const sortedMessages = [...messages].sort((a, b) => {
-      const timeA = safeDate(a.timestamp).getTime();
-      const timeB = safeDate(b.timestamp).getTime();
+      const timeA = new Date(a.timestamp).getTime();
+      const timeB = new Date(b.timestamp).getTime();
       return timeA - timeB;
     });
 
     for (const message of sortedMessages) {
       // استخدام ID كمفتاح أساسي مع فحص إضافي للمحتوى
       if (seen.has(message.id)) {
-
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`🔄 [DUPLICATE-REMOVED] Removing duplicate message: ${message.id}`);
+        }
         continue;
       }
 
@@ -3967,7 +4131,9 @@ const ConversationsImprovedFixedContent: React.FC = () => {
       uniqueMessages.push(enhancedMessage);
     }
 
-
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`✅ [DEDUP] Kept ${uniqueMessages.length}/${messages.length} unique messages (sorted by timestamp)`);
+    }
     return uniqueMessages;
   };
 
@@ -4041,12 +4207,23 @@ const ConversationsImprovedFixedContent: React.FC = () => {
   }, [newMessage]);
 
   // دالة لتنسيق عرض التاريخ والوقت
-  // ✅ FIX: استخدام timeUpdateKey لتحديث الوقت تلقائياً
   const formatMessageTime = (date: Date): string => {
-    // استخدام timeUpdateKey لإجبار React على إعادة حساب الوقت
-    const _ = timeUpdateKey; // eslint-disable-line no-unused-vars
+    // ✅ FIX: التأكد من أن date هو Date object صحيح
+    let messageDate: Date;
+    if (date instanceof Date) {
+      messageDate = date;
+    } else if (date) {
+      messageDate = new Date(date);
+    } else {
+      return '--:--';
+    }
+
+    // ✅ FIX: التحقق من صحة التاريخ
+    if (isNaN(messageDate.getTime())) {
+      return '--:--';
+    }
+
     const now = new Date();
-    const messageDate = safeDate(date);
 
     // إزالة الوقت للمقارنة بالتاريخ فقط
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -4054,32 +4231,33 @@ const ConversationsImprovedFixedContent: React.FC = () => {
     yesterday.setDate(yesterday.getDate() - 1);
     const messageDay = new Date(messageDate.getFullYear(), messageDate.getMonth(), messageDate.getDate());
 
-    // إذا كانت الرسالة اليوم: عرض الوقت
+    // ✅ FIX: عرض التاريخ والوقت معاً لكل رسالة
+    const timeString = messageDate.toLocaleTimeString('ar-EG', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    // إذا كانت الرسالة اليوم: عرض الوقت فقط
     if (messageDay.getTime() === today.getTime()) {
-      return messageDate.toLocaleTimeString('ar-EG', {
-        hour: '2-digit',
-        minute: '2-digit'
-      });
+      return timeString;
     }
-    // إذا كانت الرسالة أمس: عرض "أمس"
+    // إذا كانت الرسالة أمس: عرض "أمس" + الوقت
     else if (messageDay.getTime() === yesterday.getTime()) {
-      return 'أمس';
+      return `أمس ${timeString}`;
     }
-    // إذا كانت قبل ذلك: عرض التاريخ الميلادي
+    // إذا كانت قبل ذلك: عرض التاريخ والوقت
     else {
-      return messageDate.toLocaleDateString('en-GB', {
+      const dateString = messageDate.toLocaleDateString('ar-EG', {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric'
       });
+      return `${dateString} ${timeString}`;
     }
   };
 
   // فلترة المحادثات حسب البحث والنوع وترتيبها حسب آخر رسالة
   const filteredConversations = useMemo(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConversationsImprovedFixed.tsx:4039',message:'filteredConversations useMemo recalculating',data:{conversationsCount:conversations.length,searchQuery,conversationFilter},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-    // #endregion
     return conversations
       .filter(conv => {
         // فلترة حسب نوع المحادثة:
@@ -4405,7 +4583,7 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                           {conversation.lastMessageIsFromCustomer ? (
                             <span className="text-xs font-bold text-green-700 bg-green-100 px-1.5 py-0.5 rounded mr-1" title="رسالة من العميل">عميل</span>
                           ) : (
-                            <span className="text-xs font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded mr-1" title="رسالة من الموظف">{conversation.lastSenderName || 'موظف'}</span>
+                            <span className="text-xs font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded mr-1" title="رسالة من الموظف">موظف</span>
                           )}
                           <p className={`text-sm flex-1 ${conversation.lastMessageIsFromCustomer
                             ? 'text-gray-900 font-semibold'
@@ -4797,6 +4975,20 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                     // إنشاء key فريد يجمع بين ID والفهرس لتجنب التكرار
                     const uniqueKey = message.id ? `${message.id}-${index}` : `temp-${index}-${message.timestamp?.getTime() || Date.now()}`;
 
+                    // ✅ FIX: تسجيل timestamp الفعلي لكل رسالة للتشخيص
+                    if (index < 5 || process.env.NODE_ENV === 'development') {
+                      const msgTimestamp = message.timestamp instanceof Date 
+                        ? message.timestamp 
+                        : (message.timestamp ? new Date(message.timestamp) : null);
+                      console.log(`📅 [TIMESTAMP-DEBUG] Message ${index + 1} (${message.id?.substring(0, 8)}):`, {
+                        rawTimestamp: message.timestamp,
+                        isDate: message.timestamp instanceof Date,
+                        parsedTimestamp: msgTimestamp,
+                        formattedTime: msgTimestamp ? formatMessageTime(msgTimestamp) : 'INVALID',
+                        content: message.content?.substring(0, 30)
+                      });
+                    }
+
                     // تسجيل تشخيصي للرسائل (تم إزالة المكررة بالفعل)
                     if (process.env.NODE_ENV === 'development' && index === 0) {
                       const originalCount = (selectedConversation.messages || []).length;
@@ -4990,10 +5182,21 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                                   message.isAiGenerated ? ` • 🤖 ${t('conversations.aiGenerated', 'AI')}` : ` • 👤 ${t('conversations.manual', 'Manual')}`
                                 )}
                                 {' • '}
-                                {message.timestamp.toLocaleTimeString('ar-SA', {
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })}
+                                {(() => {
+                                  // ✅ FIX: معالجة timestamp بشكل صحيح مع الحفاظ على التاريخ الأصلي
+                                  let timestamp: Date | null = null;
+                                  if (message.timestamp) {
+                                    if (message.timestamp instanceof Date) {
+                                      timestamp = message.timestamp;
+                                    } else {
+                                      const parsed = new Date(message.timestamp);
+                                      if (!isNaN(parsed.getTime())) {
+                                        timestamp = parsed;
+                                      }
+                                    }
+                                  }
+                                  return timestamp ? formatMessageTime(timestamp) : '--:--';
+                                })()}
                               </span>
                             </div>
                             {!message.isFromCustomer && (
@@ -5972,10 +6175,11 @@ const ConversationsImprovedFixedContent: React.FC = () => {
                             <button
                               onClick={(e) => togglePinText(text.id, text.isPinned || false, e)}
                               disabled={pinningTextId === text.id}
-                              className={`p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed ${text.isPinned
-                                ? 'text-yellow-600 hover:bg-yellow-50'
-                                : 'text-gray-400 hover:bg-gray-50 hover:text-yellow-600'
-                                }`}
+                              className={`p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed ${
+                                text.isPinned 
+                                  ? 'text-yellow-600 hover:bg-yellow-50' 
+                                  : 'text-gray-400 hover:bg-gray-50 hover:text-yellow-600'
+                              }`}
                               title={text.isPinned ? 'إلغاء تثبيت النص' : 'تثبيت النص'}
                             >
                               {pinningTextId === text.id ? (
