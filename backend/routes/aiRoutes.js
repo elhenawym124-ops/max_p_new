@@ -29,11 +29,11 @@ router.post('/gemini-keys/:id/test', verifyToken.authenticateToken, aiController
 // SYSTEM PROMPTS MANAGEMENT
 // ================================
 
-router.get('/prompts', aiController.getAllSystemPrompts);
-router.post('/prompts', aiController.addNewSystemPrompt);
-router.put('/prompts/:id/activate', aiController.activateSystemPrompt);
-router.put('/prompts/:id', aiController.updateSystemPrompt);
-router.delete('/prompts/:id', aiController.deleteSystemPrompt);
+router.get('/prompts', verifyToken.authenticateToken, aiController.getAllSystemPrompts);
+router.post('/prompts', verifyToken.authenticateToken, aiController.addNewSystemPrompt);
+router.put('/prompts/:id/activate', verifyToken.authenticateToken, aiController.activateSystemPrompt);
+router.put('/prompts/:id', verifyToken.authenticateToken, aiController.updateSystemPrompt);
+router.delete('/prompts/:id', verifyToken.authenticateToken, aiController.deleteSystemPrompt);
 
 // ================================
 // MEMORY MANAGEMENT

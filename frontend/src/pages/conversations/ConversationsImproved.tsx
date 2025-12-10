@@ -90,7 +90,7 @@ const ConversationsImproved: React.FC = () => {
 
   // خدمة التحكم في الذكاء الاصطناعي
   const { toggleAI, getAIStatus } = useConversationAI();
-  
+
   // خدمة رفع الملفات
   const uploadService = require('../../services/uploadService').default;
 
@@ -169,7 +169,7 @@ const ConversationsImproved: React.FC = () => {
   // معالجة الكتابة
   const handleTyping = (e: React.ChangeEvent<HTMLInputElement>) => {
     setNewMessage(e.target.value);
-    
+
     if (selectedConversation) {
       startTyping(selectedConversation.id);
     }
@@ -215,7 +215,7 @@ const ConversationsImproved: React.FC = () => {
         // معالجة كل ملف مرفوع
         for (let i = 0; i < data.data.length; i++) {
           const uploadedFile = data.data[i];
-          
+
           // إرسال رسالة الصورة
           const imageMessage = {
             content: uploadedFile.originalName,
@@ -245,7 +245,7 @@ const ConversationsImproved: React.FC = () => {
             lastMessage: `📷 ${uploadedFile.originalName}`,
             lastMessageTime: new Date()
           };
-          
+
           // إرسال عبر Socket.IO (سيتم إرسالها للعميل على الفيسبوك)
           emit('send_message', {
             conversationId: selectedConversation.id,
@@ -285,30 +285,30 @@ const ConversationsImproved: React.FC = () => {
     const confirmDelete = window.confirm(
       `هل أنت متأكد من حذف محادثة "${customerName}"؟\n\nسيتم حذف جميع الرسائل المرتبطة بهذه المحادثة نهائياً.`
     );
-    
+
     if (!confirmDelete) return;
-    
+
     try {
       setDeletingConversation(conversationId);
-      
+
       const response = await fetch(`https://www.mokhtarelhenawy.online/api/v1/conversations/${conversationId}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
         },
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         // إعادة تحميل المحادثات
         await loadConversations();
-        
+
         // إذا كانت المحادثة المحذوفة هي المحادثة المختارة، قم بإلغاء الاختيار
         if (selectedConversation?.id === conversationId) {
           selectConversation('');
         }
-        
+
         console.log('✅ تم حذف المحادثة بنجاح');
       } else {
         throw new Error(data.message || 'فشل في حذف المحادثة');
@@ -361,6 +361,23 @@ const ConversationsImproved: React.FC = () => {
     }
   };
 
+  // Helper to safely format time
+  const formatTime = (date: any) => {
+    try {
+      if (!date) return '';
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return '';
+
+      return d.toLocaleTimeString('ar-SA', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (e) {
+      console.error('Error formatting time:', e);
+      return '';
+    }
+  };
+
   // البحث في الخادم بدلاً من التصفية المحلية
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -387,7 +404,7 @@ const ConversationsImproved: React.FC = () => {
   const displayedConversations = searchQuery.trim() ? conversations : conversations;
 
   // الحصول على مستخدمي الكتابة للمحادثة الحالية
-  const currentTypingUsers = typingUsers.filter(user => 
+  const currentTypingUsers = typingUsers.filter(user =>
     user.conversationId === selectedConversation?.id
   );
 
@@ -399,9 +416,9 @@ const ConversationsImproved: React.FC = () => {
     <ErrorBoundary>
       <div className="flex bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-full relative">
         {/* Connection Status */}
-        <ConnectionStatus 
-          isConnected={isConnected} 
-          isReconnecting={isReconnecting} 
+        <ConnectionStatus
+          isConnected={isConnected}
+          isReconnecting={isReconnecting}
         />
 
         {/* Conversations Sidebar - محسن للموبايل */}
@@ -507,11 +524,10 @@ const ConversationsImproved: React.FC = () => {
               displayedConversations.map((conversation) => (
                 <div
                   key={conversation.id}
-                  className={`p-4 border-b border-gray-200/50 transition-all duration-200 hover:bg-white/60 ${
-                    selectedConversation?.id === conversation.id
+                  className={`p-4 border-b border-gray-200/50 transition-all duration-200 hover:bg-white/60 ${selectedConversation?.id === conversation.id
                       ? 'bg-white/80 border-r-4 border-r-indigo-500'
                       : ''
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center space-x-3 space-x-reverse">
                     <div className="relative flex-shrink-0">
@@ -522,7 +538,7 @@ const ConversationsImproved: React.FC = () => {
                         <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-400 border-2 border-white rounded-full"></div>
                       )}
                     </div>
-                    <div 
+                    <div
                       className="flex-1 min-w-0 cursor-pointer"
                       onClick={() => handleSelectConversation(conversation.id)}
                     >
@@ -536,17 +552,14 @@ const ConversationsImproved: React.FC = () => {
                           )}
                         </h3>
                         <span className="text-xs text-gray-500">
-                          {conversation.lastMessageTime.toLocaleTimeString('ar-SA', {
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
+                          {formatTime(conversation.lastMessageTime)}
                         </span>
                       </div>
                       <p className="text-sm text-gray-600 truncate mt-1">
                         {conversation.lastMessage}
                       </p>
                     </div>
-                    
+
                     {/* Conversation Actions */}
                     <div className="flex items-center space-x-2 space-x-reverse">
                       {conversation.unreadCount > 0 && (
@@ -554,7 +567,7 @@ const ConversationsImproved: React.FC = () => {
                           {conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}
                         </div>
                       )}
-                      
+
                       {/* Delete Button */}
                       <button
                         onClick={(e) => {
@@ -618,11 +631,10 @@ const ConversationsImproved: React.FC = () => {
                         }
                       }}
                       disabled={!selectedConversation || togglingAI === selectedConversation?.id}
-                      className={`p-2 rounded-full transition-all duration-200 ${
-                        selectedConversation?.aiEnabled ?? true
+                      className={`p-2 rounded-full transition-all duration-200 ${selectedConversation?.aiEnabled ?? true
                           ? 'text-green-600 bg-green-50 hover:bg-green-100'
                           : 'text-red-600 bg-red-50 hover:bg-red-100'
-                      } disabled:opacity-50 disabled:cursor-not-allowed border-2 border-blue-300`}
+                        } disabled:opacity-50 disabled:cursor-not-allowed border-2 border-blue-300`}
                       title={`${selectedConversation?.aiEnabled ?? true ? 'إيقاف' : 'تفعيل'} الذكاء الاصطناعي`}
                     >
                       {togglingAI === selectedConversation?.id ? (
@@ -671,11 +683,10 @@ const ConversationsImproved: React.FC = () => {
                       >
                         <div className="max-w-xs lg:max-w-md">
                           <div
-                            className={`px-4 py-2 rounded-lg ${
-                              message.isFromCustomer
+                            className={`px-4 py-2 rounded-lg ${message.isFromCustomer
                                 ? 'bg-gray-200 text-gray-900 rounded-bl-none'
                                 : 'bg-indigo-600 text-white rounded-br-none'
-                            }`}
+                              }`}
                           >
                             {/* عرض المحتوى حسب نوع الرسالة */}
                             {(message.type === 'image' || message.type === 'IMAGE') && (message.fileUrl || (message.content && message.content.startsWith('http'))) ? (
@@ -726,10 +737,7 @@ const ConversationsImproved: React.FC = () => {
                           </div>
                           <div className="flex items-center justify-between mt-1">
                             <span className="text-xs text-gray-500">
-                              {message.timestamp.toLocaleTimeString('ar-SA', {
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
+                              {formatTime(message.timestamp)}
                             </span>
                             {!message.isFromCustomer && (
                               <span className="text-xs text-gray-500">
@@ -777,7 +785,7 @@ const ConversationsImproved: React.FC = () => {
               {/* Message Input */}
               <div className="flex-shrink-0 bg-white/80 border-t border-gray-200/50 p-4">
                 <SendingIndicator isSending={loading.sending} />
-                
+
                 <form onSubmit={handleSendMessage} className="flex items-center space-x-3 space-x-reverse">
                   <input
                     ref={fileInputRef}

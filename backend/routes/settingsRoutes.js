@@ -3,6 +3,18 @@ const router = express.Router();
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
 // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const { messageQueueManager } = require('./queueRoutes');
+const verifyToken = require('../utils/verifyToken');
+
+// Apply authentication middleware to all routes except public ones
+// Public routes (no auth required): /currencies
+router.use((req, res, next) => {
+  // Skip authentication for public routes
+  if (req.path === '/currencies') {
+    return next();
+  }
+  // Apply authentication to all other routes
+  verifyToken.authenticateToken(req, res, next);
+});
 
 // Mock authentication middleware
 const mockAuth = (req, res, next) => {
@@ -773,7 +785,6 @@ router.put('/queue', async (req, res) => {
 // ============================================
 // 💡 Recommendation Settings Endpoints
 // ============================================
-const verifyToken = require('../utils/verifyToken');
 
 // Get recommendation settings
 router.get('/recommendation-settings', verifyToken.authenticateToken, async (req, res) => {

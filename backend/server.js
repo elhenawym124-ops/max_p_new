@@ -1662,6 +1662,7 @@ app.get('/api/v1/conversations',
         let pageId = null; // معرف الصفحة
         let adSource = null; // ✅ معلومات الإعلان
         let postId = null; // 🆕 معرف المنشور
+        let lastSenderName = null; // 🆕 اسم الموظف الأخير
         if (conv.metadata) {
           try {
             const metadata = JSON.parse(conv.metadata);
@@ -1670,6 +1671,7 @@ app.get('/api/v1/conversations',
             pageId = metadata.pageId || null;
             adSource = metadata.adSource || null; // ✅ استخراج معلومات الإعلان
             postId = metadata.postId || null; // 🆕 استخراج معرف المنشور
+            lastSenderName = metadata.lastSenderName || null; // 🆕 استخراج اسم الموظف الأخير
 
             // 🔍 DEBUG: Log postId extraction for debugging
             if (postId) {
@@ -1796,6 +1798,8 @@ app.get('/api/v1/conversations',
           pageId: pageId, // إضافة معرف الصفحة
           adSource: adSource, // ✅ إضافة معلومات الإعلان
           postId: postId, // 🆕 إضافة معرف المنشور
+          // 🔧 FIX: Clear lastSenderName if last message is from customer
+          lastSenderName: lastMessageIsFromCustomer ? null : lastSenderName, // 🆕 اسم الموظف الأخير
           metadata: conv.metadata, // 🆕 إرسال metadata كاملة للـ debug
           lastMessageIsFromCustomer: lastMessageIsFromCustomer, // ⚡ NEW: هل آخر رسالة من العميل؟
           lastCustomerMessageIsUnread: lastCustomerMessageIsUnread
@@ -1901,6 +1905,23 @@ app.get('/api/v1/conversations/:id',
         ? `${conversation.customer.firstName || ''} ${conversation.customer.lastName || ''}`.trim() || conversation.customerId
         : conversation.customerId || 'عميل غير معروف';
 
+      // استخراج lastSenderName من metadata
+      let lastSenderName = null;
+      if (conversation.metadata) {
+        try {
+          const metadata = JSON.parse(conversation.metadata);
+          lastSenderName = metadata.lastSenderName || null;
+        } catch (e) {
+          console.warn('⚠️ Failed to parse metadata for lastSenderName:', e);
+        }
+      }
+
+      // 🔧 FIX: Clear lastSenderName if last message is from customer
+      const lastMessageIsFromCustomer = conversation.lastMessageIsFromCustomer || false;
+      if (lastMessageIsFromCustomer) {
+        lastSenderName = null;
+      }
+
       const formattedConversation = {
         id: conversation.id,
         customerId: conversation.customerId,
@@ -1916,8 +1937,9 @@ app.get('/api/v1/conversations/:id',
         pageName: conversation.pageName || null,
         pageId: conversation.pageId || null,
         adSource: conversation.adSource || null,
+        lastSenderName: lastSenderName, // 🆕 اسم الموظف الأخير
         metadata: conversation.metadata || null,
-        lastMessageIsFromCustomer: conversation.lastMessageIsFromCustomer || false,
+        lastMessageIsFromCustomer: lastMessageIsFromCustomer,
         lastCustomerMessageIsUnread: conversation.lastCustomerMessageIsUnread || false,
         createdAt: conversation.createdAt,
         updatedAt: conversation.updatedAt

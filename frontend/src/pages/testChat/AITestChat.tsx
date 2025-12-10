@@ -81,7 +81,7 @@ const AITestChatContent: React.FC = () => {
       setMessages(messagesData.map(msg => {
         const mappedMsg = {
           ...msg,
-          timestamp: new Date(msg.timestamp)
+          createdAt: new Date(msg.createdAt)
         };
         if (msg.aiResponseInfo) {
           console.log('✅ [FRONTEND] Message has aiResponseInfo:', msg.id, msg.aiResponseInfo);
@@ -113,7 +113,7 @@ const AITestChatContent: React.FC = () => {
       content: messageContent,
       senderId: 'user',
       senderName: 'أنت',
-      timestamp: new Date(),
+      createdAt: new Date(),
       type: 'text',
       isFromCustomer: true,
       status: 'sending',
@@ -135,7 +135,7 @@ const AITestChatContent: React.FC = () => {
       // تحديث رسالة المستخدم
       setMessages(prev => prev.map(msg => 
         msg.id === tempUserMessage.id 
-          ? { ...result.userMessage, timestamp: new Date(result.userMessage.timestamp) }
+          ? { ...result.userMessage, createdAt: new Date(result.userMessage.createdAt) }
           : msg
       ));
 
@@ -144,7 +144,7 @@ const AITestChatContent: React.FC = () => {
         // ✅ FIX: استخدام aiResponseInfo من aiMessage أولاً، ثم من aiResponse
         const aiMessageWithInfo: ExtendedTestMessage = {
           ...result.aiMessage,
-          timestamp: new Date(result.aiMessage.timestamp),
+          createdAt: new Date(result.aiMessage.createdAt),
           aiResponseInfo: result.aiMessage.aiResponseInfo || result.aiResponse || undefined
         };
         console.log('✅ [FRONTEND] Adding AI message with aiResponseInfo:', aiMessageWithInfo.aiResponseInfo);
@@ -167,7 +167,7 @@ const AITestChatContent: React.FC = () => {
           content: '🤐 النظام صامت - لم يتم إرسال رد للعميل',
           senderId: 'system',
           senderName: 'النظام',
-          timestamp: new Date(),
+          createdAt: new Date(),
           type: 'text',
           isFromCustomer: false,
           status: 'sent',
@@ -214,7 +214,7 @@ const AITestChatContent: React.FC = () => {
       conversation,
       messages: messagesData.map(msg => ({
         ...msg,
-        timestamp: new Date(msg.timestamp)
+        createdAt: new Date(msg.createdAt)
       })),
       newMessage: '',
       sending: false,
@@ -266,7 +266,7 @@ const AITestChatContent: React.FC = () => {
       content: messageContent,
       senderId: 'user',
       senderName: 'أنت',
-      timestamp: new Date(),
+      createdAt: new Date(),
       type: 'text',
       isFromCustomer: true,
       status: 'sending',
@@ -295,7 +295,7 @@ const AITestChatContent: React.FC = () => {
         if (chat) {
           const updatedMessages = chat.messages.map(msg =>
             msg.id === tempUserMessage.id
-              ? { ...result.userMessage, timestamp: new Date(result.userMessage.timestamp) }
+              ? { ...result.userMessage, createdAt: new Date(result.userMessage.createdAt) }
               : msg
           );
 
@@ -303,7 +303,7 @@ const AITestChatContent: React.FC = () => {
           if (result.aiMessage) {
             const aiMessageWithInfo: ExtendedTestMessage = {
               ...result.aiMessage,
-              timestamp: new Date(result.aiMessage.timestamp),
+              createdAt: new Date(result.aiMessage.createdAt),
               aiResponseInfo: result.aiResponse || undefined
             };
             updatedMessages.push(aiMessageWithInfo);
@@ -313,7 +313,7 @@ const AITestChatContent: React.FC = () => {
               content: '🤐 النظام صامت - لم يتم إرسال رد للعميل',
               senderId: 'system',
               senderName: 'النظام',
-              timestamp: new Date(),
+              createdAt: new Date(),
               type: 'text',
               isFromCustomer: false,
               status: 'sent',
@@ -1097,7 +1097,7 @@ const AITestChatContent: React.FC = () => {
                           {!message.isFromCustomer && message.isAiGenerated && (
                             <span> • 🤖 AI</span>
                           )}
-                          <span> • {formatTime(message.timestamp)}</span>
+                          <span> • {formatTime(message.createdAt)}</span>
                         </div>
                       </div>
                     </div>

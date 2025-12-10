@@ -48,7 +48,7 @@ export interface UseRealTimeMessagingReturn {
   isConnected: boolean;
   isReconnecting: boolean;
   connectionError: string | null;
-  
+
   // Actions
   selectConversation: (conversationId: string) => void;
   sendMessage: (conversationId: string, content: string, type?: Message['type']) => Promise<void>;
@@ -59,21 +59,38 @@ export interface UseRealTimeMessagingReturn {
   loadMessages: (conversationId: string) => Promise<void>;
 }
 
+// Helper to safely parse dates
+const safeDate = (date: any): Date => {
+  if (!date) return new Date();
+  try {
+    const parsed = new Date(date);
+    // Check if date is valid
+    if (isNaN(parsed.getTime())) {
+      console.warn('⚠️ [DATE-FIX] Invalid date detected, using current time:', date);
+      return new Date();
+    }
+    return parsed;
+  } catch (e) {
+    console.error('❌ [DATE-FIX] Error parsing date:', e);
+    return new Date();
+  }
+};
+
 const useRealTimeMessaging = (): UseRealTimeMessagingReturn => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
-  
+
   const { socket, isConnected, isReconnecting, connectionError, emit, on, off } = useSocket();
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // تحديث محادثة معينة
   const updateConversation = useCallback((conversationId: string, updates: Partial<Conversation>) => {
-    setConversations(prev => prev.map(conv => 
+    setConversations(prev => prev.map(conv =>
       conv.id === conversationId ? { ...conv, ...updates } : conv
     ));
-    
+
     if (selectedConversation?.id === conversationId) {
       setSelectedConversation(prev => prev ? { ...prev, ...updates } : null);
     }
@@ -82,7 +99,7 @@ const useRealTimeMessaging = (): UseRealTimeMessagingReturn => {
   // إضافة رسالة جديدة
   const addMessage = useCallback((message: Message) => {
     const conversationId = message.conversationId;
-    
+
     setConversations(prev => prev.map(conv => {
       if (conv.id === conversationId) {
         const updatedMessages = [...conv.messages, message];
@@ -111,7 +128,7 @@ const useRealTimeMessaging = (): UseRealTimeMessagingReturn => {
   const updateMessageStatus = useCallback((messageId: string, status: Message['status']) => {
     setConversations(prev => prev.map(conv => ({
       ...conv,
-      messages: conv.messages.map(msg => 
+      messages: conv.messages.map(msg =>
         msg.id === messageId ? { ...msg, status } : msg
       )
     })));
@@ -119,7 +136,7 @@ const useRealTimeMessaging = (): UseRealTimeMessagingReturn => {
     if (selectedConversation) {
       setSelectedConversation(prev => prev ? {
         ...prev,
-        messages: prev.messages.map(msg => 
+        messages: prev.messages.map(msg =>
           msg.id === messageId ? { ...msg, status } : msg
         )
       } : null);
@@ -152,7 +169,7 @@ const useRealTimeMessaging = (): UseRealTimeMessagingReturn => {
               conv.customer.email ||
               'عميل غير معروف' : 'عميل غير معروف'),
             lastMessage: conv.lastMessage || conv.lastMessagePreview || 'لا توجد رسائل',
-            lastMessageTime: new Date(conv.lastMessageTime || conv.lastMessageAt || Date.now()),
+            lastMessageTime: safeDate(conv.lastMessageTime || conv.lastMessageAt || Date.now()),
             unreadCount: conv.unreadCount || 0,
             platform: conv.platform || conv.channel?.toLowerCase() || 'unknown',
             status: conv.status || 'active',
@@ -188,7 +205,7 @@ const useRealTimeMessaging = (): UseRealTimeMessagingReturn => {
           content: msg.content,
           senderId: msg.senderId,
           senderName: msg.senderName || 'مجهول',
-          timestamp: new Date(msg.createdAt),
+          timestamp: safeDate(msg.createdAt),
           type: msg.type?.toLowerCase() === 'image' ? 'image' : msg.type?.toLowerCase() || 'text',
           isFromCustomer: msg.isFromCustomer,
           status: msg.status || 'sent',
@@ -211,12 +228,12 @@ const useRealTimeMessaging = (): UseRealTimeMessagingReturn => {
     const conversation = conversations.find(conv => conv.id === conversationId);
     if (conversation) {
       setSelectedConversation(conversation);
-      
+
       // تحميل الرسائل إذا لم تكن محملة
       if (conversation.messages.length === 0) {
         loadMessages(conversationId);
       }
-      
+
       // تمييز الرسائل كمقروءة
       if (conversation.unreadCount > 0) {
         markAsRead(conversationId);
@@ -226,8 +243,8 @@ const useRealTimeMessaging = (): UseRealTimeMessagingReturn => {
 
   // إرسال رسالة
   const sendMessage = useCallback(async (
-    conversationId: string, 
-    content: string, 
+    conversationId: string,
+    content: string,
     type: Message['type'] = 'text'
   ) => {
     const tempId = `temp_${Date.now()}`;
@@ -236,7 +253,7 @@ const useRealTimeMessaging = (): UseRealTimeMessagingReturn => {
       content,
       senderId: 'current_user',
       senderName: 'أنت',
-      timestamp: new Date(),
+      timestamp: safeDate(new Date()),
       type,
       isFromCustomer: false,
       status: 'sending',
@@ -265,7 +282,7 @@ const useRealTimeMessaging = (): UseRealTimeMessagingReturn => {
       });
 
       const data = await response.json();
-      
+
       if (data.success) {
         // تحديث الرسالة المؤقتة بالبيانات الحقيقية
         updateMessageStatus(tempId, 'sent');
@@ -290,7 +307,7 @@ const useRealTimeMessaging = (): UseRealTimeMessagingReturn => {
   // إيقاف الكتابة
   const stopTyping = useCallback((conversationId: string) => {
     emit('stop_typing', { conversationId });
-    
+
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
@@ -303,13 +320,13 @@ const useRealTimeMessaging = (): UseRealTimeMessagingReturn => {
     // رسالة جديدة
     const handleNewMessage = (message: any) => {
       console.log('🔔 [NEW-MESSAGE] Received message:', message);
-      
+
       const formattedMessage: Message = {
         id: message.id,
         content: message.content,
         senderId: message.senderId,
         senderName: message.senderName,
-        timestamp: new Date(message.timestamp),
+        timestamp: safeDate(message.timestamp),
         type: message.type?.toLowerCase() === 'image' ? 'image' : message.type?.toLowerCase() || 'text',
         isFromCustomer: message.isFromCustomer,
         status: 'delivered',
@@ -319,7 +336,7 @@ const useRealTimeMessaging = (): UseRealTimeMessagingReturn => {
         fileSize: message.fileSize,
         voiceDuration: message.voiceDuration
       };
-      
+
       console.log('🔄 [NEW-MESSAGE] Formatted message:', formattedMessage);
       addMessage(formattedMessage);
     };
@@ -336,23 +353,23 @@ const useRealTimeMessaging = (): UseRealTimeMessagingReturn => {
     // حالة الكتابة
     const handleUserTyping = (data: any) => {
       setTypingUsers(prev => {
-        const existing = prev.find(user => 
+        const existing = prev.find(user =>
           user.userId === data.userId && user.conversationId === data.conversationId
         );
-        
+
         if (existing) return prev;
-        
+
         return [...prev, {
           userId: data.userId,
           userName: data.userName,
           conversationId: data.conversationId,
-          timestamp: new Date()
+          timestamp: safeDate(new Date())
         }];
       });
     };
 
     const handleUserStoppedTyping = (data: any) => {
-      setTypingUsers(prev => prev.filter(user => 
+      setTypingUsers(prev => prev.filter(user =>
         !(user.userId === data.userId && user.conversationId === data.conversationId)
       ));
     };
@@ -390,7 +407,7 @@ const useRealTimeMessaging = (): UseRealTimeMessagingReturn => {
   useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date();
-      setTypingUsers(prev => prev.filter(user => 
+      setTypingUsers(prev => prev.filter(user =>
         now.getTime() - user.timestamp.getTime() < 5000 // 5 ثوان
       ));
     }, 1000);

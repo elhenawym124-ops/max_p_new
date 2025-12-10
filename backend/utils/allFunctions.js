@@ -1588,7 +1588,9 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
             pageId: messagePageId,
             // 🆕 Add flags for unread tab filtering
             lastMessageIsFromCustomer: true,
-            lastCustomerMessageIsUnread: true
+            lastCustomerMessageIsUnread: true,
+            // 🔧 FIX: Clear lastSenderName for customer messages
+            lastSenderName: null
           };
 
           // Emit to company room
@@ -1607,13 +1609,32 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
       if (lastMessagePreview) {
         const updateConvStartTime = Date.now();
         // ⚡ OPTIMIZATION: Don't await - update in background
-        prisma.conversation.update({
+        // 🔧 FIX: Clear lastSenderName from metadata when customer sends a message
+        prisma.conversation.findUnique({
           where: { id: conversation.id },
-          data: {
-            lastMessageAt: timestamp,
-            lastMessagePreview: lastMessagePreview,
-            updatedAt: new Date()
+          select: { metadata: true }
+        }).then(conv => {
+          let metadata = {};
+          if (conv?.metadata) {
+            try {
+              metadata = JSON.parse(conv.metadata);
+            } catch (e) {
+              console.warn('⚠️ Error parsing conversation metadata:', e);
+            }
           }
+          // Clear lastSenderName when customer sends a message
+          delete metadata.lastSenderName;
+          delete metadata.lastSenderId;
+          
+          return prisma.conversation.update({
+            where: { id: conversation.id },
+            data: {
+              lastMessageAt: timestamp,
+              lastMessagePreview: lastMessagePreview,
+              metadata: JSON.stringify(metadata),
+              updatedAt: new Date()
+            }
+          });
         }).then(() => {
           console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - updateConvStartTime}ms] 🔄 [HANDLE] Updated conversation preview (background)`);
         }).catch(error => {
@@ -2148,7 +2169,9 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
           pageId: messagePageId,
           // 🆕 Add flags for unread tab filtering
           lastMessageIsFromCustomer: true,
-          lastCustomerMessageIsUnread: true
+          lastCustomerMessageIsUnread: true,
+          // 🔧 FIX: Clear lastSenderName for customer messages
+          lastSenderName: null
         };
 
         // Emit to company room

@@ -1,4 +1,5 @@
 const { getSharedPrismaClient } = require('../services/sharedDatabase');
+const aiAgentService = require('../services/aiAgentService');
 
 /**
  * Test Chat Controller
@@ -192,7 +193,7 @@ exports.getMessages = async (req, res) => {
         conversationId
       },
       orderBy: {
-        timestamp: 'asc'
+        createdAt: 'asc'
       }
     });
 
@@ -201,9 +202,10 @@ exports.getMessages = async (req, res) => {
       data: messages.map(msg => ({
         id: msg.id,
         content: msg.content,
-        sender: msg.sender,
-        timestamp: msg.timestamp,
-        metadata: msg.metadata
+        isFromCustomer: msg.isFromCustomer,
+        type: msg.type,
+        createdAt: msg.createdAt,
+        metadata: msg.metadata ? JSON.parse(msg.metadata) : null
       }))
     });
 
@@ -262,9 +264,9 @@ exports.sendMessage = async (req, res) => {
       data: {
         conversationId,
         content: message,
-        sender: 'USER',
-        timestamp: new Date(),
-        metadata: {}
+        isFromCustomer: true,
+        type: 'TEXT',
+        metadata: JSON.stringify({})
       }
     });
 
@@ -277,8 +279,72 @@ exports.sendMessage = async (req, res) => {
       }
     });
 
-    // TODO: Generate AI response here
-    // For now, just return the user message
+    // ✅ Generate AI response using AI Agent Service
+    let aiResponse = null;
+    let aiResponseMessage = null;
+    
+    try {
+      console.log('🤖 [TEST-CHAT] Generating AI response...');
+      
+      // Get customer data
+      const customer = await prisma.customer.findUnique({
+        where: { id: conversation.customerId },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          companyId: true
+        }
+      });
+
+      // Prepare message data for AI processing
+      const messageData = {
+        conversationId,
+        senderId: conversation.customerId,
+        content: message,
+        attachments: [],
+        customerData: customer,
+        companyId,
+        timestamp: new Date()
+      };
+
+      // Process message with AI
+      aiResponse = await aiAgentService.processCustomerMessage(messageData);
+      
+      console.log('✅ [TEST-CHAT] AI response generated:', aiResponse?.success ? 'Success' : 'Failed');
+      
+      // If AI generated a response, save it as a message
+      if (aiResponse && aiResponse.success && aiResponse.content) {
+        aiResponseMessage = await prisma.message.create({
+          data: {
+            conversationId,
+            content: aiResponse.content,
+            isFromCustomer: false,
+            type: 'TEXT',
+            metadata: JSON.stringify({
+              aiGenerated: true,
+              model: aiResponse.model || null,
+              processingTime: aiResponse.processingTime || null,
+              confidence: aiResponse.confidence || null
+            })
+          }
+        });
+
+        // Update conversation with AI response
+        await prisma.conversation.update({
+          where: { id: conversationId },
+          data: {
+            lastMessagePreview: aiResponse.content.substring(0, 100),
+            lastMessageAt: new Date()
+          }
+        });
+      }
+    } catch (aiError) {
+      console.error('❌ [TEST-CHAT] Error generating AI response:', aiError);
+      // Don't fail the request if AI fails, just log the error
+    }
     
     res.json({
       success: true,
@@ -286,10 +352,24 @@ exports.sendMessage = async (req, res) => {
         userMessage: {
           id: userMessage.id,
           content: userMessage.content,
-          sender: userMessage.sender,
-          timestamp: userMessage.timestamp
+          isFromCustomer: userMessage.isFromCustomer,
+          type: userMessage.type,
+          createdAt: userMessage.createdAt
         },
-        aiResponse: null // Will be implemented later
+        aiResponse: aiResponseMessage ? {
+          id: aiResponseMessage.id,
+          content: aiResponseMessage.content,
+          isFromCustomer: aiResponseMessage.isFromCustomer,
+          type: aiResponseMessage.type,
+          createdAt: aiResponseMessage.createdAt,
+          metadata: aiResponseMessage.metadata ? JSON.parse(aiResponseMessage.metadata) : null
+        } : null,
+        aiResponseInfo: aiResponse ? {
+          success: aiResponse.success,
+          error: aiResponse.error,
+          model: aiResponse.model,
+          processingTime: aiResponse.processingTime
+        } : null
       }
     });
 

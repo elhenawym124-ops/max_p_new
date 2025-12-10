@@ -2476,11 +2476,27 @@ const getMessages = async (req, res) => {
 
     res.json({
       success: true,
-      data: messages.map(msg => ({
-        ...msg,
-        // Ensure frontend compatibility fields
-        senderName: msg.sender ? `${msg.sender.firstName} ${msg.sender.lastName}` : (msg.isFromCustomer ? 'Customer' : 'Bot/Employee')
-      })),
+      data: messages.map(msg => {
+        // Parse metadata to get employeeName
+        let employeeName = null;
+        if (msg.metadata) {
+          try {
+            const metadata = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
+            employeeName = metadata.employeeName;
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+
+        return {
+          ...msg,
+          // Ensure frontend compatibility fields
+          // Priority: metadata.employeeName > sender relation > fallback
+          senderName: employeeName ||
+            (msg.sender ? `${msg.sender.firstName} ${msg.sender.lastName}` :
+              (msg.isFromCustomer ? 'Customer' : 'موظف'))
+        };
+      }),
       pagination: {
         total,
         page: parseInt(page),

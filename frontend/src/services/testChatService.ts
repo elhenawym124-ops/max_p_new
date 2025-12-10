@@ -19,15 +19,16 @@ export interface TestConversation {
 export interface TestMessage {
   id: string;
   content: string;
-  senderId: string;
-  senderName: string;
-  timestamp: Date;
+  senderId?: string;
+  senderName?: string;
+  createdAt: Date;
   type: 'text' | 'image' | 'file';
   isFromCustomer: boolean;
-  status: 'sending' | 'sent' | 'delivered' | 'read' | 'error';
-  conversationId: string;
+  status?: 'sending' | 'sent' | 'delivered' | 'read' | 'error';
+  conversationId?: string;
   isAiGenerated?: boolean;
   aiResponseInfo?: AITestResponse; // ✅ FIX: إضافة معلومات AI response
+  metadata?: any;
 }
 
 export interface AITestResponse {

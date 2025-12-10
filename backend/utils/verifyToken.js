@@ -20,7 +20,11 @@ const authenticateToken = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
 
-    req.user = decoded;
+    // Map userId to id for compatibility with code that expects req.user.id
+    req.user = {
+      ...decoded,
+      id: decoded.userId || decoded.id
+    };
     next();
   } catch (error) {
     return res.status(401).json({
