@@ -14,7 +14,7 @@ const { getSharedPrismaClient } = require('../sharedDatabase');
 class ModelManager {
   constructor(aiAgentService) {
     this.aiAgentService = aiAgentService;
-    this.prisma = getSharedPrismaClient();
+    this._prisma = null; // ✅ FIX: Lazy initialization
     this.exhaustedModelsCache = new Set(); // ذاكرة مؤقتة للنماذج المستنفدة
     this.currentActiveModel = null; // النموذج النشط الحالي للجلسة
     this.lastUsedGlobalKeyId = null; // آخر مفتاح مستخدم (Global Round-Robin)
@@ -24,6 +24,17 @@ class ModelManager {
     this.activeModelCache = new Map(); // Cache: companyId → { model, timestamp } (TTL: 5 ثواني)
     this.aggregatedModelsCache = new Map(); // Cache: modelName_companyId → { models, timestamp } (TTL: 30 ثانية)
     this.modelsOrderedCache = new Map(); // Cache: companyId → { models, timestamp } (TTL: 60 ثانية)
+  }
+
+  /**
+   * ✅ FIX: Lazy getter for Prisma client
+   * يحصل على Prisma client فقط عند الحاجة، وليس عند إنشاء الـ class
+   */
+  get prisma() {
+    if (!this._prisma) {
+      this._prisma = getSharedPrismaClient();
+    }
+    return this._prisma;
   }
 
   /**

@@ -1559,7 +1559,10 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
           metadata: newMessage.metadata ? JSON.parse(newMessage.metadata) : null,
           customerName: `${customer.firstName} ${customer.lastName}`.trim(),
           // 🏢 Company Isolation
-          companyId: customer.companyId
+          companyId: customer.companyId,
+          // 📱 Platform identification for filtering
+          platform: 'facebook',
+          channel: 'FACEBOOK'
         };
 
         // ✅ إرسال للشركة فقط - Company Isolation
@@ -2108,7 +2111,10 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
         metadata: parsedMetadata,
         customerName: `${customer.firstName} ${customer.lastName}`.trim(),
         // 🏢 Company Isolation
-        companyId: customer.companyId
+        companyId: customer.companyId,
+        // 📱 Platform identification for filtering
+        platform: 'facebook',
+        channel: 'FACEBOOK'
       };
 
       // 🔍 DEBUG: Log reply metadata being sent via Socket
@@ -2329,7 +2335,10 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
             lastMessageIsFromCustomer: false,
             lastCustomerMessageIsUnread: false,
             // 🏢 Company Isolation
-            companyId: conversation.companyId
+            companyId: conversation.companyId,
+            // 📱 Platform identification for filtering
+            platform: 'facebook',
+            channel: 'FACEBOOK'
           };
 
           // ✅ إرسال للشركة فقط - Company Isolation

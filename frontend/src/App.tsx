@@ -36,7 +36,6 @@ import PostComments from './pages/comments/PostComments';
 import PostAITracking from './pages/posts/PostAITracking';
 import ConversationsSimple from './pages/conversations/ConversationsSimple';
 import ConversationsImprovedFixed from './pages/conversations/ConversationsImprovedFixed';
-import TelegramConversations from './pages/conversations/TelegramConversations';
 import ConversationsDashboard from './pages/conversations/ConversationsDashboard';
 import ConversationsTest from './pages/conversations/ConversationsTest';
 import ConversationsSimpleTest from './pages/conversations/ConversationsSimpleTest';
@@ -251,16 +250,18 @@ const AppContent = () => {
     );
   }
 
-  // Check if path is /products/reviews and log debug info
-  if (currentPath === '/products/reviews') {
-    console.log('🔍 [App] Accessing /products/reviews');
+  // Check if path is /products/reviews or /my-activity and log debug info
+  if (currentPath === '/products/reviews' || currentPath === '/my-activity') {
+    console.log(`🔍 [App] Accessing ${currentPath}`);
     console.log('🔍 [App] Is authenticated:', isAuthenticated);
+    console.log('🔍 [App] Is loading:', isLoading);
     console.log('🔍 [App] Token exists:', !!localStorage.getItem('accessToken'));
-    console.log('🔍 [App] Will render:', isAuthenticated ? 'ProductReviews component' : 'Redirect to login');
+    console.log('🔍 [App] Will render:', isAuthenticated ? 'Component' : 'Redirect to login');
 
     // If not authenticated but token exists, log more details
     if (!isAuthenticated && localStorage.getItem('accessToken')) {
       console.warn('⚠️ [App] User has token but isAuthenticated is false! This might be a timing issue.');
+      console.warn('⚠️ [App] isLoading:', isLoading);
     }
   }
 
@@ -348,7 +349,17 @@ const AppContent = () => {
           <Route path="/products/reviews" element={<ProtectedRoute><ProductReviewsSimple /></ProtectedRoute>} />
 
           {/* Protected Routes - Only accessible when authenticated */}
-          {isAuthenticated ? (
+          {isLoading ? (
+            // While loading, don't render any routes to avoid race condition
+            <Route path="*" element={
+              <div className="min-h-screen flex items-center justify-center">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+                  <p className="mt-4 text-gray-600">جاري التحميل...</p>
+                </div>
+              </div>
+            } />
+          ) : isAuthenticated ? (
             <>
               <Route path="/dashboard" element={<Layout><Dashboard /></Layout>} />
               <Route path="/customers" element={<Layout><CustomerList /></Layout>} />
@@ -481,7 +492,6 @@ const AppContent = () => {
               <Route path="/settings/facebook" element={<Layout><FacebookSettings /></Layout>} />
               <Route path="/settings/facebook-oauth" element={<Layout><FacebookOAuth /></Layout>} />
               <Route path="/settings/telegram" element={<Layout><TelegramSettings /></Layout>} />
-              <Route path="/telegram/conversations" element={<Layout><TelegramConversations /></Layout>} />
               <Route path="/telegram/pro" element={<Layout><TelegramConversationsPro /></Layout>} />
               <Route path="/telegram-userbot" element={<Layout><TelegramUserbot /></Layout>} /> {/* System 2 */}
               <Route path="/terms" element={<Layout><TermsOfService /></Layout>} />

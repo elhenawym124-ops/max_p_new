@@ -24,15 +24,18 @@ const conversationStorage = multer.diskStorage({
 });
 
 const conversationFileFilter = (req, file, cb) => {
-  // Accept images and common file types
-  const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx|txt/;
-  const mimetype = allowedTypes.test(file.mimetype) || file.mimetype.startsWith('image/');
+  // Accept images, videos, audio, and common file types
+  const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx|txt|mp4|avi|mov|wmv|mp3|wav|ogg|m4a/;
+  const mimetype = allowedTypes.test(file.mimetype) || 
+                   file.mimetype.startsWith('image/') || 
+                   file.mimetype.startsWith('video/') || 
+                   file.mimetype.startsWith('audio/');
   const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
 
   if (mimetype || extname) {
     cb(null, true);
   } else {
-    cb(new Error('Only images and documents are allowed!'), false);
+    cb(new Error('Only images, videos, audio, and documents are allowed!'), false);
   }
 };
 
@@ -40,8 +43,18 @@ const conversationUpload = multer({
   storage: conversationStorage,
   fileFilter: conversationFileFilter,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 50 * 1024 * 1024, // 50MB limit (increased for videos)
     files: 5 // Maximum 5 files
+  }
+});
+
+// Single file upload for media messages
+const mediaUpload = multer({
+  storage: conversationStorage,
+  fileFilter: conversationFileFilter,
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB limit
+    files: 1 // Single file
   }
 });
 
@@ -65,5 +78,11 @@ router.get('/:id/post-details', verifyToken.authenticateToken, conversationContr
 router.get('/', verifyToken.authenticateToken, conversationController.getConversations);
 router.get('/:id', verifyToken.authenticateToken, conversationController.getConversation);
 router.get('/:id/messages', verifyToken.authenticateToken, conversationController.getMessages);
+
+// 🆕 Media and message management routes
+router.post('/:id/messages/media', verifyToken.authenticateToken, mediaUpload.single('file'), conversationController.sendMediaMessage);
+router.put('/:id/messages/:messageId', verifyToken.authenticateToken, conversationController.editMessage);
+router.delete('/:id/messages/:messageId', verifyToken.authenticateToken, conversationController.deleteMessage);
+router.post('/:id/messages/location', verifyToken.authenticateToken, conversationController.sendLocationMessage);
 
 module.exports = router;

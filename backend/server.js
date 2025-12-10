@@ -576,6 +576,7 @@ app.use("/api/v1/user/text-gallery", textGalleryRoutes) // 📝 حافظة ال�
 app.use("/api/v1/support", supportRoutes) // 🎫 Support System
 app.use("/api/v1/activity", activityLogRoutes) // 📊 Activity Log System
 app.use("/api/v1/test-chat", require('./routes/testChatRoutes')) // 🧪 Test Chat for AI Testing
+app.use('/api/v1/telegram', telegramRoutes); // 🤖 Telegram Bot & Userbot Management
 app.use('/api/userbot', require('./routes/userbotRoutes')); // 🤖 Telegram System 2 (Userbot)
 
 // Homepage routes moved before globalSecurity middleware (line 434)

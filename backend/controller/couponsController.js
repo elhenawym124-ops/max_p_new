@@ -1,5 +1,5 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { getSharedPrismaClient } = require('../services/sharedDatabase');
+const getPrisma = () => getSharedPrismaClient();
 
 /**
  * 🎟️ Coupons Controller
@@ -29,7 +29,7 @@ exports.getCoupons = async (req, res) => {
 
     // جلب الكوبونات
     const [coupons, total] = await Promise.all([
-      prisma.coupon.findMany({
+      getPrisma().coupon.findMany({
         where,
         include: {
           _count: {
@@ -40,7 +40,7 @@ exports.getCoupons = async (req, res) => {
         skip,
         take
       }),
-      prisma.coupon.count({ where })
+      getPrisma().coupon.count({ where })
     ]);
 
     // تصفية حسب فئة العملاء إذا تم تحديدها
@@ -78,7 +78,7 @@ exports.getCoupon = async (req, res) => {
     const { companyId } = req.user;
     const { id } = req.params;
 
-    const coupon = await prisma.coupon.findFirst({
+    const coupon = await getPrisma().coupon.findFirst({
       where: {
         id,
         companyId
@@ -143,7 +143,7 @@ exports.createCoupon = async (req, res) => {
     }
 
     // التحقق من عدم وجود كوبون بنفس الكود
-    const existingCoupon = await prisma.coupon.findFirst({
+    const existingCoupon = await getPrisma().coupon.findFirst({
       where: {
         companyId,
         code: code.toUpperCase()
@@ -158,7 +158,7 @@ exports.createCoupon = async (req, res) => {
     }
 
     // إنشاء الكوبون
-    const coupon = await prisma.coupon.create({
+    const coupon = await getPrisma().coupon.create({
       data: {
         companyId,
         code: code.toUpperCase(),
@@ -200,7 +200,7 @@ exports.updateCoupon = async (req, res) => {
     const updateData = req.body;
 
     // التحقق من وجود الكوبون
-    const existingCoupon = await prisma.coupon.findFirst({
+    const existingCoupon = await getPrisma().coupon.findFirst({
       where: { id, companyId }
     });
 
@@ -212,7 +212,7 @@ exports.updateCoupon = async (req, res) => {
     }
 
     // تحديث الكوبون
-    const updatedCoupon = await prisma.coupon.update({
+    const updatedCoupon = await getPrisma().coupon.update({
       where: { id },
       data: {
         ...updateData,
@@ -248,7 +248,7 @@ exports.deleteCoupon = async (req, res) => {
     const { id } = req.params;
 
     // التحقق من وجود الكوبون
-    const existingCoupon = await prisma.coupon.findFirst({
+    const existingCoupon = await getPrisma().coupon.findFirst({
       where: { id, companyId }
     });
 
@@ -260,7 +260,7 @@ exports.deleteCoupon = async (req, res) => {
     }
 
     // حذف الكوبون
-    await prisma.coupon.delete({
+    await getPrisma().coupon.delete({
       where: { id }
     });
 
@@ -291,7 +291,7 @@ exports.validateCoupon = async (req, res) => {
     }
 
     // البحث عن الكوبون
-    const coupon = await prisma.coupon.findFirst({
+    const coupon = await getPrisma().coupon.findFirst({
       where: {
         companyId,
         code: code.toUpperCase(),
@@ -388,9 +388,9 @@ exports.applyCoupon = async (req, res) => {
     const { couponId, orderId, customerId, orderAmount, discountAmount } = req.body;
 
     // تسجيل استخدام الكوبون
-    await prisma.$transaction([
+    await getPrisma().$transaction([
       // إضافة سجل الاستخدام
-      prisma.couponUsage.create({
+      getPrisma().couponUsage.create({
         data: {
           couponId,
           companyId,
@@ -401,7 +401,7 @@ exports.applyCoupon = async (req, res) => {
         }
       }),
       // تحديث عداد الاستخدام
-      prisma.coupon.update({
+      getPrisma().coupon.update({
         where: { id: couponId },
         data: {
           usageCount: {
@@ -430,10 +430,10 @@ exports.getCouponStats = async (req, res) => {
     const { companyId } = req.user;
 
     const [totalCoupons, activeCoupons, totalUsages, totalDiscount] = await Promise.all([
-      prisma.coupon.count({ where: { companyId } }),
-      prisma.coupon.count({ where: { companyId, isActive: true } }),
-      prisma.couponUsage.count({ where: { companyId } }),
-      prisma.couponUsage.aggregate({
+      getPrisma().coupon.count({ where: { companyId } }),
+      getPrisma().coupon.count({ where: { companyId, isActive: true } }),
+      getPrisma().couponUsage.count({ where: { companyId } }),
+      getPrisma().couponUsage.aggregate({
         where: { companyId },
         _sum: { discountAmount: true }
       })

@@ -238,10 +238,21 @@ class ApiClient {
   private handleError(error: AxiosError<ApiError>): void {
     const status = error.response?.status;
     const errorData = error.response?.data;
+    const originalRequest = error.config as AxiosRequestConfig & { _skipErrorToast?: boolean };
 
     // Don't show toast for certain errors (503 is retried automatically)
     const silentErrors = [401, 404, 503];
     if (silentErrors.includes(status || 0)) {
+      return;
+    }
+
+    // Don't show toast if explicitly skipped (e.g., for markAsRead timeouts)
+    if (originalRequest._skipErrorToast) {
+      return;
+    }
+
+    // Don't show toast for timeout errors on markAsRead endpoint
+    if (error.message?.includes('timeout') && originalRequest.url?.includes('/whatsapp/messages/read')) {
       return;
     }
 

@@ -12,8 +12,7 @@ export interface BotConfig {
 
 export const telegramService = {
     connectBot: async (companyId: string, botToken: string, label?: string) => {
-        const response = await companyAwareApi.post('/telegram-settings/connect', {
-            companyId,
+        const response = await companyAwareApi.post('/telegram/settings/connect', {
             botToken,
             label
         });
@@ -21,15 +20,14 @@ export const telegramService = {
     },
 
     disconnectBot: async (companyId: string, configId: string) => {
-        const response = await companyAwareApi.post('/telegram-settings/disconnect', {
-            companyId,
+        const response = await companyAwareApi.post('/telegram/settings/disconnect', {
             id: configId
         });
         return response.data;
     },
 
     getStatus: async (companyId: string): Promise<{ bots: BotConfig[] }> => {
-        const response = await companyAwareApi.get(`/telegram-settings/status/${companyId}`);
+        const response = await companyAwareApi.get(`/telegram/settings/status/${companyId}`);
         return response.data;
     }
 };

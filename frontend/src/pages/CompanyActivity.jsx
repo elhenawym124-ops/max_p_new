@@ -52,6 +52,7 @@ import {
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import axios from 'axios';
+import { getApiUrl } from '../config/environment';
 import {
   BarChart,
   Bar,
@@ -68,7 +69,7 @@ import {
   Line
 } from 'recharts';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_URL = getApiUrl().replace('/api/v1', '');
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D'];
 
@@ -81,7 +82,7 @@ const CompanyActivity = () => {
 
   // Pagination
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(20);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
   const [totalActivities, setTotalActivities] = useState(0);
 
   // Filters

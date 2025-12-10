@@ -120,7 +120,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       title: 'Telegram',
       icon: '✈️',
       items: [
-        { to: '/telegram/conversations', icon: <PaperAirplaneIcon className="h-5 w-5" />, label: 'Telegram Bot' },
         { to: '/telegram/pro', icon: <SparklesIcon className="h-5 w-5" />, label: 'Telegram Pro', badge: 'جديد' },
         { to: '/telegram-userbot', icon: <UserCircleIcon className="h-5 w-5" />, label: 'Telegram Userbot', badge: 'جديد' }, // System 2
         { to: '/settings/telegram', icon: <Cog6ToothIcon className="h-5 w-5" />, label: 'Telegram Settings' },

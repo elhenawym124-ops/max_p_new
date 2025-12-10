@@ -193,7 +193,10 @@ export const useMarkAsRead = (
 
   return useMutation<any, Error, MarkAsReadParams>({
     mutationFn: async (params) => {
-      const response = await api.post('/whatsapp/messages/read', params);
+      // Use shorter timeout for mark as read (10 seconds instead of 30)
+      const response = await api.post('/whatsapp/messages/read', params, {
+        timeout: 10000
+      });
       return response.data;
     },
     retry: false, // ✅ منع المحاولات المتكررة عند فشل الاتصال

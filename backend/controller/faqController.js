@@ -1,5 +1,5 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { getSharedPrismaClient } = require('../services/sharedDatabase');
+const getPrisma = () => getSharedPrismaClient();
 
 // Get all FAQs (Public)
 const getFAQs = async (req, res) => {
@@ -15,7 +15,7 @@ const getFAQs = async (req, res) => {
       ];
     }
     
-    const faqs = await prisma.fAQ.findMany({
+    const faqs = await getPrisma().fAQ.findMany({
       where,
       orderBy: [{ order: 'asc' }, { createdAt: 'desc' }]
     });
@@ -57,7 +57,7 @@ const getFAQs = async (req, res) => {
 // Get FAQ categories
 const getFAQCategories = async (req, res) => {
   try {
-    const faqs = await prisma.fAQ.findMany({
+    const faqs = await getPrisma().fAQ.findMany({
       where: { isActive: true },
       select: { category: true }
     });
@@ -93,7 +93,7 @@ const rateFAQ = async (req, res) => {
     const { faqId } = req.params;
     const { helpful } = req.body; // true or false
 
-    const faq = await prisma.fAQ.findUnique({ where: { id: faqId } });
+    const faq = await getPrisma().fAQ.findUnique({ where: { id: faqId } });
     if (!faq) {
       return res.status(404).json({
         success: false,
@@ -101,7 +101,7 @@ const rateFAQ = async (req, res) => {
       });
     }
 
-    const updatedFaq = await prisma.fAQ.update({
+    const updatedFaq = await getPrisma().fAQ.update({
       where: { id: faqId },
       data: helpful 
         ? { helpful: { increment: 1 } }
@@ -139,7 +139,7 @@ const createFAQ = async (req, res) => {
 
     const { question, answer, category, order, tags } = req.body;
 
-    const faq = await prisma.fAQ.create({
+    const faq = await getPrisma().fAQ.create({
       data: {
         question,
         answer,
@@ -186,7 +186,7 @@ const updateFAQ = async (req, res) => {
     if (tags !== undefined) updateData.tags = JSON.stringify(tags);
     if (isActive !== undefined) updateData.isActive = isActive;
 
-    const faq = await prisma.fAQ.update({
+    const faq = await getPrisma().fAQ.update({
       where: { id: faqId },
       data: updateData
     });
@@ -225,7 +225,7 @@ const deleteFAQ = async (req, res) => {
 
     const { faqId } = req.params;
 
-    await prisma.fAQ.delete({ where: { id: faqId } });
+    await getPrisma().fAQ.delete({ where: { id: faqId } });
 
     res.json({
       success: true,
@@ -265,13 +265,13 @@ const getAllFAQsForAdmin = async (req, res) => {
     if (isActive !== undefined) where.isActive = isActive === 'true';
 
     const [faqs, total] = await Promise.all([
-      prisma.fAQ.findMany({
+      getPrisma().fAQ.findMany({
         where,
         orderBy: [{ order: 'asc' }, { createdAt: 'desc' }],
         take: parseInt(limit),
         skip: (parseInt(page) - 1) * parseInt(limit)
       }),
-      prisma.fAQ.count({ where })
+      getPrisma().fAQ.count({ where })
     ]);
 
     res.json({

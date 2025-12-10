@@ -20,17 +20,22 @@ interface Chat {
 }
 
 interface Message {
-    id: number;
+    id: number | string;
     text: string;
     date: number;
-    senderId: string;
+    senderId: string | null;
+    senderName?: string;
     isOut: boolean;
-    media: boolean;
+    media: boolean | null;
 }
 
 const TelegramUserbot: React.FC = () => {
     const { user } = useAuth();
-    const [step, setStep] = useState<'LOGIN' | 'VERIFY' | 'CHATS'>('LOGIN');
+    const [step, setStep] = useState<'SELECT' | 'LOGIN' | 'VERIFY' | 'CHATS'>('SELECT');
+    
+    // Userbot Selection
+    const [userbots, setUserbots] = useState<any[]>([]);
+    const [selectedUserbot, setSelectedUserbot] = useState<string | null>(null);
 
     // Login Form
     const [phoneNumber, setPhoneNumber] = useState('');
@@ -48,6 +53,7 @@ const TelegramUserbot: React.FC = () => {
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3007'}/api/userbot`;
+    const TELEGRAM_API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3007'}/api/v1/telegram`;
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -57,14 +63,96 @@ const TelegramUserbot: React.FC = () => {
         scrollToBottom();
     }, [messages]);
 
+    // Load userbots on mount
+    useEffect(() => {
+        if (user?.companyId) {
+            loadUserbots();
+        }
+    }, [user?.companyId]);
+
+    // Auto-fetch chats when userbot is selected and step is CHATS (for auto-login)
+    useEffect(() => {
+        if (selectedUserbot && step === 'CHATS' && chats.length === 0) {
+            console.log('🔄 Auto-fetching chats for logged in userbot:', selectedUserbot);
+            fetchChats();
+        }
+    }, [selectedUserbot, step]);
+
+    const loadUserbots = async () => {
+        if (!user?.companyId) return;
+        
+        try {
+            const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+            if (!token) {
+                setError('Authentication required');
+                return;
+            }
+            
+            const response = await axios.get(`${TELEGRAM_API_URL}/userbots`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            const userbotsList = response.data?.data || response.data || [];
+            setUserbots(Array.isArray(userbotsList) ? userbotsList : []);
+            
+            // Check if any userbot is already logged in (has active session)
+            const loggedInUserbot = userbotsList.find((ub: any) => 
+                ub.sessionString && ub.isActive && ub.clientPhone
+            );
+            
+            if (loggedInUserbot) {
+                // Userbot is already logged in, go directly to chats
+                console.log('✅ Found logged in userbot:', loggedInUserbot.id);
+                setSelectedUserbot(loggedInUserbot.id);
+                setStep('CHATS');
+                // Note: fetchChats will be called by useEffect when selectedUserbot and step are set
+            } else if (userbotsList.length === 1 && userbotsList[0]?.id) {
+                // Only one userbot, auto-select it
+                const singleUserbot = userbotsList[0];
+                setSelectedUserbot(singleUserbot.id);
+                // Check if it's already connected
+                if (singleUserbot.sessionString && singleUserbot.isActive && singleUserbot.clientPhone) {
+                    setStep('CHATS');
+                } else {
+                    setStep('LOGIN');
+                }
+            } else if (userbotsList.length > 0) {
+                // Multiple userbots, show selection screen
+                setStep('SELECT');
+            } else {
+                // No userbots, show selection screen (which will show "add userbot" message)
+                setStep('SELECT');
+            }
+        } catch (error: any) {
+            console.error('Failed to load userbots:', error);
+            if (error.response?.status === 404) {
+                // No userbots configured yet - this is OK
+                setUserbots([]);
+                setStep('SELECT');
+            } else {
+                setError(error.response?.data?.error || 'Failed to load userbots. Please add a userbot in Settings first.');
+            }
+        }
+    };
+
     // 1. Send Login Code
     const handleSendCode = async () => {
+        if (!selectedUserbot) {
+            setError('Please select a userbot first');
+            return;
+        }
+        
         setIsLoading(true);
         setError('');
         try {
+            const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
             await axios.post(`${API_URL}/login`, {
-                companyId: user?.companyId,
+                userbotConfigId: selectedUserbot,
                 phoneNumber
+            }, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
             });
             setStep('VERIFY');
         } catch (err: any) {
@@ -75,18 +163,43 @@ const TelegramUserbot: React.FC = () => {
     };
 
     // 2. Verify Code
+    const [requiresPassword, setRequiresPassword] = useState(false);
+    const [password, setPassword] = useState('');
+
     const handleVerify = async () => {
+        if (!selectedUserbot) {
+            setError('Please select a userbot first');
+            return;
+        }
+        
         setIsLoading(true);
         setError('');
         try {
-            await axios.post(`${API_URL}/verify`, {
-                companyId: user?.companyId,
-                code: phoneCode
+            const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+            const response = await axios.post(`${API_URL}/verify`, {
+                userbotConfigId: selectedUserbot,
+                code: phoneCode,
+                password: requiresPassword ? password : undefined
+            }, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
             });
-            setStep('CHATS');
-            fetchChats();
+            
+            if (response.data.requiresPassword) {
+                setRequiresPassword(true);
+                setError('Two-factor authentication is enabled. Please enter your password.');
+            } else {
+                setStep('CHATS');
+                fetchChats();
+            }
         } catch (err: any) {
-            setError(err.response?.data?.error || 'Verification failed');
+            if (err.response?.data?.requiresPassword) {
+                setRequiresPassword(true);
+                setError('Two-factor authentication is enabled. Please enter your password.');
+            } else {
+                setError(err.response?.data?.error || 'Verification failed');
+            }
         } finally {
             setIsLoading(false);
         }
@@ -94,13 +207,59 @@ const TelegramUserbot: React.FC = () => {
 
     // 3. Fetch Chats
     const fetchChats = async () => {
+        if (!selectedUserbot) {
+            console.warn('⚠️ Cannot fetch chats: no userbot selected');
+            return;
+        }
+        
         try {
-            const res = await axios.get(`${API_URL}/dialogs?companyId=${user?.companyId}`);
-            setChats(res.data.data);
-            setStep('CHATS');
-        } catch (err) {
-            console.error(err);
-            if (step === 'CHATS') setError('Failed to fetch chats.');
+            console.log('📥 Fetching chats for userbot:', selectedUserbot);
+            const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+            if (!token) {
+                setError('Authentication token missing');
+                return;
+            }
+            
+            const res = await axios.get(`${API_URL}/dialogs?userbotConfigId=${selectedUserbot}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (res.data.success) {
+                console.log('✅ Chats fetched:', res.data.data?.length || 0);
+                setChats(res.data.data || []);
+                setStep('CHATS');
+            } else {
+                console.error('❌ Failed to fetch chats:', res.data.error);
+                
+                // Check if session expired
+                if (res.data.error === 'AUTH_KEY_UNREGISTERED' || res.data.requiresReauth) {
+                    setError('Session expired. Please login again.');
+                    setStep('LOGIN');
+                    // Clear any cached userbot selection
+                    setSelectedUserbot(null);
+                } else {
+                    setError(res.data.error || res.data.message || 'Failed to fetch chats');
+                }
+            }
+        } catch (err: any) {
+            console.error('❌ Failed to fetch chats:', err);
+            const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to fetch chats';
+            
+            // Check if it's an auth error
+            if (errorMessage.includes('AUTH_KEY_UNREGISTERED') || err.response?.data?.requiresReauth) {
+                setError('Session expired. Please login again.');
+                setStep('LOGIN');
+                setSelectedUserbot(null);
+            } else {
+                setError(errorMessage);
+                if (step === 'CHATS') {
+                    // If we're already on CHATS step, maybe session expired
+                    console.warn('⚠️ Session might be expired, redirecting to login');
+                    setStep('LOGIN');
+                }
+            }
         }
     };
 
@@ -109,9 +268,18 @@ const TelegramUserbot: React.FC = () => {
         if (!selectedChat || !user?.companyId) return;
 
         const fetchMessages = async () => {
+            if (!selectedUserbot) return;
+            
             try {
-                const res = await axios.get(`${API_URL}/messages?companyId=${user?.companyId}&chatId=${selectedChat.id}`);
-                setMessages(res.data.data);
+                const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+                const res = await axios.get(`${API_URL}/messages?userbotConfigId=${selectedUserbot}&chatId=${selectedChat.id}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                // Sort messages by date (oldest first) before setting
+                const sortedMessages = (res.data.data || []).sort((a: Message, b: Message) => a.date - b.date);
+                setMessages(sortedMessages);
             } catch (err) {
                 console.error("Failed to fetch messages", err);
             }
@@ -131,13 +299,18 @@ const TelegramUserbot: React.FC = () => {
 
     // 5. Send Message
     const handleSendMessage = async () => {
-        if (!selectedChat || !messageText.trim()) return;
+        if (!selectedChat || !messageText.trim() || !selectedUserbot) return;
 
         try {
+            const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
             await axios.post(`${API_URL}/message`, {
-                companyId: user?.companyId,
+                userbotConfigId: selectedUserbot,
                 chatId: selectedChat.id,
                 message: messageText
+            }, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
             });
 
             // Optimistic update
@@ -158,12 +331,21 @@ const TelegramUserbot: React.FC = () => {
 
     // 6. Logout
     const handleLogout = async () => {
+        if (!selectedUserbot) return;
         if (!confirm('Are you sure you want to disconnect?')) return;
         try {
-            await axios.post(`${API_URL}/logout`, { companyId: user?.companyId });
-            setStep('LOGIN');
+            const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+            await axios.post(`${API_URL}/logout`, {
+                userbotConfigId: selectedUserbot
+            }, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            setStep('SELECT');
             setChats([]);
             setSelectedChat(null);
+            setSelectedUserbot(null);
         } catch (err) {
             console.error(err);
         }
@@ -176,12 +358,16 @@ const TelegramUserbot: React.FC = () => {
 
         const formData = new FormData();
         formData.append('file', file);
-        formData.append('companyId', user?.companyId || '');
+        formData.append('userbotConfigId', selectedUserbot || '');
         formData.append('chatId', selectedChat.id);
 
         try {
+            const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
             await axios.post(`${API_URL}/message/file`, formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
+                headers: { 
+                    'Content-Type': 'multipart/form-data',
+                    'Authorization': `Bearer ${token}`
+                }
             });
             // Optimistic Update (Text only placeholder)
             const newMessage: Message = {
@@ -211,9 +397,67 @@ const TelegramUserbot: React.FC = () => {
             </div>
 
             {error && (
-                <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-4 flex items-center">
-                    <ExclamationCircleIcon className="h-5 w-5 mr-2" />
-                    {error}
+                <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-4 flex items-start">
+                    <ExclamationCircleIcon className="h-5 w-5 mr-2 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                        <div className="font-semibold mb-1">{error}</div>
+                        {error.includes('API credentials') && (
+                            <div className="text-sm text-red-500 mt-2">
+                                💡 <strong>الحل:</strong> أضف API ID و API Hash في <a href="/settings?tab=telegram" className="underline">Telegram Settings</a>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {step === 'SELECT' && (
+                <div className="flex-1 flex justify-center items-center">
+                    <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
+                        <h2 className="text-xl font-bold mb-4">اختر حساب Telegram Userbot</h2>
+                        {!userbots || userbots.length === 0 ? (
+                            <div className="text-center py-8">
+                                <p className="text-gray-500 mb-4">لا توجد حسابات Userbot مضافة</p>
+                                <a href="/settings/telegram" className="text-blue-600 hover:underline inline-block mt-4 px-4 py-2 bg-blue-50 rounded-lg">
+                                    ➕ أضف حساب Userbot من الإعدادات
+                                </a>
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                <p className="text-sm text-gray-500 mb-4">اختر الحساب الذي تريد الاتصال به:</p>
+                                {Array.isArray(userbots) && userbots.map((userbot: any) => {
+                                    if (!userbot || !userbot.id) return null;
+                                    const isConnected = userbot.sessionString && userbot.isActive && userbot.clientPhone;
+                                    return (
+                                        <button
+                                            key={userbot.id}
+                                            onClick={() => {
+                                                setSelectedUserbot(userbot.id);
+                                                if (isConnected) {
+                                                    setStep('CHATS');
+                                                    // fetchChats will be called by useEffect
+                                                } else {
+                                                    setStep('LOGIN');
+                                                }
+                                            }}
+                                            className="w-full p-4 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
+                                        >
+                                            <div className="font-semibold flex items-center justify-between">
+                                                <span>{userbot.label || 'Unnamed Userbot'}</span>
+                                                {isConnected && (
+                                                    <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
+                                                        متصل
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="text-sm text-gray-500 mt-1">
+                                                {userbot.clientPhone || 'غير متصل'}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
 
@@ -242,22 +486,49 @@ const TelegramUserbot: React.FC = () => {
             {step === 'VERIFY' && (
                 <div className="flex-1 flex justify-center items-center">
                     <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
-                        <h2 className="text-xl font-bold mb-4">Enter Code</h2>
-                        <input
-                            type="text"
-                            placeholder="12345"
-                            className="w-full p-3 border rounded-lg mb-4"
-                            value={phoneCode}
-                            onChange={e => setPhoneCode(e.target.value)}
-                        />
-                        <button
-                            onClick={handleVerify}
-                            disabled={isLoading}
-                            className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 disabled:opacity-50"
-                        >
-                            {isLoading ? 'Verifying...' : 'Verify & Login'}
-                        </button>
-                        <button onClick={() => setStep('LOGIN')} className="w-full mt-2 text-gray-500">Back</button>
+                        <h2 className="text-xl font-bold mb-4">
+                            {requiresPassword ? 'Enter Password (2FA)' : 'Enter Code'}
+                        </h2>
+                        {!requiresPassword ? (
+                            <>
+                                <input
+                                    type="text"
+                                    placeholder="12345"
+                                    className="w-full p-3 border rounded-lg mb-4"
+                                    value={phoneCode}
+                                    onChange={e => setPhoneCode(e.target.value)}
+                                />
+                                <button
+                                    onClick={handleVerify}
+                                    disabled={isLoading}
+                                    className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 disabled:opacity-50"
+                                >
+                                    {isLoading ? 'Verifying...' : 'Verify & Login'}
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                <input
+                                    type="password"
+                                    placeholder="Enter your 2FA password"
+                                    className="w-full p-3 border rounded-lg mb-4"
+                                    value={password}
+                                    onChange={e => setPassword(e.target.value)}
+                                />
+                                <button
+                                    onClick={handleVerify}
+                                    disabled={isLoading || !password}
+                                    className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 disabled:opacity-50"
+                                >
+                                    {isLoading ? 'Verifying...' : 'Verify with Password'}
+                                </button>
+                            </>
+                        )}
+                        <button onClick={() => {
+                            setStep('LOGIN');
+                            setRequiresPassword(false);
+                            setPassword('');
+                        }} className="w-full mt-2 text-gray-500">Back</button>
                     </div>
                 </div>
             )}
@@ -318,14 +589,23 @@ const TelegramUserbot: React.FC = () => {
                                 </div>
 
                                 <div className="flex-1 p-4 overflow-y-auto space-y-4">
-                                    {messages.map((msg, index) => (
+                                    {messages
+                                        .sort((a, b) => a.date - b.date) // Sort by date (oldest first)
+                                        .map((msg, index) => (
                                         <div key={`${msg.id}-${index}`} className={`flex ${msg.isOut ? 'justify-end' : 'justify-start'}`}>
                                             <div className={`max-w-[70%] p-3 rounded-lg shadow-sm ${msg.isOut ? 'bg-blue-600 text-white rounded-br-none' : 'bg-white text-gray-800 rounded-bl-none'
                                                 }`}>
+                                                {/* Sender name for incoming messages */}
+                                                {!msg.isOut && msg.senderName && (
+                                                    <div className={`text-xs font-semibold mb-1 ${msg.isOut ? 'text-blue-200' : 'text-gray-600'}`}>
+                                                        {msg.senderName}
+                                                    </div>
+                                                )}
                                                 {msg.media && <div className="text-xs opacity-75 mb-1">[Media]</div>}
                                                 <div className="break-words">{msg.text}</div>
-                                                <div className={`text-[10px] mt-1 text-right ${msg.isOut ? 'text-blue-200' : 'text-gray-400'}`}>
-                                                    {new Date(msg.date * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                <div className={`text-[10px] mt-1 flex justify-between items-center ${msg.isOut ? 'text-blue-200' : 'text-gray-400'}`}>
+                                                    <span>{new Date(msg.date * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                    {msg.isOut && <span className="ml-2">✓</span>}
                                                 </div>
                                             </div>
                                         </div>

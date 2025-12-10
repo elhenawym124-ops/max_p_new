@@ -12,6 +12,7 @@
 const { getSharedPrismaClient } = require('../sharedDatabase');
 // // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues // ❌ Removed to prevent early loading issues
 const WhatsAppManager = require('./WhatsAppManager');
+const WhatsAppSyncService = require('./WhatsAppSyncService');
 const socketService = require('../socketService');
 const getIO = () => socketService.getIO();
 
@@ -791,6 +792,27 @@ async function saveOutgoingMessage(sessionId, remoteJid, data, options = {}) {
         }
 
         if (companyId) {
+            // ✅ SYNC TO MAIN CRM (Persistent Storage)
+            try {
+                await WhatsAppSyncService.syncMessage(
+                    companyId,
+                    remoteJid,
+                    {
+                        type: data.type, // RAW WhatsApp type
+                        content: data.content,
+                        mediaUrl: data.mediaUrl,
+                        mediaType: data.mediaType,
+                        mediaMimeType: data.mediaMimeType,
+                        mediaFileName: data.mediaFileName,
+                        timestamp: new Date(),
+                        senderId: options.senderId // Pass if available
+                    },
+                    false // isIncoming = false
+                );
+            } catch (syncErr) {
+                console.error('Failed to sync outgoing message to CRM:', syncErr);
+            }
+
             console.log(`🔌 [DEBUG] Emitting whatsapp:message:sent to company_${companyId}`, {
                 sessionId,
                 messageId: savedMessage.id

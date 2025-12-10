@@ -33,7 +33,7 @@ function checkIfAIEnabledSync(companyId) {
   // ⚡ CRITICAL FIX: If not in cache, assume AI is DISABLED and load in background
   // This ensures instant processing when AI is off
   // Load settings in background immediately (non-blocking)
-  loadAISettingsInBackground(companyId).catch(() => {});
+  loadAISettingsInBackground(companyId).catch(() => { });
   // ⚡ DEFAULT: If not in cache, assume AI is DISABLED (fastest default for instant processing)
   return false;
 }
@@ -49,15 +49,15 @@ async function loadAISettingsInBackground(companyId) {
         select: { autoReplyEnabled: true }
       });
     }, 1); // ⚡ Only 1 retry for speed
-    
+
     const isEnabled = aiSettings?.autoReplyEnabled || false;
-    
+
     // Cache the result
     aiSettingsCache.set(companyId, {
       autoReplyEnabled: isEnabled,
       timestamp: Date.now()
     });
-    
+
     console.log(`✅ [AI-CACHE] Loaded AI settings for company ${companyId}: ${isEnabled ? 'ENABLED' : 'DISABLED'}`);
   } catch (error) {
     console.error(`❌ [AI-CACHE] Error loading AI settings:`, error.message);
@@ -76,9 +76,9 @@ async function preloadAISettingsForAllCompanies() {
     const allCompanies = await prisma.company.findMany({
       select: { id: true }
     });
-    
+
     console.log(`🔄 [AI-CACHE] Pre-loading AI settings for ${allCompanies.length} companies...`);
-    
+
     // Load settings for all companies in parallel (but limit concurrency)
     const batchSize = 10;
     for (let i = 0; i < allCompanies.length; i += batchSize) {
@@ -87,7 +87,7 @@ async function preloadAISettingsForAllCompanies() {
         batch.map(company => loadAISettingsInBackground(company.id))
       );
     }
-    
+
     console.log(`✅ [AI-CACHE] Pre-loaded AI settings for ${allCompanies.length} companies`);
   } catch (error) {
     console.error(`❌ [AI-CACHE] Error pre-loading AI settings:`, error.message);
@@ -96,7 +96,7 @@ async function preloadAISettingsForAllCompanies() {
 
 // ⚡ Start pre-loading on module load (non-blocking)
 setImmediate(() => {
-  preloadAISettingsForAllCompanies().catch(() => {});
+  preloadAISettingsForAllCompanies().catch(() => { });
 });
 
 
@@ -107,7 +107,7 @@ async function getCachedFacebookPage(pageId) {
     // Using cached data
     return cached.data;
   }
-  
+
   // Cache miss - fetching from database
   const pageData = await safeQuery(async () => {
     const prisma = getPrisma();
@@ -115,16 +115,16 @@ async function getCachedFacebookPage(pageId) {
       where: { pageId: pageId }
     });
   }, 2);
-  
+
   if (pageData && pageData.status === 'connected') {
     //console.log(`✅ [PAGE-CACHE] Using connected page: ${pageData.pageName}`);
   }
-  
+
   facebookPagesCache.set(pageId, {
     data: pageData,
     timestamp: Date.now()
   });
-  
+
   return pageData;
 }
 
@@ -143,7 +143,7 @@ function isValidMessageContent(content) {
 setInterval(() => {
   const oneHourAgo = Date.now() - (60 * 60 * 1000);
   let cleanedCount = 0;
-  
+
   // Clean processed messages
   for (const [messageId, timestamp] of processedMessages.entries()) {
     if (timestamp < oneHourAgo) {
@@ -151,7 +151,7 @@ setInterval(() => {
       cleanedCount++;
     }
   }
-  
+
   // Clean Facebook pages cache
   let cacheCleanedCount = 0;
   for (const [pageId, cached] of facebookPagesCache.entries()) {
@@ -160,9 +160,9 @@ setInterval(() => {
       cacheCleanedCount++;
     }
   }
-  
+
   if (cleanedCount > 0 || cacheCleanedCount > 0) {
-     //console.log(`🧹 [CLEANUP] Messages: ${cleanedCount}, Cache: ${cacheCleanedCount}`);
+    //console.log(`🧹 [CLEANUP] Messages: ${cleanedCount}, Cache: ${cacheCleanedCount}`);
   }
 }, 30 * 60 * 1000); // Every 30 minutes
 
@@ -209,41 +209,41 @@ const postWebhook = async (req, res) => {
       return;
     }
 
-  // Check if webhook contains actual messages
-  const hasActualMessages = body?.entry?.some(entry =>
-    entry.messaging?.some(msg => msg.message?.text || msg.message?.attachments)
-  );
+    // Check if webhook contains actual messages
+    const hasActualMessages = body?.entry?.some(entry =>
+      entry.messaging?.some(msg => msg.message?.text || msg.message?.attachments)
+    );
 
-  // Check if webhook contains feed events (which may include comments)
-  const hasFeedEvents = body?.entry?.some(entry =>
-    entry.changes?.some(change => change.field === 'feed' && change.value)
-  );
+    // Check if webhook contains feed events (which may include comments)
+    const hasFeedEvents = body?.entry?.some(entry =>
+      entry.changes?.some(change => change.field === 'feed' && change.value)
+    );
 
-  // 🔍 Check for referral BEFORE skipping
-  const hasReferralAnywhere = body?.entry?.some(entry =>
-    entry.messaging?.some(msg => msg.referral)
-  );
-  
-  if (hasReferralAnywhere) {
-    console.log('');
-    console.log('🔍 [WEBHOOK-DEBUG] ==================== REFERRAL DETECTED IN WEBHOOK ====================');
-    console.log('🔍 [WEBHOOK-DEBUG] Full webhook body:', JSON.stringify(body, null, 2));
-    console.log('🔍 [WEBHOOK-DEBUG] ===========================================================');
-    console.log('');
-  }
+    // 🔍 Check for referral BEFORE skipping
+    const hasReferralAnywhere = body?.entry?.some(entry =>
+      entry.messaging?.some(msg => msg.referral)
+    );
 
-  // Skip logging for non-message events (delivery, read, etc.)
-  // BUT: Don't skip if there's a referral (even without message text)
-  if (!hasActualMessages && !hasFeedEvents && !hasReferralAnywhere) {
-    return;
-  }
+    if (hasReferralAnywhere) {
+      console.log('');
+      console.log('🔍 [WEBHOOK-DEBUG] ==================== REFERRAL DETECTED IN WEBHOOK ====================');
+      console.log('🔍 [WEBHOOK-DEBUG] Full webhook body:', JSON.stringify(body, null, 2));
+      console.log('🔍 [WEBHOOK-DEBUG] ===========================================================');
+      console.log('');
+    }
 
-  if (body?.object === 'page') {
+    // Skip logging for non-message events (delivery, read, etc.)
+    // BUT: Don't skip if there's a referral (even without message text)
+    if (!hasActualMessages && !hasFeedEvents && !hasReferralAnywhere) {
+      return;
+    }
+
+    if (body?.object === 'page') {
       // 🔍 Check if webhook contains referral data before processing
       const hasReferralInBody = body?.entry?.some(entry =>
         entry.messaging?.some(msg => msg.referral)
       );
-      
+
       if (hasReferralInBody) {
         console.log('');
         console.log('🔍 [WEBHOOK-DEBUG] ==================== WEBHOOK WITH REFERRAL DETECTED ====================');
@@ -251,33 +251,33 @@ const postWebhook = async (req, res) => {
         console.log('🔍 [WEBHOOK-DEBUG] ===========================================================');
         console.log('');
       }
-      
+
       // Process each entry in the webhook
       for (const entry of body?.entry || []) {
         try {
-      
+
           // NEW: Check if this page still exists in our database AND is connected
           // If not, ignore the webhook event to prevent processing orphaned events
           // ⚡ Using cache to avoid repeated database queries
           const pageExists = await getCachedFacebookPage(entry.id);
-      
-      // 🔒 CRITICAL FIX: Check both existence AND connection status
-      if (!pageExists) {
-        //console.log(`⚠️ [WEBHOOK] Ignoring webhook event from unregistered page: ${entry.id}`);
-        continue;
-      }
-      
-      if (pageExists.status === 'disconnected') {
-        //console.log(`⚠️ [WEBHOOK] Ignoring webhook event from DISCONNECTED page: ${pageExists.pageName} (${entry.id})`);
-        // console.log(`   This page was disconnected at: ${pageExists.disconnectedAt}`);
-        // console.log(`   Please unsubscribe this page from webhooks in Facebook settings`);
-        continue;
-      }
-      
-      // Save Page ID from webhook
-      if (entry.id) {
-        lastWebhookPageId = entry.id;
-      }
+
+          // 🔒 CRITICAL FIX: Check both existence AND connection status
+          if (!pageExists) {
+            //console.log(`⚠️ [WEBHOOK] Ignoring webhook event from unregistered page: ${entry.id}`);
+            continue;
+          }
+
+          if (pageExists.status === 'disconnected') {
+            //console.log(`⚠️ [WEBHOOK] Ignoring webhook event from DISCONNECTED page: ${pageExists.pageName} (${entry.id})`);
+            // console.log(`   This page was disconnected at: ${pageExists.disconnectedAt}`);
+            // console.log(`   Please unsubscribe this page from webhooks in Facebook settings`);
+            continue;
+          }
+
+          // Save Page ID from webhook
+          if (entry.id) {
+            lastWebhookPageId = entry.id;
+          }
 
           // Process messaging events (existing code)
           if (entry.messaging && entry.messaging.length > 0) {
@@ -285,115 +285,115 @@ const postWebhook = async (req, res) => {
               // ⚡ Process messages in parallel for better performance
               const messagePromises = entry.messaging.map(async (webhookEvent) => {
                 try {
-          
-          // Check if this is an echo message (sent from the page itself)
-          const isEchoMessage = webhookEvent.message?.is_echo;
-          const senderId = webhookEvent.sender?.id;
-          const recipientId = webhookEvent.message?.from?.id || webhookEvent.recipient?.id || entry.id;
-          
-          // NEW: Store the page ID that received this message
-          // This is critical for replying correctly
-          const receivingPageId = entry.id;
-          
-          // ✅ Skip logging for echo messages (to reduce log noise)
-          if (isEchoMessage) {
-            // Handle echo messages (replies from page) silently
-            await handlePageReply(webhookEvent, receivingPageId);
-            return;
-          }
-          
-          // 🆕 Extract postId from referral (fast - no API calls)
-          if (webhookEvent.referral) {
-            console.log('');
-            console.log('📌 [POST-REF] ==================== REFERRAL FOUND IN WEBHOOK EVENT ====================');
-            console.log('📌 [POST-REF] Webhook event keys:', Object.keys(webhookEvent));
-            console.log('📌 [POST-REF] Referral object:', JSON.stringify(webhookEvent.referral, null, 2));
-            console.log('📌 [POST-REF] ===========================================================');
-            console.log('');
-            
-            let postId = null;
-            // Extract post_id from different possible locations
-            if (webhookEvent.referral.ads_context_data?.post_id) {
-              postId = webhookEvent.referral.ads_context_data.post_id;
-              console.log('✅ [POST-REF] Found post_id in ads_context_data.post_id:', postId);
-            } else if (webhookEvent.referral.post_id) {
-              postId = webhookEvent.referral.post_id;
-              console.log('✅ [POST-REF] Found post_id in post_id:', postId);
-            } else if (webhookEvent.referral.post_ref) {
-              postId = webhookEvent.referral.post_ref;
-              console.log('✅ [POST-REF] Found post_id in post_ref:', postId);
-            } else if (webhookEvent.referral.ad_ref) {
-              postId = webhookEvent.referral.ad_ref;
-              console.log('✅ [POST-REF] Found post_id in ad_ref:', postId);
-            } else if (webhookEvent.referral.ad_id) {
-              // For ads, we can use ad_id as fallback
-              postId = webhookEvent.referral.ad_id;
-              console.log('✅ [POST-REF] Found post_id in ad_id (fallback):', postId);
-            } else {
-              console.log('⚠️ [POST-REF] Referral exists but no postId found!');
-              console.log('⚠️ [POST-REF] Referral keys:', Object.keys(webhookEvent.referral));
-            }
-            
-            // Attach postId to webhookEvent for use in handleMessage
-            if (postId) {
-              webhookEvent._extractedPostId = postId;
-              console.log('✅ [POST-REF] Post ID extracted and attached to webhookEvent:', postId, 'for sender:', senderId);
-            } else {
-              console.log('❌ [POST-REF] Failed to extract postId from referral');
-            }
-          } else {
-            // Check if this message has a message object (to confirm it's being processed)
-            if (webhookEvent.message) {
-              // Don't log every regular message, just silently process
-            }
-          }
-          
-          // Handle postback events (button clicks, etc.)
-          if (webhookEvent.postback) {
-            // يمكن إضافة معالجة إضافية هنا لاحقاً
-            return;
-          }
 
-          // 🎯 Customer message
-          //console.log(`📨 [MSG] ${webhookEvent.message?.mid?.slice(-8)} from ${senderId}`);
+                  // Check if this is an echo message (sent from the page itself)
+                  const isEchoMessage = webhookEvent.message?.is_echo;
+                  const senderId = webhookEvent.sender?.id;
+                  const recipientId = webhookEvent.message?.from?.id || webhookEvent.recipient?.id || entry.id;
 
-          // Check for text message or referral (even without message text)
-          // Referral can come without message text (OPEN_THREAD event)
-          if (webhookEvent.referral) {
-            // Process referral event (even if no message text)
-            console.log('📨 [POST-REF] Processing referral event (may not have message text)');
-            // If there's a message, process it normally
-            if (webhookEvent.message && webhookEvent.message.text) {
-              await handleMessage(webhookEvent, receivingPageId);
-            } else if (webhookEvent.message) {
-              // Non-text message (images, files, etc.)
-              const messageId = webhookEvent.message.mid;
-              if (processedMessages.has(messageId)) {
-                return;
-              }
-              processedMessages.set(messageId, Date.now());
-              await handleMessage(webhookEvent, receivingPageId);
-            } else {
-              // Referral without message - still process to create conversation
-              console.log('📨 [POST-REF] Referral without message text - creating conversation context');
-              await handleMessage(webhookEvent, receivingPageId);
-            }
-          } else if (webhookEvent.message && webhookEvent.message.text) {
-            await handleMessage(webhookEvent, receivingPageId);
-          } else if (webhookEvent.message) {
-            // Non-text message (images, files, etc.)
-            const messageId = webhookEvent.message.mid;
-            if (processedMessages.has(messageId)) {
-              return;
-            }
-            processedMessages.set(messageId, Date.now());
-            await handleMessage(webhookEvent, receivingPageId);
-          }
+                  // NEW: Store the page ID that received this message
+                  // This is critical for replying correctly
+                  const receivingPageId = entry.id;
+
+                  // ✅ Skip logging for echo messages (to reduce log noise)
+                  if (isEchoMessage) {
+                    // Handle echo messages (replies from page) silently
+                    await handlePageReply(webhookEvent, receivingPageId);
+                    return;
+                  }
+
+                  // 🆕 Extract postId from referral (fast - no API calls)
+                  if (webhookEvent.referral) {
+                    console.log('');
+                    console.log('📌 [POST-REF] ==================== REFERRAL FOUND IN WEBHOOK EVENT ====================');
+                    console.log('📌 [POST-REF] Webhook event keys:', Object.keys(webhookEvent));
+                    console.log('📌 [POST-REF] Referral object:', JSON.stringify(webhookEvent.referral, null, 2));
+                    console.log('📌 [POST-REF] ===========================================================');
+                    console.log('');
+
+                    let postId = null;
+                    // Extract post_id from different possible locations
+                    if (webhookEvent.referral.ads_context_data?.post_id) {
+                      postId = webhookEvent.referral.ads_context_data.post_id;
+                      console.log('✅ [POST-REF] Found post_id in ads_context_data.post_id:', postId);
+                    } else if (webhookEvent.referral.post_id) {
+                      postId = webhookEvent.referral.post_id;
+                      console.log('✅ [POST-REF] Found post_id in post_id:', postId);
+                    } else if (webhookEvent.referral.post_ref) {
+                      postId = webhookEvent.referral.post_ref;
+                      console.log('✅ [POST-REF] Found post_id in post_ref:', postId);
+                    } else if (webhookEvent.referral.ad_ref) {
+                      postId = webhookEvent.referral.ad_ref;
+                      console.log('✅ [POST-REF] Found post_id in ad_ref:', postId);
+                    } else if (webhookEvent.referral.ad_id) {
+                      // For ads, we can use ad_id as fallback
+                      postId = webhookEvent.referral.ad_id;
+                      console.log('✅ [POST-REF] Found post_id in ad_id (fallback):', postId);
+                    } else {
+                      console.log('⚠️ [POST-REF] Referral exists but no postId found!');
+                      console.log('⚠️ [POST-REF] Referral keys:', Object.keys(webhookEvent.referral));
+                    }
+
+                    // Attach postId to webhookEvent for use in handleMessage
+                    if (postId) {
+                      webhookEvent._extractedPostId = postId;
+                      console.log('✅ [POST-REF] Post ID extracted and attached to webhookEvent:', postId, 'for sender:', senderId);
+                    } else {
+                      console.log('❌ [POST-REF] Failed to extract postId from referral');
+                    }
+                  } else {
+                    // Check if this message has a message object (to confirm it's being processed)
+                    if (webhookEvent.message) {
+                      // Don't log every regular message, just silently process
+                    }
+                  }
+
+                  // Handle postback events (button clicks, etc.)
+                  if (webhookEvent.postback) {
+                    // يمكن إضافة معالجة إضافية هنا لاحقاً
+                    return;
+                  }
+
+                  // 🎯 Customer message
+                  //console.log(`📨 [MSG] ${webhookEvent.message?.mid?.slice(-8)} from ${senderId}`);
+
+                  // Check for text message or referral (even without message text)
+                  // Referral can come without message text (OPEN_THREAD event)
+                  if (webhookEvent.referral) {
+                    // Process referral event (even if no message text)
+                    console.log('📨 [POST-REF] Processing referral event (may not have message text)');
+                    // If there's a message, process it normally
+                    if (webhookEvent.message && webhookEvent.message.text) {
+                      await handleMessage(webhookEvent, receivingPageId);
+                    } else if (webhookEvent.message) {
+                      // Non-text message (images, files, etc.)
+                      const messageId = webhookEvent.message.mid;
+                      if (processedMessages.has(messageId)) {
+                        return;
+                      }
+                      processedMessages.set(messageId, Date.now());
+                      await handleMessage(webhookEvent, receivingPageId);
+                    } else {
+                      // Referral without message - still process to create conversation
+                      console.log('📨 [POST-REF] Referral without message text - creating conversation context');
+                      await handleMessage(webhookEvent, receivingPageId);
+                    }
+                  } else if (webhookEvent.message && webhookEvent.message.text) {
+                    await handleMessage(webhookEvent, receivingPageId);
+                  } else if (webhookEvent.message) {
+                    // Non-text message (images, files, etc.)
+                    const messageId = webhookEvent.message.mid;
+                    if (processedMessages.has(messageId)) {
+                      return;
+                    }
+                    processedMessages.set(messageId, Date.now());
+                    await handleMessage(webhookEvent, receivingPageId);
+                  }
                 } catch (msgError) {
                   //console.error('❌ [WEBHOOK] Error processing message event:', msgError.message);
                 }
               });
-              
+
               // ⚡ Wait for all messages to be processed in parallel
               await Promise.all(messagePromises);
             } catch (messagingError) {
@@ -414,7 +414,7 @@ const postWebhook = async (req, res) => {
                         //console.log(`🤖 [COMMENT] Ignoring comment from our own page: ${change.value.comment_id}`);
                         continue;
                       }
-                      
+
                       await handleComment(change.value, entry.id);
                     }
                     // We can add more feed event types here in the future
@@ -447,36 +447,36 @@ async function handlePageReply(webhookEvent, pageId = null) {
     const messageId = webhookEvent.message.mid;
     const messageText = webhookEvent.message.text || '';
     const hasAttachments = webhookEvent.message.attachments && webhookEvent.message.attachments.length > 0;
-    
+
     // ⚡ CRITICAL: Check if this echo message was already processed
     //console.log(`🔍 [PAGE-REPLY] Processing echo: ${messageId.slice(-8)} | Already processed? ${processedMessages.has(messageId)}`);
-    
+
     if (processedMessages.has(messageId)) {
       //console.log(`⚠️ [PAGE-REPLY] Echo message already processed - skipping duplicate: ${messageId.slice(-8)}`);
       return;
     }
-    
+
     // Mark as processed immediately to prevent duplicates
     processedMessages.set(messageId, Date.now());
     //console.log(`✅ [PAGE-REPLY] Marked as processed: ${messageId.slice(-8)}`);
-    
+
     // Better extraction of recipient ID from echo messages
     // For echo messages, the recipient is actually the customer who receives the message
     const recipientId = webhookEvent.recipient?.id; // Customer who received the message
     const pageSenderId = webhookEvent.sender.id; // Page that sent the message
-    
+
     // Processing page reply (already logged in postWebhook)
-    
+
     // Validate that we have a recipient ID
     if (!recipientId) {
       //console.log(`⚠️ [PAGE-REPLY] No recipient ID found in webhook event`);
       return;
     }
-    
+
     // ⚡ Get companyId from the Facebook page first - استخدام Cache
     // نحتاجه مبكراً لإرسال instant_echo للشركة الصحيحة
     const facebookPage = await getCachedFacebookPage(pageId);
-    
+
     // ⚡ ULTRA-FAST ECHO: إرسال Socket event فوراً بعد جلب companyId
     // هذا يسمح للفرونت إند بعرض الرسالة فوراً بينما نحن نحفظها في الخلفية
     if (facebookPage && facebookPage.companyId) {
@@ -500,7 +500,7 @@ async function handlePageReply(webhookEvent, pageId = null) {
             // 🏢 Company Isolation
             companyId: facebookPage.companyId
           };
-          
+
           // ✅ إرسال للشركة فقط - Company Isolation
           io.to(`company_${facebookPage.companyId}`).emit('instant_echo', instantEcho);
           //console.log(`⚡ [INSTANT-ECHO] Sent to company ${facebookPage.companyId}: ${messageId.slice(-8)}`);
@@ -509,14 +509,14 @@ async function handlePageReply(webhookEvent, pageId = null) {
         //console.error(`❌ [INSTANT-ECHO] Failed:`, instantError.message);
       }
     }
-    
+
     // ⚡ Step 2 disabled for performance (manual message check)
-    
+
     if (!facebookPage || !facebookPage.companyId) {
       console.log(`❌ [PAGE-REPLY] Facebook page not found or not linked to company: ${pageId}`);
       return;
     }
-    
+
     // Find the customer who received this message with BOTH facebookId AND companyId
     let customer = await safeQuery(async () => {
       const prisma = getPrisma();
@@ -529,15 +529,15 @@ async function handlePageReply(webhookEvent, pageId = null) {
         }
       });
     }, 2); // ⚡ تقليل retries من 5 إلى 2 لتسريع Echo
-    
+
     if (!customer) {
       //console.log(`⚠️ [PAGE-REPLY] Customer not found for Facebook ID: ${recipientId}`);
-     // console.log(`🚫 [PAGE-REPLY] Skipping echo message - customer should exist from previous conversation`);
+      // console.log(`🚫 [PAGE-REPLY] Skipping echo message - customer should exist from previous conversation`);
       return;
     }
-    
+
     // Customer found
-    
+
     // Find existing conversation for this customer
     let conversation = await safeQuery(async () => {
       const prisma = getPrisma();
@@ -549,7 +549,7 @@ async function handlePageReply(webhookEvent, pageId = null) {
         orderBy: { lastMessageAt: 'desc' }
       });
     }, 2); // ⚡ تقليل retries من 5 إلى 2 لتسريع Echo
-    
+
     // If no conversation exists, create one
     if (!conversation) {
       // Creating new conversation
@@ -574,7 +574,7 @@ async function handlePageReply(webhookEvent, pageId = null) {
       } else if (initialPreview && initialPreview.length > 100) {
         initialPreview = initialPreview.substring(0, 100) + '...';
       }
-      
+
       conversation = await safeQuery(async () => {
         const prisma = getPrisma();
         return await prisma.conversation.create({
@@ -588,10 +588,10 @@ async function handlePageReply(webhookEvent, pageId = null) {
           }
         });
       }, 3);
-      
+
       // Conversation created
     }
-    
+
     // التحقق من صحة محتوى الرسالة قبل الحفظ
     // ✅ السماح بالرسائل التي تحتوي على attachments حتى بدون نص
     // ❌ رفض فقط الرسائل التي لا تحتوي على نص ولا attachments
@@ -599,16 +599,16 @@ async function handlePageReply(webhookEvent, pageId = null) {
       //console.log(`⚠️ [PAGE-REPLY] رسالة بدون نص صالح أو attachments تم تجاهلها: "${messageText}"`);
       return; // Exit function without saving
     }
-    
+
     // تحديد نوع الرسالة بناءً على المحتوى
     let messageType = 'TEXT';
     let messageContent = messageText;
-    
+
     // إذا كانت الرسالة تحتوي على attachments فقط بدون نص
     if (hasAttachments && (!messageText || messageText.trim().length === 0)) {
       const attachment = webhookEvent.message.attachments[0];
       messageType = attachment.type.toUpperCase(); // IMAGE, VIDEO, FILE, TEMPLATE, etc.
-      
+
       // Handle different attachment types
       if (attachment.type === 'template') {
         // Extract template content
@@ -616,9 +616,9 @@ async function handlePageReply(webhookEvent, pageId = null) {
         if (template.template_type === 'generic' && template.elements && template.elements.length > 0) {
           const element = template.elements[0];
           // Use image URL as content, or button URL if no image
-          messageContent = element.image_url || 
-                          (element.buttons && element.buttons[0]?.url) || 
-                          '[Template Message]';
+          messageContent = element.image_url ||
+            (element.buttons && element.buttons[0]?.url) ||
+            '[Template Message]';
         } else {
           messageContent = '[Template Message]';
         }
@@ -627,23 +627,23 @@ async function handlePageReply(webhookEvent, pageId = null) {
         messageContent = attachment.payload?.url || `[${attachment.type}]`;
       }
     }
-    
+
     // ⚡ Check if this message is AI-generated
     const aiMetadata = aiMessagesCache.get(messageId);
     const isAIGenerated = !!aiMetadata;
-    
+
     if (isAIGenerated) {
       //console.log(`🤖 [AI-ECHO] Detected AI-generated message: ${messageId.slice(-8)}`);
       // Clean up cache
       aiMessagesCache.delete(messageId);
     }
-    
+
     // 🆕 FIX: قراءة معرف المرسل (الموظف) من conversation metadata
     let senderUserId = null; // معرف الموظف (User.id)
     let senderUserName = null; // اسم الموظف
-    
+
     //console.log(`🔍 [ECHO-DEBUG] Conversation metadata exists: ${!!conversation.metadata}`);
-    
+
     try {
       if (conversation.metadata) {
         let convMetadata = {};
@@ -654,7 +654,7 @@ async function handlePageReply(webhookEvent, pageId = null) {
           console.warn('⚠️ Error parsing conversation metadata for sender info:', parseError.message);
           convMetadata = {};
         }
-        
+
         if (convMetadata.lastSenderId) {
           senderUserId = convMetadata.lastSenderId;
           senderUserName = convMetadata.lastSenderName || 'موظف';
@@ -700,7 +700,7 @@ async function handlePageReply(webhookEvent, pageId = null) {
 
     if (existingMessage) {
       console.log(`⚠️ [PAGE-REPLY] Message already exists (instant save/broadcast) - updating with Facebook ID: ${messageId.slice(-8)}`);
-      
+
       // تحديث الرسالة الموجودة بـ Facebook Message ID إذا لم يكن موجود
       try {
         const existingMetadata = JSON.parse(existingMessage.metadata || '{}');
@@ -724,7 +724,7 @@ async function handlePageReply(webhookEvent, pageId = null) {
       } catch (updateError) {
         console.error('⚠️ [PAGE-REPLY] Failed to update existing message:', updateError.message);
       }
-      
+
       return; // Exit early to prevent duplicate
     }
 
@@ -793,7 +793,7 @@ async function handlePageReply(webhookEvent, pageId = null) {
         }
       });
     }, 2); // ⚡ تقليل retries من 5 إلى 2 لتسريع Echo
-    
+
     // تنظيف الـ metadata بعد حفظ الرسالة
     if (senderUserId) {
       try {
@@ -807,10 +807,10 @@ async function handlePageReply(webhookEvent, pageId = null) {
           console.warn('⚠️ Error parsing conversation metadata:', parseError.message);
           convMetadata = {};
         }
-        
+
         delete convMetadata.lastSenderId;
         delete convMetadata.lastSenderName;
-        
+
         await safeQuery(async () => {
           const prisma = getPrisma();
           return await prisma.conversation.update({
@@ -824,7 +824,7 @@ async function handlePageReply(webhookEvent, pageId = null) {
         console.warn('⚠️ Error cleaning up sender metadata:', e.message);
       }
     }
-    
+
     // ⚡ Emit confirmation Socket.IO event (الرسالة اتحفظت بنجاح)
     const io = socketService.getIO();
     if (io) {
@@ -850,9 +850,12 @@ async function handlePageReply(webhookEvent, pageId = null) {
           isConfirmed: true,
           isPending: false,
           // 🏢 Company Isolation
-          companyId: facebookPage.companyId
+          companyId: facebookPage.companyId,
+          // 📱 Platform identification for filtering
+          platform: 'facebook',
+          channel: 'FACEBOOK'
         };
-        
+
         // ✅ إرسال event تأكيد منفصل مع عزل الشركة
         io.to(`company_${facebookPage.companyId}`).emit('echo_confirmed', socketData);
         io.to(`company_${facebookPage.companyId}`).emit('new_message', socketData);
@@ -864,7 +867,7 @@ async function handlePageReply(webhookEvent, pageId = null) {
     } else {
       //console.log(`❌ [PAGE-REPLY] Socket.IO not available - message saved but not broadcast`);
     }
-    
+
     // Update conversation last message
     // Create a user-friendly preview based on message type
     let preview = messageContent;
@@ -881,7 +884,7 @@ async function handlePageReply(webhookEvent, pageId = null) {
     } else if (preview && preview.length > 100) {
       preview = preview.substring(0, 100) + '...';
     }
-    
+
     // Sanitize preview to prevent hex escape errors
     if (preview) {
       // Remove any problematic characters that could cause hex escape issues
@@ -890,7 +893,7 @@ async function handlePageReply(webhookEvent, pageId = null) {
       // Trim and ensure it's a valid string
       preview = preview.trim();
     }
-    
+
     try {
       await safeQuery(async () => {
         const prisma = getPrisma();
@@ -906,9 +909,9 @@ async function handlePageReply(webhookEvent, pageId = null) {
       console.error('⚠️ [PAGE-REPLY] Error updating conversation preview:', updateError.message);
       // Don't throw - this is non-critical, message is already saved
     }
-    
+
     // Processing completed
-    
+
   } catch (error) {
     console.error('❌ [PAGE-REPLY] Error processing Facebook page reply:', error);
   }
@@ -919,18 +922,18 @@ function isCommentFromOurPage(commentData, pageId) {
   try {
     // PRIMARY CHECK: If sender ID matches page ID, this is definitely our own comment
     if (commentData.from?.id === pageId) {
-     // console.log(`🤖 [COMMENT] Detected our own comment by sender ID match: ${commentData.comment_id}`);
+      // console.log(`🤖 [COMMENT] Detected our own comment by sender ID match: ${commentData.comment_id}`);
       return true;
     }
-    
+
     // SECONDARY CHECK: If the comment text matches our standard response
     // We'll check against a more generic pattern since responses can be customized
-    if (commentData.message.includes("Thank you for your comment") || 
-        commentData.message.includes("We'll get back to you soon")) {
-     // console.log(`🤖 [COMMENT] Detected our standard response pattern: ${commentData.comment_id}`);
+    if (commentData.message.includes("Thank you for your comment") ||
+      commentData.message.includes("We'll get back to you soon")) {
+      // console.log(`🤖 [COMMENT] Detected our standard response pattern: ${commentData.comment_id}`);
       return true;
     }
-    
+
     return false;
   } catch (error) {
     console.error('❌ [COMMENT] Error checking if comment is from our page:', error);
@@ -971,10 +974,10 @@ async function handleMessage(webhookEvent, pageId = null) {
       const facebookPage = cached.data;
       if (facebookPage && facebookPage.companyId) {
         const companyId = facebookPage.companyId;
-        
+
         // ⚡ Pre-load AI settings in background for faster future checks
-        loadAISettingsInBackground(companyId).catch(() => {});
-        
+        loadAISettingsInBackground(companyId).catch(() => { });
+
         // 🆕 For referral events without message, process directly (don't queue)
         if (hasReferral && !webhookEvent.message) {
           console.log('📨 [POST-REF] Processing referral event without message - calling handleFacebookMessage directly');
@@ -1006,7 +1009,7 @@ async function handleMessage(webhookEvent, pageId = null) {
 
         // ⚡ CRITICAL FIX: Fast sync check - if AI disabled or not in cache, process directly
         const aiEnabled = checkIfAIEnabledSync(companyId);
-        
+
         if (!aiEnabled) {
           // ⚡ AI معطل = معالجة فورية تماماً بدون أي صف
           console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - startTime}ms] ⚡ [INSTANT] AI disabled or not cached - Processing DIRECTLY (bypassing queue completely)`);
@@ -1044,9 +1047,9 @@ async function handleMessage(webhookEvent, pageId = null) {
       }
 
       const companyId = facebookPage.companyId;
-      
+
       // ⚡ Pre-load AI settings in background for faster future checks
-      loadAISettingsInBackground(companyId).catch(() => {});
+      loadAISettingsInBackground(companyId).catch(() => { });
 
       // 🆕 For referral events without message, process directly (don't queue)
       if (hasReferral && !webhookEvent.message) {
@@ -1074,7 +1077,7 @@ async function handleMessage(webhookEvent, pageId = null) {
             pageId: recipientPageId,
             isProcessing: true // علامة أن الرسالة قيد المعالجة
           };
-          
+
           // إرسال للشركة فقط
           io.to(`company_${companyId}`).emit('message_preview', instantPreview);
           // console.log(`⚡ [INSTANT] Preview sent to company ${companyId}`);
@@ -1086,7 +1089,7 @@ async function handleMessage(webhookEvent, pageId = null) {
 
       // ⚡ CRITICAL FIX: Fast sync check - if AI disabled or not in cache, process directly
       const aiEnabled = checkIfAIEnabledSync(companyId);
-      
+
       if (!aiEnabled) {
         // ⚡ AI معطل = معالجة فورية تماماً بدون أي صف
         console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${Date.now() - startTime}ms] ⚡ [INSTANT] AI disabled or not cached - Processing DIRECTLY (bypassing queue completely)`);
@@ -1115,7 +1118,7 @@ async function handleMessage(webhookEvent, pageId = null) {
 
   } catch (error) {
     console.error('❌ Error processing Facebook message:', error);
-    
+
     // Fallback to direct processing if queue fails
     try {
       const recipientPageId = webhookEvent.recipient?.id || pageId;
@@ -1130,17 +1133,17 @@ async function handleMessage(webhookEvent, pageId = null) {
 // NEW: Function to handle Facebook comments
 async function handleComment(commentData, pageId = null) {
   try {
-   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-   console.log('💬 NEW COMMENT FROM FACEBOOK:');
-   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-   console.log('📄 Page ID:', pageId);
-   console.log('💬 Comment ID:', commentData.comment_id);
-   console.log('💬 Post ID:', commentData.post_id);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('💬 NEW COMMENT FROM FACEBOOK:');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('📄 Page ID:', pageId);
+    console.log('💬 Comment ID:', commentData.comment_id);
+    console.log('💬 Post ID:', commentData.post_id);
     console.log('👤 Sender ID:', commentData.from?.id);
     console.log('👤 Sender Name:', commentData.from?.name);
     console.log('💬 Comment Text:', commentData.message);
-   console.log('🕐 Created Time:', new Date(commentData.created_time * 1000).toLocaleString('en-US', { timeZone: 'Africa/Cairo' }));
-   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    console.log('🕐 Created Time:', new Date(commentData.created_time * 1000).toLocaleString('en-US', { timeZone: 'Africa/Cairo' }));
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
     // 🤖 Call the proper AI processing function for comments
     const { handleFacebookComment } = require('../utils/allFunctions');

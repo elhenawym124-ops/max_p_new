@@ -1,5 +1,5 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { getSharedPrismaClient } = require('../services/sharedDatabase');
+const getPrisma = () => getSharedPrismaClient();
 
 /**
  * 📄 Store Pages Controller
@@ -22,7 +22,7 @@ const getAllPages = async (req, res) => {
     const looksLikeSlug = companyId.includes('-') || companyId.length < 20;
     
     if (looksLikeSlug) {
-      const company = await prisma.company.findUnique({
+      const company = await getPrisma().company.findUnique({
         where: { slug: companyId },
         select: { id: true }
       });
@@ -37,7 +37,7 @@ const getAllPages = async (req, res) => {
       whereClause.isActive = true;
     }
 
-    const pages = await prisma.storePage.findMany({
+    const pages = await getPrisma().storePage.findMany({
       where: whereClause,
       orderBy: [
         { order: 'asc' },
@@ -66,7 +66,7 @@ const getPageById = async (req, res) => {
   try {
     const { companyId, pageId } = req.params;
 
-    const page = await prisma.storePage.findFirst({
+    const page = await getPrisma().storePage.findFirst({
       where: {
         id: pageId,
         companyId
@@ -109,7 +109,7 @@ const getPageBySlug = async (req, res) => {
     const looksLikeSlug = companyId.includes('-') || companyId.length < 20;
     
     if (looksLikeSlug) {
-      const company = await prisma.company.findUnique({
+      const company = await getPrisma().company.findUnique({
         where: { slug: companyId },
         select: { id: true }
       });
@@ -119,7 +119,7 @@ const getPageBySlug = async (req, res) => {
       }
     }
 
-    const page = await prisma.storePage.findFirst({
+    const page = await getPrisma().storePage.findFirst({
       where: {
         slug,
         companyId: actualCompanyId,
@@ -176,7 +176,7 @@ const createPage = async (req, res) => {
     }
 
     // Check if slug already exists for this company
-    const existingPage = await prisma.storePage.findFirst({
+    const existingPage = await getPrisma().storePage.findFirst({
       where: {
         companyId,
         slug
@@ -190,7 +190,7 @@ const createPage = async (req, res) => {
       });
     }
 
-    const page = await prisma.storePage.create({
+    const page = await getPrisma().storePage.create({
       data: {
         companyId,
         title,
@@ -241,7 +241,7 @@ const updatePage = async (req, res) => {
     } = req.body;
 
     // Check if page exists
-    const existingPage = await prisma.storePage.findFirst({
+    const existingPage = await getPrisma().storePage.findFirst({
       where: {
         id: pageId,
         companyId
@@ -257,7 +257,7 @@ const updatePage = async (req, res) => {
 
     // If slug is being changed, check if new slug is available
     if (slug && slug !== existingPage.slug) {
-      const slugExists = await prisma.storePage.findFirst({
+      const slugExists = await getPrisma().storePage.findFirst({
         where: {
           companyId,
           slug,
@@ -285,7 +285,7 @@ const updatePage = async (req, res) => {
     if (metaTitle !== undefined) updateData.metaTitle = metaTitle;
     if (metaDescription !== undefined) updateData.metaDescription = metaDescription;
 
-    const page = await prisma.storePage.update({
+    const page = await getPrisma().storePage.update({
       where: { id: pageId },
       data: updateData
     });
@@ -313,7 +313,7 @@ const deletePage = async (req, res) => {
     const { companyId, pageId } = req.params;
 
     // Check if page exists
-    const existingPage = await prisma.storePage.findFirst({
+    const existingPage = await getPrisma().storePage.findFirst({
       where: {
         id: pageId,
         companyId
@@ -327,7 +327,7 @@ const deletePage = async (req, res) => {
       });
     }
 
-    await prisma.storePage.delete({
+    await getPrisma().storePage.delete({
       where: { id: pageId }
     });
 
@@ -352,7 +352,7 @@ const togglePageStatus = async (req, res) => {
   try {
     const { companyId, pageId } = req.params;
 
-    const page = await prisma.storePage.findFirst({
+    const page = await getPrisma().storePage.findFirst({
       where: {
         id: pageId,
         companyId
@@ -366,7 +366,7 @@ const togglePageStatus = async (req, res) => {
       });
     }
 
-    const updatedPage = await prisma.storePage.update({
+    const updatedPage = await getPrisma().storePage.update({
       where: { id: pageId },
       data: { isActive: !page.isActive }
     });
@@ -394,7 +394,7 @@ const initializeDefaultPages = async (req, res) => {
     const { companyId } = req.params;
 
     // Check if company already has pages
-    const existingPages = await prisma.storePage.count({
+    const existingPages = await getPrisma().storePage.count({
       where: { companyId }
     });
 
@@ -779,7 +779,7 @@ const initializeDefaultPages = async (req, res) => {
     ];
 
     // Create all default pages
-    const createdPages = await prisma.storePage.createMany({
+    const createdPages = await getPrisma().storePage.createMany({
       data: defaultPages.map(page => ({
         ...page,
         companyId

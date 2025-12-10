@@ -147,24 +147,32 @@ model Company {
 
 model TelegramConfig {
   id              String   @id @default(cuid())
-  companyId       String   //Removed @unique for multi-bot support
+  companyId       String   // Support multiple bots/userbots per company
   
-  // Bot Settings
-  label           String   @default("Official Bot") // Friendly Name
-  botToken        String?  @db.Text // Encrypted Token
+  type            String   @default("BOT") // "BOT" or "USERBOT"
+  label           String   @default("Official Bot") // Friendly Name for identification
+  
+  // Bot Settings (for BOT type)
+  botToken        String?  @db.Text // Encrypted Token (for BOT type)
   botName         String?
   botUsername     String?
-  isActive        Boolean  @default(false)
   
-  // Client Settings (Future Phase)
-  clientSession   String?  @db.Text
+  // Userbot Settings (for USERBOT type)
+  apiId           String?  @db.Text // Telegram API ID (for USERBOT type)
+  apiHash         String?  @db.Text // Telegram API Hash (for USERBOT type)
+  sessionString   String?  @db.Text // Telegram session string (for USERBOT)
+  clientSession   String?  @db.Text // Deprecated - use sessionString instead
   clientPhone     String?
   
+  isActive        Boolean  @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   
   company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   
+  @@index([companyId])
+  @@index([type])
+  @@index([companyId, type])
   @@map("telegram_configs")
 }
 
@@ -3075,6 +3083,7 @@ model WhatsAppSession {
   company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   messages        WhatsAppMessage[]
   contacts        WhatsAppContact[]
+  statuses        WhatsAppStatus[] // 📸 الحالات
   
   @@index([companyId])
   @@index([status])
@@ -3232,6 +3241,52 @@ model WhatsAppContact {
   @@index([category])
   @@map("whatsapp_contacts")
 }
+
+// 📸 حالات WhatsApp (Status Updates)
+model WhatsAppStatus {
+  id          String   @id @default(cuid())
+  sessionId   String
+  
+  // المصدر
+  remoteJid   String   // من نشر هذه الحالة
+  
+  // معرف الرسالة
+  messageId   String   @unique
+  
+  // نوع الحالة
+  type        WhatsAppMessageType @default(TEXT)
+  content     String?  @db.Text
+  
+  // الوسائط
+  mediaUrl    String?  @db.Text
+  mediaType   String?
+  mediaMimeType String?
+  
+  // التوقيت
+  timestamp   DateTime
+  expiresAt   DateTime // تنتهي بعد 24 ساعة
+  
+  // المشاهدة
+  isViewed    Boolean  @default(false)
+  viewedAt    DateTime?
+  
+  // البيانات الوصفية
+  metadata    String?  @db.Text
+  
+  // التواريخ
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // العلاقات
+  session     WhatsAppSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  @@index([sessionId])
+  @@index([remoteJid])
+  @@index([expiresAt])
+  @@index([sessionId, expiresAt])
+  @@map("whatsapp_statuses")
+}
+
 
 // 📝 قوالب الردود السريعة لـ WhatsApp
 model WhatsAppQuickReply {

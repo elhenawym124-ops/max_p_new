@@ -16,6 +16,7 @@ const pino = require('pino');
 const path = require('path');
 const fs = require('fs').promises;
 const { getSharedPrismaClient } = require('../sharedDatabase');
+const WhatsAppSyncService = require('./WhatsAppSyncService');
 // // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues // ❌ Removed to prevent early loading issues
 const socketService = require('../socketService');
 const getIO = () => socketService.getIO();
@@ -473,6 +474,13 @@ async function handleIncomingMessages(sessionId, companyId, m, sock) {
                 remoteJid = `${cleaned}@s.whatsapp.net`;
             }
 
+            // معالجة رسائل الحالة (Status Updates)
+            if (remoteJid === 'status@broadcast') {
+                console.log('📸 Received status update');
+                await handleStatusUpdate(sessionId, companyId, msg, sock);
+                continue; // Skip normal message processing
+            }
+
             // استخراج محتوى الرسالة
             const messageContent = await extractMessageContent(msg, sock, sessionId);
             if (!messageContent) continue;
@@ -515,14 +523,43 @@ async function handleIncomingMessages(sessionId, companyId, m, sock) {
                 }
             });
 
+            // ✅ SYNC TO MAIN CRM (Persistent Storage)
+            let syncedCustomer = null;
+            try {
+                const syncResult = await WhatsAppSyncService.syncMessage(
+                    companyId,
+                    remoteJid,
+                    {
+                        type: messageContent.type,
+                        content: messageContent.text,
+                        mediaUrl: messageContent.mediaUrl,
+                        mediaType: messageContent.mediaType,
+                        mediaMimeType: messageContent.mimetype,
+                        mediaFileName: messageContent.fileName,
+                        timestamp: new Date(msg.messageTimestamp * 1000),
+                        pushName: msg.pushName
+                    },
+                    true // isIncoming
+                );
+                syncedCustomer = syncResult?.customer;
+            } catch (syncErr) {
+                console.error('Failed to sync incoming message to CRM:', syncErr);
+            }
+
             // تحديث أو إنشاء جهة الاتصال
-            const contact = await updateOrCreateContact(sessionId, remoteJid, msg, sock, { isOutgoing: fromMe });
+            const contact = await updateOrCreateContact(sessionId, remoteJid, msg, sock, {
+                isOutgoing: fromMe,
+                customerId: syncedCustomer?.id
+            });
 
             // إذا كانت رسالة مجموعة، نحفظ المرسل كجهة اتصال أيضاً
             if (remoteJid.endsWith('@g.us') && msg.key.participant) {
                 await updateOrCreateContact(sessionId, msg.key.participant, msg, sock, {
                     isOutgoing: false,
-                    isGroupParticipant: true
+                    isGroupParticipant: true,
+                    // Group participants might need their own customer entry? 
+                    // For now, we skip syncing group participants to CRM customers implicitly 
+                    // unless they send a direct message.
                 });
             }
 
@@ -610,6 +647,73 @@ async function handleIncomingMessages(sessionId, companyId, m, sock) {
         }
     }
 }
+
+/**
+ * معالجة تحديثات الحالة (Status Updates)
+ */
+async function handleStatusUpdate(sessionId, companyId, msg, sock) {
+    try {
+        const io = getIO();
+        const messageId = msg.key.id;
+
+        // Get the actual sender (participant in status updates)
+        const remoteJid = msg.key.participant || msg.pushName;
+
+        if (!remoteJid) {
+            console.log('⚠️ Status update without participant, skipping');
+            return;
+        }
+
+        // Extract status content
+        const messageContent = await extractMessageContent(msg, sock, sessionId);
+        if (!messageContent) return;
+
+        // Calculate expiration (24 hours from now)
+        const timestamp = new Date(msg.messageTimestamp * 1000);
+        const expiresAt = new Date(timestamp.getTime() + 24 * 60 * 60 * 1000);
+
+        // Save to database
+        const savedStatus = await getSharedPrismaClient().whatsAppStatus.upsert({
+            where: { messageId },
+            update: {
+                type: messageContent.type,
+                content: messageContent.text,
+                mediaUrl: messageContent.mediaUrl,
+                mediaType: messageContent.mediaType,
+                mediaMimeType: messageContent.mimetype,
+                timestamp,
+                expiresAt,
+                metadata: JSON.stringify(msg)
+            },
+            create: {
+                sessionId,
+                remoteJid,
+                messageId,
+                type: messageContent.type,
+                content: messageContent.text,
+                mediaUrl: messageContent.mediaUrl,
+                mediaType: messageContent.mediaType,
+                mediaMimeType: messageContent.mimetype,
+                timestamp,
+                expiresAt,
+                metadata: JSON.stringify(msg)
+            }
+        });
+
+        console.log(`📸 Saved status update: ${savedStatus.id} (expires in 24h)`);
+
+        // Emit socket event
+        io?.to(`company_${companyId}`).emit('whatsapp:status:new', {
+            sessionId,
+            status: savedStatus
+        });
+
+    } catch (error) {
+        console.error('❌ Error processing status update:', error);
+        await logEvent(sessionId, companyId, 'status_error', { error: error.message }, 'error');
+    }
+}
+
 
 /**
  * استخراج محتوى الرسالة
@@ -777,7 +881,7 @@ async function extractMessageContent(msg, sock, sessionId) {
  */
 async function updateOrCreateContact(sessionId, remoteJid, msg, sock, options = {}) {
     try {
-        const { isOutgoing = false, isGroupParticipant = false } = options;
+        const { isOutgoing = false, isGroupParticipant = false, customerId } = options;
 
         // Ensure JID is normalized using the same logic as MessageHandler
         const formatJid = (to) => {
@@ -823,6 +927,11 @@ async function updateOrCreateContact(sessionId, remoteJid, msg, sock, options = 
             profilePicUrl,
         };
 
+        // Link to Customer if provided
+        if (customerId) {
+            updateData.customerId = customerId;
+        }
+
         // Only update pushName if it's defined (i.e., not outgoing or it's a group)
         if (pushName) {
             updateData.pushName = pushName;
@@ -848,7 +957,8 @@ async function updateOrCreateContact(sessionId, remoteJid, msg, sock, options = 
             lastMessageAt: new Date(),
             unreadCount: (!isOutgoing && !isGroupParticipant) ? 1 : 0,
             totalMessages: 1,
-            isGroup
+            isGroup,
+            customerId
         };
 
         const contact = await getSharedPrismaClient().whatsAppContact.upsert({

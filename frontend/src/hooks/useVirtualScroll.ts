@@ -105,12 +105,16 @@ export const useVirtualMessages = <T extends { id: string }>(
     const hasNewMessages = items.length > prevItemsLengthRef.current;
     if (hasNewMessages) {
       // Scroll to last item
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         virtualizer.scrollToIndex(items.length - 1, {
           align: 'end',
           behavior: 'smooth'
         });
       }, 100);
+      
+      prevItemsLengthRef.current = items.length;
+      
+      return () => clearTimeout(timeoutId);
     }
     prevItemsLengthRef.current = items.length;
   }, [items.length, scrollToBottom, isAtBottom, virtualizer]);
@@ -179,6 +183,7 @@ export const useInfiniteScroll = (
 ) => {
   const { threshold = 200, enabled = true } = options;
   const [isLoading, setIsLoading] = useState(false);
+  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -191,13 +196,29 @@ export const useInfiniteScroll = (
       if (scrollTop < threshold && !isLoading) {
         setIsLoading(true);
         onLoadMore();
+        
+        // Clear any existing timeout
+        if (loadingTimeoutRef.current) {
+          clearTimeout(loadingTimeoutRef.current);
+        }
+        
         // Reset loading state after a delay
-        setTimeout(() => setIsLoading(false), 1000);
+        loadingTimeoutRef.current = setTimeout(() => {
+          setIsLoading(false);
+          loadingTimeoutRef.current = null;
+        }, 1000);
       }
     };
 
     element.addEventListener('scroll', handleScroll, { passive: true });
-    return () => element.removeEventListener('scroll', handleScroll);
+    
+    return () => {
+      element.removeEventListener('scroll', handleScroll);
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+        loadingTimeoutRef.current = null;
+      }
+    };
   }, [containerRef, onLoadMore, threshold, enabled, isLoading]);
 
   return { isLoading };

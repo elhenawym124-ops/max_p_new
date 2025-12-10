@@ -288,11 +288,12 @@ const postMessageConverstation = async (req, res) => {
           isFromCustomer: false,
           senderId: senderId, // معرف الموظف
           metadata: JSON.stringify({
-            platform: 'facebook',
+            platform: conversation.channel ? conversation.channel.toLowerCase() : 'facebook',
             source: 'manual_reply',
             employeeId: senderId,
             employeeName: senderName,
-            isFacebookReply: true,
+            isFacebookReply: conversation.channel !== 'TELEGRAM',
+            isTelegramReply: conversation.channel === 'TELEGRAM',
             timestamp: new Date(),
             instantSave: true // علامة لتحديد أن هذه الرسالة تم حفظها فوراً
           }),
@@ -313,15 +314,26 @@ const postMessageConverstation = async (req, res) => {
           isFromCustomer: savedMessage.isFromCustomer,
           timestamp: savedMessage.createdAt,
           metadata: JSON.parse(savedMessage.metadata),
-          isFacebookReply: true,
           senderId: senderId,
           senderName: senderName,
           lastMessageIsFromCustomer: false,
-          lastCustomerMessageIsUnread: false
+          lastCustomerMessageIsUnread: false,
+          // 🏢 Company Isolation
+          companyId: conversation.companyId,
+          // 📱 Platform identification for filtering
+          platform: conversation.channel === 'TELEGRAM' ? 'telegram' : (conversation.channel ? conversation.channel.toLowerCase() : 'facebook'),
+          channel: conversation.channel || 'FACEBOOK'
         };
 
-        io.emit('new_message', socketData);
-        console.log(`⚡ [SOCKET] Message emitted immediately to frontend`);
+        // ✅ إرسال للشركة فقط - Company Isolation
+        io.to(`company_${conversation.companyId}`).emit('new_message', socketData);
+        console.log(`⚡ [SOCKET] Message emitted to company ${conversation.companyId}`, {
+          messageId: socketData.id,
+          conversationId: socketData.conversationId,
+          platform: socketData.platform,
+          channel: socketData.channel,
+          content: socketData.content?.substring(0, 50)
+        });
       }
     } catch (saveError) {
       console.error('❌ [INSTANT-SAVE] Error saving message:', saveError.message);
@@ -668,11 +680,17 @@ const uploadFile = async (req, res) => {
             senderId: senderId,
             senderName: senderName,
             lastMessageIsFromCustomer: false,
-            lastCustomerMessageIsUnread: false
+            lastCustomerMessageIsUnread: false,
+            // 🏢 Company Isolation
+            companyId: conversation.companyId,
+            // 📱 Platform identification for filtering
+            platform: conversation.channel ? conversation.channel.toLowerCase() : 'facebook',
+            channel: conversation.channel || 'FACEBOOK'
           };
 
-          io.emit('new_message', socketData);
-          console.log(`⚡ [SOCKET-FILE] ${messageType} emitted immediately to frontend`);
+          // ✅ إرسال للشركة فقط - Company Isolation
+          io.to(`company_${conversation.companyId}`).emit('new_message', socketData);
+          console.log(`⚡ [SOCKET-FILE] ${messageType} emitted to company ${conversation.companyId}`);
         }
       } catch (saveError) {
         console.error(`❌ [INSTANT-SAVE-FILE] Error saving ${messageType}:`, saveError.message);
@@ -963,15 +981,21 @@ const postReply = async (req, res) => {
           isFromCustomer: savedMessage.isFromCustomer,
           timestamp: savedMessage.createdAt,
           metadata: JSON.parse(savedMessage.metadata),
-          isFacebookReply: true,
+          isFacebookReply: conversation?.channel !== 'TELEGRAM',
           senderId: senderId,
           senderName: senderName,
           lastMessageIsFromCustomer: false,
-          lastCustomerMessageIsUnread: false
+          lastCustomerMessageIsUnread: false,
+          // 🏢 Company Isolation
+          companyId: conversation.companyId,
+          // 📱 Platform identification for filtering
+          platform: conversation.channel ? conversation.channel.toLowerCase() : 'facebook',
+          channel: conversation.channel || 'FACEBOOK'
         };
 
-        io.emit('new_message', socketData);
-        console.log(`⚡ [SOCKET-REPLY] Message emitted immediately to frontend`);
+        // ✅ إرسال للشركة فقط - Company Isolation
+        io.to(`company_${conversation.companyId}`).emit('new_message', socketData);
+        console.log(`⚡ [SOCKET-REPLY] Message emitted to company ${conversation.companyId}`);
       }
 
       // Update conversation last message
@@ -1552,6 +1576,19 @@ const sendExistingImage = async (req, res) => {
 
     console.log(`💾 [SEND-EXISTING-IMAGE] Message saved: ${savedMessage.id}`);
 
+    // جلب معلومات المحادثة للحصول على companyId و channel
+    const conversation = await getSharedPrismaClient().conversation.findUnique({
+      where: { id },
+      select: { companyId: true, channel: true, customer: true }
+    });
+
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Conversation not found'
+      });
+    }
+
     // إرسال الرسالة للـ socket
     const io = socketService.getIO();
     if (io) {
@@ -1564,15 +1601,21 @@ const sendExistingImage = async (req, res) => {
         timestamp: savedMessage.createdAt,
         metadata: JSON.parse(savedMessage.metadata),
         attachments: savedMessage.attachments,
-        isFacebookReply: true,
+        isFacebookReply: conversation.channel !== 'TELEGRAM',
         senderId: senderId,
         senderName: senderName,
         lastMessageIsFromCustomer: false,
-        lastCustomerMessageIsUnread: false
+        lastCustomerMessageIsUnread: false,
+        // 🏢 Company Isolation
+        companyId: conversation.companyId,
+        // 📱 Platform identification for filtering
+        platform: conversation.channel ? conversation.channel.toLowerCase() : 'facebook',
+        channel: conversation.channel || 'FACEBOOK'
       };
 
-      io.emit('new_message', socketData);
-      console.log(`⚡ [SEND-EXISTING-IMAGE] Message emitted to socket`);
+      // ✅ إرسال للشركة فقط - Company Isolation
+      io.to(`company_${conversation.companyId}`).emit('new_message', socketData);
+      console.log(`⚡ [SEND-EXISTING-IMAGE] Message emitted to company ${conversation.companyId}`);
     }
 
     // Update conversation last message
@@ -2452,6 +2495,397 @@ const getMessages = async (req, res) => {
   }
 };
 
+// Send media message (image, video, audio, document)
+const sendMediaMessage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const companyId = req.user?.companyId;
+    const senderId = req.user?.userId || req.user?.id;
+
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Company ID required'
+      });
+    }
+
+    const conversation = await getSharedPrismaClient().conversation.findFirst({
+      where: { id, companyId },
+      include: { customer: true }
+    });
+
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Conversation not found'
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'File is required'
+      });
+    }
+
+    const fileType = req.body.type || 'image';
+    const caption = req.body.caption || '';
+    const fileUrl = req.file.location || req.file.path || `/uploads/${req.file.filename}`;
+
+    let senderName = 'Agent';
+    if (senderId) {
+      const user = await getSharedPrismaClient().user.findUnique({
+        where: { id: senderId },
+        select: { firstName: true, lastName: true, email: true }
+      });
+      if (user) {
+        senderName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'Agent';
+      }
+    }
+
+    // Save message to database
+    const message = await getSharedPrismaClient().message.create({
+      data: {
+        conversationId: id,
+        content: caption || `[${fileType}]`,
+        type: fileType.toUpperCase(),
+        isFromCustomer: false,
+        senderId: senderId,
+        metadata: JSON.stringify({
+          fileUrl: fileUrl,
+          fileName: req.file.originalname,
+          fileSize: req.file.size,
+          mimeType: req.file.mimetype,
+          platform: conversation.channel === 'TELEGRAM' ? 'telegram' : (conversation.channel ? conversation.channel.toLowerCase() : 'facebook'),
+          source: 'media_upload'
+        })
+      }
+    });
+
+    // Send via Telegram if it's a Telegram conversation
+    if (conversation.channel === 'TELEGRAM') {
+      const result = await telegramBotService.sendReply(id, caption, {
+        type: fileType,
+        fileUrl: fileUrl
+      });
+      if (!result.success) {
+        console.error('Failed to send via Telegram:', result.error);
+      }
+    }
+
+    // Update conversation
+    await getSharedPrismaClient().conversation.update({
+      where: { id },
+      data: {
+        lastMessageAt: new Date(),
+        lastMessagePreview: caption || `[${fileType}]`,
+        isRead: false
+      }
+    });
+
+    // Emit socket event
+    const io = socketService.getIO();
+    if (io) {
+      const socketData = {
+        id: message.id,
+        conversationId: message.conversationId,
+        content: message.content,
+        type: message.type.toLowerCase(),
+        isFromCustomer: message.isFromCustomer,
+        timestamp: message.createdAt,
+        senderId: senderId,
+        senderName: senderName,
+        fileUrl: fileUrl,
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        metadata: JSON.parse(message.metadata),
+        companyId: companyId,
+        platform: conversation.channel === 'TELEGRAM' ? 'telegram' : (conversation.channel ? conversation.channel.toLowerCase() : 'facebook'),
+        channel: conversation.channel || 'FACEBOOK'
+      };
+      io.to(`company_${companyId}`).emit('new_message', socketData);
+      console.log(`⚡ [SOCKET] Media message emitted to company ${companyId}`);
+    }
+
+    res.json({
+      success: true,
+      data: message
+    });
+  } catch (error) {
+    console.error('Error sending media message:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+// Edit message
+const editMessage = async (req, res) => {
+  try {
+    const { id, messageId } = req.params;
+    const { content } = req.body;
+    const companyId = req.user?.companyId;
+
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Company ID required'
+      });
+    }
+
+    if (!content || !content.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Message content is required'
+      });
+    }
+
+    const conversation = await getSharedPrismaClient().conversation.findFirst({
+      where: { id, companyId }
+    });
+
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Conversation not found'
+      });
+    }
+
+    const message = await getSharedPrismaClient().message.findFirst({
+      where: { id: messageId, conversationId: id }
+    });
+
+    if (!message) {
+      return res.status(404).json({
+        success: false,
+        error: 'Message not found'
+      });
+    }
+
+    // Update message in database
+    const updatedMessage = await getSharedPrismaClient().message.update({
+      where: { id: messageId },
+      data: { content: content.trim() }
+    });
+
+    // Edit in Telegram if it's a Telegram conversation
+    if (conversation.channel === 'TELEGRAM') {
+      const result = await telegramBotService.editMessage(id, messageId, content.trim());
+      if (!result.success) {
+        console.error('Failed to edit message in Telegram:', result.error);
+      }
+    }
+
+    // Emit socket event
+    socketService.sendToConversationSecure(id, companyId, 'message_edited', {
+      ...updatedMessage,
+      companyId: companyId
+    });
+
+    res.json({
+      success: true,
+      data: updatedMessage
+    });
+  } catch (error) {
+    console.error('Error editing message:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+// Delete message
+const deleteMessage = async (req, res) => {
+  try {
+    const { id, messageId } = req.params;
+    const companyId = req.user?.companyId;
+
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Company ID required'
+      });
+    }
+
+    const conversation = await getSharedPrismaClient().conversation.findFirst({
+      where: { id, companyId }
+    });
+
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Conversation not found'
+      });
+    }
+
+    const message = await getSharedPrismaClient().message.findFirst({
+      where: { id: messageId, conversationId: id }
+    });
+
+    if (!message) {
+      return res.status(404).json({
+        success: false,
+        error: 'Message not found'
+      });
+    }
+
+    // Delete from Telegram if it's a Telegram conversation
+    if (conversation.channel === 'TELEGRAM') {
+      const result = await telegramBotService.deleteMessage(id, messageId);
+      if (!result.success) {
+        console.error('Failed to delete message in Telegram:', result.error);
+      }
+    }
+
+    // Delete message from database
+    await getSharedPrismaClient().message.delete({
+      where: { id: messageId }
+    });
+
+    // Emit socket event
+    socketService.sendToConversationSecure(id, companyId, 'message_deleted', {
+      messageId: messageId,
+      companyId: companyId
+    });
+
+    res.json({
+      success: true,
+      message: 'Message deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting message:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+// Send location message
+const sendLocationMessage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { latitude, longitude } = req.body;
+    const companyId = req.user?.companyId;
+
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Company ID required'
+      });
+    }
+
+    if (!latitude || !longitude) {
+      return res.status(400).json({
+        success: false,
+        error: 'Latitude and longitude are required'
+      });
+    }
+
+    const conversation = await getSharedPrismaClient().conversation.findFirst({
+      where: { id, companyId },
+      include: { customer: true }
+    });
+
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Conversation not found'
+      });
+    }
+
+    const senderId = req.user?.userId || req.user?.id;
+    let senderName = 'Agent';
+    if (senderId) {
+      const user = await getSharedPrismaClient().user.findUnique({
+        where: { id: senderId },
+        select: { firstName: true, lastName: true, email: true }
+      });
+      if (user) {
+        senderName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'Agent';
+      }
+    }
+
+    // Save message to database
+    const message = await getSharedPrismaClient().message.create({
+      data: {
+        conversationId: id,
+        content: `[Location] ${latitude}, ${longitude}`,
+        type: 'TEXT',
+        isFromCustomer: false,
+        senderId: senderId,
+        metadata: JSON.stringify({
+          latitude: parseFloat(latitude),
+          longitude: parseFloat(longitude),
+          type: 'location',
+          platform: conversation.channel === 'TELEGRAM' ? 'telegram' : (conversation.channel ? conversation.channel.toLowerCase() : 'facebook'),
+          source: 'location_share'
+        })
+      }
+    });
+
+    // Send via Telegram if it's a Telegram conversation
+    if (conversation.channel === 'TELEGRAM') {
+      const result = await telegramBotService.sendReply(id, '', {
+        type: 'location',
+        latitude: parseFloat(latitude),
+        longitude: parseFloat(longitude)
+      });
+      if (!result.success) {
+        console.error('Failed to send location via Telegram:', result.error);
+      }
+    }
+
+    // Update conversation
+    await getSharedPrismaClient().conversation.update({
+      where: { id },
+      data: {
+        lastMessageAt: new Date(),
+        lastMessagePreview: '[Location]',
+        isRead: false
+      }
+    });
+
+    // Emit socket event
+    const io = socketService.getIO();
+    if (io) {
+      const socketData = {
+        id: message.id,
+        conversationId: message.conversationId,
+        content: message.content,
+        type: message.type.toLowerCase(),
+        isFromCustomer: message.isFromCustomer,
+        timestamp: message.createdAt,
+        senderId: senderId,
+        senderName: senderName,
+        location: {
+          latitude: parseFloat(latitude),
+          longitude: parseFloat(longitude)
+        },
+        metadata: JSON.parse(message.metadata),
+        companyId: companyId,
+        platform: conversation.channel === 'TELEGRAM' ? 'telegram' : (conversation.channel ? conversation.channel.toLowerCase() : 'facebook'),
+        channel: conversation.channel || 'FACEBOOK'
+      };
+      io.to(`company_${companyId}`).emit('new_message', socketData);
+      console.log(`⚡ [SOCKET] Location message emitted to company ${companyId}`);
+    }
+
+    res.json({
+      success: true,
+      data: message
+    });
+  } catch (error) {
+    console.error('Error sending location message:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   deleteConverstation,
   postMessageConverstation,
@@ -2468,5 +2902,10 @@ module.exports = {
   // New exports
   getConversations,
   getConversation,
-  getMessages
+  getMessages,
+  // Media and message management
+  sendMediaMessage,
+  editMessage,
+  deleteMessage,
+  sendLocationMessage
 }

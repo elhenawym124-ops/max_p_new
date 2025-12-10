@@ -1,5 +1,5 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { getSharedPrismaClient } = require('../services/sharedDatabase');
+const getPrisma = () => getSharedPrismaClient();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -118,7 +118,7 @@ const createTicket = async (req, res) => {
     const companyId = req.user.companyId;
 
     // Create ticket
-    const ticket = await prisma.supportTicket.create({
+    const ticket = await getPrisma().supportTicket.create({
       data: {
         ticketId: generateTicketId(),
         subject,
@@ -136,7 +136,7 @@ const createTicket = async (req, res) => {
     });
 
     // Create initial message
-    await prisma.supportMessage.create({
+    await getPrisma().supportMessage.create({
       data: {
         content,
         isFromAdmin: false,
@@ -155,7 +155,7 @@ const createTicket = async (req, res) => {
         url: `/uploads/support/${file.filename}`,
         ticketId: ticket.id
       }));
-      await prisma.supportAttachment.createMany({ data: attachmentData });
+      await getPrisma().supportAttachment.createMany({ data: attachmentData });
     }
 
     res.status(201).json({
@@ -184,7 +184,7 @@ const getUserTickets = async (req, res) => {
     if (category) where.category = mapCategory(category);
 
     const [tickets, total] = await Promise.all([
-      prisma.supportTicket.findMany({
+      getPrisma().supportTicket.findMany({
         where,
         include: {
           user: {
@@ -196,7 +196,7 @@ const getUserTickets = async (req, res) => {
         take: parseInt(limit),
         skip: (parseInt(page) - 1) * parseInt(limit)
       }),
-      prisma.supportTicket.count({ where })
+      getPrisma().supportTicket.count({ where })
     ]);
 
     res.json({
@@ -228,7 +228,7 @@ const getTicketDetails = async (req, res) => {
 
     const where = isAdmin ? { ticketId } : { ticketId, userId };
     
-    const ticket = await prisma.supportTicket.findFirst({
+    const ticket = await getPrisma().supportTicket.findFirst({
       where,
       include: {
         user: {
@@ -295,7 +295,7 @@ const addMessage = async (req, res) => {
 
     const where = isAdmin ? { ticketId } : { ticketId, userId };
     
-    const ticket = await prisma.supportTicket.findFirst({ where });
+    const ticket = await getPrisma().supportTicket.findFirst({ where });
     if (!ticket) {
       return res.status(404).json({
         success: false,
@@ -304,7 +304,7 @@ const addMessage = async (req, res) => {
     }
 
     // Create new message
-    const message = await prisma.supportMessage.create({
+    const message = await getPrisma().supportMessage.create({
       data: {
         content,
         isFromAdmin: isAdmin,
@@ -328,12 +328,12 @@ const addMessage = async (req, res) => {
         url: `/uploads/support/${file.filename}`,
         messageId: message.id
       }));
-      await prisma.supportAttachment.createMany({ data: attachmentData });
+      await getPrisma().supportAttachment.createMany({ data: attachmentData });
     }
 
     // Update ticket status if admin is replying
     if (isAdmin && ticket.status === 'OPEN') {
-      await prisma.supportTicket.update({
+      await getPrisma().supportTicket.update({
         where: { id: ticket.id },
         data: { status: 'IN_PROGRESS' }
       });
@@ -367,7 +367,7 @@ const updateTicketStatus = async (req, res) => {
       });
     }
 
-    const ticket = await prisma.supportTicket.findFirst({ where: { ticketId } });
+    const ticket = await getPrisma().supportTicket.findFirst({ where: { ticketId } });
     if (!ticket) {
       return res.status(404).json({
         success: false,
@@ -380,7 +380,7 @@ const updateTicketStatus = async (req, res) => {
       updateData.closedAt = new Date();
     }
 
-    const updatedTicket = await prisma.supportTicket.update({
+    const updatedTicket = await getPrisma().supportTicket.update({
       where: { id: ticket.id },
       data: updateData,
       include: {
@@ -412,7 +412,7 @@ const rateTicket = async (req, res) => {
     const { rating, feedback } = req.body;
     const userId = req.user.id;
 
-    const ticket = await prisma.supportTicket.findFirst({ 
+    const ticket = await getPrisma().supportTicket.findFirst({ 
       where: { ticketId, userId } 
     });
     if (!ticket) {
@@ -429,7 +429,7 @@ const rateTicket = async (req, res) => {
       });
     }
 
-    const updatedTicket = await prisma.supportTicket.update({
+    const updatedTicket = await getPrisma().supportTicket.update({
       where: { id: ticket.id },
       data: { rating, feedback: feedback || null }
     });
@@ -473,7 +473,7 @@ const getAllTickets = async (req, res) => {
     }
 
     const [tickets, total, openCount, inProgressCount, closedCount] = await Promise.all([
-      prisma.supportTicket.findMany({
+      getPrisma().supportTicket.findMany({
         where,
         include: {
           user: {
@@ -484,10 +484,10 @@ const getAllTickets = async (req, res) => {
         take: parseInt(limit),
         skip: (parseInt(page) - 1) * parseInt(limit)
       }),
-      prisma.supportTicket.count({ where }),
-      prisma.supportTicket.count({ where: { status: 'OPEN' } }),
-      prisma.supportTicket.count({ where: { status: 'IN_PROGRESS' } }),
-      prisma.supportTicket.count({ where: { status: 'CLOSED' } })
+      getPrisma().supportTicket.count({ where }),
+      getPrisma().supportTicket.count({ where: { status: 'OPEN' } }),
+      getPrisma().supportTicket.count({ where: { status: 'IN_PROGRESS' } }),
+      getPrisma().supportTicket.count({ where: { status: 'CLOSED' } })
     ]);
 
     // Format stats for frontend

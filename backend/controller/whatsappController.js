@@ -3857,8 +3857,141 @@ module.exports = {
     // Template Messages
     sendTemplateMessage,
     getMessageTemplate,
-    getDebugSessions
+    getDebugSessions,
+
+    // Status Updates
+    getStatuses,
+    postStatus,
+    markStatusViewed
 };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 📸 Status Updates (الحالات)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function getStatuses(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId } = req.params;
+
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const statuses = await getSharedPrismaClient().whatsAppStatus.findMany({
+            where: {
+                sessionId,
+                expiresAt: { gte: new Date() }
+            },
+            orderBy: { timestamp: 'desc' },
+            include: { session: { select: { name: true } } }
+        });
+
+        res.json({ success: true, statuses });
+    } catch (error) {
+        console.error('❌ Error getting statuses:', error);
+        res.status(500).json({ error: 'حدث خطأ' });
+    }
+}
+
+async function postStatus(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId } = req.params;
+        const { content } = req.body;
+        const mediaFile = req.file;
+
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const sessionManager = WhatsAppManager.getSession(sessionId);
+        if (!sessionManager || sessionManager.status !== 'connected') {
+            return res.status(400).json({ error: 'الجلسة غير متصلة' });
+        }
+
+        let statusData = { type: 'TEXT', content: content || '' };
+
+        if (mediaFile) {
+            const media = await WhatsAppMediaHandler.uploadMedia(
+                mediaFile.path,
+                mediaFile.mimetype,
+                mediaFile.originalname
+            );
+            statusData = {
+                type: media.type.toUpperCase(),
+                content: content || '',
+                mediaUrl: media.url,
+                mediaMimeType: media.mimetype
+            };
+        }
+
+        const jid = 'status@broadcast';
+        let result = await sessionManager.sock.sendMessage(jid,
+            statusData.type === 'TEXT' ? { text: statusData.content } :
+                statusData.type === 'IMAGE' ? { image: { url: statusData.mediaUrl }, caption: statusData.content } :
+                    { video: { url: statusData.mediaUrl }, caption: statusData.content }
+        );
+
+        const timestamp = new Date();
+        const expiresAt = new Date(timestamp.getTime() + 24 * 60 * 60 * 1000);
+
+        const savedStatus = await getSharedPrismaClient().whatsAppStatus.create({
+            data: {
+                sessionId,
+                remoteJid: session.phoneNumber || 'me',
+                messageId: result.key.id,
+                type: statusData.type,
+                content: statusData.content,
+                mediaUrl: statusData.mediaUrl,
+                mediaMimeType: statusData.mediaMimeType,
+                timestamp,
+                expiresAt
+            }
+        });
+
+        res.json({ success: true, status: savedStatus });
+    } catch (error) {
+        console.error('❌ Error posting status:', error);
+        res.status(500).json({ error: 'حدث خطأ' });
+    }
+}
+
+async function markStatusViewed(req, res) {
+    try {
+        const { companyId } = req.user;
+        const { sessionId, statusId } = req.params;
+
+        const session = await getSharedPrismaClient().whatsAppSession.findFirst({
+            where: { id: sessionId, companyId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'الجلسة غير موجودة' });
+        }
+
+        const status = await getSharedPrismaClient().whatsAppStatus.update({
+            where: { id: statusId },
+            data: {
+                isViewed: true,
+                viewedAt: new Date()
+            }
+        });
+
+        res.json({ success: true, status });
+    } catch (error) {
+        console.error('❌ Error marking status:', error);
+        res.status(500).json({ error: 'حدث خطأ' });
+    }
+}
 
 
 

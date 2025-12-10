@@ -157,6 +157,19 @@ router.post('/messages/send-product', verifyToken.authenticateToken, whatsappCon
 router.post('/messages/send-reaction', verifyToken.authenticateToken, whatsappController.sendReaction);
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// 📸 الحالات (Status Updates)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// جلب الحالات
+router.get('/:sessionId/statuses', verifyToken.authenticateToken, whatsappController.getStatuses);
+
+// نشر حالة جديدة
+router.post('/:sessionId/status', verifyToken.authenticateToken, upload.single('media'), whatsappController.postStatus);
+
+// تحديد الحالة كمشاهدة
+router.put('/:sessionId/status/:statusId/view', verifyToken.authenticateToken, whatsappController.markStatusViewed);
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // 👤 جهات الاتصال
 // ═══════════════════════════════════════════════════════════════════════════════
 
