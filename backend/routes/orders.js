@@ -154,6 +154,19 @@ router.get('/simple', requireAuth, async (req, res) => {
     ]);
 
     console.log(`📦 [ORDERS] Found ${regularOrders.length} regular, ${guestOrders.length} guest (Top ${fetchLimit})`);
+    
+    // Debug: Log items for first few orders BEFORE mapping
+    if (regularOrders.length > 0) {
+      const firstOrder = regularOrders[0];
+      console.log(`🔍 [ORDERS-DEBUG] First order BEFORE mapping:`, {
+        orderNumber: firstOrder.orderNumber,
+        hasItems: !!firstOrder.items,
+        itemsIsArray: Array.isArray(firstOrder.items),
+        itemsLength: firstOrder.items?.length || 0,
+        itemsType: typeof firstOrder.items,
+        itemsValue: firstOrder.items ? (Array.isArray(firstOrder.items) ? 'array' : JSON.stringify(firstOrder.items).substring(0, 100)) : 'null/undefined'
+      });
+    }
 
     // تحويل البيانات (Mapping)
     const formattedRegularOrders = regularOrders.map(order => {
@@ -196,6 +209,23 @@ router.get('/simple', requireAuth, async (req, res) => {
         });
       }
 
+      // Debug: Log items for first few orders
+      if (regularOrders.indexOf(order) < 3) {
+        console.log(`📦 [ORDER-ITEMS] Order ${order.orderNumber}:`, {
+          hasItems: !!order.items,
+          itemsIsArray: Array.isArray(order.items),
+          itemsLength: order.items?.length || 0,
+          firstItem: order.items?.[0] ? {
+            id: order.items[0].id,
+            productId: order.items[0].productId,
+            hasProduct: !!order.items[0].product,
+            productName: order.items[0].product?.name,
+            price: order.items[0].price,
+            quantity: order.items[0].quantity
+          } : null
+        });
+      }
+
       return {
         id: order.orderNumber,
         orderNumber: order.orderNumber,
@@ -212,7 +242,7 @@ router.get('/simple', requireAuth, async (req, res) => {
         paymentStatus: order.paymentStatus.toLowerCase(),
         paymentMethod: order.paymentMethod.toLowerCase().replace('_', '_on_'),
         shippingAddress: shippingAddress,
-        items: order.items.map(item => ({
+        items: Array.isArray(order.items) && order.items.length > 0 ? order.items.map(item => ({
           id: item.id,
           productId: item.productId,
           name: item.product?.name || JSON.parse(item.metadata || '{}').productName || '',
@@ -220,7 +250,7 @@ router.get('/simple', requireAuth, async (req, res) => {
           quantity: item.quantity,
           total: item.total,
           metadata: JSON.parse(item.metadata || '{}')
-        })),
+        })) : [],
         trackingNumber: order.trackingNumber,
         notes: order.notes,
         createdAt: order.createdAt,
