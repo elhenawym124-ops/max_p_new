@@ -664,7 +664,7 @@ const getCustomerActivity = async (req, res) => {
       },
       select: {
         id: true,
-        platform: true,
+        channel: true,
         lastMessageAt: true,
         createdAt: true
       },
@@ -694,7 +694,7 @@ const getCustomerActivity = async (req, res) => {
       ...conversations.map(conv => ({
         type: 'conversation',
         id: conv.id,
-        platform: conv.platform,
+        platform: conv.channel,
         timestamp: conv.lastMessageAt || conv.createdAt,
         data: conv
       })),
