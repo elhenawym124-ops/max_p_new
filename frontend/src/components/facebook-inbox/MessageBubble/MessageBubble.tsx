@@ -37,7 +37,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onForw
     const [showReactionSelector, setShowReactionSelector] = useState(false);
 
     // Parse metadata safely
-    let metadata = {};
+    let metadata: any = {};
     try {
         if (typeof message.metadata === 'string') {
             metadata = JSON.parse(message.metadata);
@@ -48,7 +48,10 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onForw
         // ignore
     }
 
-    const isStarred = (metadata as any)?.isStarred || message.isStarred;
+    const isStarred = metadata?.isStarred || message.isStarred;
+    const replyTo = metadata?.replyTo;
+    const myReaction = metadata?.myReaction;
+    const reactionCounts = metadata?.reactions || {};
 
     const formatTime = (date: Date) => {
         return new Date(date).toLocaleTimeString('ar-SA', {
