@@ -1,0 +1,147 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # للسماح بالتشغيل اليدوي
+
+env:
+  NODE_VERSION: '18'
+
+jobs:
+  deploy:
+    name: Deploy Frontend & Backend
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            frontend/package-lock.json
+            backend/package-lock.json
+
+      # Build Frontend
+      - name: Install Frontend Dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Build Frontend
+        working-directory: ./frontend
+        run: npm run build
+        env:
+          NODE_OPTIONS: '--max-old-space-size=6144'
+
+      # Build Backend (if needed)
+      - name: Install Backend Dependencies
+        working-directory: ./backend
+        run: npm ci --only=production
+
+      # Deploy Frontend to Server
+      - name: Deploy Frontend to Server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          source: "frontend/dist"
+          target: "/var/www"
+          strip_components: 0
+
+      # Deploy Backend to Server
+      - name: Deploy Backend to Server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          source: "backend"
+          target: "/var/www"
+          strip_components: 0
+
+      - name: Run Deployment Script on Server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          script: |
+            # Move files to correct locations
+            mkdir -p /var/www/frontend2
+            if [ -d "/var/www/frontend/dist" ]; then
+              rm -rf /var/www/frontend2/dist
+              mv /var/www/frontend/dist /var/www/frontend2/dist
+              rm -rf /var/www/frontend
+            fi
+            if [ -d "/var/www/backend" ]; then
+              rm -rf /var/www/backend2
+              mv /var/www/backend /var/www/backend2
+            fi
+            # Install/Update dependencies on server
+            cd /var/www/backend2 && npm ci --only=production
+            # Restart services
+            pm2 restart 0 || pm2 start /var/www/backend2/server.js --name backend
+
+  # Alternative: Deploy using Docker
+  deploy-docker:
+    name: Deploy with Docker
+    runs-on: ubuntu-latest
+    if: false # تعطيل افتراضياً، فعّله إذا كنت تستخدم Docker
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Registry (if using)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.DOCKER_REGISTRY }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+        if: ${{ secrets.DOCKER_REGISTRY }}
+
+      - name: Build and push Frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile.production
+          push: ${{ secrets.DOCKER_REGISTRY != '' }}
+          tags: ${{ secrets.DOCKER_REGISTRY }}/max_p_new-frontend:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/max_p_new-frontend:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/max_p_new-frontend:buildcache,mode=max
+
+      - name: Build and push Backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile.backend
+          push: ${{ secrets.DOCKER_REGISTRY != '' }}
+          tags: ${{ secrets.DOCKER_REGISTRY }}/max_p_new-backend:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/max_p_new-backend:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/max_p_new-backend:buildcache,mode=max
+
+      - name: Deploy to Server via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          script: |
+            cd /var/www
+            docker-compose pull
+            docker-compose up -d --build
+            docker system prune -f
+
