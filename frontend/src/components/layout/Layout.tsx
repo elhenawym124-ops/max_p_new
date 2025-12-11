@@ -110,7 +110,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       icon: '💬',
       items: [
         { to: '/conversations-improved', icon: <ChatBubbleLeftRightIcon className="h-5 w-5" />, label: t('sidebar.conversationsImproved') },
-        { to: '/facebook-inbox', icon: <ChatBubbleLeftRightIcon className="h-5 w-5" />, label: 'Facebook Inbox222222', badge: 'جديد' },
+        { to: '/facebook-inbox', icon: <ChatBubbleLeftRightIcon className="h-5 w-5" />, label: 'Facebook Inbox2222222222222', badge: 'جديد' },
         { to: '/unified-comments', icon: <ChatBubbleLeftRightIcon className="h-5 w-5" />, label: t('sidebar.unifiedComments') },
         { to: '/whatsapp', icon: <ChatBubbleLeftRightIcon className="h-5 w-5" />, label: 'واتساب', badge: 'جديد' },
         { to: '/whatsapp/settings', icon: <Cog6ToothIcon className="h-5 w-5" />, label: 'إعدادات واتساب' },
