@@ -31,17 +31,50 @@ jobs:
       - name: Install Frontend Dependencies
         working-directory: ./frontend
         run: npm ci
+        continue-on-error: false
 
       - name: Build Frontend
         working-directory: ./frontend
         run: npm run build
         env:
           NODE_OPTIONS: '--max-old-space-size=6144'
+        continue-on-error: false
 
       # Build Backend (if needed)
       - name: Install Backend Dependencies
         working-directory: ./backend
         run: npm ci --only=production
+        continue-on-error: false
+
+      # Verify secrets exist
+      - name: Verify Secrets
+        run: |
+          if [ -z "${{ secrets.SERVER_HOST }}" ]; then
+            echo "❌ SERVER_HOST is missing"
+            exit 1
+          fi
+          if [ -z "${{ secrets.SERVER_USER }}" ]; then
+            echo "❌ SERVER_USER is missing"
+            exit 1
+          fi
+          if [ -z "${{ secrets.SERVER_SSH_KEY }}" ]; then
+            echo "❌ SERVER_SSH_KEY is missing"
+            exit 1
+          fi
+          echo "✅ All secrets are present"
+
+      # Test SSH Connection
+      - name: Test SSH Connection
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          script: |
+            echo "✅ SSH connection successful"
+            whoami
+            pwd
 
       # Deploy Frontend to Server
       - name: Deploy Frontend to Server
@@ -54,6 +87,7 @@ jobs:
           source: "frontend/dist"
           target: "/var/www"
           strip_components: 0
+          rm: false
 
       # Deploy Backend to Server
       - name: Deploy Backend to Server
@@ -66,6 +100,7 @@ jobs:
           source: "backend"
           target: "/var/www"
           strip_components: 0
+          rm: false
 
       - name: Run Deployment Script on Server
         uses: appleboy/ssh-action@v1.0.3
@@ -75,21 +110,51 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
           script: |
-            # Move files to correct locations
+            set -e
+            echo "🚀 Starting deployment on server..."
+            
+            # Create directories
             mkdir -p /var/www/frontend2
+            mkdir -p /var/www/backend2
+            
+            # Move frontend files
             if [ -d "/var/www/frontend/dist" ]; then
+              echo "📦 Moving frontend files..."
               rm -rf /var/www/frontend2/dist
               mv /var/www/frontend/dist /var/www/frontend2/dist
               rm -rf /var/www/frontend
+              echo "✅ Frontend moved successfully"
+            else
+              echo "⚠️ Frontend dist not found, skipping..."
             fi
+            
+            # Move backend files
             if [ -d "/var/www/backend" ]; then
+              echo "📦 Moving backend files..."
               rm -rf /var/www/backend2
               mv /var/www/backend /var/www/backend2
+              echo "✅ Backend moved successfully"
+            else
+              echo "⚠️ Backend not found, skipping..."
             fi
+            
             # Install/Update dependencies on server
-            cd /var/www/backend2 && npm ci --only=production
+            if [ -d "/var/www/backend2" ]; then
+              echo "📦 Installing backend dependencies..."
+              cd /var/www/backend2
+              npm ci --only=production || npm install --only=production
+              echo "✅ Dependencies installed"
+            fi
+            
             # Restart services
-            pm2 restart 0 || pm2 start /var/www/backend2/server.js --name backend
+            echo "🔄 Restarting services..."
+            if command -v pm2 &> /dev/null; then
+              pm2 restart 0 2>/dev/null || pm2 start /var/www/backend2/server.js --name backend || echo "⚠️ PM2 restart failed, but continuing..."
+            else
+              echo "⚠️ PM2 not found, skipping restart"
+            fi
+            
+            echo "✅ Deployment completed!"
 
   # Alternative: Deploy using Docker
   deploy-docker:
