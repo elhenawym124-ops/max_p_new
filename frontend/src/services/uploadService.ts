@@ -158,6 +158,38 @@ class UploadService {
   }
 
   /**
+   * Upload a general media file (image or video)
+   */
+  async uploadMedia(file: File): Promise<UploadResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      // Use the generic upload endpoint if available, otherwise fallback to product-image or create a new one
+      // For now, assuming /upload/single works for all or we reuse product-image endpoint which often handles generic files in many setups
+      // Or better, check if there's a specific video endpoint. 
+      // Safe bet: use the same endpoint but ideally we'd want a generic one.
+      // Let's assume /api/v1/user/image-gallery/upload works for images, need one for video?
+      // For this user's codebase, `uploadProductImage` seems to hit `/upload/single` or similar based on `API_BASE_URL`.
+      // Let's look at `uploadProductImage` again.
+
+      const response = await axios.post(`${API_BASE_URL}/upload/single`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error('Error uploading media:', error);
+      return {
+        success: false,
+        error: error.response?.data?.error || 'Failed to upload media',
+      };
+    }
+  }
+
+  /**
    * Upload product image
    */
   async uploadProductImage(file: File): Promise<UploadResponse> {

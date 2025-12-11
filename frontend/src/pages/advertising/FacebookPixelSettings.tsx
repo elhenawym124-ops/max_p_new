@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   ChartBarIcon, 
   CheckCircleIcon, 
@@ -88,10 +88,17 @@ const FacebookPixelSettings: React.FC = () => {
   const [showManualSetup, setShowManualSetup] = useState(false);
   const { user } = useAuth();
 
+  // Track if settings have been loaded to prevent multiple calls
+  const hasLoadedSettings = useRef(false);
+  
   // Load settings on mount
   useEffect(() => {
     const initializePage = async () => {
-      await loadSettings();
+      // Only load settings if not already loaded
+      if (!hasLoadedSettings.current) {
+        hasLoadedSettings.current = true;
+        await loadSettings();
+      }
       
       // معالجة query parameters بعد إعادة التوجيه من Facebook OAuth
       const urlParams = new URLSearchParams(window.location.search);
@@ -131,13 +138,33 @@ const FacebookPixelSettings: React.FC = () => {
       }
     };
     
-    initializePage();
+    // Only initialize if settings haven't been loaded yet
+    if (!hasLoadedSettings.current) {
+      initializePage();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Auto-fetch pixels when settings are loaded (if token exists)
+  // Use useRef to track if we've already attempted to fetch pixels
+  const hasAttemptedFetch = useRef(false);
+  
+  // Reset hasAttemptedFetch and hasLoadedSettings when companyId changes
   useEffect(() => {
-    if (!loading && !fetchingPixels && !showPixelSelector && !showManualSetup) {
+    hasAttemptedFetch.current = false;
+    hasLoadedSettings.current = false;
+  }, [user?.companyId]);
+  
+  useEffect(() => {
+    // Only fetch if:
+    // 1. Settings are loaded (!loading)
+    // 2. Not currently fetching
+    // 3. Pixel selector is not already shown
+    // 4. Manual setup is not shown
+    // 5. We haven't attempted to fetch yet (prevent multiple calls)
+    // 6. User is available
+    if (!loading && !fetchingPixels && !showPixelSelector && !showManualSetup && !hasAttemptedFetch.current && user?.companyId) {
+      hasAttemptedFetch.current = true;
       // جلب Pixels تلقائياً بعد تحميل الإعدادات (إذا كان Token موجود)
       const timer = setTimeout(() => {
         fetchPixels();
@@ -145,10 +172,15 @@ const FacebookPixelSettings: React.FC = () => {
       return () => clearTimeout(timer);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading]);
+  }, [loading, fetchingPixels, showPixelSelector, showManualSetup, user?.companyId]);
 
-  const loadSettings = async () => {
+  const loadSettings = async (skipGuard: boolean = false) => {
     try {
+      // Prevent multiple simultaneous calls unless explicitly allowed
+      if (!skipGuard && hasLoadedSettings.current && !loading) {
+        return;
+      }
+      
       setLoading(true);
       const response = await storefrontSettingsService.getSettings();
       console.log('📥 Raw response:', response);
@@ -186,6 +218,7 @@ const FacebookPixelSettings: React.FC = () => {
         console.log('📊 Pixel ID:', newSettings.facebookPixelId);
         console.log('📊 Pixel Enabled:', newSettings.facebookPixelEnabled);
         setSettings(newSettings);
+        hasLoadedSettings.current = true;
       }
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -226,8 +259,8 @@ const FacebookPixelSettings: React.FC = () => {
       
       toast.success('✅ تم حفظ الإعدادات بنجاح');
       
-      // Reload to get updated data
-      await loadSettings();
+      // Reload to get updated data (skip guard to force reload)
+      await loadSettings(true);
     } catch (error) {
       toast.error('❌ فشل حفظ الإعدادات');
       console.error('❌ Save error:', error);
@@ -245,7 +278,7 @@ const FacebookPixelSettings: React.FC = () => {
       
       if (response.success) {
         toast.success('✅ Pixel ID صحيح وتم تفعيله بنجاح!');
-        await loadSettings(); // Reload to get updated status
+        await loadSettings(true); // Reload to get updated status
       } else {
         toast.error(`❌ فشل الاختبار: ${response.message || 'Pixel ID غير صحيح'}`);
       }
@@ -265,7 +298,7 @@ const FacebookPixelSettings: React.FC = () => {
       
       if (response.success) {
         toast.success('✅ الاتصال ناجح! تحقق من Facebook Events Manager');
-        await loadSettings(); // Reload to get updated status
+        await loadSettings(true); // Reload to get updated status
       } else {
         toast.error(`❌ فشل الاتصال: ${response.message}`);
       }
@@ -403,7 +436,7 @@ const FacebookPixelSettings: React.FC = () => {
       toast.dismiss(loadingToast);
       toast.success('✅ تم ربط Pixel بنجاح!');
       
-      await loadSettings();
+      await loadSettings(true);
     } catch (error: any) {
       console.error('Error selecting pixel:', error);
       toast.error('فشل ربط Pixel');

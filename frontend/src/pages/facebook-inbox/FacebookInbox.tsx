@@ -454,6 +454,14 @@ const FacebookInbox: React.FC = () => {
                 >
                     <BarChart3 className="w-5 h-5" />
                 </button>
+                <div className="absolute left-14 top-1/2 transform -translate-y-1/2">
+                    <a
+                        href="/facebook/create-post"
+                        className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 flex items-center"
+                    >
+                        <span>نشر بوست +</span>
+                    </a>
+                </div>
             </div>
 
             <InboxTabs

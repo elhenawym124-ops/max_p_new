@@ -135,7 +135,8 @@ const getFacebookAppConfig = async (req, res) => {
                 'pages_read_engagement',
                 'pages_manage_metadata',
                 'pages_read_user_content',
-                'pages_show_list'
+                'pages_show_list',
+                'pages_manage_posts'
             ],
             webhookFields: ['messages', 'messaging_postbacks', 'message_attachments']
         };
@@ -260,10 +261,10 @@ const connectFacebookPage = async (req, res) => {
                 },
                 timeout: 5000
             });
-            
+
             ////console.log('✅ [FACEBOOK-CONNECT] Token is valid');
             ////console.log(`   Page: ${testResponse.data.name} (${testResponse.data.id})`);
-            
+
         } catch (tokenError) {
             console.error('❌ [FACEBOOK-CONNECT] Invalid token:', tokenError.response?.data?.error?.message || tokenError.message);
             return res.status(400).json({
@@ -291,7 +292,7 @@ const connectFacebookPage = async (req, res) => {
 
             let savedPage;
             let isReconnection = false;
-            
+
             if (existingPage && existingPage.companyId === companyId) {
                 // Update existing page for same company (RECONNECTION CASE)
                 isReconnection = existingPage.status === 'disconnected';
@@ -325,7 +326,7 @@ const connectFacebookPage = async (req, res) => {
             // 🔗 NEW: Ensure webhook subscription for reconnected pages
             if (isReconnection) {
                 ////console.log('🔗 [FACEBOOK-CONNECT] This is a reconnection - checking webhook subscription...');
-                
+
                 try {
                     // Check if page is subscribed to webhook
                     const subscriptionsResponse = await axios.get(`https://graph.facebook.com/v18.0/${pageId}/subscribed_apps`, {
@@ -334,13 +335,13 @@ const connectFacebookPage = async (req, res) => {
                         },
                         timeout: 10000
                     });
-                    
+
                     const isSubscribed = subscriptionsResponse.data.data && subscriptionsResponse.data.data.length > 0;
                     ////console.log(`🔍 [FACEBOOK-CONNECT] Webhook subscription status: ${isSubscribed ? 'SUBSCRIBED' : 'NOT SUBSCRIBED'}`);
-                    
+
                     if (!isSubscribed) {
                         ////console.log('🔧 [FACEBOOK-CONNECT] Attempting to subscribe page to webhook...');
-                        
+
                         const subscribeResponse = await axios.post(`https://graph.facebook.com/v18.0/${pageId}/subscribed_apps`, {
                             subscribed_fields: 'messages,messaging_postbacks,messaging_referrals,message_attachments'
                         }, {
@@ -349,13 +350,13 @@ const connectFacebookPage = async (req, res) => {
                             },
                             timeout: 10000
                         });
-                        
+
                         ////console.log('✅ [FACEBOOK-CONNECT] Successfully subscribed page to webhook!');
                         ////console.log('   Response:', subscribeResponse.data);
                     } else {
                         ////console.log('✅ [FACEBOOK-CONNECT] Page is already subscribed to webhook');
                     }
-                    
+
                 } catch (webhookError) {
                     ////console.log('⚠️ [FACEBOOK-CONNECT] Could not manage webhook subscription:', webhookError.response?.data?.error?.message || webhookError.message);
                     ////console.log('   This may be due to missing pages_manage_metadata permission');
@@ -375,8 +376,8 @@ const connectFacebookPage = async (req, res) => {
 
             res.json({
                 success: true,
-                message: isReconnection 
-                    ? 'Page reconnected successfully - webhook subscription verified' 
+                message: isReconnection
+                    ? 'Page reconnected successfully - webhook subscription verified'
                     : 'Page connected successfully',
                 data: connectionData
             });
@@ -420,9 +421,9 @@ const facebookDiagnostics = async (req, res) => {
         });
 
         const companyMessages = await getSharedPrismaClient().message.count({
-            where: { 
+            where: {
                 conversation: {
-                    companyId: user.companyId 
+                    companyId: user.companyId
                 }
             }
         });

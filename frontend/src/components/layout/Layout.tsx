@@ -53,6 +53,7 @@ import {
   RocketLaunchIcon,
   StarIcon,
   PaperAirplaneIcon,
+  PencilSquareIcon,
 } from '@heroicons/react/24/outline';
 
 interface LayoutProps {
@@ -184,6 +185,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       icon: '📢',
       items: [
         { to: '/broadcast', icon: <SpeakerWaveIcon className="h-5 w-5" />, label: t('sidebar.broadcast') },
+        { to: '/facebook/create-post', icon: <PencilSquareIcon className="h-5 w-5" />, label: 'نشر فيسبوك', badge: 'جديد' },
       ]
     },
     {
