@@ -11,12 +11,21 @@ const { getSharedPrismaClient } = require('../services/sharedDatabase');
 
 // الحصول على الطلبات البسيطة
 // الحصول على الطلبات البسيطة (مع Pagination & Filtering)
-router.get('/simple', async (req, res) => {
+router.get('/simple', requireAuth, async (req, res) => {
   try {
     // الحصول على companyId من المستخدم المصادق عليه
     const companyId = req.user?.companyId;
 
+    // Debug logging (development only)
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[ORDERS] /simple request - req.user:`, req.user ? { id: req.user.id, email: req.user.email, companyId: req.user.companyId } : 'null');
+      console.log(`[ORDERS] /simple request - companyId:`, companyId);
+    }
+
     if (!companyId) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error(`[ORDERS] /simple - Missing companyId. req.user:`, req.user);
+      }
       return res.status(403).json({
         success: false,
         message: 'غير مصرح - معرف الشركة مطلوب'
@@ -38,7 +47,10 @@ router.get('/simple', async (req, res) => {
     // هذا يضمن الترتيب الصحيح عبر الجدولين دون جلب الداتا كاملة.
     const fetchLimit = page * limit;
 
-    console.log(`📦 [ORDERS] Fetching page ${page} (limit ${limit}) for company: ${companyId}`);
+    // Log only in development
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`📦 [ORDERS] Fetching page ${page} (limit ${limit}) for company: ${companyId}`);
+    }
 
     // بناء شروط البحث (Where Clause)
     const whereClause = { companyId };
@@ -561,19 +573,32 @@ router.get('/', async (req, res) => {
 });
 
 // الحصول على طلب بسيط محدد بالرقم
-router.get('/simple/:orderNumber', async (req, res) => {
+router.get('/simple/:orderNumber', requireAuth, async (req, res) => {
   try {
     const { orderNumber } = req.params;
+    
+    // Debug logging
+    console.log('🔍 [ORDER-DETAIL] Request for order:', orderNumber);
+    console.log('🔍 [ORDER-DETAIL] req.user:', req.user ? { id: req.user.id, email: req.user.email, companyId: req.user.companyId } : 'null');
+    
     const companyId = req.user?.companyId;
 
     if (!companyId) {
+      console.error('❌ [ORDER-DETAIL] Missing companyId!', { 
+        user: req.user,
+        hasUser: !!req.user,
+        orderNumber 
+      });
       return res.status(403).json({
         success: false,
         message: 'غير مصرح - معرف الشركة مطلوب'
       });
     }
 
-    const order = await getSharedPrismaClient().order.findFirst({
+    console.log('🔍 [ORDER-DETAIL] Searching for order:', { orderNumber, companyId });
+
+    // Try to find regular order first
+    let order = await getSharedPrismaClient().order.findFirst({
       where: {
         orderNumber,
         companyId
@@ -608,73 +633,150 @@ router.get('/simple/:orderNumber', async (req, res) => {
       }
     });
 
+    let isGuestOrder = false;
+    let guestOrder = null;
+
+    // If not found, try guest order
     if (!order) {
+      console.log('🔍 [ORDER-DETAIL] Regular order not found, trying guest order...');
+      guestOrder = await getSharedPrismaClient().guestOrder.findFirst({
+        where: {
+          orderNumber,
+          companyId
+        }
+      });
+
+      if (guestOrder) {
+        isGuestOrder = true;
+        console.log('✅ [ORDER-DETAIL] Found guest order:', orderNumber);
+      }
+    }
+
+    // If neither found, return 404
+    if (!order && !guestOrder) {
+      console.error('❌ [ORDER-DETAIL] Order not found:', { 
+        orderNumber, 
+        companyId,
+        searchedRegular: true,
+        searchedGuest: true
+      });
       return res.status(404).json({
         success: false,
-        message: 'الطلب غير موجود'
+        message: 'الطلب غير موجود',
+        orderNumber,
+        companyId
       });
     }
 
-    // Parse shippingAddress if it's a JSON string
-    let shippingAddress = order.shippingAddress || '';
-    try {
-      if (typeof shippingAddress === 'string' && shippingAddress.startsWith('{')) {
-        shippingAddress = JSON.parse(shippingAddress);
-      }
-    } catch (e) {
-      // Keep as string if parsing fails
-    }
+    let formattedOrder;
 
-    // تحويل البيانات للصيغة المتوافقة مع الـ frontend
-    // PRIORITY: Use order.customerName from WooCommerce first
-    let finalCustomerName = '';
-    
-    // First: Try order.customerName (from WooCommerce)
-    if (order.customerName && order.customerName.trim()) {
-      finalCustomerName = order.customerName.trim();
+    if (isGuestOrder && guestOrder) {
+      // Format guest order
+      let items = guestOrder.items || [];
+      if (typeof items === 'string') {
+        try { items = JSON.parse(items); } catch (e) { items = []; }
+      }
+
+      let shippingAddress = guestOrder.shippingAddress || {};
+      if (typeof shippingAddress === 'string') {
+        try { shippingAddress = JSON.parse(shippingAddress); } catch (e) { shippingAddress = {}; }
+      }
+
+      formattedOrder = {
+        id: guestOrder.orderNumber,
+        orderNumber: guestOrder.orderNumber,
+        customerName: guestOrder.guestName || '',
+        customerPhone: guestOrder.guestPhone || '',
+        customerEmail: guestOrder.guestEmail || '',
+        customerAddress: typeof shippingAddress === 'object' ? (shippingAddress.address || shippingAddress.street || '') : '',
+        city: typeof shippingAddress === 'object' ? (shippingAddress.city || '') : '',
+        total: guestOrder.total || 0,
+        subtotal: guestOrder.total || 0,
+        tax: 0,
+        shipping: guestOrder.shippingCost || 0,
+        status: guestOrder.status?.toLowerCase() || 'pending',
+        paymentStatus: 'pending',
+        paymentMethod: guestOrder.paymentMethod?.toLowerCase() || 'cash_on_delivery',
+        shippingAddress: shippingAddress,
+        items: Array.isArray(items) ? items.map(item => ({
+          id: item.productId || item.id || '',
+          productId: item.productId || '',
+          productName: item.name || item.productName || '',
+          name: item.name || item.productName || '',
+          price: item.price || 0,
+          quantity: item.quantity || 1,
+          total: (item.price || 0) * (item.quantity || 1),
+          metadata: item.metadata || {}
+        })) : [],
+        trackingNumber: null,
+        notes: guestOrder.notes || '',
+        createdAt: guestOrder.createdAt,
+        updatedAt: guestOrder.updatedAt,
+        metadata: { source: 'storefront', isGuestOrder: true }
+      };
+    } else {
+      // Format regular order
+      // Parse shippingAddress if it's a JSON string
+      let shippingAddress = order.shippingAddress || '';
+      try {
+        if (typeof shippingAddress === 'string' && shippingAddress.startsWith('{')) {
+          shippingAddress = JSON.parse(shippingAddress);
+        }
+      } catch (e) {
+        // Keep as string if parsing fails
+      }
+
+      // تحويل البيانات للصيغة المتوافقة مع الـ frontend
+      // PRIORITY: Use order.customerName from WooCommerce first
+      let finalCustomerName = '';
+      
+      // First: Try order.customerName (from WooCommerce)
+      if (order.customerName && order.customerName.trim()) {
+        finalCustomerName = order.customerName.trim();
+      }
+      // Second: Fallback to Customer relation if customerName is empty
+      else if (order.customer) {
+        const firstName = order.customer.firstName || '';
+        const lastName = order.customer.lastName || '';
+        finalCustomerName = `${firstName} ${lastName}`.trim();
+      }
+      // Final fallback: empty string
+      else {
+        finalCustomerName = '';
+      }
+      
+      formattedOrder = {
+        id: order.orderNumber,
+        orderNumber: order.orderNumber,
+        customerName: finalCustomerName,
+        customerPhone: order.customerPhone || order.customer?.phone || '',
+        customerEmail: order.customerEmail || order.customer?.email || '',
+        customerAddress: order.customerAddress || '',
+        city: order.city || '',
+        total: order.total,
+        subtotal: order.subtotal,
+        tax: order.tax,
+        shipping: order.shipping,
+        status: order.status.toLowerCase(),
+        paymentStatus: order.paymentStatus.toLowerCase(),
+        paymentMethod: order.paymentMethod.toLowerCase().replace('_', '_on_'),
+        shippingAddress: shippingAddress,
+        items: order.items.map(item => ({
+          id: item.id,
+          productId: item.productId,
+          name: item.product?.name || JSON.parse(item.metadata || '{}').productName || '',
+          price: item.price,
+          quantity: item.quantity,
+          total: item.total,
+          metadata: JSON.parse(item.metadata || '{}')
+        })),
+        trackingNumber: order.trackingNumber,
+        notes: order.notes,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+        metadata: order.metadata ? JSON.parse(order.metadata) : {}
+      };
     }
-    // Second: Fallback to Customer relation if customerName is empty
-    else if (order.customer) {
-      const firstName = order.customer.firstName || '';
-      const lastName = order.customer.lastName || '';
-      finalCustomerName = `${firstName} ${lastName}`.trim();
-    }
-    // Final fallback: empty string
-    else {
-      finalCustomerName = '';
-    }
-    
-    const formattedOrder = {
-      id: order.orderNumber,
-      orderNumber: order.orderNumber,
-      customerName: finalCustomerName,
-      customerPhone: order.customerPhone || order.customer?.phone || '',
-      customerEmail: order.customerEmail || order.customer?.email || '',
-      customerAddress: order.customerAddress || '',
-      city: order.city || '',
-      total: order.total,
-      subtotal: order.subtotal,
-      tax: order.tax,
-      shipping: order.shipping,
-      status: order.status.toLowerCase(),
-      paymentStatus: order.paymentStatus.toLowerCase(),
-      paymentMethod: order.paymentMethod.toLowerCase().replace('_', '_on_'),
-      shippingAddress: shippingAddress,
-      items: order.items.map(item => ({
-        id: item.id,
-        productId: item.productId,
-        name: item.product?.name || JSON.parse(item.metadata || '{}').productName || '',
-        price: item.price,
-        quantity: item.quantity,
-        total: item.total,
-        metadata: JSON.parse(item.metadata || '{}')
-      })),
-      trackingNumber: order.trackingNumber,
-      notes: order.notes,
-      createdAt: order.createdAt,
-      updatedAt: order.updatedAt,
-      metadata: order.metadata ? JSON.parse(order.metadata) : {}
-    };
 
     res.json({
       success: true,

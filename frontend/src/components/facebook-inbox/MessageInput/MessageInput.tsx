@@ -1,0 +1,235 @@
+import React, { useState, useRef } from 'react';
+import { PaperAirplaneIcon, PaperClipIcon, FaceSmileIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import EmojiPicker from 'emoji-picker-react';
+import QuickReplyDropdown, { QuickReply } from '../QuickReplyDropdown/QuickReplyDropdown';
+import { replaceVariables, getContextVariables } from '../../../utils/quickReplyUtils';
+
+interface MessageInputProps {
+    onSendMessage: (content: string) => void;
+    onSendFile: (file: File) => void;
+    sending: boolean;
+    uploadingFile: boolean;
+    conversation?: any;
+    user?: any;
+    replyTo?: any;
+    onCancelReply?: () => void;
+    initialText?: string;
+    onTextCleared?: () => void;
+}
+
+const MessageInput: React.FC<MessageInputProps> = ({
+    onSendMessage,
+    onSendFile,
+    sending,
+    uploadingFile,
+    conversation,
+    user,
+    replyTo,
+    onCancelReply,
+    initialText,
+    onTextCleared
+}) => {
+    const [message, setMessage] = useState('');
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const [showQuickReplies, setShowQuickReplies] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Update message when initialText changes (e.g. from AI suggestion)
+    React.useEffect(() => {
+        if (initialText) {
+            setMessage(initialText);
+            // Clear the parent state immediately so we don't get stuck with this text
+            // or keep it so user can edit? Usually one-off set is better.
+            // But if we clear it immediately, the parent might pass empty string back if renders happen.
+            // Let's rely on parent to clear it if needed, or better:
+            // The parent passed it because user clicked a suggestion.
+            // We set it here. We should ideally callback to say "we consumed it".
+            if (onTextCleared) {
+                // Using a small timeout to avoid render loops or state clashes during render
+                setTimeout(() => onTextCleared(), 100);
+            }
+        }
+    }, [initialText, onTextCleared]);
+
+    const handleSend = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (message.trim() && !sending) {
+            onSendMessage(message);
+            setMessage('');
+            setShowQuickReplies(false);
+        }
+    };
+
+    const handleKeyPress = (e: React.KeyboardEvent) => {
+        // Don't send on Enter if quick replies dropdown is open
+        if (e.key === 'Enter' && !e.shiftKey && !showQuickReplies) {
+            e.preventDefault();
+            handleSend(e);
+        }
+    };
+
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value;
+        setMessage(value);
+
+        // Show quick replies if starts with /
+        if (value.startsWith('/')) {
+            setShowQuickReplies(true);
+        } else {
+            setShowQuickReplies(false);
+        }
+    };
+
+    const handleSelectQuickReply = (reply: QuickReply) => {
+        // Replace variables in content
+        const contextVars = getContextVariables(conversation, user);
+        const processedContent = replaceVariables(reply.content, contextVars);
+
+        setMessage(processedContent);
+        setShowQuickReplies(false);
+    };
+
+    const handleEmojiClick = (emojiData: any) => {
+        setMessage(prev => prev + emojiData.emoji);
+    };
+
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file && !uploadingFile) {
+            onSendFile(file);
+        }
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
+    return (
+        <div className="border-t border-gray-200 p-4 bg-white relative">
+            {/* Quick Replies Dropdown */}
+            {showQuickReplies && (
+                <QuickReplyDropdown
+                    inputValue={message}
+                    onSelectReply={handleSelectQuickReply}
+                    onClose={() => setShowQuickReplies(false)}
+                />
+            )}
+
+            {/* Reply Banner */}
+            {replyTo && (
+                <div className="absolute top-0 transform -translate-y-full left-0 right-0 bg-gray-50 border-t border-r border-l border-gray-200 p-2 flex justify-between items-center text-sm shadow-sm rounded-t-lg mx-4">
+                    <div className="flex flex-col max-w-[90%]">
+                        <span className="font-semibold text-blue-600 text-xs">
+                            الرد على {replyTo.senderName}:
+                        </span>
+                        <span className="truncate text-gray-600 text-xs">
+                            {replyTo.type === 'text' ? replyTo.content : (replyTo.type === 'image' ? '🖼️ صورة' : '📎 ملف')}
+                        </span>
+                    </div>
+                    <button
+                        onClick={onCancelReply}
+                        className="p-1 hover:bg-gray-200 rounded-full"
+                    >
+                        <XMarkIcon className="w-4 h-4 text-gray-500" />
+                    </button>
+                </div>
+            )}
+
+            <form onSubmit={handleSend} className="flex items-center gap-2">
+                {/* File Upload */}
+                <div className="relative">
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        className="hidden"
+                        onChange={handleFileSelect}
+                        accept="image/*,.pdf,.doc,.docx,.txt"
+                    />
+                    <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingFile}
+                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                        title="إرفاق ملف"
+                    >
+                        {uploadingFile ? (
+                            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                            <PaperClipIcon className="w-5 h-5 text-gray-600" />
+                        )}
+                    </button>
+                </div>
+
+                {/* Emoji Picker */}
+                <div className="relative">
+                    <button
+                        type="button"
+                        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                        title="إيموجي"
+                    >
+                        <FaceSmileIcon className="w-5 h-5 text-gray-600" />
+                    </button>
+
+                    {showEmojiPicker && (
+                        <>
+                            <div
+                                className="fixed inset-0 z-10"
+                                onClick={() => setShowEmojiPicker(false)}
+                            />
+                            <div className="absolute bottom-full left-0 mb-2 z-20">
+                                <EmojiPicker onEmojiClick={handleEmojiClick} />
+                            </div>
+                        </>
+                    )}
+                </div>
+
+                {/* Text Input */}
+                <div className="flex-1 relative">
+                    <input
+                        type="text"
+                        value={message}
+                        onChange={handleInputChange}
+                        onKeyPress={handleKeyPress}
+                        placeholder="اكتب رسالة... (أو / للردود السريعة)"
+                        disabled={sending || uploadingFile}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:bg-gray-50"
+                    />
+                    {message.startsWith('/') && !showQuickReplies && (
+                        <div className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+                            ⚡
+                        </div>
+                    )}
+                </div>
+
+                {/* Send Button */}
+                <button
+                    type="submit"
+                    disabled={!message.trim() || sending || uploadingFile}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                    {sending ? (
+                        <>
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            <span>جاري الإرسال...</span>
+                        </>
+                    ) : (
+                        <>
+                            <PaperAirplaneIcon className="w-5 h-5" />
+                            <span>إرسال</span>
+                        </>
+                    )}
+                </button>
+            </form>
+
+            {/* Helper Text */}
+            {message.startsWith('/') && (
+                <div className="mt-2 text-xs text-gray-500 flex items-center gap-1">
+                    <span>💡</span>
+                    <span>اضغط Tab أو Enter لاختيار رد سريع</span>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default MessageInput;

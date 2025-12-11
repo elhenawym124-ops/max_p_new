@@ -160,7 +160,7 @@ const postMessageConverstation = async (req, res) => {
     //console.log(`📦 Request body:`, req.body);
 
     const { id } = req.params;
-    const { message } = req.body;
+    const { message, replyTo } = req.body;
 
     if (!message) {
       //console.log(`❌ No message content provided`);
@@ -199,20 +199,7 @@ const postMessageConverstation = async (req, res) => {
     //console.log(`📤 Sending message to conversation ${id}: ${message}`);
 
     // ⚡ OPTIMIZATION: Parallel DB queries to reduce latency
-    // ✅ FIX: استخدام req.user.id مباشرة (verifyToken.js يضبطه من decoded.userId || decoded.id)
-    const senderId = req.user?.id;
-    
-    // ✅ FIX: Logging لتشخيص المشكلة
-    console.log(`🔍 [SENDER-DEBUG] req.user:`, {
-      hasUser: !!req.user,
-      userId: req.user?.userId,
-      id: req.user?.id,
-      email: req.user?.email,
-      firstName: req.user?.firstName,
-      lastName: req.user?.lastName,
-      allKeys: req.user ? Object.keys(req.user) : [],
-      calculatedSenderId: senderId
-    });
+    const senderId = req.user?.userId || req.user?.id;
 
     const [conversation, user] = await Promise.all([
       getSharedPrismaClient().conversation.findUnique({
@@ -232,15 +219,6 @@ const postMessageConverstation = async (req, res) => {
         }
       }) : Promise.resolve(null)
     ]);
-    
-    // ✅ FIX: Logging لتشخيص المشكلة
-    console.log(`🔍 [SENDER-DEBUG] User from DB:`, {
-      hasUser: !!user,
-      userId: user?.id,
-      firstName: user?.firstName,
-      lastName: user?.lastName,
-      email: user?.email
-    });
 
     // ⚡ Parse metadata once and reuse
     let conversationMetadata = {};
@@ -253,62 +231,15 @@ const postMessageConverstation = async (req, res) => {
     }
 
     // 🔧 FIX: استخدام userId من JWT token
-    let senderName = null;
+    let senderName = 'موظف';
 
-    // ✅ FIX: محاولة استخدام req.user مباشرة إذا كان يحتوي على firstName و lastName
-    if (req.user && (req.user.firstName || req.user.lastName)) {
-      const firstName = req.user.firstName || '';
-      const lastName = req.user.lastName || '';
-      const fullName = `${firstName} ${lastName}`.trim();
-      
-      if (fullName) {
-        senderName = fullName;
-        console.log(`👤 [SENDER-INFO] Using name from req.user: ${senderName}`);
-      }
-    }
+    if (req.user && senderId && user) {
+      senderName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'موظف';
 
-    // ✅ FIX: إذا لم يكن هناك اسم من req.user، جرب user من قاعدة البيانات
-    if (!senderName && req.user && senderId && user) {
-      // ✅ FIX: بناء اسم المرسل من firstName و lastName مع معالجة القيم الفارغة
-      const firstName = user.firstName || '';
-      const lastName = user.lastName || '';
-      const fullName = `${firstName} ${lastName}`.trim();
-      
-      if (fullName) {
-        senderName = fullName;
-        console.log(`👤 [SENDER-INFO] Using name from DB user: ${senderName}`);
-      } else if (user.email) {
-        senderName = user.email;
-        console.log(`👤 [SENDER-INFO] Using email from DB user: ${senderName}`);
-      }
-    }
-
-    // ✅ FIX: إذا لم يكن هناك اسم بعد، جرب req.user.email
-    if (!senderName && req.user?.email) {
-      senderName = req.user.email;
-      console.log(`👤 [SENDER-INFO] Using email from req.user: ${senderName}`);
-    }
-
-    // ✅ FIX: فقط إذا لم يكن هناك أي بيانات، استخدم "موظف"
-    if (!senderName) {
-      senderName = 'موظف';
-      console.warn(`⚠️ [SENDER-INFO] No sender name found, using default: ${senderName}`, {
-        hasReqUser: !!req.user,
-        reqUserFirstName: req.user?.firstName,
-        reqUserLastName: req.user?.lastName,
-        reqUserEmail: req.user?.email,
-        senderId: senderId,
-        hasUserRecord: !!user,
-        userFirstName: user?.firstName,
-        userLastName: user?.lastName,
-        userEmail: user?.email
-      });
-    }
-
-    if (senderId) {
       conversationMetadata.lastSenderId = senderId; // معرف الموظف اللي بعت الرسالة
       conversationMetadata.lastSenderName = senderName; // اسم الموظف
-      console.log(`👤 [SENDER-INFO] Final sender info: ${senderId} - ${senderName}`);
+    } else {
+      console.warn(`⚠️ [SENDER-INFO] req.user or senderId is missing!`, req.user);
     }
 
     // ⚡ OPTIMIZATION: Combine all conversation updates into one query
@@ -333,7 +264,6 @@ const postMessageConverstation = async (req, res) => {
     if (conversation && conversation.companyId) {
       // Non-blocking cache invalidation
       conversationCache.invalidateConversation(id, conversation.companyId);
-      //console.log(`🧹 [CACHE] Invalidated cache for conversation ${id}`);
     }
 
     // 💾 حفظ الرسالة فوراً في قاعدة البيانات (INSTANT SAVE)
@@ -350,14 +280,12 @@ const postMessageConverstation = async (req, res) => {
             platform: conversation.channel ? conversation.channel.toLowerCase() : 'facebook',
             source: 'manual_reply',
             employeeId: senderId,
-            employeeName: senderName, // ✅ FIX: إرسال اسم الموظف في metadata
-            // ✅ FIX: استخدام user من DB أو req.user كـ fallback
-            employeeFirstName: user?.firstName || req.user?.firstName || null,
-            employeeLastName: user?.lastName || req.user?.lastName || null,
+            employeeName: senderName,
             isFacebookReply: conversation.channel !== 'TELEGRAM',
             isTelegramReply: conversation.channel === 'TELEGRAM',
             timestamp: new Date(),
-            instantSave: true // علامة لتحديد أن هذه الرسالة تم حفظها فوراً
+            instantSave: true, // علامة لتحديد أن هذه الرسالة تم حفظها فوراً
+            ...(replyTo ? { replyTo } : {}) // Add replyTo logic
           }),
           createdAt: new Date()
         }
@@ -368,43 +296,16 @@ const postMessageConverstation = async (req, res) => {
       // إرسال الرسالة فوراً للـ socket
       const io = socketService.getIO();
       if (io) {
-        // ✅ FIX: بناء sender object من user أو req.user
-        let senderObject = null;
-        if (user) {
-          senderObject = {
-            id: user.id,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            name: senderName
-          };
-        } else if (req.user && (req.user.firstName || req.user.lastName)) {
-          // ✅ FIX: استخدام req.user مباشرة إذا كان user غير موجود
-          senderObject = {
-            id: req.user.id || req.user.userId || senderId,
-            firstName: req.user.firstName,
-            lastName: req.user.lastName,
-            name: senderName
-          };
-        }
-
-        // ✅ FIX: تحويل timestamp إلى ISO string لضمان التنسيق الصحيح
-        const messageTimestamp = savedMessage.createdAt 
-          ? (savedMessage.createdAt instanceof Date 
-              ? savedMessage.createdAt.toISOString() 
-              : new Date(savedMessage.createdAt).toISOString())
-          : new Date().toISOString();
-
         const socketData = {
           id: savedMessage.id,
           conversationId: savedMessage.conversationId,
           content: savedMessage.content,
           type: savedMessage.type.toLowerCase(),
           isFromCustomer: savedMessage.isFromCustomer,
-          timestamp: messageTimestamp, // ✅ FIX: استخدام timestamp محول إلى ISO string
+          timestamp: savedMessage.createdAt,
           metadata: JSON.parse(savedMessage.metadata),
           senderId: senderId,
-          senderName: senderName, // ✅ FIX: إرسال اسم الموظف
-          sender: senderObject, // ✅ FIX: إضافة sender object مع firstName و lastName
+          senderName: senderName,
           lastMessageIsFromCustomer: false,
           lastCustomerMessageIsUnread: false,
           // 🏢 Company Isolation
@@ -413,12 +314,6 @@ const postMessageConverstation = async (req, res) => {
           platform: conversation.channel === 'TELEGRAM' ? 'telegram' : (conversation.channel ? conversation.channel.toLowerCase() : 'facebook'),
           channel: conversation.channel || 'FACEBOOK'
         };
-        
-        console.log(`📤 [SOCKET-DATA] Sending message with sender info:`, {
-          senderId: senderId,
-          senderName: senderName,
-          sender: senderObject
-        });
 
         // ✅ إرسال للشركة فقط - Company Isolation
         io.to(`company_${conversation.companyId}`).emit('new_message', socketData);
@@ -2555,9 +2450,7 @@ const getMessages = async (req, res) => {
     const [messages, total] = await Promise.all([
       getSharedPrismaClient().message.findMany({
         where: { conversationId: id },
-        orderBy: { createdAt: 'asc' }, // Oldest first usually for chat history? Or desc and reverse?
-        // Usually chat history APIs return reversed desc or asc. 
-        // Let's return asc (chronological) for simple appending.
+        orderBy: { createdAt: 'desc' }, // Get newest first
         skip,
         take: parseInt(limit),
         include: {
@@ -2571,7 +2464,7 @@ const getMessages = async (req, res) => {
 
     res.json({
       success: true,
-      data: messages.map(msg => {
+      data: messages.reverse().map(msg => {
         // Parse metadata to get employeeName
         let employeeName = null;
         if (msg.metadata) {
@@ -2874,6 +2767,122 @@ const deleteMessage = async (req, res) => {
   }
 };
 
+/**
+ * ⭐ Toggle message star status
+ * PUT /conversations/:id/messages/:messageId/star
+ */
+const toggleMessageStar = async (req, res) => {
+  try {
+    const { id, messageId } = req.params;
+    const companyId = req.user?.companyId;
+
+    const message = await getSharedPrismaClient().message.findFirst({
+      where: { id: messageId, conversationId: id }
+    });
+
+    if (!message) {
+      return res.status(404).json({ success: false, error: 'Message not found' });
+    }
+
+    let metadata = {};
+    try {
+      metadata = message.metadata ? JSON.parse(message.metadata) : {};
+    } catch (e) {
+      metadata = {};
+    }
+
+    // Toggle star status
+    const isStarred = !metadata.isStarred;
+    metadata.isStarred = isStarred;
+
+    await getSharedPrismaClient().message.update({
+      where: { id: messageId },
+      data: {
+        metadata: JSON.stringify(metadata)
+      }
+    });
+
+    // Option: Emit socket event if needed for real-time update
+    // socketService.sendToConversationSecure(...)
+
+    res.json({
+      success: true,
+      data: { isStarred },
+      message: isStarred ? 'Message starred' : 'Message unstarred'
+    });
+
+  } catch (error) {
+    console.error('Error toggling message star:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * 😄 Toggle message reaction
+ * PUT /conversations/:id/messages/:messageId/reaction
+ */
+const toggleMessageReaction = async (req, res) => {
+  try {
+    const { id, messageId } = req.params;
+    const { reaction } = req.body; // e.g., '👍', '❤️', '😂'
+    const companyId = req.user?.companyId;
+    const userId = req.user?.userId || req.user?.id;
+
+    if (!reaction) {
+      return res.status(400).json({ success: false, error: 'Reaction is required' });
+    }
+
+    const message = await getSharedPrismaClient().message.findFirst({
+      where: { id: messageId, conversationId: id }
+    });
+
+    if (!message) {
+      return res.status(404).json({ success: false, error: 'Message not found' });
+    }
+
+    let metadata = {};
+    try {
+      metadata = message.metadata ? JSON.parse(message.metadata) : {};
+    } catch (e) {
+      metadata = {};
+    }
+
+    // Initialize reactions object if not exists: { userId: reaction }
+    if (!metadata.reactions) {
+      metadata.reactions = {};
+    }
+
+    const currentReaction = metadata.reactions[userId];
+
+    if (currentReaction === reaction) {
+      // Remove reaction if same
+      delete metadata.reactions[userId];
+    } else {
+      // Add/Update reaction
+      metadata.reactions[userId] = reaction;
+    }
+
+    await getSharedPrismaClient().message.update({
+      where: { id: messageId },
+      data: {
+        metadata: JSON.stringify(metadata)
+      }
+    });
+
+    // Socket emit would happen here in a real deployment
+
+    res.json({
+      success: true,
+      data: { reactions: metadata.reactions },
+      message: 'Reaction updated'
+    });
+
+  } catch (error) {
+    console.error('Error toggling message reaction:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 // Send location message
 const sendLocationMessage = async (req, res) => {
   try {
@@ -2997,6 +3006,132 @@ const sendLocationMessage = async (req, res) => {
   }
 };
 
+// 📦 تحديث محادثات متعددة دفعة واحدة
+const bulkUpdateConversations = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+      });
+    }
+
+    const { conversationIds, updates } = req.body;
+
+    if (!conversationIds || !Array.isArray(conversationIds) || conversationIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'معرفات المحادثات مطلوبة'
+      });
+    }
+
+    if (!updates || typeof updates !== 'object') {
+      return res.status(400).json({
+        success: false,
+        message: 'بيانات التحديث مطلوبة'
+      });
+    }
+
+    // التحقق من أن جميع المحادثات تنتمي للشركة
+    const conversations = await getSharedPrismaClient().conversation.findMany({
+      where: {
+        id: { in: conversationIds },
+        companyId: companyId
+      },
+      select: { id: true }
+    });
+
+    if (conversations.length !== conversationIds.length) {
+      return res.status(403).json({
+        success: false,
+        message: 'بعض المحادثات غير موجودة أو لا تنتمي لشركتك'
+      });
+    }
+
+    // تحديث المحادثات
+    const result = await getSharedPrismaClient().conversation.updateMany({
+      where: {
+        id: { in: conversationIds },
+        companyId: companyId
+      },
+      data: updates
+    });
+
+    // Invalidate cache for updated conversations
+    conversationIds.forEach(id => {
+      conversationCache.invalidate(id);
+    });
+
+    console.log(`📦 [BULK-UPDATE] Updated ${result.count} conversations for company ${companyId}`);
+
+    res.json({
+      success: true,
+      data: {
+        updatedCount: result.count
+      },
+      message: `تم تحديث ${result.count} محادثة بنجاح`
+    });
+  } catch (error) {
+    console.error('❌ Error bulk updating conversations:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في تحديث المحادثات',
+      error: error.message
+    });
+  }
+};
+
+// Snooze conversation
+const snoozeConversation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { snoozeUntil } = req.body;
+    const companyId = req.user.companyId;
+
+    if (!snoozeUntil) {
+      return res.status(400).json({ error: 'Snooze date is required' });
+    }
+
+    const conversation = await prisma.conversation.findUnique({
+      where: { id: id },
+      select: { metadata: true, companyId: true }
+    });
+
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    if (conversation.companyId !== companyId) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    let metadata = {};
+    try {
+      metadata = JSON.parse(conversation.metadata || '{}');
+    } catch (e) {
+      metadata = {};
+    }
+
+    metadata.snoozedUntil = snoozeUntil;
+
+    const updated = await prisma.conversation.update({
+      where: { id: id },
+      data: {
+        metadata: JSON.stringify(metadata),
+        // Optionally update status? Maybe not.
+        // status: 'snoozed' // Only if we had this status enum.
+      }
+    });
+
+    res.json({ message: 'Conversation snoozed', snoozedUntil });
+  } catch (error) {
+    console.error('Error snoozing conversation:', error);
+    res.status(500).json({ error: 'Failed to snooze conversation' });
+  }
+};
+
 module.exports = {
   deleteConverstation,
   postMessageConverstation,
@@ -3018,5 +3153,9 @@ module.exports = {
   sendMediaMessage,
   editMessage,
   deleteMessage,
-  sendLocationMessage
-}
+  toggleMessageStar,
+  toggleMessageReaction,
+  snoozeConversation,
+  sendLocationMessage,
+  bulkUpdateConversations
+};

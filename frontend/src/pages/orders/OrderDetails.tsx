@@ -4,6 +4,7 @@ import { useCurrency } from '../../hooks/useCurrency';
 import { useDateFormat } from '../../hooks/useDateFormat';
 import { useAuth } from '../../hooks/useAuthSimple';
 import { config } from '../../config';
+import { apiClient } from '../../services/apiClient';
 import {
   ArrowLeftIcon,
   PencilIcon,
@@ -110,15 +111,22 @@ const OrderDetails: React.FC = () => {
   }, [orderNumber, authLoading, isAuthenticated]);
 
   const fetchOrderDetails = async () => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OrderDetails.tsx:113',message:'fetchOrderDetails entry',data:{orderNumber},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
-      // Try admin orders first
-      let response = await fetch(`${apiUrl}/orders-new/simple/${orderNumber}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      let data = await response.json();
+      // Use apiClient instead of fetch
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OrderDetails.tsx:118',message:'Before API call',data:{orderNumber},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      const response = await apiClient.get(`/orders-new/simple/${orderNumber}`);
+      const data = response.data;
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OrderDetails.tsx:120',message:'API response received',data:{status:response.status,hasData:!!data,success:data?.success,hasOrderData:!!data?.data,orderDataKeys:data?.data?Object.keys(data.data):[]},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
 
       // If not found, try guest public API (fallback logic from original file)
       if (!data.success && response.status === 404) {
@@ -130,6 +138,9 @@ const OrderDetails: React.FC = () => {
 
       if (data.success) {
         const simpleOrder = data.data;
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OrderDetails.tsx:129',message:'Before order transformation',data:{simpleOrderKeys:Object.keys(simpleOrder),hasItems:!!simpleOrder.items,itemsIsArray:Array.isArray(simpleOrder.items),itemsLength:Array.isArray(simpleOrder.items)?simpleOrder.items.length:0,hasNulls:Object.entries(simpleOrder).filter(([k,v])=>v===null||v===undefined).map(([k])=>k)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         const enhancedOrder: OrderDetails = {
           id: simpleOrder.id,
           orderNumber: simpleOrder.orderNumber,
@@ -139,19 +150,19 @@ const OrderDetails: React.FC = () => {
           customerAddress: simpleOrder.customerAddress || (typeof simpleOrder.shippingAddress === 'string' ? simpleOrder.shippingAddress : simpleOrder.shippingAddress?.address) || '',
           city: simpleOrder.city || simpleOrder.shippingAddress?.city || '',
           country: simpleOrder.shippingAddress?.country || '',
-          status: simpleOrder.status.toUpperCase(),
-          paymentStatus: simpleOrder.paymentStatus.toUpperCase(),
+          status: (simpleOrder.status || '').toUpperCase(),
+          paymentStatus: (simpleOrder.paymentStatus || 'pending').toUpperCase(),
           paymentMethod: simpleOrder.paymentMethod,
-          items: simpleOrder.items.map((item: any) => ({
+          items: (Array.isArray(simpleOrder.items) ? simpleOrder.items : []).map((item: any) => ({
             id: item.id || Math.random().toString(),
-            productId: item.productId,
-            productName: item.name,
+            productId: item.productId || '',
+            productName: item.name || item.productName || 'منتج غير محدد',
             productColor: item.metadata?.color,
             productSize: item.metadata?.size,
             price: parseFloat(item.price) || 0,
-            quantity: item.quantity,
-            total: parseFloat(item.total) || 0,
-            metadata: item.metadata
+            quantity: parseInt(item.quantity) || 1,
+            total: parseFloat(item.total) || (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1),
+            metadata: item.metadata || {}
           })),
           subtotal: parseFloat(simpleOrder.subtotal) || 0,
           tax: parseFloat(simpleOrder.tax) || 0,
@@ -165,6 +176,9 @@ const OrderDetails: React.FC = () => {
           createdAt: simpleOrder.createdAt,
           updatedAt: simpleOrder.updatedAt
         };
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OrderDetails.tsx:166',message:'Order transformed, setting state',data:{enhancedOrderKeys:Object.keys(enhancedOrder),itemsCount:enhancedOrder.items.length,hasNullItems:enhancedOrder.items.some(i=>i.price===null||i.total===null)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
         setOrder(enhancedOrder);
 
         // Initialize Edit Form
@@ -178,12 +192,21 @@ const OrderDetails: React.FC = () => {
         });
 
       } else {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OrderDetails.tsx:178',message:'API returned success=false',data:{message:data.message,status:response.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+        // #endregion
         console.error('Failed to fetch order:', data.message);
       }
     } catch (error) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OrderDetails.tsx:181',message:'Error caught',data:{errorMessage:error?.message,errorType:error?.constructor?.name,errorStack:error?.stack?.substring(0,200)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
       console.error('Error fetching order:', error);
     } finally {
       setLoading(false);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OrderDetails.tsx:184',message:'fetchOrderDetails exit',data:{loading:false},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
     }
   };
 
@@ -357,12 +380,12 @@ const OrderDetails: React.FC = () => {
           {/* Order Status (Only View Mode) */}
           <div className="bg-white shadow rounded-lg p-6 flex justify-between items-center">
             <div className="flex items-center gap-2">
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(order.status)}`}>
-                {getStatusText(order.status)}
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor((order.status || '').toUpperCase())}`}>
+                {getStatusText((order.status || '').toUpperCase())}
               </span>
               <span className="text-gray-400">|</span>
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${order.paymentStatus === 'COMPLETED' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                {order.paymentStatus === 'COMPLETED' ? 'مدفوع' : 'في الانتظار'}
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${order.paymentStatus === 'COMPLETED' || order.paymentStatus === 'PAID' ? 'bg-green-100 text-green-800' : order.paymentStatus === 'FAILED' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                {order.paymentStatus === 'COMPLETED' || order.paymentStatus === 'PAID' ? 'مدفوع' : order.paymentStatus === 'FAILED' ? 'فشل الدفع' : 'في الانتظار'}
               </span>
             </div>
             {order.conversationId && (
@@ -384,7 +407,12 @@ const OrderDetails: React.FC = () => {
             </div>
 
             <div className="space-y-4">
-              {(isEditing ? editForm.items : order.items).map((item, index) => (
+              {(isEditing ? editForm.items : order.items).length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <p>لا توجد منتجات في هذا الطلب</p>
+                </div>
+              ) : (
+                (isEditing ? editForm.items : order.items).map((item, index) => (
                 <div key={index} className="flex flex-col sm:flex-row items-center justify-between p-4 border border-gray-200 rounded-lg gap-4">
 
                   {isEditing ? (
@@ -440,7 +468,8 @@ const OrderDetails: React.FC = () => {
                     </>
                   )}
                 </div>
-              ))}
+              ))
+              )}
             </div>
 
             {/* Totals */}
@@ -451,9 +480,10 @@ const OrderDetails: React.FC = () => {
                 </div>
               ) : (
                 <>
-                  <div className="flex justify-between"><span className="text-gray-600">المجموع الفرعي:</span><span className="font-medium">{formatPrice(order.subtotal, order.currency)}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-600">الشحن:</span><span className="font-medium">{formatPrice(order.shipping, order.currency)}</span></div>
-                  <div className="flex justify-between text-lg font-bold border-t pt-2 mt-2"><span>الإجمالي:</span><span>{formatPrice(order.total, order.currency)}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">المجموع الفرعي:</span><span className="font-medium">{formatPrice(order.subtotal ?? 0, order.currency)}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">الشحن:</span><span className="font-medium">{formatPrice(order.shipping ?? 0, order.currency)}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">الضريبة:</span><span className="font-medium">{formatPrice(order.tax ?? 0, order.currency)}</span></div>
+                  <div className="flex justify-between text-lg font-bold border-t pt-2 mt-2"><span>الإجمالي:</span><span>{formatPrice(order.total ?? order.subtotal ?? 0, order.currency)}</span></div>
                 </>
               )}
             </div>
@@ -472,7 +502,7 @@ const OrderDetails: React.FC = () => {
                 <label className="text-sm font-medium text-gray-500 block mb-1">الاسم</label>
                 {isEditing ? (
                   <input type="text" value={editForm.customerName} onChange={(e) => setEditForm({ ...editForm, customerName: e.target.value })} className="w-full border-gray-300 rounded-md text-sm" />
-                ) : <p className="text-gray-900">{order.customerName}</p>}
+                ) : <p className="text-gray-900">{order.customerName || 'غير محدد'}</p>}
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-500 block mb-1">الهاتف</label>
@@ -480,7 +510,7 @@ const OrderDetails: React.FC = () => {
                   <input type="text" value={editForm.customerPhone} onChange={(e) => setEditForm({ ...editForm, customerPhone: e.target.value })} className="w-full border-gray-300 rounded-md text-sm" dir="ltr" />
                 ) : (
                   <div className="flex items-center text-gray-900" dir="ltr">
-                    <PhoneIcon className="w-4 h-4 text-gray-400 mr-2" /> {order.customerPhone}
+                    <PhoneIcon className="w-4 h-4 text-gray-400 mr-2" /> {order.customerPhone || 'غير محدد'}
                   </div>
                 )}
               </div>
@@ -491,7 +521,7 @@ const OrderDetails: React.FC = () => {
                 ) : (
                   <div className="flex items-start text-gray-900">
                     <MapPinIcon className="w-4 h-4 text-gray-400 ml-2 mt-1" />
-                    <span>{order.customerAddress}<br />{order.city}</span>
+                    <span>{(order.customerAddress || order.city) ? `${order.customerAddress || ''}${order.customerAddress && order.city ? ', ' : ''}${order.city || ''}` : 'غير محدد'}</span>
                   </div>
                 )}
               </div>

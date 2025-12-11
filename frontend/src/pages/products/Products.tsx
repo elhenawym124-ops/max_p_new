@@ -117,6 +117,16 @@ const Products: React.FC = () => {
   const [showImportModal, setShowImportModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Filter state (must be defined before hasActiveFilters)
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [stockFilter, setStockFilter] = useState<string>('all');
+
+  // Check if any filters are active
+  const hasActiveFilters = !!(searchQuery || categoryFilter !== 'all' || statusFilter !== 'all' || 
+    stockFilter !== 'all' || priceMin || priceMax || dateFrom || dateTo || tagsFilter);
+
   // Load products from API with pagination
   const loadProducts = useCallback(async () => {
     try {
@@ -132,15 +142,21 @@ const Products: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
+      // If filters are active, load all products for client-side filtering
+      // Otherwise, use server-side pagination
+      const limit = hasActiveFilters ? 10000 : itemsPerPage;
+      const page = hasActiveFilters ? 1 : currentPage;
+
       // Build query params
       const params = new URLSearchParams({
-        page: currentPage.toString(),
-        limit: itemsPerPage.toString(),
+        page: page.toString(),
+        limit: limit.toString(),
         sortBy: sortField,
         sortOrder: sortDirection,
       });
+      const apiUrl = `${config.apiUrl}/products?${params}`;
 
-      const response = await fetch(`${config.apiUrl}/products?${params}`, {
+      const response = await fetch(apiUrl, {
         headers
       });
       const data = await response.json();
@@ -148,12 +164,12 @@ const Products: React.FC = () => {
       if (data.success && data.data) {
         const transformedProducts = data.data.map((product: any) => ({
           id: product.id,
-          name: product.name,
+          name: product.name || '',
           description: product.description || '',
           price: product.price,
           comparePrice: product.comparePrice,
           cost: product.cost,
-          sku: product.sku,
+          sku: product.sku || '',
           category: product.category?.name || 'غير محدد',
           categoryId: product.categoryId,
           images: product.images ? safeJsonParse(product.images, []) : [],
@@ -168,26 +184,31 @@ const Products: React.FC = () => {
         }));
 
         setProducts(transformedProducts);
+        // When filters are active, use the total from server for display, but pagination will be client-side
+        // When no filters, use server pagination total
         setTotalItems(data.pagination?.total || transformedProducts.length);
       } else {
         setError('فشل في تحميل المنتجات');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error loading products:', err);
       setError('حدث خطأ أثناء تحميل المنتجات');
     } finally {
       setLoading(false);
     }
-  }, [currentPage, itemsPerPage, sortField, sortDirection]);
+  }, [currentPage, itemsPerPage, sortField, sortDirection, searchQuery, categoryFilter, statusFilter, stockFilter, priceMin, priceMax, dateFrom, dateTo, tagsFilter]);
 
   useEffect(() => {
     loadProducts();
   }, [loadProducts]);
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [stockFilter, setStockFilter] = useState<string>('all');
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    if (currentPage !== 1) {
+      setCurrentPage(1);
+    }
+  }, [searchQuery, categoryFilter, statusFilter, stockFilter, priceMin, priceMax, dateFrom, dateTo, tagsFilter]);
+
   const [isLoading, setIsLoading] = useState(false);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
 
@@ -227,11 +248,12 @@ const Products: React.FC = () => {
   };
 
   // Advanced filtering with price range, date range, and tags
-  const filteredProducts = products.filter(product => {
-    const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         product.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         product.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         (product.tags || []).some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
+  // Only apply client-side filtering when filters are active
+  const filteredProducts = hasActiveFilters ? products.filter(product => {
+    const matchesSearch = (product.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         (product.sku || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         (product.description || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         (product.tags || []).some(tag => (tag || '').toLowerCase().includes(searchQuery.toLowerCase()));
     
     const matchesCategory = categoryFilter === 'all' || product.category === categoryFilter;
     const matchesStatus = statusFilter === 'all' || 
@@ -242,20 +264,20 @@ const Products: React.FC = () => {
     const matchesStock = stockFilter === 'all' || stockStatus === stockFilter;
 
     // Advanced filters
-    const matchesPriceMin = !priceMin || product.price >= parseFloat(priceMin);
-    const matchesPriceMax = !priceMax || product.price <= parseFloat(priceMax);
-    const matchesDateFrom = !dateFrom || new Date(product.createdAt) >= new Date(dateFrom);
-    const matchesDateTo = !dateTo || new Date(product.createdAt) <= new Date(dateTo);
+    const matchesPriceMin = !priceMin || (product.price != null && product.price >= parseFloat(priceMin));
+    const matchesPriceMax = !priceMax || (product.price != null && product.price <= parseFloat(priceMax));
+    const matchesDateFrom = !dateFrom || (product.createdAt && new Date(product.createdAt) >= new Date(dateFrom));
+    const matchesDateTo = !dateTo || (product.createdAt && new Date(product.createdAt) <= new Date(dateTo));
     const matchesTags = !tagsFilter || (product.tags || []).some(tag => 
-      tag.toLowerCase().includes(tagsFilter.toLowerCase())
+      (tag || '').toLowerCase().includes(tagsFilter.toLowerCase())
     );
 
     return matchesSearch && matchesCategory && matchesStatus && matchesStock && 
            matchesPriceMin && matchesPriceMax && matchesDateFrom && matchesDateTo && matchesTags;
-  });
+  }) : products;
 
-  // Sorting
-  const sortedProducts = [...filteredProducts].sort((a, b) => {
+  // Sorting - only apply client-side sorting when filters are active (server handles sorting when no filters)
+  const sortedProducts = hasActiveFilters ? [...filteredProducts].sort((a, b) => {
     let comparison = 0;
     switch (sortField) {
       case 'name':
@@ -275,12 +297,20 @@ const Products: React.FC = () => {
         break;
     }
     return sortDirection === 'asc' ? comparison : -comparison;
-  });
+  }) : filteredProducts;
 
   // Pagination calculations
-  const totalPages = Math.ceil(sortedProducts.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedProducts = sortedProducts.slice(startIndex, startIndex + itemsPerPage);
+  // When no filters: use server-side pagination (products are already paginated)
+  // When filters active: use client-side pagination on filtered results
+  const totalPages = hasActiveFilters 
+    ? Math.ceil(sortedProducts.length / itemsPerPage)
+    : Math.ceil(totalItems / itemsPerPage);
+  const startIndex = hasActiveFilters 
+    ? (currentPage - 1) * itemsPerPage
+    : (currentPage - 1) * itemsPerPage; // For display purposes only when no filters
+  const paginatedProducts = hasActiveFilters
+    ? sortedProducts.slice(startIndex, startIndex + itemsPerPage)
+    : sortedProducts; // Server already paginated, use as-is
 
   // Handle sort
   const handleSort = (field: SortField) => {
@@ -1435,8 +1465,8 @@ const Products: React.FC = () => {
             <div className="flex items-center gap-4">
               <p className="text-sm text-gray-700">
                 عرض <span className="font-medium">{startIndex + 1}</span> إلى{' '}
-                <span className="font-medium">{Math.min(startIndex + itemsPerPage, sortedProducts.length)}</span> من{' '}
-                <span className="font-medium">{sortedProducts.length}</span> منتج
+                <span className="font-medium">{hasActiveFilters ? Math.min(startIndex + itemsPerPage, sortedProducts.length) : Math.min(startIndex + itemsPerPage, totalItems)}</span> من{' '}
+                <span className="font-medium">{hasActiveFilters ? sortedProducts.length : totalItems}</span> منتج
               </p>
               <select
                 value={itemsPerPage}

@@ -22,16 +22,16 @@ class ResponseGenerator {
   constructor(aiAgentService) {
     // ✅ حفظ reference لـ aiAgentService للوصول للدوال المساعدة
     this.aiAgentService = aiAgentService;
-    
+
     // ✅ FIX 1: نظام تتبع عالمي للنماذج المجربة
     // Map: sessionId → Set<modelNames>
     this.globalTriedModels = new Map();
-    
+
     // تنظيف تلقائي للجلسات القديمة كل 5 دقائق
     setInterval(() => {
       const now = Date.now();
       const fiveMinutesAgo = now - (5 * 60 * 1000);
-      
+
       for (const [sessionId, data] of this.globalTriedModels.entries()) {
         if (data.timestamp < fiveMinutesAgo) {
           this.globalTriedModels.delete(sessionId);
@@ -48,11 +48,11 @@ class ResponseGenerator {
     try {
       // الحصول على إعدادات AI من قاعدة البيانات
       const settings = await this.aiAgentService.getSettings(companyId);
-      
+
       // ✅ استخدام القيم من قاعدة البيانات (التي تأتي من الواجهة)
       // ⚠️ القيمة الافتراضية موجودة في الواجهة فقط (AIManagement.tsx)
       const messageType = messageContext?.messageType || 'general';
-      
+
       // ✅ FIX: استخدام ?? بدلاً من || لتجنب مشاكل القيم الصفرية
       // القيمة تأتي من قاعدة البيانات (التي حفظتها الواجهة)
       const baseConfig = {
@@ -62,7 +62,7 @@ class ResponseGenerator {
         // ⚠️ القيمة من قاعدة البيانات (مصدرها الواجهة) - fallback من constants فقط
         maxOutputTokens: settings.aiMaxTokens ?? DEFAULT_AI_SETTINGS.MAX_OUTPUT_TOKENS,
       };
-      
+
       // ✅ Logging للتحقق من القيمة المستخدمة
       if (settings.aiMaxTokens !== null && settings.aiMaxTokens !== undefined) {
         console.log(`🔍 [AI-CONFIG] Using aiMaxTokens from database: ${settings.aiMaxTokens} (companyId: ${companyId})`);
@@ -77,7 +77,7 @@ class ResponseGenerator {
       if (messageContext?.maxTokens !== undefined) {
         baseConfig.maxOutputTokens = messageContext.maxTokens;
       }
-      
+
       // ✅ تطبيق إعدادات حسب نوع الرسالة من constants
       const typeTemperature = TEMPERATURE_BY_TYPE[messageType];
       if (typeTemperature !== null && typeTemperature !== undefined && messageContext?.temperature === undefined) {
@@ -86,17 +86,17 @@ class ResponseGenerator {
         // للتحيات والدردشة: إبداع أعلى قليلاً
         baseConfig.temperature = Math.min(baseConfig.temperature + 0.1, 0.9);
       }
-      
+
       // ✅ تطبيق Token Limits حسب نوع الرسالة (فقط إذا لم تكن القيمة موجودة في قاعدة البيانات)
       // ⚠️ لا نستبدل القيمة المخصصة من الواجهة (مثل 1280) بقيمة من TOKEN_LIMITS_BY_TYPE
       // نستخدم TOKEN_LIMITS_BY_TYPE فقط إذا كانت القيمة من قاعدة البيانات هي الافتراضية (2048) أو null
       if (messageContext?.maxTokens === undefined) {
         // ✅ فقط إذا كانت القيمة من قاعدة البيانات هي نفس القيمة الافتراضية أو null
         // هذا يعني أن المستخدم لم يغير القيمة في الواجهة
-        const isDefaultValue = settings.aiMaxTokens === null || 
-                               settings.aiMaxTokens === undefined || 
-                               settings.aiMaxTokens === DEFAULT_AI_SETTINGS.MAX_OUTPUT_TOKENS;
-        
+        const isDefaultValue = settings.aiMaxTokens === null ||
+          settings.aiMaxTokens === undefined ||
+          settings.aiMaxTokens === DEFAULT_AI_SETTINGS.MAX_OUTPUT_TOKENS;
+
         if (isDefaultValue) {
           // ✅ فقط في هذه الحالة نستخدم TOKEN_LIMITS_BY_TYPE
           const typeTokenLimit = TOKEN_LIMITS_BY_TYPE[messageType];
@@ -107,7 +107,7 @@ class ResponseGenerator {
         // ✅ إذا كانت القيمة من قاعدة البيانات مختلفة (مثل 1280 أو 512)، نستخدمها كما هي
         // لا نغير baseConfig.maxOutputTokens في هذه الحالة
       }
-      
+
       // ✅ تطبيق Sampling Settings حسب نوع الرسالة
       const typeSampling = SAMPLING_BY_TYPE[messageType];
       if (typeSampling) {
@@ -117,7 +117,7 @@ class ResponseGenerator {
 
       //console.log(`🎛️ [AI-CONFIG] Using generation config:`, baseConfig);
       return baseConfig;
-      
+
     } catch (error) {
       console.error('❌ [AI-CONFIG] Error building generation config:', error);
       // ✅ إرجاع الإعدادات الافتراضية من constants عند حدوث خطأ
@@ -146,8 +146,8 @@ class ResponseGenerator {
     // ✅ إضافة قواعد الاستجابة (Response Rules Checkpoints)
     if (companyPrompts.responseRules) {
       try {
-        const rules = typeof companyPrompts.responseRules === 'string' 
-          ? JSON.parse(companyPrompts.responseRules) 
+        const rules = typeof companyPrompts.responseRules === 'string'
+          ? JSON.parse(companyPrompts.responseRules)
           : companyPrompts.responseRules;
         prompt += buildPromptFromRules(rules);
       } catch (e) {
@@ -238,7 +238,7 @@ class ResponseGenerator {
 
     // ✅ FIX: التحقق من وجود منتجات في RAG
     const hasProductsInRAG = ragData && ragData.some(item => item.type === 'product');
-    
+
     // إذا لم تكن هناك منتجات في RAG، أضف تحذير صارم
     if (!hasProductsInRAG) {
       prompt += `🚨 تحذير مهم جداً:\n`;
@@ -314,8 +314,8 @@ class ResponseGenerator {
     console.log('🔍 [RESPONSE-RULES] Checking for response rules...');
     if (companyPrompts.responseRules) {
       try {
-        const rules = typeof companyPrompts.responseRules === 'string' 
-          ? JSON.parse(companyPrompts.responseRules) 
+        const rules = typeof companyPrompts.responseRules === 'string'
+          ? JSON.parse(companyPrompts.responseRules)
           : companyPrompts.responseRules;
         console.log('✅ [RESPONSE-RULES] Using custom response rules:', {
           responseLength: rules.responseLength,
@@ -344,18 +344,18 @@ class ResponseGenerator {
     console.log(`🔍 [POST-PRODUCT-RESPONSE-CHECK] Checking for post product response:`);
     console.log(`   - isPostProductResponse: ${messageData?.isPostProductResponse}`);
     console.log(`   - ragData length: ${ragData?.length || 0}`);
-    
+
     let postProductInfo = null;
     if (messageData?.isPostProductResponse && ragData && ragData.length > 0) {
       const product = ragData[0];
       const productName = product.metadata?.name || product.name || 'المنتج';
       const productPrice = product.metadata?.price || product.price || 'غير متوفر';
-      
+
       postProductInfo = {
         name: productName,
         price: productPrice
       };
-      
+
       console.log(`📌 [POST-PRODUCT-RESPONSE] Product found: ${productName} - ${productPrice}`);
       console.log(`   ✅ سيتم إضافة معلومات المنتج في الـ prompt العادي`);
     }
@@ -365,17 +365,17 @@ class ResponseGenerator {
     // ✨ تحليل ذكي مختصر للسياق
     try {
       const dynamicBuilder = require('../dynamicPromptBuilder');
-      
+
       const emotionalState = dynamicBuilder.detectEmotionalState(customerMessage);
       const customerTone = dynamicBuilder.detectCustomerTone(customerMessage);
       const urgencyLevel = dynamicBuilder.detectUrgencyLevel(customerMessage);
-      
+
       // إضافة ملاحظات مختصرة فقط عند الضرورة
       let contextNotes = [];
       if (emotionalState === 'frustrated') contextNotes.push('⚠️ العميل منزعج - تعاطفي معاه');
       if (urgencyLevel === 'high') contextNotes.push('⚡ رد سريع ومباشر');
       if (customerTone === 'formal' && emotionalState !== 'frustrated') contextNotes.push('📝 حافظي على الرسمية');
-      
+
       if (contextNotes.length > 0) {
         prompt += `💡 ملاحظات: ${contextNotes.join(' • ')}\n\n`;
       }
@@ -387,14 +387,14 @@ class ResponseGenerator {
     try {
       const shippingService = require('../shippingService');
       const companyId = messageData?.companyId || customerData?.companyId;
-      
+
       if (companyId) {
         // فحص إذا كان العميل يسأل عن الشحن
         const isAskingAboutShipping = shippingService.isAskingAboutShipping(customerMessage);
-        
+
         // ✅ FIX: محاولة استخراج المحافظة من الرسالة والمحادثة السابقة
         const extractedGov = await shippingService.extractGovernorateFromMessage(customerMessage, companyId, conversationMemory);
-        
+
         if (isAskingAboutShipping || extractedGov.found) {
           // ✅ FIX: إضافة تحذير صريح للرد على سؤال الشحن مباشرة
           prompt += `🚨🚨🚨 تنبيه مهم جداً - العميل يسأل عن الشحن:\n`;
@@ -404,11 +404,11 @@ class ResponseGenerator {
           prompt += `❌ ممنوع: تجاهل سؤال العميل والانتقال لموضوع آخر\n`;
           prompt += `✅ يجب: الرد على السؤال المطروح مباشرة أولاً\n`;
           prompt += `=====================================\n\n`;
-          
+
           if (extractedGov.found) {
             // العميل ذكر محافظة - جلب معلومات الشحن
             const shippingInfo = await shippingService.findShippingInfo(extractedGov.governorate, companyId);
-            
+
             if (shippingInfo && shippingInfo.found) {
               prompt += `🚚 معلومات الشحن للمحافظة المذكورة:\n`;
               prompt += `=====================================\n`;
@@ -435,11 +435,11 @@ class ResponseGenerator {
             // ✅ FIX: العميل يسأل عن الشحن لكن لم يذكر المحافظة في الرسالة الحالية
             // ✅ FIX: فحص المحادثة السابقة أولاً قبل السؤال
             const extractedFromMemory = await shippingService.extractGovernorateFromMessage('', companyId, conversationMemory);
-            
+
             if (extractedFromMemory.found) {
               // ✅ تم العثور على محافظة في المحادثة السابقة
               const shippingInfo = await shippingService.findShippingInfo(extractedFromMemory.governorate, companyId);
-              
+
               if (shippingInfo && shippingInfo.found) {
                 prompt += `🚚 معلومات الشحن (من المحادثة السابقة):\n`;
                 prompt += `=====================================\n`;
@@ -465,7 +465,7 @@ class ResponseGenerator {
             } else {
               // لم يتم العثور على محافظة في المحادثة - اطلبي من العميل
               const availableGovernorates = await shippingService.getAvailableGovernorates(companyId);
-              
+
               if (availableGovernorates.length > 0) {
                 prompt += `🚚 معلومات الشحن المتاحة:\n`;
                 prompt += `=====================================\n`;
@@ -503,7 +503,7 @@ class ResponseGenerator {
     const isNewCustomer = !customerData?.orderCount || customerData.orderCount === 0;
     const conversationLength = conversationMemory?.length || 0;
     const isFirstMessage = conversationLength === 0 || (conversationLength === 1 && conversationMemory[0]?.isFromCustomer === true);
-    
+
     // ✅ FIX: كشف التحية في أول رسالة
     const isGreeting = isFirstMessage && (
       customerMessage.toLowerCase().includes('السلام عليكم') ||
@@ -553,35 +553,35 @@ class ResponseGenerator {
       prompt += `5. ✅ مثال على رد جيد: "أهلاً بيك! ${postProductInfo.name} - ${postProductInfo.price} جنيه. عايز تفاصيل أكتر عن المنتج؟"\n`;
       prompt += `6. ❌ لا تنسي ذكر اسم المنتج والسعر في ردك\n`;
       prompt += `=====================================\n\n`;
-      
+
       console.log(`📌 [POST-PRODUCT-INFO] Added post product info to prompt: ${postProductInfo.name} - ${postProductInfo.price}`);
     }
-    
+
     // 🆕 إضافة معلومات المنشور إذا كانت متوفرة
     if (messageData?.postDetails) {
       const postDetails = messageData.postDetails;
       prompt += `📌 معلومات المنشور الذي جاء منه العميل:\n`;
       prompt += `=====================================\n`;
-      
+
       if (postDetails.message) {
         prompt += `📝 نص المنشور:\n"${postDetails.message}"\n\n`;
       }
-      
+
       if (postDetails.hasImages && postDetails.imageUrls && postDetails.imageUrls.length > 0) {
         prompt += `🖼️ المنشور يحتوي على ${postDetails.imageUrls.length} صورة\n`;
         prompt += `💡 استخدمي هذه المعلومات لفهم المنتج/الخدمة التي يسأل عنها العميل\n\n`;
       }
-      
+
       if (postDetails.permalinkUrl) {
         prompt += `🔗 رابط المنشور: ${postDetails.permalinkUrl}\n\n`;
       }
-      
+
       prompt += `💡 مهم: العميل جاء من هذا المنشور - استخدمي محتوى المنشور لفهم السياق ومساعدة العميل بشكل أفضل\n`;
       if (!postProductInfo) {
         prompt += `💡 إذا سأل العميل عن السعر أو المنتج بدون تحديد، فالمقصود هو المنتج المذكور في المنشور أعلاه\n`;
       }
       prompt += `=====================================\n\n`;
-      
+
       console.log(`📌 [POST-CONTEXT] Added post details to prompt`);
     }
 
@@ -617,30 +617,30 @@ class ResponseGenerator {
       'كام الثمن', 'كام التمن', 'كام السعر'
     ];
     const isPriceQuestion = priceKeywords.some(keyword => msgLower.includes(keyword));
-    
+
     // Add conversation memory if available
     console.log('📚 [MEMORY-CHECK] فحص سجل المحادثة:');
     console.log('  - conversationMemory موجود؟', !!conversationMemory);
     console.log('  - عدد الرسائل:', conversationMemory?.length || 0);
-    
+
     // 🔍 استخراج آخر منتج تم السؤال عنه من المحادثة
     let lastMentionedProduct = null;
     let lastProductContext = null;
-    
+
     // ✅ استخدام productExtractor module لاستخراج المنتج
     const productInfo = productExtractor.extractProduct(customerMessage, conversationMemory, ragData);
     if (productInfo) {
       lastMentionedProduct = productInfo.productName;
       lastProductContext = productInfo.context;
     }
-    
+
     if (conversationMemory && conversationMemory.length > 0) {
       console.log('✅ [MEMORY] تم العثور على سجل محادثة:', conversationMemory.length, 'رسالة');
-      
+
       conversationMemory.slice(0, 3).forEach((interaction, index) => {
         console.log(`  ${index + 1}. ${interaction.isFromCustomer ? 'العميل' : 'AI'}: ${interaction.content?.substring(0, 50)}...`);
       });
-      
+
       // ✅ FIX: تعليمات موحدة ومختصرة لتجنب التكرار
       const aiMessagesCount = conversationMemory.filter(msg => !msg.isFromCustomer).length;
       prompt += `📚 سجل المحادثة:\n`;
@@ -658,87 +658,87 @@ class ResponseGenerator {
       prompt += `5. ✅ ركزي على ما طلبه المستخدم في الرسالة الحالية فقط\n`;
       prompt += `6. ✅ إذا كان المستخدم يسأل عن شيء عام (مثل: "عايزه اعمل اوردر")، اسأليه عن المعلومات المطلوبة فقط بدون ذكر معلومات إضافية\n`;
       prompt += `=====================================\n\n`;
-      
+
       // ✅ تحسين: تقليل عدد الرسائل من 10 إلى 5 لتوفير tokens
       const recentMessages = conversationMemory.slice(-5);
-      
+
       // ✅ FIX: إضافة عنوان أوضح للمحادثة السابقة
       prompt += `📋 تفاصيل المحادثة السابقة (آخر ${recentMessages.length} رسالة):\n`;
       prompt += `=====================================\n`;
-      
+
       recentMessages.forEach((interaction, index) => {
         const sender = interaction.isFromCustomer ? 'العميل' : 'أنتِ (النظام)';
         const content = interaction.content || '[رسالة فارغة]';
         const intent = interaction.intent || 'غير محدد';
         const position = conversationMemory.length - recentMessages.length + index + 1;
-        
+
         // ✅ FIX: تحسين عرض كل رسالة مع معلومات أكثر وضوحاً
         prompt += `[${position}] ${sender}:\n`;
         prompt += `   "${content}"\n`;
         if (interaction.isFromCustomer && intent !== 'غير محدد') {
           prompt += `   → النية: ${intent}\n`;
         }
-        
+
         // ✅ FIX: إضافة معلومات أكثر وضوحاً عن المنتجات/الأسعار المذكورة
         if (interaction.isFromCustomer && content) {
           const contentLower = content.toLowerCase();
-          if (contentLower.includes('منتج') || contentLower.includes('كوتشي') || 
-              contentLower.includes('حذاء') || contentLower.includes('بوت') ||
-              contentLower.includes('هاف') || contentLower.includes('ugg')) {
+          if (contentLower.includes('منتج') || contentLower.includes('كوتشي') ||
+            contentLower.includes('حذاء') || contentLower.includes('بوت') ||
+            contentLower.includes('هاف') || contentLower.includes('ugg')) {
             prompt += `   → 💡 ذكر منتج في هذه الرسالة - استخدمي هذه المعلومات!\n`;
           }
-          if (contentLower.includes('سعر') || contentLower.includes('كام') || 
-              contentLower.includes('بكام') || contentLower.includes('بكم') ||
-              contentLower.includes('جنيه')) {
+          if (contentLower.includes('سعر') || contentLower.includes('كام') ||
+            contentLower.includes('بكام') || contentLower.includes('بكم') ||
+            contentLower.includes('جنيه')) {
             prompt += `   → 💰 ذكر سعر في هذه الرسالة - استخدمي هذه المعلومات!\n`;
           }
-          if (contentLower.includes('مقاس') || contentLower.includes('لون') || 
-              contentLower.includes('الوان') || contentLower.includes('أسود') ||
-              contentLower.includes('أبيض')) {
+          if (contentLower.includes('مقاس') || contentLower.includes('لون') ||
+            contentLower.includes('الوان') || contentLower.includes('أسود') ||
+            contentLower.includes('أبيض')) {
             prompt += `   → 📏 ذكر مواصفات (مقاس/لون) في هذه الرسالة - استخدمي هذه المعلومات!\n`;
           }
-          if (contentLower.includes('عنوان') || contentLower.includes('محافظة') || 
-              contentLower.includes('هاتف') || contentLower.includes('اسم') ||
-              contentLower.includes('القاهرة') || contentLower.includes('الإسكندرية')) {
+          if (contentLower.includes('عنوان') || contentLower.includes('محافظة') ||
+            contentLower.includes('هاتف') || contentLower.includes('اسم') ||
+            contentLower.includes('القاهرة') || contentLower.includes('الإسكندرية')) {
             prompt += `   → 📍 ذكر بيانات (عنوان/محافظة/هاتف/اسم) في هذه الرسالة - استخدمي هذه المعلومات!\n`;
           }
         }
-        
+
         prompt += `\n`;
-        
+
         if (!interaction.content || interaction.content.trim() === '') {
           console.warn(`⚠️ [MEMORY-EMPTY] رسالة ${position} فارغة في سجل المحادثة`);
         }
       });
-      
+
       prompt += `=====================================\n`;
       // ✅ FIX: تم إزالة التكرار - التعليمات موجودة في البداية
-      
+
       // ✅ إضافة سياق آخر منتج مذكور (محسّن)
       if (lastMentionedProduct) {
-        const isAskingForImages = msgLower.includes('صور') || msgLower.includes('صوره') || 
-                                  msgLower.includes('الصور') || msgLower.includes('ابعت') ||
-                                  msgLower.includes('ارسل') || msgLower.includes('شوف') ||
-                                  msgLower.includes('ممكن أشوف') || msgLower.includes('عايز أشوف');
+        const isAskingForImages = msgLower.includes('صور') || msgLower.includes('صوره') ||
+          msgLower.includes('الصور') || msgLower.includes('ابعت') ||
+          msgLower.includes('ارسل') || msgLower.includes('شوف') ||
+          msgLower.includes('ممكن أشوف') || msgLower.includes('عايز أشوف');
         const isAskingForInfo = msgLower.includes('معلومات') || msgLower.includes('تفاصيل') ||
-                               msgLower.includes('مواصفات') || msgLower.includes('وصف');
-        const isAskingForOrder = msgLower.includes('اوردر') || msgLower.includes('أوردر') || 
-                                msgLower.includes('اطلب') || msgLower.includes('أطلب') ||
-                                msgLower.includes('اشتري') || msgLower.includes('أشتري') ||
-                                msgLower.includes('عايز أطلب') || msgLower.includes('عايز اشتري');
-        const isAskingForPrice = msgLower.includes('سعر') || msgLower.includes('سعره') || 
-                                msgLower.includes('بكام') || msgLower.includes('بكم') ||
-                                msgLower.includes('كام') || msgLower.includes('ثمن') ||
-                                msgLower.includes('كم') || msgLower.includes('شحال');
-        
+          msgLower.includes('مواصفات') || msgLower.includes('وصف');
+        const isAskingForOrder = msgLower.includes('اوردر') || msgLower.includes('أوردر') ||
+          msgLower.includes('اطلب') || msgLower.includes('أطلب') ||
+          msgLower.includes('اشتري') || msgLower.includes('أشتري') ||
+          msgLower.includes('عايز أطلب') || msgLower.includes('عايز اشتري');
+        const isAskingForPrice = msgLower.includes('سعر') || msgLower.includes('سعره') ||
+          msgLower.includes('بكام') || msgLower.includes('بكم') ||
+          msgLower.includes('كام') || msgLower.includes('ثمن') ||
+          msgLower.includes('كم') || msgLower.includes('شحال');
+
         const hasNoProductInCurrentMessage = !ragData || ragData.length === 0;
-        
+
         if ((isAskingForImages || isAskingForInfo || isAskingForOrder || isAskingForPrice) && hasNoProductInCurrentMessage) {
           let requestType = 'صور';
           if (isAskingForOrder) requestType = 'طلب/أوردر';
           else if (isAskingForInfo) requestType = 'معلومات/تفاصيل';
           else if (isAskingForPrice) requestType = 'السعر';
-          
+
           prompt += `\n🎯🎯🔴 مهم جداً - سياق المحادثة الحالي:\n`;
           prompt += `=====================================\n`;
           prompt += `📌 آخر منتج تم السؤال عنه في المحادثة: "${lastMentionedProduct}"\n`;
@@ -747,7 +747,7 @@ class ResponseGenerator {
           }
           prompt += `⚠️⚠️⚠️ العميل يطلب ${requestType} بدون تحديد منتج في الرسالة الحالية!\n\n`;
           prompt += `✅✅✅ المقصود هو المنتج: "${lastMentionedProduct}"\n\n`;
-          
+
           if (isAskingForPrice) {
             prompt += `💰 تعليمات للإجابة على سؤال السعر:\n`;
             prompt += `   - اذكري اسم المنتج "${lastMentionedProduct}" بوضوح\n`;
@@ -771,13 +771,13 @@ class ResponseGenerator {
             prompt += `   - اذكري المواصفات والأسعار من قاعدة البيانات\n`;
             prompt += `   - استخدمي عبارات مثل "بخصوص ${lastMentionedProduct}..."\n\n`;
           }
-          
+
           prompt += `💡💡💡 مهم جداً:\n`;
           prompt += `   - استخدمي اسم المنتج "${lastMentionedProduct}" في ردك\n`;
           prompt += `   - اربطي ردك بالسياق من المحادثة السابقة\n`;
           prompt += `   - لا تسألي عن المنتج مرة أخرى (تم ذكره سابقاً)\n`;
           prompt += `=====================================\n\n`;
-          
+
           console.log('🚨 [CONTEXT-AWARE] العميل يطلب', requestType, 'عن آخر منتج:', lastMentionedProduct);
         } else {
           prompt += `\n🎯 معلومات عن المحادثة السابقة:\n`;
@@ -792,7 +792,7 @@ class ResponseGenerator {
         }
       }
       prompt += `\n`;
-      
+
       console.log('✅ [MEMORY] تم إضافة سجل المحادثة للـ prompt');
     } else {
       console.log('⚠️ [MEMORY] لا يوجد سجل محادثة - هذا أول تفاعل');
@@ -801,15 +801,15 @@ class ResponseGenerator {
 
     // ✅ استخدام متغير محلي لـ ragData لإمكانية التعديل
     let filteredRagData = ragData;
-    
+
     // ✅ إذا كان هناك lastMentionedProduct وسؤال عن السعر، البحث عن المنتج الصحيح في ragData
     if (isPriceQuestion && lastMentionedProduct && filteredRagData && filteredRagData.length > 0) {
       const matchingProduct = filteredRagData.find(item => {
         const productName = item.metadata?.name || item.name || '';
         return productName.toLowerCase().includes(lastMentionedProduct.toLowerCase()) ||
-               lastMentionedProduct.toLowerCase().includes(productName.toLowerCase());
+          lastMentionedProduct.toLowerCase().includes(productName.toLowerCase());
       });
-      
+
       if (matchingProduct) {
         console.log('✅ [PRICE-QUESTION] تم العثور على منتج مطابق في ragData:', matchingProduct.metadata?.name || matchingProduct.name);
         filteredRagData = [matchingProduct];
@@ -817,15 +817,15 @@ class ResponseGenerator {
         console.log('⚠️ [PRICE-QUESTION] المنتج المذكور آخر مرة غير موجود في ragData - سيتم استخدام ragData الحالي');
       }
     }
-    
+
     // 🎯 إضافة قسم خاص لأول رسالة سؤال عن السعر مع المنتجات الممولة
     if (messageData?.isFirstPriceInquiry && filteredRagData && filteredRagData.length > 0) {
       const hasPostProduct = messageData?.hasPostProduct;
       const promotedCount = messageData?.promotedProductsCount || filteredRagData.length;
-      
+
       prompt += `🎯🎯🎯 حالة خاصة: أول رسالة سؤال عن السعر - منتجات ممولة 🎯🎯🎯\n`;
       prompt += `=====================================\n`;
-      
+
       if (hasPostProduct) {
         prompt += `📌 تم العثور على منتج مرتبط بالإعلان الذي دخل منه العميل.\n`;
         prompt += `✅ يجب الرد على العميل باسم المنتج وسعره مباشرة بناءً على محتوى المنشور.\n\n`;
@@ -833,7 +833,7 @@ class ResponseGenerator {
         prompt += `📢 العميل يسأل عن السعر لأول مرة من إعلان ممول.\n`;
         prompt += `✅ يجب الرد بالمنتجات الممولة المتاحة (${promotedCount} منتج).\n\n`;
       }
-      
+
       prompt += `🗃️ المنتجات الممولة المتاحة (يجب استخدامها في الرد):\n`;
       prompt += `=====================================\n`;
 
@@ -842,7 +842,7 @@ class ResponseGenerator {
           const productName = item.metadata?.name || 'منتج';
           const productPrice = item.metadata?.price;
           prompt += `🛍️ منتج ${index + 1}: ${productName}\n`;
-          
+
           // ✅ IMPROVED: Only show price if it exists and is valid
           if (productPrice && typeof productPrice === 'number' && productPrice > 0) {
             prompt += `   💰 السعر: ${productPrice} جنيه\n`;
@@ -856,19 +856,19 @@ class ResponseGenerator {
           } else {
             prompt += `   💰 السعر: غير متوفر حالياً\n`;
           }
-          
+
           // ✅ FIX: استخراج معلومات الألوان والمقاسات من metadata.variants بشكل صريح
           if (item.metadata?.variants && Array.isArray(item.metadata.variants) && item.metadata.variants.length > 0) {
             const colorVariants = item.metadata.variants.filter(v => v.type === 'color');
             const sizeVariants = item.metadata.variants.filter(v => v.type === 'size');
-            
+
             if (colorVariants.length > 0) {
               const availableColors = colorVariants.map(v => v.name).filter(Boolean);
               if (availableColors.length > 0) {
                 prompt += `   🎨 الألوان المتاحة: ${availableColors.join('، ')}\n`;
               }
             }
-            
+
             if (sizeVariants.length > 0) {
               const availableSizes = sizeVariants.map(v => v.name).filter(Boolean);
               if (availableSizes.length > 0) {
@@ -876,7 +876,7 @@ class ResponseGenerator {
               }
             }
           }
-          
+
           prompt += `   ${item.content}\n\n`;
         }
       });
@@ -893,14 +893,14 @@ class ResponseGenerator {
     } else if (filteredRagData && filteredRagData.length > 0) {
       // Add RAG data if available (استخدام filteredRagData)
       const isCategoryRequest = smartResponseInfo?.categoryInfo;
-      
+
       if (isCategoryRequest) {
         // طلب category - عرض جميع المنتجات من التصنيف
         prompt += `📦 المنتجات المتاحة من التصنيف "${smartResponseInfo.categoryInfo.categoryName}":\n`;
         prompt += `=====================================\n`;
         prompt += `📊 إجمالي المنتجات: ${smartResponseInfo.categoryInfo.totalProducts}\n`;
         prompt += `📸 إجمالي الصور: ${smartResponseInfo.categoryInfo.totalImages}\n\n`;
-        
+
         filteredRagData.forEach((item, index) => {
           if (item.type === 'product' && item.metadata) {
             prompt += `${index + 1}. ${item.metadata.name}\n`;
@@ -909,7 +909,7 @@ class ResponseGenerator {
             prompt += `   📸 الصور: ${item.metadata.images?.length || 0} صورة\n\n`;
           }
         });
-        
+
         prompt += `=====================================\n`;
         // ✅ FIX: تم نقل معلومات الصور إلى قسم تعليمات الجودة لتجنب التكرار
       } else {
@@ -923,19 +923,19 @@ class ResponseGenerator {
           if (item.type === 'product') {
             const productName = item.metadata?.name || 'منتج';
             prompt += `🛍️ منتج ${index + 1}: ${productName}\n`;
-            
+
             // ✅ FIX: استخراج معلومات الألوان والمقاسات من metadata.variants بشكل صريح
             if (item.metadata?.variants && Array.isArray(item.metadata.variants) && item.metadata.variants.length > 0) {
               const colorVariants = item.metadata.variants.filter(v => v.type === 'color');
               const sizeVariants = item.metadata.variants.filter(v => v.type === 'size');
-              
+
               if (colorVariants.length > 0) {
                 const availableColors = colorVariants.map(v => v.name).filter(Boolean);
                 if (availableColors.length > 0) {
                   prompt += `   🎨 الألوان المتاحة: ${availableColors.join('، ')}\n`;
                 }
               }
-              
+
               if (sizeVariants.length > 0) {
                 const availableSizes = sizeVariants.map(v => v.name).filter(Boolean);
                 if (availableSizes.length > 0) {
@@ -943,7 +943,7 @@ class ResponseGenerator {
                 }
               }
             }
-            
+
             prompt += `   ${item.content}\n`;
 
             if (item.metadata) {
@@ -996,7 +996,7 @@ class ResponseGenerator {
     prompt += `   - في نهاية الرد، اسألي سؤالاً أو قدمي اقتراحاً لتوجيه المحادثة\n`;
     prompt += `   - اسألي عن المزيد من المعلومات إذا لزم الأمر\n`;
     prompt += `   - قدمي خطوات واضحة للعميل (مثل: "لو عايز تطلب، محتاج منك...")\n\n`;
-    
+
     // ✅ FIX: قواعد الصور والأسعار - موحدة ومختصرة
     prompt += `🚨 قواعد مهمة:\n`;
     prompt += `=====================================\n`;
@@ -1010,14 +1010,14 @@ class ResponseGenerator {
 
     // Add customer message
     prompt += `رسالة العميل: "${customerMessage}"\n\n`;
-    
+
     // ✅ Add response requirements based on message type
-    const isAmbiguousMessage = customerMessage.length < 10 || 
-                                msgLower === 'ممكن' || 
-                                msgLower === 'ماشي' ||
-                                msgLower.includes('حاجة حلوة') ||
-                                msgLower.includes('حاجة') && !msgLower.includes('منتج') && !msgLower.includes('كوتشي');
-    
+    const isAmbiguousMessage = customerMessage.length < 10 ||
+      msgLower === 'ممكن' ||
+      msgLower === 'ماشي' ||
+      msgLower.includes('حاجة حلوة') ||
+      msgLower.includes('حاجة') && !msgLower.includes('منتج') && !msgLower.includes('كوتشي');
+
     if (isAmbiguousMessage) {
       prompt += `⚠️ تنبيه: هذه رسالة غامضة!\n`;
       prompt += `=====================================\n`;
@@ -1027,23 +1027,23 @@ class ResponseGenerator {
       prompt += `- قدمي اقتراحات بناءً على المنتجات المتاحة في قاعدة البيانات\n`;
       prompt += `=====================================\n\n`;
     }
-    
+
     // Add concise contextual guidance
     if (filteredRagData && filteredRagData.length > 0) {
       const multipleProductsFound = smartResponseInfo?.multipleProducts && smartResponseInfo.multipleProducts.length > 1;
-      
-      const hasPromotedProduct = filteredRagData.some(item => 
-        item.type === 'product' && 
-        item.metadata && 
+
+      const hasPromotedProduct = filteredRagData.some(item =>
+        item.type === 'product' &&
+        item.metadata &&
         item.metadata.hasPromotedAd === true
       );
-      
-      const promotedProducts = filteredRagData.filter(item => 
-        item.type === 'product' && 
-        item.metadata && 
+
+      const promotedProducts = filteredRagData.filter(item =>
+        item.type === 'product' &&
+        item.metadata &&
         item.metadata.hasPromotedAd === true
       );
-      
+
       let finalNotes = [];
       if (isPriceQuestion) {
         if (isNewCustomer && hasPromotedProduct && promotedProducts.length > 0) {
@@ -1063,7 +1063,7 @@ class ResponseGenerator {
               price: productPrice
             };
           }).filter(p => p.name && p.price);
-          
+
           if (productsInfo.length > 0) {
             prompt += `\n⚠️ مهم جداً - حالة خاصة:\n`;
             prompt += `=====================================\n`;
@@ -1071,11 +1071,11 @@ class ResponseGenerator {
             prompt += `💰 يسأل عن السعر\n`;
             prompt += `📢 يوجد ${productsInfo.length} منتج${productsInfo.length > 1 ? 'ات' : ''} له${productsInfo.length > 1 ? 'م' : ''} إعلان${productsInfo.length > 1 ? 'ات' : ''} ممول${productsInfo.length > 1 ? 'ة' : ''} على Facebook\n`;
             prompt += `\n📋 المعلومات المطلوبة في الرد:\n`;
-            
+
             productsInfo.forEach((product, index) => {
               prompt += `${index + 1}. اسم المنتج: "${product.name}" - السعر: ${product.price} جنيه\n`;
             });
-            
+
             prompt += `\n- يجب أن تسألي العميل عن المحافظة (من أي محافظة أنت؟ / في أي محافظة بتسكن؟)\n`;
             prompt += `\n💡 ملاحظات مهمة:\n`;
             prompt += `- استخدمي شخصيتك وطريقة كلامك الطبيعية من الـ personality prompt أعلاه\n`;
@@ -1094,11 +1094,11 @@ class ResponseGenerator {
         }
       }
       // ✅ FIX: تم نقل معلومات الصور إلى قسم تعليمات الجودة لتجنب التكرار
-      
+
       if (multipleProductsFound) {
         finalNotes.push(`🎯 ${smartResponseInfo.multipleProducts.length} منتجات متاحة`);
       }
-      
+
       if (finalNotes.length > 0) {
         prompt += `\n💡 ${finalNotes.join(' • ')}\n\n`;
       }
@@ -1107,7 +1107,7 @@ class ResponseGenerator {
     // ✅ Add final response quality check instructions
     prompt += `\n🔴 تعليمات نهائية لجودة الرد:\n`;
     prompt += `=====================================\n`;
-    
+
     // ✅ قواعد منع المبالغة والحماس الزائد
     prompt += `🚫🚫🚫 ممنوع منعاً باتاً - عبارات مبالغ فيها:\n`;
     prompt += `❌ "مبسوطين جداً" أو "فرحانين" أو "يا هلا بيك"\n`;
@@ -1117,7 +1117,7 @@ class ResponseGenerator {
     prompt += `❌ أكثر من emoji واحد في الرد\n`;
     prompt += `❌ جمل طويلة أو فقرات متعددة غير ضرورية\n`;
     prompt += `✅ استخدمي لغة طبيعية بسيطة بدون حماس زائد\n\n`;
-    
+
     prompt += `✅ قبل إرسال الرد، تأكدي من:\n`;
     prompt += `1. الرد قصير ومباشر (2-4 جمل max)\n`;
     prompt += `2. الرد يحتوي على المعلومات المطلوبة من قاعدة البيانات\n`;
@@ -1152,7 +1152,7 @@ class ResponseGenerator {
     console.log(prompt.substring(0, 200) + '...');
     console.log('📝 [BUILD-PROMPT] آخر 200 حرف من الـ Prompt:');
     console.log('...' + prompt.substring(prompt.length - 200));
-    
+
     return prompt;
   }
 
@@ -1162,20 +1162,20 @@ class ResponseGenerator {
   async buildOrderConfirmationPrompt(customerMessage, customerData, companyPrompts, order, orderDetails, conversationMemory, companyId) {
     try {
       console.log('📝 [ORDER-CONFIRMATION] بناء prompt لتأكيد الطلب:', order.orderNumber);
-      
+
       let prompt = '';
-      
+
       // إضافة personality prompt
       if (companyPrompts.personalityPrompt) {
         prompt += `${companyPrompts.personalityPrompt.trim()}\n\n`;
       }
-      
+
       // ✅ FIX: إضافة قواعد الاستجابة (Response Rules Checkpoints) - مهم جداً!
       console.log('🔍 [ORDER-CONFIRMATION-RULES] Checking for response rules...');
       if (companyPrompts.responseRules) {
         try {
-          const rules = typeof companyPrompts.responseRules === 'string' 
-            ? JSON.parse(companyPrompts.responseRules) 
+          const rules = typeof companyPrompts.responseRules === 'string'
+            ? JSON.parse(companyPrompts.responseRules)
             : companyPrompts.responseRules;
           console.log('✅ [ORDER-CONFIRMATION-RULES] Using custom response rules');
           const rulesPrompt = buildPromptFromRules(rules);
@@ -1190,7 +1190,7 @@ class ResponseGenerator {
         const defaultRulesPrompt = buildPromptFromRules(getDefaultRules());
         prompt += defaultRulesPrompt;
       }
-      
+
       // سياق المحادثة
       if (conversationMemory && conversationMemory.length > 0) {
         prompt += `📚 سجل المحادثة السابقة:\n`;
@@ -1200,18 +1200,18 @@ class ResponseGenerator {
         });
         prompt += `=====================================\n\n`;
       }
-      
+
       // ✅ معلومات الطلب المؤكد - استخدام البيانات من الـ database
       const shippingCost = order.shipping || 50;
       const totalPrice = order.total || ((orderDetails.productPrice || 0) + shippingCost);
-      
+
       // ✅ استخدام بيانات المنتج من order.items إذا كانت متوفرة
       const orderItem = order.items && order.items.length > 0 ? order.items[0] : null;
       const productName = orderItem?.productName || orderDetails.productName || 'المنتج';
       const productColor = orderItem?.productColor || orderDetails.productColor;
       const productSize = orderItem?.productSize || orderDetails.productSize;
       const productPrice = orderItem?.price || orderDetails.productPrice;
-      
+
       // ✅ الحصول على مدة التوصيل من قاعدة البيانات
       let deliveryTime = '3-5 أيام'; // القيمة الافتراضية
       try {
@@ -1226,7 +1226,7 @@ class ResponseGenerator {
       } catch (error) {
         console.error(`❌ [ORDER-CONFIRMATION] خطأ في جلب مدة التوصيل:`, error.message);
       }
-      
+
       prompt += `🎉 تم إنشاء الطلب بنجاح!\n\n`;
       prompt += `📋 تفاصيل الطلب المؤكد:\n`;
       prompt += `- رقم الطلب: ${order.orderNumber}\n`;
@@ -1236,16 +1236,16 @@ class ResponseGenerator {
       if (productPrice) prompt += `- سعر المنتج: ${productPrice} جنيه\n`;
       prompt += `- الشحن: ${shippingCost} جنيه\n`;
       prompt += `- الإجمالي: ${totalPrice} جنيه\n\n`;
-      
+
       prompt += `👤 بيانات العميل:\n`;
       prompt += `- الاسم: ${orderDetails.customerName}\n`;
       prompt += `- الموبايل: ${orderDetails.customerPhone}\n`;
       prompt += `- العنوان: ${orderDetails.customerAddress}\n`;
       if (orderDetails.city) prompt += `- المدينة: ${orderDetails.city}\n`;
       prompt += `\n`;
-      
+
       prompt += `رسالة العميل الأخيرة: "${customerMessage}"\n\n`;
-      
+
       prompt += `🎯 مهمتك الآن:\n`;
       prompt += `- أكدي للعميل إن طلبه تم بنجاح بطريقة طبيعية ومختصرة\n`;
       prompt += `- اذكري تفاصيل الطلب: ${productName}${productColor ? ` - ${productColor}` : ''}${productSize ? ` - مقاس ${productSize}` : ''}\n`;
@@ -1256,18 +1256,18 @@ class ResponseGenerator {
       prompt += `- استخدمي emoji واحد أو اتنين بس\n`;
       prompt += `- ⚠️ ممنوع تماماً تذكري: "صورة"، "أرفق"، "[صورة]"، "ده شكله"، أو أي إشارة للصور\n`;
       prompt += `- ⚠️ لا تكرري بيانات العميل (الاسم، العنوان، الموبايل) في الرد - هو عارفها\n\n`;
-      
+
       prompt += `مثال للرد المناسب:\n`;
       prompt += `"تمام يا ${orderDetails.customerName}! طلبك اتأكد بنجاح 🎉\n`;
       prompt += `${productName}${productColor ? ` - ${productColor}` : ''}${productSize ? ` - مقاس ${productSize}` : ''}\n`;
       prompt += `الإجمالي: ${totalPrice} جنيه شامل الشحن.\n`;
       prompt += `رقم الطلب: ${order.orderNumber}\n`;
       prompt += `هيوصلك خلال ${deliveryTime}. شكراً ليكي!"\n\n`;
-      
+
       prompt += `⚠️ تحذير نهائي: لا تذكري أي شيء عن الصور أو إرفاق صور!`;
-      
+
       return prompt;
-      
+
     } catch (error) {
       console.error('❌ [ORDER-CONFIRMATION] خطأ في بناء prompt التأكيد:', error);
       throw error;
@@ -1288,9 +1288,9 @@ class ResponseGenerator {
     // ✅ تحديد إصدارات API للاختبار حسب نوع النموذج
     const isNewModel = modelName.includes('3') || modelName.includes('2.5') || modelName.includes('2.0');
     const apiVersions = isNewModel ? ['v1beta', 'v1alpha', 'v1'] : ['v1', 'v1beta', 'v1alpha'];
-    
+
     let lastError = null;
-    
+
     for (const apiVersion of apiVersions) {
       try {
         // ✅ إعداد thinkingConfig لتقليل استهلاك التوكنز في نماذج 2.5
@@ -1300,17 +1300,17 @@ class ResponseGenerator {
             thinkingBudget: 0 // ✅ تعطيل التفكير لتوفير التوكنز
           }
         } : {};
-        
-        const model = genAI.getGenerativeModel({ 
+
+        const model = genAI.getGenerativeModel({
           model: modelName,
           ...(apiVersion !== 'v1' ? { apiVersion } : {}), // v1 هو الافتراضي
           generationConfig,
           ...thinkingConfig
         });
-        
+
         // 🔄 Retry logic for 503 errors
         const retryDelays = [1000, 2000];
-        
+
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
           try {
             const result = await model.generateContent(prompt);
@@ -1321,13 +1321,13 @@ class ResponseGenerator {
             };
           } catch (retryError) {
             lastError = retryError;
-            
+
             // Check if it's a 503 Service Unavailable error
-            const is503Error = retryError.status === 503 || 
-                             retryError.message?.includes('503') || 
-                             retryError.message?.includes('Service Unavailable') ||
-                             retryError.message?.includes('overloaded');
-            
+            const is503Error = retryError.status === 503 ||
+              retryError.message?.includes('503') ||
+              retryError.message?.includes('Service Unavailable') ||
+              retryError.message?.includes('overloaded');
+
             if (is503Error && attempt < maxRetries) {
               const delay = retryDelays[attempt];
               console.log(`🔄 [RETRY-503] API ${apiVersion}, Attempt ${attempt + 1}/${maxRetries + 1} failed with 503. Retrying after ${delay}ms...`);
@@ -1342,20 +1342,20 @@ class ResponseGenerator {
       } catch (error) {
         lastError = error;
         // ✅ إذا كان الخطأ 404 أو 400، قد يعني أن النموذج غير متوفر في هذا الإصدار
-        const is404or400 = error.status === 404 || error.status === 400 || 
-                          error.message?.includes('404') || error.message?.includes('400') ||
-                          error.message?.includes('not found') || error.message?.includes('invalid');
-        
+        const is404or400 = error.status === 404 || error.status === 400 ||
+          error.message?.includes('404') || error.message?.includes('400') ||
+          error.message?.includes('not found') || error.message?.includes('invalid');
+
         if (is404or400) {
           console.log(`⚠️ [API-VERSION] Model ${modelName} not available with ${apiVersion}, trying next version...`);
           continue; // Try next API version
         }
-        
+
         // ✅ للأخطاء الأخرى، نستمر في المحاولة مع إصدار API التالي
         continue;
       }
     }
-    
+
     // ✅ إذا فشلت جميع المحاولات
     throw lastError || new Error(`Failed to generate content with all API versions for model: ${modelName}`);
   }
@@ -1365,31 +1365,31 @@ class ResponseGenerator {
    */
   async generateAIResponse(prompt, conversationMemory, useRAG, providedGeminiConfig, companyId, conversationId, messageContext) {
     const startTime = Date.now();
-    
+
     // ✅ FIX: إعلان geminiConfig خارج try block ليكون متاحاً في catch block
     let geminiConfig = null;
-    
+
     // ✅ FIX 1: إنشاء session ID لتتبع النماذج المجربة
     const sessionId = `${companyId}_${conversationId}_${Date.now()}`;
     this.globalTriedModels.set(sessionId, {
       models: new Set(),
       timestamp: Date.now()
     });
-    
+
     try {
       console.log(`🔍 [AI-RESPONSE] بدء توليد رد للشركة ${companyId}, المحادثة ${conversationId} - Session: ${sessionId}`);
-      
+
       // Get active Gemini configuration (use provided one if available, otherwise use session model with company isolation)
       const modelSelectionStart = Date.now();
       geminiConfig = providedGeminiConfig || await this.aiAgentService.getCurrentActiveModel(companyId);
       const modelSelectionDuration = Date.now() - modelSelectionStart;
-      
+
       if (!geminiConfig) {
         const totalDuration = Date.now() - startTime;
         console.error(`❌ [AI-RESPONSE] لم يتم العثور على نموذج نشط للشركة ${companyId} - وقت اختيار النموذج: ${modelSelectionDuration}ms, الوقت الإجمالي: ${totalDuration}ms`);
         throw new Error(`No active Gemini key found for company: ${companyId}`);
       }
-      
+
       console.log(`✅ [AI-RESPONSE] تم اختيار النموذج: ${geminiConfig.model} (Key: ${geminiConfig.keyName || geminiConfig.keyId}) - وقت الاختيار: ${modelSelectionDuration}ms`);
 
       // Step 1: Enhance prompt with approved patterns (if companyId provided)
@@ -1415,7 +1415,7 @@ class ResponseGenerator {
 
       // ✨ الحصول على إعدادات التوليد الديناميكية
       const generationConfig = await this.buildGenerationConfig(companyId, messageContext);
-      
+
       // ⚠️ Warning for thinking models
       if (geminiConfig.model.includes('2.5') || geminiConfig.model.includes('thinking')) {
         // Thinking models use tokens for internal reasoning
@@ -1423,15 +1423,15 @@ class ResponseGenerator {
 
       // Step 2: Generate AI response using enhanced prompt with API version fallback
       const { GoogleGenerativeAI } = require('@google/generative-ai');
-      
+
       // 🔍 DEBUG: فحص الـ apiKey
-      const apiKeyPreview = geminiConfig.apiKey ? 
-        `${geminiConfig.apiKey.substring(0, 10)}...${geminiConfig.apiKey.slice(-4)} (length: ${geminiConfig.apiKey.length})` : 
+      const apiKeyPreview = geminiConfig.apiKey ?
+        `${geminiConfig.apiKey.substring(0, 10)}...${geminiConfig.apiKey.slice(-4)} (length: ${geminiConfig.apiKey.length})` :
         'NULL/UNDEFINED';
       console.log(`🔑 [API-KEY-DEBUG] Key preview: ${apiKeyPreview}, Model: ${geminiConfig.model}, KeyName: ${geminiConfig.keyName}`);
-      
+
       const genAI = new GoogleGenerativeAI(geminiConfig.apiKey);
-      
+
       // ✅ استخدام الدالة المساعدة لتجربة إصدارات API متعددة
       const { response, apiVersion } = await this.tryGenerateWithApiVersions(
         genAI,
@@ -1440,11 +1440,11 @@ class ResponseGenerator {
         enhancedPrompt,
         2 // maxRetries
       );
-      
+
       if (apiVersion && apiVersion !== 'v1 (default)') {
         console.log(`✅ [API-VERSION] Using ${apiVersion} for model ${geminiConfig.model}`);
       }
-      
+
       // 🔍 Debug full response object
       console.log(`🔍 [AI-RESPONSE-DEBUG] Full response object:`, {
         hasResponse: !!response,
@@ -1453,7 +1453,7 @@ class ResponseGenerator {
         promptFeedback: response?.promptFeedback,
         usageMetadata: response?.usageMetadata
       });
-      
+
       // ✅ تحسين: إضافة logging لتتبع استهلاك tokens
       let totalTokenCount = 0;
       if (response?.usageMetadata) {
@@ -1471,7 +1471,7 @@ class ResponseGenerator {
           companyId: companyId
         });
       }
-      
+
       // ✅ تحديث الاستخدام فقط بعد نجاح الطلب - مع تتبع TPM
       const usedModelId = geminiConfig.modelId;
       if (usedModelId) {
@@ -1485,12 +1485,12 @@ class ResponseGenerator {
           modelId: geminiConfig.modelId
         });
       }
-      
+
       // Check if response was blocked
       if (response.promptFeedback?.blockReason) {
         console.error(`🚫 [AI-BLOCKED] Response was blocked! Reason: ${response.promptFeedback.blockReason}`);
         console.error(`🚫 [AI-BLOCKED] Safety ratings:`, response.promptFeedback.safetyRatings);
-        
+
         // 🤐 النظام الصامت - إرسال إشعار فوري عند حظر الرد
         await aiResponseMonitor.recordAIFailure({
           companyId: companyId,
@@ -1520,7 +1520,7 @@ class ResponseGenerator {
         // 🤐 النظام الصامت - إرجاع كائن يحتوي على السبب
         return { content: null, silentReason: `تم حظر الرد بسبب: ${response.promptFeedback.blockReason}` };
       }
-      
+
       // Check candidates
       if (response.candidates && response.candidates.length > 0) {
         console.log(`📊 [AI-CANDIDATES] First candidate:`, {
@@ -1530,18 +1530,18 @@ class ResponseGenerator {
           partsLength: response.candidates[0].content?.parts?.length || 0
         });
       }
-      
+
       let aiContent = '';
       try {
         // Check if response was truncated due to MAX_TOKENS
         if (response.candidates && response.candidates.length > 0) {
           const candidate = response.candidates[0];
           const finishReason = candidate.finishReason;
-          
+
           // 🤐 النظام الصامت - معالجة finishReason SAFETY و RECITATION
           if (finishReason === 'SAFETY' || finishReason === 'RECITATION') {
             console.error(`🚫 [AI-BLOCKED] Response blocked by finishReason: ${finishReason}`);
-            
+
             // إرسال إشعار فوري
             await aiResponseMonitor.recordAIFailure({
               companyId: companyId,
@@ -1571,11 +1571,11 @@ class ResponseGenerator {
             // 🤐 النظام الصامت - إرجاع كائن يحتوي على السبب
             return { content: null, silentReason: `تم حظر الرد بسبب: ${finishReason}` };
           }
-          
+
           // If MAX_TOKENS, try to extract partial content
           if (finishReason === 'MAX_TOKENS') {
             console.warn(`⚠️ [AI-MAX-TOKENS] Response truncated due to token limit`);
-            
+
             // Try to extract text from parts manually first
             if (candidate.content?.parts && candidate.content.parts.length > 0) {
               aiContent = candidate.content.parts.map(part => part.text || '').join('');
@@ -1583,7 +1583,7 @@ class ResponseGenerator {
                 console.log(`✅ [AI-MAX-TOKENS] Extracted partial content (${aiContent.length} chars) from truncated response`);
               }
             }
-            
+
             // If still empty, try response.text() as fallback
             if (!aiContent || aiContent.trim().length === 0) {
               try {
@@ -1592,25 +1592,25 @@ class ResponseGenerator {
                 console.error(`❌ [AI-TEXT-ERROR] Error calling response.text() after MAX_TOKENS:`, textError.message);
               }
             }
-            
+
             // ✅ FIX: إذا كان الرد فارغاً بعد MAX_TOKENS، إعادة المحاولة بإعدادات أفضل
             if (!aiContent || aiContent.trim().length === 0) {
               console.warn(`⚠️ [AI-MAX-TOKENS] Response is empty after MAX_TOKENS - retrying with better config`);
-              
+
               // ✅ استخدام retry count من messageContext أو 0
               const retryCount = messageContext?._retry_count || 0;
-              
+
               // ✅ التحقق من حد أقصى لعدد المحاولات
               if (retryCount < DEFAULT_AI_SETTINGS.MAX_RETRIES) {
                 // ✅ حساب القيمة الجديدة باستخدام multipliers من constants
                 const currentMaxTokens = generationConfig.maxOutputTokens || DEFAULT_AI_SETTINGS.MAX_OUTPUT_TOKENS;
-                const multiplier = retryCount === 0 
-                  ? RETRY_TOKEN_MULTIPLIERS.second 
+                const multiplier = retryCount === 0
+                  ? RETRY_TOKEN_MULTIPLIERS.second
                   : RETRY_TOKEN_MULTIPLIERS.third;
                 const newMaxTokens = currentMaxTokens * multiplier;
-                
+
                 console.log(`🔄 [AI-MAX-TOKENS] Retry ${retryCount + 1}/${DEFAULT_AI_SETTINGS.MAX_RETRIES} with maxOutputTokens: ${newMaxTokens}, temperature: 0.3`);
-                
+
                 // إنشاء messageContext جديد مع إعدادات محسنة
                 const retryContext = {
                   ...messageContext,
@@ -1618,7 +1618,7 @@ class ResponseGenerator {
                   temperature: 0.3, // ✅ تقليل التفكير الزائد
                   _retry_count: retryCount + 1, // ✅ زيادة عداد المحاولات
                 };
-                
+
                 // ✅ إعادة المحاولة (iterative - لا recursive)
                 return await this.generateAIResponse(
                   prompt,
@@ -1630,7 +1630,7 @@ class ResponseGenerator {
                   retryContext
                 );
               }
-              
+
               // ✅ إذا فشلت جميع المحاولات، إرسال إشعار
               const finalMaxTokens = generationConfig.maxOutputTokens || DEFAULT_AI_SETTINGS.MAX_OUTPUT_TOKENS;
               console.error(`❌ [AI-MAX-TOKENS] All retries failed (${retryCount + 1} attempts) - response still empty`);
@@ -1649,7 +1649,7 @@ class ResponseGenerator {
                   }
                 });
               }
-              
+
               // إرجاع كائن يحتوي على السبب للسماح بـ fallback في messageProcessor
               return { content: null, silentReason: 'تم قطع الرد بسبب تجاوز حد الرموز (MAX_TOKENS) حتى بعد إعادة المحاولة' };
             }
@@ -1689,7 +1689,7 @@ class ResponseGenerator {
           }
         }
       }
-      
+
       console.log(`🔍 [AI-RESPONSE-DEBUG] Response received from Gemini`);
       console.log(`📏 [AI-RESPONSE-DEBUG] Response length: ${aiContent?.length || 0}`);
       console.log(`📝 [AI-RESPONSE-DEBUG] Response preview: ${aiContent?.substring(0, 100) || 'EMPTY'}`);
@@ -1706,7 +1706,7 @@ class ResponseGenerator {
             conversationId: conversationId, // ✅ إضافة conversationId للتحقق من قاعدة البيانات
             companyId: companyId // ✅ إضافة companyId للعزل الأمني
           };
-          
+
           const optimizedResponse = await this.aiAgentService.responseOptimizer.optimizeResponse(
             aiContent,
             approvedPatterns,
@@ -1723,11 +1723,11 @@ class ResponseGenerator {
           // Continue with original response if optimization fails
         }
       }
-      
+
       // Step 3: Response diversity check (OPTIONAL - skip after order creation to avoid DB pressure)
       try {
         const settings2 = await this.aiAgentService.getSettings(companyId);
-        
+
         // ✅ Skip diversity check immediately after order creation to avoid DB pressure
         const isOrderConfirmation = messageContext?.messageType === 'order_confirmation';
         if (settings2.enableDiversityCheck && !isOrderConfirmation) {
@@ -1740,10 +1740,10 @@ class ResponseGenerator {
         }
       } catch (diversityError) {
         // ✅ Silent error handling - diversity is optional
-        if (diversityError.message?.includes('not yet connected') || 
-            diversityError.message?.includes('Engine') ||
-            diversityError.message?.includes('toLowerCase') ||
-            diversityError.message?.includes('messageData is not defined')) {
+        if (diversityError.message?.includes('not yet connected') ||
+          diversityError.message?.includes('Engine') ||
+          diversityError.message?.includes('toLowerCase') ||
+          diversityError.message?.includes('messageData is not defined')) {
           // Ignore connection errors and scope errors - they're expected
         } else {
           console.error('⚠️ [ResponseDiversity] Non-critical error:', diversityError.message);
@@ -1765,7 +1765,7 @@ class ResponseGenerator {
       } catch (toneError) {
         // Silent error handling
       }
-      
+
       // Step 4: Record pattern usage for performance tracking (BATCH OPTIMIZED)
       if (conversationId && approvedPatterns.length > 0) {
         try {
@@ -1779,7 +1779,7 @@ class ResponseGenerator {
       // ✅ VALIDATION: Check if response is valid before returning
       if (!aiContent || typeof aiContent !== 'string') {
         console.warn('⚠️ [AI-VALIDATION] Response is null or not a string');
-        
+
         // 🤐 النظام الصامت - إرسال إشعار عند فشل validation
         if (companyId && conversationId) {
           await aiResponseMonitor.recordAIFailure({
@@ -1791,21 +1791,21 @@ class ResponseGenerator {
             context: {}
           });
         }
-        
+
         return { content: null, silentReason: 'الرد غير صالح (ليس نصاً)' }; // 🤐 إرجاع كائن يحتوي على السبب
       }
 
       const trimmedContent = aiContent.trim();
-      
+
       // ✅ FIX: Check if response is too short
       // نسمح بردود قصيرة فقط في حالات خاصة (مثل detectConfirmationWithAI)
-      const isConfirmationCheck = messageContext?.messageType === 'order_confirmation' || 
-                                  messageContext?.inquiryType === 'order_confirmation';
-      
+      const isConfirmationCheck = messageContext?.messageType === 'order_confirmation' ||
+        messageContext?.inquiryType === 'order_confirmation';
+
       // ✅ FIX: الردود أقل من 3 أحرف مرفوضة تماماً (حتى في confirmation checks)
       if (trimmedContent.length < 3) {
         console.warn(`⚠️ [AI-VALIDATION] Response too short (${trimmedContent.length} chars): "${trimmedContent}"`);
-        
+
         // 🤐 النظام الصامت - إرسال إشعار
         if (companyId && conversationId) {
           await aiResponseMonitor.recordAIFailure({
@@ -1817,20 +1817,20 @@ class ResponseGenerator {
             context: { responsePreview: trimmedContent, isConfirmationCheck }
           });
         }
-        
+
         return { content: null, silentReason: 'الرد غير صالح (ليس نصاً)' }; // 🤐 إرجاع كائن يحتوي على السبب
       }
-      
+
       // ✅ FIX: الردود من 3-9 أحرف قد تكون صحيحة لكن قصيرة - نتحقق من المحتوى
       if (trimmedContent.length >= 3 && trimmedContent.length < 10 && !isConfirmationCheck) {
         // كلمات مفيدة مقبولة حتى لو كانت قصيرة
         const usefulShortWords = ['شكراً', 'شكرا', 'شكر', 'تمام', 'حاضر', 'نعم', 'موافق', 'ممتاز', 'أوكي', 'ok', 'yes'];
         const hasUsefulWord = usefulShortWords.some(word => trimmedContent.toLowerCase().includes(word.toLowerCase()));
-        
+
         // ✅ FIX: إذا كان الرد قصيراً ولا يحتوي على كلمات مفيدة، نحاول إعادة التوليد
         if (!hasUsefulWord) {
           console.warn(`⚠️ [AI-VALIDATION] Response is short (${trimmedContent.length} chars) and doesn't contain useful words: "${trimmedContent}"`);
-          
+
           // ✅ FIX: إرجاع كائن يحتوي على السبب لإعادة المحاولة في messageProcessor
           return { content: null, silentReason: `الرد قصير جداً (${trimmedContent.length} حرف) ولا يحتوي على كلمات مفيدة` };
         }
@@ -1840,7 +1840,7 @@ class ResponseGenerator {
       const withoutSymbols = trimmedContent.replace(/[✓✗×✓✔✕✖✓✓✓✓\s]+/g, '').trim();
       if (withoutSymbols.length < 2) {
         console.warn(`⚠️ [AI-VALIDATION] Response contains only symbols: "${trimmedContent}"`);
-        
+
         // 🤐 النظام الصامت - إرسال إشعار
         if (companyId && conversationId) {
           await aiResponseMonitor.recordAIFailure({
@@ -1852,7 +1852,7 @@ class ResponseGenerator {
             context: { responsePreview: trimmedContent }
           });
         }
-        
+
         return { content: null, silentReason: 'الرد غير صالح (ليس نصاً)' }; // 🤐 إرجاع كائن يحتوي على السبب
       }
 
@@ -1860,7 +1860,7 @@ class ResponseGenerator {
       const uniqueChars = new Set(trimmedContent.replace(/\s/g, ''));
       if (uniqueChars.size <= 2 && trimmedContent.length < 10) {
         console.warn(`⚠️ [AI-VALIDATION] Response appears to be noise (repeated chars): "${trimmedContent}"`);
-        
+
         // 🤐 النظام الصامت - إرسال إشعار
         if (companyId && conversationId) {
           await aiResponseMonitor.recordAIFailure({
@@ -1872,16 +1872,16 @@ class ResponseGenerator {
             context: { responsePreview: trimmedContent }
           });
         }
-        
+
         return { content: null, silentReason: 'الرد غير صالح (ليس نصاً)' }; // 🤐 إرجاع كائن يحتوي على السبب
       }
 
       const totalDuration = Date.now() - startTime;
       console.log(`✅ [AI-RESPONSE] تم توليد رد بنجاح - الطول: ${trimmedContent.length} حرف - الوقت الإجمالي: ${totalDuration}ms`);
-      
+
       // ✅ FIX 1: تنظيف session بعد النجاح
       this.globalTriedModels.delete(sessionId);
-      
+
       return trimmedContent;
 
     } catch (error) {
@@ -1891,7 +1891,7 @@ class ResponseGenerator {
       // ✅ FIX 1: استخدام النظام العالمي لتتبع النماذج المجربة
       const sessionData = this.globalTriedModels.get(sessionId);
       const triedModels = sessionData ? sessionData.models : new Set();
-      
+
       if (geminiConfig?.model) {
         triedModels.add(geminiConfig.model); // النموذج الأساسي الذي فشل
         console.log(`📝 [TRIED-MODELS] Added ${geminiConfig.model} to tried list. Total tried: ${triedModels.size}`);
@@ -1899,39 +1899,39 @@ class ResponseGenerator {
 
       // ✅ FIX 7: حد أقصى للمحاولات
       const MAX_FALLBACK_ATTEMPTS = 5;
-      
+
       // فحص إذا كان خطأ 503 (Service Unavailable - Model Overloaded)
-      const is503Error = error.status === 503 || 
-                        error.message?.includes('503') || 
-                        error.message?.includes('Service Unavailable') ||
-                        error.message?.includes('overloaded');
-      
+      const is503Error = error.status === 503 ||
+        error.message?.includes('503') ||
+        error.message?.includes('Service Unavailable') ||
+        error.message?.includes('overloaded');
+
       // ✅ FIX 7: استخدام while loop مع حد أقصى للمحاولات
       if (is503Error && triedModels.size < MAX_FALLBACK_ATTEMPTS) {
         console.log(`🔄 [503-ERROR] Model is overloaded. Attempting to switch to backup model (attempt ${triedModels.size + 1}/${MAX_FALLBACK_ATTEMPTS})...`);
-        
+
         // ✅ FIX 2: محاولة الحصول على نموذج بديل مع استثناء النماذج المجربة
         const excludeModelsArray = Array.from(triedModels);
         const backupModel = await this.aiAgentService.findNextAvailableModel(companyId, excludeModelsArray);
         if (backupModel) {
           console.log(`🔄 [503-FALLBACK] Switching to backup model: ${backupModel.model}`);
-          
+
           // ✅ FIX 1: إضافة النموذج البديل إلى قائمة النماذج التي تم تجربتها
           triedModels.add(backupModel.model);
           console.log(`📝 [TRIED-MODELS] Added backup model ${backupModel.model} to tried list. Total tried: ${triedModels.size}`);
-          
+
           // إعادة المحاولة مع النموذج البديل (مع retry logic أيضاً)
           try {
             const { GoogleGenerativeAI } = require('@google/generative-ai');
             const genAI = new GoogleGenerativeAI(backupModel.apiKey);
-            
+
             // ✅ إعداد thinkingConfig لتقليل استهلاك التوكنز
             const isThinkingModel = backupModel.model.includes('2.5') || backupModel.model.includes('thinking');
             const thinkingConfig = isThinkingModel ? {
               thinkingConfig: { thinkingBudget: 0 }
             } : {};
-            
-            const model = genAI.getGenerativeModel({ 
+
+            const model = genAI.getGenerativeModel({
               model: backupModel.model,
               generationConfig: await this.buildGenerationConfig(companyId, messageContext),
               ...thinkingConfig
@@ -1944,7 +1944,7 @@ class ResponseGenerator {
             const maxRetries = 2; // ✅ تحسين: تقليل من 3 إلى 2
             const retryDelays = [1000, 2000]; // ✅ تحسين: تقليل من 3 إلى 2
             let lastRetryError;
-            
+
             for (let attempt = 0; attempt <= maxRetries; attempt++) {
               try {
                 result = await model.generateContent(prompt);
@@ -1952,12 +1952,12 @@ class ResponseGenerator {
                 break; // Success
               } catch (retryError) {
                 lastRetryError = retryError;
-                
-                const isStill503 = retryError.status === 503 || 
-                                 retryError.message?.includes('503') || 
-                                 retryError.message?.includes('Service Unavailable') ||
-                                 retryError.message?.includes('overloaded');
-                
+
+                const isStill503 = retryError.status === 503 ||
+                  retryError.message?.includes('503') ||
+                  retryError.message?.includes('Service Unavailable') ||
+                  retryError.message?.includes('overloaded');
+
                 if (isStill503 && attempt < maxRetries) {
                   const delay = retryDelays[attempt];
                   console.log(`🔄 [RETRY-503-BACKUP] Backup model attempt ${attempt + 1}/${maxRetries + 1} failed with 503. Retrying after ${delay}ms...`);
@@ -1968,11 +1968,11 @@ class ResponseGenerator {
                 }
               }
             }
-            
+
             if (!response) {
               throw lastRetryError || new Error('Backup model failed after retries');
             }
-            
+
             const aiContent = response.text();
 
             // تحديث عداد الاستخدام للنموذج الجديد
@@ -1987,20 +1987,20 @@ class ResponseGenerator {
             return aiContent;
           } catch (retryError) {
             console.error('❌ [503-FALLBACK] Backup model also failed:', retryError.message);
-            
+
             // ✅ FIX: التحقق من نوع الخطأ - إذا كان 429، حاول البحث عن نموذج بديل آخر
-            const is429Error = retryError.status === 429 || 
-                              retryError.message?.includes('429') || 
-                              retryError.message?.includes('Too Many Requests') ||
-                              retryError.message?.includes('quota');
-            
+            const is429Error = retryError.status === 429 ||
+              retryError.message?.includes('429') ||
+              retryError.message?.includes('Too Many Requests') ||
+              retryError.message?.includes('quota');
+
             if (is429Error) {
               console.log('🔄 [503-FALLBACK-429] Backup model failed with 429. Attempting to find another backup model...');
-              
+
               // ✅ FIX: استخراج معلومات 429 من الخطأ
               let quotaValue = null;
               let modelName = backupModel.model; // استخدام النموذج البديل الذي فشل
-              
+
               try {
                 const errorDetails = retryError.errorDetails || [];
                 for (const detail of errorDetails) {
@@ -2019,7 +2019,7 @@ class ResponseGenerator {
               } catch (parseError) {
                 console.warn('⚠️ [503-FALLBACK-429] Could not parse error details:', parseError);
               }
-              
+
               // ✅ FIX: تحديد النموذج البديل كمستنفد قبل البحث عن نموذج ثانٍ
               // ✅ FIX: تمرير modelId لتحديث فقط المفتاح المحدد الذي فشل
               if (modelName) {
@@ -2031,35 +2031,35 @@ class ResponseGenerator {
                   console.log(`⚠️ [QUOTA-EXHAUSTED] Marked backup model ${modelName} as exhausted (quota: ${quotaValue || 'unknown'}) - No modelId provided`);
                 }
               }
-              
+
               // ✅ FIX: إضافة النموذج البديل إلى قائمة النماذج التي تم تجربتها (triedModels تم تعريفه في بداية catch block)
               // triedModels تم تعريفه في بداية catch block
               if (!triedModels.has(backupModel.model)) {
                 triedModels.add(backupModel.model); // النموذج البديل الذي فشل بـ 429
               }
-              
+
               // ✅ FIX: محاولة البحث عن نموذج بديل آخر (نموذج ثالث) مع استثناء النماذج التي تم تجربتها
               const excludeModelsArray = Array.from(triedModels);
               console.log(`🔍 [503-FALLBACK-429] Searching for second backup model. Excluding: ${excludeModelsArray.join(', ')} (${excludeModelsArray.length} models)`);
               console.log(`🔍 [503-FALLBACK-429] Tried models count: ${triedModels.size}, Max attempts: ${MAX_FALLBACK_ATTEMPTS}`);
-              
+
               const secondBackupModel = await this.aiAgentService.findNextAvailableModel(companyId, excludeModelsArray);
-              if (secondBackupModel && 
-                  secondBackupModel.model !== backupModel.model && 
-                  !triedModels.has(secondBackupModel.model)) {
+              if (secondBackupModel &&
+                secondBackupModel.model !== backupModel.model &&
+                !triedModels.has(secondBackupModel.model)) {
                 console.log(`✅ [503-FALLBACK-429] Found second backup model: ${secondBackupModel.model} (Key: ${secondBackupModel.keyName || 'N/A'})`);
-                
+
                 try {
                   const { GoogleGenerativeAI } = require('@google/generative-ai');
                   const genAI = new GoogleGenerativeAI(secondBackupModel.apiKey);
-                  
+
                   // ✅ إعداد thinkingConfig لتقليل استهلاك التوكنز
                   const isThinkingModel = secondBackupModel.model.includes('2.5') || secondBackupModel.model.includes('thinking');
                   const thinkingConfig = isThinkingModel ? {
                     thinkingConfig: { thinkingBudget: 0 }
                   } : {};
-                  
-                  const model = genAI.getGenerativeModel({ 
+
+                  const model = genAI.getGenerativeModel({
                     model: secondBackupModel.model,
                     generationConfig: await this.buildGenerationConfig(companyId, messageContext),
                     ...thinkingConfig
@@ -2071,7 +2071,7 @@ class ResponseGenerator {
                   const maxRetries = 2;
                   const retryDelays = [1000, 2000];
                   let lastRetryError;
-                  
+
                   for (let attempt = 0; attempt <= maxRetries; attempt++) {
                     try {
                       result = await model.generateContent(prompt);
@@ -2079,22 +2079,22 @@ class ResponseGenerator {
                       break; // Success
                     } catch (secondRetryError) {
                       lastRetryError = secondRetryError;
-                      
-                      const isStill503 = secondRetryError.status === 503 || 
-                                       secondRetryError.message?.includes('503') || 
-                                       secondRetryError.message?.includes('Service Unavailable') ||
-                                       secondRetryError.message?.includes('overloaded');
-                      
-                      const is429Error = secondRetryError.status === 429 || 
-                                       secondRetryError.message?.includes('429') || 
-                                       secondRetryError.message?.includes('Too Many Requests') ||
-                                       secondRetryError.message?.includes('quota');
-                      
+
+                      const isStill503 = secondRetryError.status === 503 ||
+                        secondRetryError.message?.includes('503') ||
+                        secondRetryError.message?.includes('Service Unavailable') ||
+                        secondRetryError.message?.includes('overloaded');
+
+                      const is429Error = secondRetryError.status === 429 ||
+                        secondRetryError.message?.includes('429') ||
+                        secondRetryError.message?.includes('Too Many Requests') ||
+                        secondRetryError.message?.includes('quota');
+
                       // ✅ FIX: إذا كان 429، لا نعيد المحاولة - نبحث عن نموذج آخر مباشرة
                       if (is429Error) {
                         throw secondRetryError; // ارمي الخطأ للبحث عن نموذج آخر
                       }
-                      
+
                       if (isStill503 && attempt < maxRetries) {
                         const delay = retryDelays[attempt];
                         console.log(`🔄 [RETRY-503-SECOND-BACKUP] Second backup model attempt ${attempt + 1}/${maxRetries + 1} failed with 503. Retrying after ${delay}ms...`);
@@ -2105,11 +2105,11 @@ class ResponseGenerator {
                       }
                     }
                   }
-                  
+
                   if (!response) {
                     throw lastRetryError || new Error('Second backup model failed after retries');
                   }
-                  
+
                   const aiContent = response.text();
 
                   // تحديث عداد الاستخدام للنموذج الجديد
@@ -2124,20 +2124,20 @@ class ResponseGenerator {
                   return aiContent;
                 } catch (secondBackupError) {
                   console.error('❌ [503-FALLBACK-429] Second backup model also failed:', secondBackupError.message);
-                  
+
                   // ✅ FIX: التحقق من نوع الخطأ - إذا كان 429، حاول البحث عن نموذج بديل ثالث
-                  const isSecond429Error = secondBackupError.status === 429 || 
-                                          secondBackupError.message?.includes('429') || 
-                                          secondBackupError.message?.includes('Too Many Requests') ||
-                                          secondBackupError.message?.includes('quota');
-                  
+                  const isSecond429Error = secondBackupError.status === 429 ||
+                    secondBackupError.message?.includes('429') ||
+                    secondBackupError.message?.includes('Too Many Requests') ||
+                    secondBackupError.message?.includes('quota');
+
                   if (isSecond429Error && triedModels.size < MAX_FALLBACK_ATTEMPTS) {
                     console.log('🔄 [503-FALLBACK-429-429] Second backup model also failed with 429. Attempting to find third backup model...');
-                    
+
                     // ✅ FIX: استخراج معلومات 429 من الخطأ
                     let secondQuotaValue = null;
                     let secondModelName = secondBackupModel.model;
-                    
+
                     try {
                       const errorDetails = secondBackupError.errorDetails || [];
                       for (const detail of errorDetails) {
@@ -2156,38 +2156,38 @@ class ResponseGenerator {
                     } catch (parseError) {
                       console.warn('⚠️ [503-FALLBACK-429-429] Could not parse error details:', parseError);
                     }
-                    
+
                     // ✅ FIX: تحديد النموذج البديل الثاني كمستنفد
                     if (secondModelName) {
                       const secondModelId = secondBackupModel?.modelId || null;
                       await this.aiAgentService.markModelAsExhaustedFrom429(secondModelName, secondQuotaValue, companyId, secondModelId);
                       console.log(`⚠️ [QUOTA-EXHAUSTED] Marked second backup model ${secondModelName} (modelId: ${secondModelId || 'N/A'}) as exhausted`);
                     }
-                    
+
                     // ✅ FIX: إضافة النموذج البديل الثاني إلى قائمة النماذج التي تم تجربتها
                     if (!triedModels.has(secondBackupModel.model)) {
                       triedModels.add(secondBackupModel.model);
                     }
-                    
+
                     // ✅ FIX: محاولة البحث عن نموذج بديل ثالث
                     const excludeModelsArray = Array.from(triedModels);
                     const thirdBackupModel = await this.aiAgentService.findNextAvailableModel(companyId, excludeModelsArray);
-                    if (thirdBackupModel && 
-                        thirdBackupModel.model !== secondBackupModel.model && 
-                        thirdBackupModel.model !== backupModel.model &&
-                        !triedModels.has(thirdBackupModel.model)) {
+                    if (thirdBackupModel &&
+                      thirdBackupModel.model !== secondBackupModel.model &&
+                      thirdBackupModel.model !== backupModel.model &&
+                      !triedModels.has(thirdBackupModel.model)) {
                       console.log(`🔄 [503-FALLBACK-429-429] Found third backup model: ${thirdBackupModel.model}`);
-                      
+
                       try {
                         const { GoogleGenerativeAI } = require('@google/generative-ai');
                         const genAI = new GoogleGenerativeAI(thirdBackupModel.apiKey);
-                        
+
                         const isThinkingModel = thirdBackupModel.model.includes('2.5') || thirdBackupModel.model.includes('thinking');
                         const thinkingConfig = isThinkingModel ? {
                           thinkingConfig: { thinkingBudget: 0 }
                         } : {};
-                        
-                        const model = genAI.getGenerativeModel({ 
+
+                        const model = genAI.getGenerativeModel({
                           model: thirdBackupModel.model,
                           generationConfig: await this.buildGenerationConfig(companyId, messageContext),
                           ...thinkingConfig
@@ -2195,40 +2195,40 @@ class ResponseGenerator {
 
                         const result = await model.generateContent(prompt);
                         const response = result.response;
-                        
+
                         if (!response || !response.candidates || response.candidates.length === 0) {
                           throw new Error('Empty response from third backup model');
                         }
-                        
+
                         const aiContent = response.text();
                         if (!aiContent || aiContent.trim().length === 0) {
                           throw new Error('Empty content from third backup model');
                         }
-                        
+
                         if (thirdBackupModel.modelId) {
                           await this.aiAgentService.updateModelUsage(thirdBackupModel.modelId);
                         }
-                        
+
                         this.aiAgentService.updateCurrentActiveModel(thirdBackupModel);
-                        
+
                         console.log(`✅ [503-FALLBACK-429-429] Successfully got response from third backup model: ${thirdBackupModel.model}`);
                         return aiContent;
                       } catch (thirdBackupError) {
                         console.error('❌ [503-FALLBACK-429-429] Third backup model also failed:', thirdBackupError.message);
-                        
+
                         // ✅ FIX: التحقق من نوع الخطأ - إذا كان 429، حاول البحث عن نموذج بديل رابع
-                        const isThird429Error = thirdBackupError.status === 429 || 
-                                              thirdBackupError.message?.includes('429') || 
-                                              thirdBackupError.message?.includes('Too Many Requests') ||
-                                              thirdBackupError.message?.includes('quota');
-                        
+                        const isThird429Error = thirdBackupError.status === 429 ||
+                          thirdBackupError.message?.includes('429') ||
+                          thirdBackupError.message?.includes('Too Many Requests') ||
+                          thirdBackupError.message?.includes('quota');
+
                         if (isThird429Error && triedModels.size < MAX_FALLBACK_ATTEMPTS) {
                           console.log('🔄 [503-FALLBACK-429-429-429] Third backup model also failed with 429. Attempting to find fourth backup model...');
-                          
+
                           // ✅ FIX: استخراج معلومات 429 من الخطأ
                           let thirdQuotaValue = null;
                           let thirdModelName = thirdBackupModel.model;
-                          
+
                           try {
                             const errorDetails = thirdBackupError.errorDetails || [];
                             for (const detail of errorDetails) {
@@ -2247,39 +2247,39 @@ class ResponseGenerator {
                           } catch (parseError) {
                             console.warn('⚠️ [503-FALLBACK-429-429-429] Could not parse error details:', parseError);
                           }
-                          
+
                           // ✅ FIX: تحديد النموذج البديل الثالث كمستنفد
                           if (thirdModelName) {
                             const thirdModelId = thirdBackupModel?.modelId || null;
                             await this.aiAgentService.markModelAsExhaustedFrom429(thirdModelName, thirdQuotaValue, companyId, thirdModelId);
                             console.log(`⚠️ [QUOTA-EXHAUSTED] Marked third backup model ${thirdModelName} (modelId: ${thirdModelId || 'N/A'}) as exhausted`);
                           }
-                          
+
                           // ✅ FIX: إضافة النموذج البديل الثالث إلى قائمة النماذج التي تم تجربتها
                           if (!triedModels.has(thirdBackupModel.model)) {
                             triedModels.add(thirdBackupModel.model);
                           }
-                          
+
                           // ✅ FIX: محاولة البحث عن نموذج بديل رابع
                           const excludeModelsArray = Array.from(triedModels);
                           const fourthBackupModel = await this.aiAgentService.findNextAvailableModel(companyId, excludeModelsArray);
-                          if (fourthBackupModel && 
-                              fourthBackupModel.model !== thirdBackupModel.model && 
-                              fourthBackupModel.model !== secondBackupModel.model &&
-                              fourthBackupModel.model !== backupModel.model &&
-                              !triedModels.has(fourthBackupModel.model)) {
+                          if (fourthBackupModel &&
+                            fourthBackupModel.model !== thirdBackupModel.model &&
+                            fourthBackupModel.model !== secondBackupModel.model &&
+                            fourthBackupModel.model !== backupModel.model &&
+                            !triedModels.has(fourthBackupModel.model)) {
                             console.log(`🔄 [503-FALLBACK-429-429-429] Found fourth backup model: ${fourthBackupModel.model}`);
-                            
+
                             try {
                               const { GoogleGenerativeAI } = require('@google/generative-ai');
                               const genAI = new GoogleGenerativeAI(fourthBackupModel.apiKey);
-                              
+
                               const isThinkingModel = fourthBackupModel.model.includes('2.5') || fourthBackupModel.model.includes('thinking');
                               const thinkingConfig = isThinkingModel ? {
                                 thinkingConfig: { thinkingBudget: 0 }
                               } : {};
-                              
-                              const model = genAI.getGenerativeModel({ 
+
+                              const model = genAI.getGenerativeModel({
                                 model: fourthBackupModel.model,
                                 generationConfig: await this.buildGenerationConfig(companyId, messageContext),
                                 ...thinkingConfig
@@ -2287,40 +2287,40 @@ class ResponseGenerator {
 
                               const result = await model.generateContent(prompt);
                               const response = result.response;
-                              
+
                               if (!response || !response.candidates || response.candidates.length === 0) {
                                 throw new Error('Empty response from fourth backup model');
                               }
-                              
+
                               const aiContent = response.text();
                               if (!aiContent || aiContent.trim().length === 0) {
                                 throw new Error('Empty content from fourth backup model');
                               }
-                              
+
                               if (fourthBackupModel.modelId) {
                                 await this.aiAgentService.updateModelUsage(fourthBackupModel.modelId);
                               }
-                              
+
                               this.aiAgentService.updateCurrentActiveModel(fourthBackupModel);
-                              
+
                               console.log(`✅ [503-FALLBACK-429-429-429] Successfully got response from fourth backup model: ${fourthBackupModel.model}`);
                               return aiContent;
                             } catch (fourthBackupError) {
                               console.error('❌ [503-FALLBACK-429-429-429] Fourth backup model also failed:', fourthBackupError.message);
-                              
+
                               // ✅ FIX: التحقق من نوع الخطأ - إذا كان 429، حاول البحث عن نموذج بديل خامس
-                              const isFourth429Error = fourthBackupError.status === 429 || 
-                                                    fourthBackupError.message?.includes('429') || 
-                                                    fourthBackupError.message?.includes('Too Many Requests') ||
-                                                    fourthBackupError.message?.includes('quota');
-                              
+                              const isFourth429Error = fourthBackupError.status === 429 ||
+                                fourthBackupError.message?.includes('429') ||
+                                fourthBackupError.message?.includes('Too Many Requests') ||
+                                fourthBackupError.message?.includes('quota');
+
                               if (isFourth429Error && triedModels.size < MAX_FALLBACK_ATTEMPTS) {
                                 console.log('🔄 [503-FALLBACK-429-429-429-429] Fourth backup model also failed with 429. Attempting to find fifth backup model...');
-                                
+
                                 // ✅ FIX: استخراج معلومات 429 من الخطأ
                                 let fourthQuotaValue = null;
                                 let fourthModelName = fourthBackupModel.model;
-                                
+
                                 try {
                                   const errorDetails = fourthBackupError.errorDetails || [];
                                   for (const detail of errorDetails) {
@@ -2339,40 +2339,40 @@ class ResponseGenerator {
                                 } catch (parseError) {
                                   console.warn('⚠️ [503-FALLBACK-429-429-429-429] Could not parse error details:', parseError);
                                 }
-                                
+
                                 // ✅ FIX: تحديد النموذج البديل الرابع كمستنفد
                                 if (fourthModelName) {
                                   const fourthModelId = fourthBackupModel?.modelId || null;
                                   await this.aiAgentService.markModelAsExhaustedFrom429(fourthModelName, fourthQuotaValue, companyId, fourthModelId);
                                   console.log(`⚠️ [QUOTA-EXHAUSTED] Marked fourth backup model ${fourthModelName} (modelId: ${fourthModelId || 'N/A'}) as exhausted`);
                                 }
-                                
+
                                 // ✅ FIX: إضافة النموذج البديل الرابع إلى قائمة النماذج التي تم تجربتها
                                 if (!triedModels.has(fourthBackupModel.model)) {
                                   triedModels.add(fourthBackupModel.model);
                                 }
-                                
+
                                 // ✅ FIX: محاولة البحث عن نموذج بديل خامس
                                 const excludeModelsArray = Array.from(triedModels);
                                 const fifthBackupModel = await this.aiAgentService.findNextAvailableModel(companyId, excludeModelsArray);
-                                if (fifthBackupModel && 
-                                    fifthBackupModel.model !== fourthBackupModel.model && 
-                                    fifthBackupModel.model !== thirdBackupModel.model &&
-                                    fifthBackupModel.model !== secondBackupModel.model &&
-                                    fifthBackupModel.model !== backupModel.model &&
-                                    !triedModels.has(fifthBackupModel.model)) {
+                                if (fifthBackupModel &&
+                                  fifthBackupModel.model !== fourthBackupModel.model &&
+                                  fifthBackupModel.model !== thirdBackupModel.model &&
+                                  fifthBackupModel.model !== secondBackupModel.model &&
+                                  fifthBackupModel.model !== backupModel.model &&
+                                  !triedModels.has(fifthBackupModel.model)) {
                                   console.log(`🔄 [503-FALLBACK-429-429-429-429] Found fifth backup model: ${fifthBackupModel.model}`);
-                                  
+
                                   try {
                                     const { GoogleGenerativeAI } = require('@google/generative-ai');
                                     const genAI = new GoogleGenerativeAI(fifthBackupModel.apiKey);
-                                    
+
                                     const isThinkingModel = fifthBackupModel.model.includes('2.5') || fifthBackupModel.model.includes('thinking');
                                     const thinkingConfig = isThinkingModel ? {
                                       thinkingConfig: { thinkingBudget: 0 }
                                     } : {};
-                                    
-                                    const model = genAI.getGenerativeModel({ 
+
+                                    const model = genAI.getGenerativeModel({
                                       model: fifthBackupModel.model,
                                       generationConfig: await this.buildGenerationConfig(companyId, messageContext),
                                       ...thinkingConfig
@@ -2380,22 +2380,22 @@ class ResponseGenerator {
 
                                     const result = await model.generateContent(prompt);
                                     const response = result.response;
-                                    
+
                                     if (!response || !response.candidates || response.candidates.length === 0) {
                                       throw new Error('Empty response from fifth backup model');
                                     }
-                                    
+
                                     const aiContent = response.text();
                                     if (!aiContent || aiContent.trim().length === 0) {
                                       throw new Error('Empty content from fifth backup model');
                                     }
-                                    
+
                                     if (fifthBackupModel.modelId) {
                                       await this.aiAgentService.updateModelUsage(fifthBackupModel.modelId);
                                     }
-                                    
+
                                     this.aiAgentService.updateCurrentActiveModel(fifthBackupModel);
-                                    
+
                                     console.log(`✅ [503-FALLBACK-429-429-429-429] Successfully got response from fifth backup model: ${fifthBackupModel.model}`);
                                     return aiContent;
                                   } catch (fifthBackupError) {
@@ -2424,7 +2424,7 @@ class ResponseGenerator {
                 console.error(`❌ [503-FALLBACK-429] No second backup model available. Tried: ${Array.from(triedModels).join(', ')} (${triedModels.size} models)`);
                 console.error(`❌ [503-FALLBACK-429] Excluded models: ${excludeModelsArray.join(', ')}`);
                 console.error(`❌ [503-FALLBACK-429] Attempts: ${triedModels.size}/${MAX_FALLBACK_ATTEMPTS}`);
-                
+
                 // ✅ FIX: محاولة البحث مرة أخرى بدون استثناءات (fallback) للتأكد من عدم وجود نماذج متاحة
                 console.log(`🔄 [503-FALLBACK-429] Attempting fallback search without exclusions...`);
                 const fallbackModel = await this.aiAgentService.findNextAvailableModel(companyId, []);
@@ -2437,13 +2437,13 @@ class ResponseGenerator {
                     try {
                       const { GoogleGenerativeAI } = require('@google/generative-ai');
                       const genAI = new GoogleGenerativeAI(fallbackModel.apiKey);
-                      
+
                       const isThinkingModel = fallbackModel.model.includes('2.5') || fallbackModel.model.includes('thinking');
                       const thinkingConfig = isThinkingModel ? {
                         thinkingConfig: { thinkingBudget: 0 }
                       } : {};
-                      
-                      const model = genAI.getGenerativeModel({ 
+
+                      const model = genAI.getGenerativeModel({
                         model: fallbackModel.model,
                         generationConfig: await this.buildGenerationConfig(companyId, messageContext),
                         ...thinkingConfig
@@ -2451,22 +2451,22 @@ class ResponseGenerator {
 
                       const result = await model.generateContent(prompt);
                       const response = result.response;
-                      
+
                       if (!response || !response.candidates || response.candidates.length === 0) {
                         throw new Error('Empty response from fallback model');
                       }
-                      
+
                       const aiContent = response.text();
                       if (!aiContent || aiContent.trim().length === 0) {
                         throw new Error('Empty content from fallback model');
                       }
-                      
+
                       if (fallbackModel.modelId) {
                         await this.aiAgentService.updateModelUsage(fallbackModel.modelId);
                       }
-                      
+
                       this.aiAgentService.updateCurrentActiveModel(fallbackModel);
-                      
+
                       console.log(`✅ [503-FALLBACK-429] Successfully got response from fallback model: ${fallbackModel.model}`);
                       return aiContent;
                     } catch (fallbackError) {
@@ -2480,7 +2480,7 @@ class ResponseGenerator {
                 }
               }
             }
-            
+
             // 🤐 النظام الصامت - إرسال إشعار فوري عند فشل النموذج البديل
             if (companyId && conversationId) {
               await aiResponseMonitor.recordAIFailure({
@@ -2511,18 +2511,18 @@ class ResponseGenerator {
                 }
               });
             }
-            
+
             // 🤐 النظام الصامت - إرجاع كائن يحتوي على السبب
             return { content: null, silentReason: `فشل النموذج البديل بعد خطأ 503: ${retryError.message}` };
           }
         } else {
           // ✅ FIX 7: رسالة مختلفة حسب السبب
-          const reason = triedModels.size >= MAX_FALLBACK_ATTEMPTS 
+          const reason = triedModels.size >= MAX_FALLBACK_ATTEMPTS
             ? `استنفدت جميع المحاولات (${triedModels.size}/${MAX_FALLBACK_ATTEMPTS})`
             : 'لا يوجد نماذج بديلة متاحة';
-          
+
           console.error(`❌ [503-FALLBACK] ${reason}. Tried models: ${Array.from(triedModels).join(', ')}`);
-          
+
           // 🤐 النظام الصامت - إرسال إشعار فوري
           if (companyId && conversationId) {
             await aiResponseMonitor.recordAIFailure({
@@ -2548,7 +2548,7 @@ class ResponseGenerator {
               }
             });
           }
-          
+
           // 🤐 النظام الصامت - إرجاع كائن يحتوي على السبب
           return { content: null, silentReason: 'النموذج الأساسي معطل ولا يوجد نموذج بديل متاح (503 Service Unavailable)' };
         }
@@ -2568,7 +2568,7 @@ class ResponseGenerator {
           }
         }
         let modelName = currentGeminiConfig?.model || null; // استخدام النموذج الحالي كبديل
-        
+
         try {
           // محاولة استخراج من errorDetails
           const errorDetails = error.errorDetails || [];
@@ -2585,12 +2585,12 @@ class ResponseGenerator {
               }
             }
           }
-          
+
           // ✅ FIX: إذا لم نجد modelName في errorDetails، نستخدم النموذج من currentGeminiConfig
           if (!modelName && currentGeminiConfig?.model) {
             modelName = currentGeminiConfig.model;
           }
-          
+
           // ✅ FIX: محاولة استخراج quotaValue من رسالة الخطأ مباشرة
           if (!quotaValue) {
             const quotaMatch = error.message.match(/limit:\s*(\d+)/i);
@@ -2598,7 +2598,7 @@ class ResponseGenerator {
               quotaValue = quotaMatch[1];
             }
           }
-          
+
           // ✅ FIX: إذا لم نجد quotaValue، نستخدم القيمة الافتراضية من قاعدة البيانات
           if (!quotaValue && currentGeminiConfig?.modelId) {
             try {
@@ -2613,7 +2613,7 @@ class ResponseGenerator {
               console.error('❌ Error fetching model usage from DB:', dbError);
             }
           }
-          
+
         } catch (parseError) {
           console.error('❌ Error parsing 429 error details:', parseError);
         }
@@ -2640,14 +2640,14 @@ class ResponseGenerator {
           try {
             const { GoogleGenerativeAI } = require('@google/generative-ai');
             const genAI = new GoogleGenerativeAI(backupModel.apiKey);
-            
+
             // ✅ إعداد thinkingConfig لتقليل استهلاك التوكنز
             const isThinkingModel = backupModel.model.includes('2.5') || backupModel.model.includes('thinking');
             const thinkingConfig = isThinkingModel ? {
               thinkingConfig: { thinkingBudget: 0 }
             } : {};
-            
-            const model = genAI.getGenerativeModel({ 
+
+            const model = genAI.getGenerativeModel({
               model: backupModel.model,
               ...thinkingConfig
             });
@@ -2667,7 +2667,7 @@ class ResponseGenerator {
             return aiContent;
           } catch (retryError) {
             console.error('❌ فشل النموذج البديل أيضاً:', retryError.message);
-            
+
             // 🤐 النظام الصامت - إرسال إشعار فوري عند فشل النموذج البديل
             if (companyId && conversationId) {
               await aiResponseMonitor.recordAIFailure({
@@ -2696,13 +2696,13 @@ class ResponseGenerator {
                 }
               });
             }
-            
+
             // 🤐 النظام الصامت - إرجاع كائن يحتوي على السبب
             return { content: null, silentReason: `فشل النموذج البديل بعد خطأ 503: ${retryError.message}` };
           }
         } else {
           console.error('❌ لا توجد نماذج بديلة متاحة');
-          
+
           // 🤐 النظام الصامت - إرسال إشعار فوري
           if (companyId && conversationId) {
             await aiResponseMonitor.recordAIFailure({
@@ -2728,7 +2728,7 @@ class ResponseGenerator {
               }
             });
           }
-          
+
           // 🤐 النظام الصامت - إرجاع كائن يحتوي على السبب
           return { content: null, silentReason: 'النموذج الأساسي معطل ولا يوجد نموذج بديل متاح (503 Service Unavailable)' };
         }
@@ -2748,15 +2748,130 @@ class ResponseGenerator {
           }
         });
       }
-      
+
       // 🤐 النظام الصامت - إرجاع كائن يحتوي على السبب
       const errorType = this.aiAgentService.errorHandler?.classifyError?.(error) || 'unknown_error';
-      
+
       // ✅ FIX 1: تنظيف session بعد الفشل
       this.globalTriedModels.delete(sessionId);
-      
+
       return { content: null, silentReason: `خطأ في توليد الرد: ${error.message} (نوع الخطأ: ${errorType})` };
     }
+  }
+}
+
+
+  /**
+   * ✨ توليد اقتراحات ردود ذكية (Smart Compose)
+   * 
+   * @param {Array} conversationMemory - سجل المحادثة
+   * @param {Object} customerData - بيانات العميل
+   * @param {Object} companyPrompts - إعدادات الشركة
+   * @param {Array} ragData - بيانات RAG (منتجات/أسئلة شائعة)
+   * @param {string} companyId - معرف الشركة
+   * @returns {Promise<Array<string>>} - مصفوفة من 3 اقتراحات
+   */
+  async generateReplySuggestions(conversationMemory, customerData, companyPrompts, ragData, companyId) {
+  try {
+    console.log(`💡 [AI-SUGGESTIONS] Generating suggestions for company ${companyId}`);
+
+    // 1. بناء Prompt خاص للاقتراحات
+    let prompt = `أنت مساعد ذكي لخدمة العملاء. مهمتك هي اقتراح 3 ردود قصيرة ومناسبة وسريعة يمكن للموظف إرسالها للعميل بناءً على سياق المحادثة.\n\n`;
+
+    // إضافة الشخصية (اختياري ولكن مفيد للنبرة)
+    if (companyPrompts.personalityPrompt) {
+      prompt += `شخصية المساعد: ${companyPrompts.personalityPrompt}\n\n`;
+    }
+
+    // إضافة معلومات العميل
+    prompt += `معلومات العميل:\n- الاسم: ${customerData?.name || 'غير محدد'}\n\n`;
+
+    // إضافة سجل المحادثة (آخر 5 رسائل فقط للتركيز)
+    const recentMessages = conversationMemory ? conversationMemory.slice(-5) : [];
+    if (recentMessages.length > 0) {
+      prompt += `سجل المحادثة (الرسائل الأخيرة):\n`;
+      recentMessages.forEach((msg, i) => {
+        const sender = msg.isFromCustomer ? 'العميل' : 'الموظف/النظام';
+        prompt += `${i + 1}. ${sender}: "${msg.content}"\n`;
+      });
+      prompt += `\n`;
+    } else {
+      prompt += `هذه بداية المحادثة. العميل لم يرسل شيئاً بعد أو هذه أول رسالة.\n\n`;
+    }
+
+    // إضافة بيانات RAG (إذا وجدت منتجات أو معلومات ذات صلة)
+    if (ragData && ragData.length > 0) {
+      prompt += `معلومات مساعدة (منتجات/سياسات):\n`;
+      ragData.slice(0, 3).forEach(item => {
+        prompt += `- ${item.content.substring(0, 100)}...\n`;
+      });
+      prompt += `\n`;
+    }
+
+    // التعليمات الصارمة
+    prompt += `التعليمات:\n`;
+    prompt += `1. اقترحي 3 ردود مختلفة (قصيرة، متوسطة، ومفصلة قليلاً).\n`;
+    prompt += `2. يجب أن تكون الردود باللهجة المصرية الطبيعية والودودة (إلا إذا كانت الشخصية تفرض غير ذلك).\n`;
+    prompt += `3. الردود يجب أن تكون جاهزة للإرسال فوراً (لا تضعي أقواس أو شرح).\n`;
+    prompt += `4. المخرجات يجب أن تكون مصفوفة JSON نصية فقط (Array of strings).\n`;
+    prompt += `5. لا تكتبي أي شيء خارج مصفوفة JSON.\n`;
+    prompt += `6. مثال للمخرجات: ["أهلاً يا فندم، إزاي أقدر اساعدك؟", "المقاسات المتاحة حالياً هي 41 و 42", "سعر المنتج 500 جنيه والتوصيل مجاني"]\n\n`;
+    prompt += `المخرجات المطلوبة (JSON Array Only):`;
+
+    // 2. استدعاء النموذج (using existing methods)
+    // نستخدم إعدادات محافظة (Low Temperature) للحصول على تنسيق JSON دقيق
+    const generationConfig = {
+      temperature: 0.3,
+      maxOutputTokens: 500,
+      responseMimeType: "application/json" // Gemini 1.5 supports this
+    };
+
+    const modelManager = this.aiAgentService.getModelManager();
+    const activeKey = await modelManager.getActiveGeminiKeyWithModel(companyId);
+
+    const { GoogleGenerativeAI } = require("@google/generative-ai");
+    const genAI = new GoogleGenerativeAI(activeKey.key);
+    const model = genAI.getGenerativeModel({
+      model: activeKey.model || "gemini-1.5-flash",
+      generationConfig: generationConfig
+    });
+
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text();
+
+    // 3. معالجة الرد وتحويله إلى مصفوفة
+    let suggestions = [];
+    try {
+      // تنظيف النص من علامات markdown إذا وجدت
+      const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+      suggestions = JSON.parse(cleanText);
+    } catch (parseError) {
+      console.warn('⚠️ [AI-SUGGESTIONS] Failed to parse JSON, trying regex fallback', responseText);
+      // محاولة استخراج النصوص بين علامات التنصيص كحل بديل
+      const matches = responseText.match(/"([^"]*)"/g);
+      if (matches) {
+        suggestions = matches.map(s => s.replace(/"/g, ''));
+      } else {
+        // Fallback final: return raw lines
+        suggestions = responseText.split('\n').filter(line => line.length > 5).slice(0, 3);
+      }
+    }
+
+    // التأكد من أنها مصفوفة
+    if (!Array.isArray(suggestions)) {
+      suggestions = [typeof suggestions === 'string' ? suggestions : "أهلاً بك، كيف يمكنني مساعدتك؟"];
+    }
+
+    return suggestions.slice(0, 3); // ضمان إرجع 3 اقتراحات كحد أقصى
+
+  } catch (error) {
+    console.error('❌ [AI-SUGGESTIONS] Error generating suggestions:', error);
+    // Fallback suggestions
+    return [
+      "أهلاً بك، كيف يمكنني مساعدتك؟",
+      "تفضل، أنا معاك للإجابة على استفساراتك.",
+      "هل لديك أي أسئلة أخرى؟"
+    ];
   }
 }
 

@@ -251,6 +251,14 @@ class AIAgentService {
   }
 
   /**
+   * توليد اقتراحات ردود ذكية (Smart Compose)
+   * ✅ Delegation to responseGenerator for better code organization
+   */
+  async generateReplySuggestions(conversationMemory, customerData, companyPrompts, ragData, companyId) {
+    return this.getResponseGenerator().generateReplySuggestions(conversationMemory, customerData, companyPrompts, ragData, companyId);
+  }
+
+  /**
    * Analyze enhanced conversation context with flow tracking
    * ✅ Delegation to contextManager for better code organization
    */

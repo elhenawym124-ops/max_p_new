@@ -241,5 +241,72 @@ router.patch('/conversations/bulk-ai-toggle', requireAuth, async (req, res) => {
   }
 });
 
+
+/**
+ * الحصول على اقتراحات ردود ذكية (Smart Compose)
+ * Get AI suggestions for a conversation
+ */
+router.get('/conversations/:conversationId/suggestions', requireAuth, async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const companyId = req.user?.companyId;
+
+    if (!companyId) {
+      return res.status(403).json({ success: false, message: 'معرف الشركة مطلوب' });
+    }
+
+    // 1. الحصول على المحادثة والعميل
+    const conversation = await getSharedPrismaClient().conversation.findFirst({
+      where: { id: conversationId, companyId },
+      include: { customer: true }
+    });
+
+    if (!conversation) {
+      return res.status(404).json({ success: false, message: 'المحادثة غير موجودة' });
+    }
+
+    // 2. تحميل خدمات AI
+    const { aiAgentService } = require('../services/aiAgentService');
+    const settingsManager = aiAgentService.getSettingsManager();
+    const contextManager = aiAgentService.getContextManager();
+
+    // 3. جلب الذاكرة والإعدادات
+    const [conversationMemory, companyPrompts] = await Promise.all([
+      contextManager.getConversationMemory(conversationId, 10), // آخر 10 رسائل
+      settingsManager.getCompanyPrompts(companyId)
+    ]);
+
+    // 4. (اختياري) يمكن جلب RAG data إذا لزم الأمر، لكن للأداء سنكتفي بالذاكرة حالياً
+    // إلا إذا كان هناك سياق منتج في آخر رسالة
+    let ragData = [];
+    // TODO: يمكن تحسين هذا لجلب بيانات RAG بناءً على آخر رسالة من العميل
+
+    // 5. توليد الاقتراحات
+    const suggestions = await aiAgentService.generateReplySuggestions(
+      conversationMemory,
+      {
+        name: conversation.customer?.firstName || conversation.customer?.name,
+        phone: conversation.customer?.phone
+      },
+      companyPrompts,
+      ragData,
+      companyId
+    );
+
+    res.json({
+      success: true,
+      suggestions: suggestions
+    });
+
+  } catch (error) {
+    console.error('❌ [AI-SUGGESTIONS-API] Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'فشل توليد الاقتراحات',
+      suggestions: ["أهلاً بك، كيف يمكنني مساعدتك؟"] // Fallback
+    });
+  }
+});
+
 module.exports = router;
 

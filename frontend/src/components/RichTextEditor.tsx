@@ -10,6 +10,15 @@ interface RichTextEditorProps {
   minHeight?: string;
 }
 
+// Suppress findDOMNode warning from react-quill (known issue with React 18)
+const originalError = console.error;
+console.error = (...args) => {
+  if (typeof args[0] === 'string' && args[0].includes('findDOMNode')) {
+    return;
+  }
+  originalError.call(console, ...args);
+};
+
 const RichTextEditor: React.FC<RichTextEditorProps> = ({
   value,
   onChange,

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useDateFormat } from '../../hooks/useDateFormat';
 import useSocket from '../../hooks/useSocket';
+import { apiClient } from '../../services/apiClient';
 import {
   ShoppingBagIcon,
   EyeIcon,
@@ -170,51 +171,139 @@ const Orders: React.FC = () => {
   }, [socket, isConnected, page]);
 
   useEffect(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:173',message:'useEffect triggered',data:{page,limit,filters,ordersCount:orders.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
+    // #endregion
     fetchOrders();
   }, [page, limit, filters]); // Fetch when page, limit, or filters change
 
   const fetchOrders = async () => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:177',message:'fetchOrders entry',data:{page,limit,filters},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
-      const apiUrl = import.meta.env['VITE_API_URL'] || 'https://mokhtarelhenawy.online/api/v1';
 
       // Build Query String
-      const queryParams = new URLSearchParams({
+      const queryParams: any = {
         page: page.toString(),
         limit: limit.toString(),
-        ...(filters.status && { status: filters.status }),
-        ...(filters.paymentStatus && { paymentStatus: filters.paymentStatus }),
-        ...(filters.search && { search: filters.search }),
-        ...(filters.startDate && { startDate: filters.startDate }),
-        ...(filters.endDate && { endDate: filters.endDate }),
-      });
+      };
+      
+      if (filters.status) queryParams.status = filters.status;
+      if (filters.paymentStatus) queryParams.paymentStatus = filters.paymentStatus;
+      if (filters.search) queryParams.search = filters.search;
+      if (filters.startDate) queryParams.startDate = filters.startDate;
+      if (filters.endDate) queryParams.endDate = filters.endDate;
 
-      const response = await fetch(`${apiUrl}/orders-new/simple?${queryParams.toString()}`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+      // Debug logging (development only)
+      if (import.meta.env.DEV) {
+        console.log('[ORDERS] Fetching orders with params:', queryParams);
+      }
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:198',message:'Before API call',data:{queryParams},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      
+      const response = await apiClient.get('/orders-new/simple', {
+        params: queryParams
       });
-      const data = await response.json();
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:201',message:'API response received',data:{status:response.status,hasData:!!response.data,success:response.data?.success,dataType:Array.isArray(response.data?.data)?'array':typeof response.data?.data,dataLength:Array.isArray(response.data?.data)?response.data.data.length:0,hasPagination:!!response.data?.pagination},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
+      // Debug logging (development only)
+      if (import.meta.env.DEV) {
+        console.log('[ORDERS] Response received:', { status: response.status, success: response.data?.success });
+      }
+      
+      const data = response.data;
+
+      // #region agent log
+      const firstOrderRaw = data?.data?.[0];
+      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:207',message:'Before data processing',data:{hasSuccess:data?.success,dataIsArray:Array.isArray(data?.data),firstOrderSample:firstOrderRaw?{orderNumber:firstOrderRaw.orderNumber,hasItems:!!firstOrderRaw.items,itemsLength:firstOrderRaw.items?.length,hasTotal:firstOrderRaw.total!==undefined,hasSubtotal:firstOrderRaw.subtotal!==undefined,totalValue:firstOrderRaw.total,subtotalValue:firstOrderRaw.subtotal,totalType:typeof firstOrderRaw.total,subtotalType:typeof firstOrderRaw.subtotal,allKeys:firstOrderRaw?Object.keys(firstOrderRaw):[]}:null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
 
       if (data.success) {
-        setOrders(data.data);
+        // #region agent log
+        const ordersData = data.data;
+        const sampleOrder = Array.isArray(ordersData) && ordersData.length > 0 ? ordersData[0] : null;
+        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:209',message:'Processing successful response',data:{ordersCount:Array.isArray(ordersData)?ordersData.length:0,sampleOrderFields:sampleOrder?Object.keys(sampleOrder):[],sampleOrderNulls:sampleOrder?Object.entries(sampleOrder).filter(([k,v])=>v===null||v===undefined).map(([k])=>k):[],pagination:data.pagination},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
+        
+        // Transform and validate orders data
+        const transformedOrders = (Array.isArray(data.data) ? data.data : []).map((order: any) => ({
+          id: order.id || order.orderNumber || '',
+          orderNumber: order.orderNumber || '',
+          customerName: order.customerName || 'غير محدد',
+          customerEmail: order.customerEmail || '',
+          customerPhone: order.customerPhone || '',
+          status: (order.status || 'pending').toLowerCase() as any,
+          items: Array.isArray(order.items) ? order.items.map((item: any) => ({
+            id: item.id || '',
+            productId: item.productId || '',
+            name: item.name || item.productName || '',
+            price: typeof item.price === 'string' ? parseFloat(item.price) || null : (item.price ?? null),
+            quantity: item.quantity || 0,
+            total: typeof item.total === 'string' ? parseFloat(item.total) || null : (item.total ?? null),
+            metadata: item.metadata || {}
+          })) : [],
+          subtotal: typeof order.subtotal === 'string' ? parseFloat(order.subtotal) || null : (order.subtotal ?? null),
+          tax: typeof order.tax === 'string' ? parseFloat(order.tax) || 0 : (order.tax ?? 0),
+          shipping: typeof order.shipping === 'string' ? parseFloat(order.shipping) || 0 : (order.shipping ?? 0),
+          total: typeof order.total === 'string' ? parseFloat(order.total) || null : (typeof order.subtotal === 'string' ? parseFloat(order.subtotal) || null : (order.total ?? order.subtotal ?? null)),
+          paymentMethod: order.paymentMethod || '',
+          paymentStatus: (order.paymentStatus || 'pending').toLowerCase() as any,
+          shippingAddress: order.shippingAddress || { city: order.city || '', country: '' },
+          trackingNumber: order.trackingNumber || undefined,
+          notes: order.notes || '',
+          createdAt: order.createdAt || new Date().toISOString(),
+          conversationId: order.conversationId || undefined,
+          updatedAt: order.updatedAt || order.createdAt || new Date().toISOString(),
+          metadata: order.metadata || {}
+        }));
+        
+        // #region agent log
+        const firstTransformedOrder = transformedOrders[0];
+        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:231',message:'Orders transformed',data:{originalCount:Array.isArray(data.data)?data.data.length:0,transformedCount:transformedOrders.length,firstOrderTotal:firstTransformedOrder?.total,firstOrderSubtotal:firstTransformedOrder?.subtotal,firstOrderTotalType:typeof firstTransformedOrder?.total,firstOrderSubtotalType:typeof firstTransformedOrder?.subtotal},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
+        
+        setOrders(transformedOrders);
         if (data.pagination) {
           setTotalPages(data.pagination.pages);
           setTotalOrders(data.pagination.total);
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:245',message:'Pagination set',data:{pages:data.pagination.pages,total:data.pagination.total},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+          // #endregion
         } else {
           setTotalPages(1);
-          setTotalOrders(data.data.length);
+          setTotalOrders(transformedOrders.length);
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:248',message:'No pagination, using fallback',data:{dataLength:transformedOrders.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+          // #endregion
         }
         // Clear selection on page change or filter change
         setSelectedOrders([]);
       } else {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:220',message:'API returned success=false',data:{message:data.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+        // #endregion
         console.error('Failed to fetch orders:', data.message);
       }
-    } catch (error) {
+    } catch (error: any) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:223',message:'Error caught',data:{errorMessage:error?.message,errorStatus:error?.response?.status,errorData:error?.response?.data,errorType:error?.constructor?.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
       console.error('Error fetching orders:', error);
+      if (error.response?.data?.message) {
+        console.error('Error message:', error.response.data.message);
+      }
     } finally {
       setLoading(false);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:228',message:'fetchOrders exit',data:{loading:false},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
     }
   };
 
@@ -425,14 +514,20 @@ const Orders: React.FC = () => {
       });
       const data = await response.json();
       if (data.success) {
+        const normalizedStatus = newStatus.toLowerCase();
         setOrders(orders.map(order =>
-          order.orderNumber === orderNumber ? { ...order, status: newStatus as any } : order
+          order.orderNumber === orderNumber ? { ...order, status: normalizedStatus as any } : order
         ));
         if (selectedOrder && selectedOrder.orderNumber === orderNumber) {
-          setSelectedOrder({ ...selectedOrder, status: newStatus as any });
+          setSelectedOrder({ ...selectedOrder, status: normalizedStatus as any });
         }
-      } else { alert(data.message || 'فشل تحديث الحالة'); }
-    } catch (error) { console.error('Error:', error); alert('خطأ أثناء التحديث'); }
+      } else { 
+        alert(data.message || 'فشل تحديث الحالة'); 
+      }
+    } catch (error) { 
+      console.error('Error updating status:', error); 
+      alert('خطأ أثناء التحديث'); 
+    }
   };
 
   const handleUpdatePaymentStatus = async (orderNumber: string, newStatus: string) => {
@@ -446,14 +541,20 @@ const Orders: React.FC = () => {
       });
       const data = await response.json();
       if (data.success) {
+        const normalizedStatus = newStatus.toLowerCase();
         setOrders(orders.map(order =>
-          order.orderNumber === orderNumber ? { ...order, paymentStatus: newStatus as any } : order
+          order.orderNumber === orderNumber ? { ...order, paymentStatus: normalizedStatus as any } : order
         ));
         if (selectedOrder && selectedOrder.orderNumber === orderNumber) {
-          setSelectedOrder({ ...selectedOrder, paymentStatus: newStatus as any });
+          setSelectedOrder({ ...selectedOrder, paymentStatus: normalizedStatus as any });
         }
-      } else { alert(data.message || 'فشل تحديث حالة الدفع'); }
-    } catch (error) { console.error('Error:', error); alert('خطأ أثناء تحديث الدفع'); }
+      } else { 
+        alert(data.message || 'فشل تحديث حالة الدفع'); 
+      }
+    } catch (error) { 
+      console.error('Error updating payment status:', error); 
+      alert('خطأ أثناء تحديث الدفع'); 
+    }
   };
 
   return (
@@ -637,8 +738,33 @@ const Orders: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                orders.map((order) => (
-                  <tr key={order.id} className={`hover:bg-gray-50 transition-colors ${selectedOrders.includes(order.orderNumber) ? 'bg-blue-50' : ''}`}>
+                orders.map((order, idx) => {
+                  // #region agent log
+                  if (idx === 0) {
+                    const logData = {
+                      location: 'Orders.tsx:739',
+                      message: 'Rendering orders table',
+                      data: {
+                        ordersCount: orders.length,
+                        firstOrderHasId: !!order.id,
+                        firstOrderHasNumber: !!order.orderNumber,
+                        firstOrderHasName: !!order.customerName,
+                        firstOrderHasTotal: order.total !== null && order.total !== undefined
+                      },
+                      timestamp: Date.now(),
+                      sessionId: 'debug-session',
+                      runId: 'run1',
+                      hypothesisId: 'H'
+                    };
+                    fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(logData)
+                    }).catch(() => {});
+                  }
+                  // #endregion
+                  return (
+                    <tr key={order.id || idx} className={`hover:bg-gray-50 transition-colors ${selectedOrders.includes(order.orderNumber) ? 'bg-blue-50' : ''}`}>
                     <td className="px-6 py-4">
                       <input
                         type="checkbox"
@@ -656,24 +782,60 @@ const Orders: React.FC = () => {
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
                         <span className="text-gray-900 font-medium">{order.customerName || 'غير محدد'}</span>
-                        <span className="text-gray-500 text-sm" dir="ltr">{order.customerPhone}</span>
+                        {order.customerPhone && (
+                          <span className="text-gray-500 text-sm" dir="ltr">{order.customerPhone}</span>
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4 font-medium text-gray-900">
-                      {formatPrice(order.total || 0)}
+                      {(() => {
+                        try {
+                          // #region agent log
+                          if (idx === 0) {
+                            fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:791',message:'Before amount calculation',data:{orderTotal:order.total,orderSubtotal:order.subtotal,orderTotalType:typeof order.total,orderSubtotalType:typeof order.subtotal,orderNumber:order.orderNumber},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
+                          }
+                          // #endregion
+                          const amount = order.total ?? order.subtotal ?? 0;
+                          // #region agent log
+                          if (idx === 0) {
+                            fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:794',message:'After amount calculation',data:{amount,amountType:typeof amount,isNumber:typeof amount==='number',willFormatAs:typeof amount==='number'?amount:0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
+                          }
+                          // #endregion
+                          const formatted = formatPrice(typeof amount === 'number' ? amount : 0);
+                          // #region agent log
+                          if (idx === 0) {
+                            fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:797',message:'After formatPrice',data:{formatted,formattedType:typeof formatted},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
+                          }
+                          // #endregion
+                          return formatted;
+                        } catch (e) {
+                          // #region agent log
+                          if (idx === 0) {
+                            fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:800',message:'Error in formatPrice',data:{errorMessage:e?.message,errorType:typeof e},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
+                          }
+                          // #endregion
+                          return '0.00';
+                        }
+                      })()}
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.status)}`}>
-                        {getStatusText(order.status)}
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor((order.status || '').toLowerCase())}`}>
+                        {getStatusText((order.status || '').toLowerCase())}
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPaymentStatusColor(order.paymentStatus)}`}>
-                        {getPaymentStatusText(order.paymentStatus)}
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPaymentStatusColor((order.paymentStatus || 'pending').toLowerCase())}`}>
+                        {getPaymentStatusText((order.paymentStatus || 'pending').toLowerCase())}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-gray-500 text-sm">
-                      {formatDate(order.createdAt)}
+                      {(() => {
+                        try {
+                          return formatDate(order.createdAt || new Date().toISOString());
+                        } catch (e) {
+                          return '-';
+                        }
+                      })()}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
@@ -706,7 +868,8 @@ const Orders: React.FC = () => {
                       </div>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -795,18 +958,24 @@ const Orders: React.FC = () => {
                       <div className="grid grid-cols-2 gap-4 text-sm">
                         <div>
                           <span className="text-gray-500 block">الاسم</span>
-                          <span className="text-gray-900 font-medium">{selectedOrder.customerName}</span>
+                          <span className="text-gray-900 font-medium">{selectedOrder.customerName || 'غير محدد'}</span>
                         </div>
                         <div>
                           <span className="text-gray-500 block">رقم الهاتف</span>
-                          <span className="text-gray-900 font-medium" dir="ltr">{selectedOrder.customerPhone}</span>
+                          <span className="text-gray-900 font-medium" dir="ltr">{selectedOrder.customerPhone || 'غير محدد'}</span>
                         </div>
                         <div className="col-span-2">
                           <span className="text-gray-500 block">العنوان</span>
                           <span className="text-gray-900 font-medium">
-                            {typeof selectedOrder.shippingAddress === 'string'
-                              ? selectedOrder.shippingAddress
-                              : `${selectedOrder.shippingAddress?.city || ''} - ${selectedOrder.shippingAddress?.country || ''}`}
+                            {(() => {
+                              if (typeof selectedOrder.shippingAddress === 'string') {
+                                return selectedOrder.shippingAddress || 'غير محدد';
+                              }
+                              const addr = selectedOrder.shippingAddress;
+                              const city = addr?.city || '';
+                              const country = addr?.country || '';
+                              return (city || country) ? `${city}${city && country ? ' - ' : ''}${country}` : 'غير محدد';
+                            })()}
                           </span>
                         </div>
                       </div>
@@ -815,43 +984,53 @@ const Orders: React.FC = () => {
                     {/* Order Items */}
                     <div className="mb-6">
                       <h4 className="text-sm font-medium text-gray-900 mb-3">المنتجات</h4>
-                      <div className="border border-gray-200 rounded-lg overflow-hidden">
-                        <table className="min-w-full divide-y divide-gray-200">
-                          <thead className="bg-gray-50">
-                            <tr>
-                              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">المنتج</th>
-                              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">الكمية</th>
-                              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">السعر</th>
-                              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">الإجمالي</th>
-                            </tr>
-                          </thead>
-                          <tbody className="bg-white divide-y divide-gray-200">
-                            {selectedOrder.items.map((item) => (
-                              <tr key={item.id}>
-                                <td className="px-4 py-2 text-sm text-gray-900">{item.name}</td>
-                                <td className="px-4 py-2 text-sm text-gray-900">{item.quantity}</td>
-                                <td className="px-4 py-2 text-sm text-gray-900">{formatPrice(item.price || 0)}</td>
-                                <td className="px-4 py-2 text-sm text-gray-900">{formatPrice(item.total || 0)}</td>
+                      {!selectedOrder.items || selectedOrder.items.length === 0 ? (
+                        <div className="text-center py-4 text-gray-500 text-sm">
+                          لا توجد منتجات في هذا الطلب
+                        </div>
+                      ) : (
+                        <div className="border border-gray-200 rounded-lg overflow-hidden">
+                          <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">المنتج</th>
+                                <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">الكمية</th>
+                                <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">السعر</th>
+                                <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">الإجمالي</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {selectedOrder.items.map((item, idx) => (
+                                <tr key={item.id || idx}>
+                                  <td className="px-4 py-2 text-sm text-gray-900">{item.name || 'منتج غير محدد'}</td>
+                                  <td className="px-4 py-2 text-sm text-gray-900">{item.quantity || 0}</td>
+                                  <td className="px-4 py-2 text-sm text-gray-900">{formatPrice(item.price ?? 0)}</td>
+                                  <td className="px-4 py-2 text-sm text-gray-900">{formatPrice(item.total ?? (item.price ?? 0) * (item.quantity || 1))}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
 
                     {/* Order Summary */}
                     <div className="border-t border-gray-200 pt-4">
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-gray-600">المجموع الفرعي</span>
-                        <span className="font-medium">{formatPrice(selectedOrder.subtotal || 0)}</span>
+                        <span className="font-medium">{formatPrice(selectedOrder.subtotal ?? 0)}</span>
+                      </div>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-gray-600">الضريبة</span>
+                        <span className="font-medium">{formatPrice(selectedOrder.tax ?? 0)}</span>
                       </div>
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-gray-600">الشحن</span>
-                        <span className="font-medium">{formatPrice(selectedOrder.shipping || 0)}</span>
+                        <span className="font-medium">{formatPrice(selectedOrder.shipping ?? 0)}</span>
                       </div>
                       <div className="flex justify-between items-center pt-2 border-t border-gray-100">
                         <span className="text-lg font-bold text-gray-900">الإجمالي</span>
-                        <span className="text-lg font-bold text-blue-600">{formatPrice(selectedOrder.total || 0)}</span>
+                        <span className="text-lg font-bold text-blue-600">{formatPrice(selectedOrder.total ?? selectedOrder.subtotal ?? 0)}</span>
                       </div>
                     </div>
 
@@ -860,7 +1039,7 @@ const Orders: React.FC = () => {
                       <div className="flex-1">
                         <label className="block text-sm font-medium text-gray-700 mb-1">تحديث الحالة</label>
                         <select
-                          value={selectedOrder.status}
+                          value={(selectedOrder.status || '').toLowerCase()}
                           onChange={(e) => handleUpdateStatus(selectedOrder.orderNumber, e.target.value)}
                           className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                         >
@@ -875,7 +1054,7 @@ const Orders: React.FC = () => {
                       <div className="flex-1">
                         <label className="block text-sm font-medium text-gray-700 mb-1">حالة الدفع</label>
                         <select
-                          value={selectedOrder.paymentStatus}
+                          value={(selectedOrder.paymentStatus || 'pending').toLowerCase()}
                           onChange={(e) => handleUpdatePaymentStatus(selectedOrder.orderNumber, e.target.value)}
                           className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                         >

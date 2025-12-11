@@ -26,10 +26,10 @@ const conversationStorage = multer.diskStorage({
 const conversationFileFilter = (req, file, cb) => {
   // Accept images, videos, audio, and common file types
   const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx|txt|mp4|avi|mov|wmv|mp3|wav|ogg|m4a/;
-  const mimetype = allowedTypes.test(file.mimetype) || 
-                   file.mimetype.startsWith('image/') || 
-                   file.mimetype.startsWith('video/') || 
-                   file.mimetype.startsWith('audio/');
+  const mimetype = allowedTypes.test(file.mimetype) ||
+    file.mimetype.startsWith('image/') ||
+    file.mimetype.startsWith('video/') ||
+    file.mimetype.startsWith('audio/');
   const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
 
   if (mimetype || extname) {
@@ -82,7 +82,14 @@ router.get('/:id/messages', verifyToken.authenticateToken, conversationControlle
 // 🆕 Media and message management routes
 router.post('/:id/messages/media', verifyToken.authenticateToken, mediaUpload.single('file'), conversationController.sendMediaMessage);
 router.put('/:id/messages/:messageId', verifyToken.authenticateToken, conversationController.editMessage);
+router.put('/:id/messages/:messageId/star', verifyToken.authenticateToken, conversationController.toggleMessageStar);
+router.put('/:id/messages/:messageId/reaction', verifyToken.authenticateToken, conversationController.toggleMessageReaction);
+// Snooze conversation
+router.post('/:id/snooze', verifyToken.authenticateToken, conversationController.snoozeConversation);
 router.delete('/:id/messages/:messageId', verifyToken.authenticateToken, conversationController.deleteMessage);
 router.post('/:id/messages/location', verifyToken.authenticateToken, conversationController.sendLocationMessage);
+
+// 🆕 Bulk Update Route
+router.put('/bulk-update', verifyToken.authenticateToken, conversationController.bulkUpdateConversations);
 
 module.exports = router;

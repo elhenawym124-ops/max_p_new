@@ -2,8 +2,8 @@ const { getSharedPrismaClient, initializeSharedDatabase, executeWithRetry } = re
 // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const axios = require('axios');
 
-const getAllCustomer = async(req , res)=>{
-      try {
+const getAllCustomer = async (req, res) => {
+  try {
     // التحقق من المصادقة والشركة
     const companyId = req.user?.companyId;
     if (!companyId) {
@@ -78,7 +78,7 @@ const blockCustomerOnPage = async (req, res) => {
   try {
     const companyId = req.user?.companyId;
     const userId = req.user?.id;
-    
+
     if (!companyId) {
       return res.status(403).json({
         success: false,
@@ -153,11 +153,11 @@ const blockCustomerOnPage = async (req, res) => {
     // 🚫 التواصل مع Facebook API لحظر المستخدم من الصفحة مباشرة
     let facebookBlockResult = null;
     const facebookUserId = customer.facebookId || null;
-    
+
     if (facebookUserId && facebookPage.pageAccessToken) {
       try {
         console.log(`🚫 [FB-API] Blocking user ${facebookUserId} on Facebook page ${pageId} via Graph API...`);
-        
+
         // استخدام Facebook Graph API لحظر المستخدم
         const fbResponse = await axios.post(
           `https://graph.facebook.com/v18.0/${pageId}/blocked`,
@@ -174,7 +174,7 @@ const blockCustomerOnPage = async (req, res) => {
             timeout: 10000
           }
         );
-        
+
         facebookBlockResult = {
           success: true,
           facebookResponse: fbResponse.data
@@ -230,7 +230,7 @@ const blockCustomerOnPage = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error blocking customer:', error);
-    
+
     // معالجة أخطاء Prisma
     if (error.code === 'P2002') {
       return res.status(400).json({
@@ -251,7 +251,7 @@ const blockCustomerOnPage = async (req, res) => {
 const unblockCustomerOnPage = async (req, res) => {
   try {
     const companyId = req.user?.companyId;
-    
+
     if (!companyId) {
       return res.status(403).json({
         success: false,
@@ -313,11 +313,11 @@ const unblockCustomerOnPage = async (req, res) => {
     // ✅ التواصل مع Facebook API لإلغاء حظر المستخدم من الصفحة مباشرة
     const facebookUserId = blocked.customer?.facebookId || blocked.facebookId;
     let facebookUnblockResult = null;
-    
+
     if (facebookUserId && facebookPage.pageAccessToken) {
       try {
         console.log(`✅ [FB-API] Unblocking user ${facebookUserId} on Facebook page ${pageId} via Graph API...`);
-        
+
         // استخدام Facebook Graph API لإلغاء حظر المستخدم
         const fbResponse = await axios.delete(
           `https://graph.facebook.com/v18.0/${pageId}/blocked/${facebookUserId}`,
@@ -331,7 +331,7 @@ const unblockCustomerOnPage = async (req, res) => {
             timeout: 10000
           }
         );
-        
+
         facebookUnblockResult = {
           success: true,
           facebookResponse: fbResponse.data
@@ -374,7 +374,7 @@ const unblockCustomerOnPage = async (req, res) => {
 const getBlockedCustomersOnPage = async (req, res) => {
   try {
     const companyId = req.user?.companyId;
-    
+
     if (!companyId) {
       return res.status(403).json({
         success: false,
@@ -452,7 +452,7 @@ const getBlockedCustomersOnPage = async (req, res) => {
 const checkCustomerBlockStatus = async (req, res) => {
   try {
     const companyId = req.user?.companyId;
-    
+
     if (!companyId) {
       return res.status(403).json({
         success: false,
@@ -526,7 +526,7 @@ const checkCustomerBlockStatus = async (req, res) => {
 const getCustomerOrders = async (req, res) => {
   try {
     const companyId = req.user?.companyId;
-    
+
     if (!companyId) {
       return res.status(403).json({
         success: false,
@@ -615,6 +615,319 @@ const getCustomerOrders = async (req, res) => {
   }
 };
 
+// 📊 جلب سجل نشاطات العميل
+const getCustomerActivity = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+      });
+    }
+
+    const { customerId } = req.params;
+
+    if (!customerId) {
+      return res.status(400).json({
+        success: false,
+        message: 'معرف العميل مطلوب'
+      });
+    }
+
+    // التحقق من أن العميل ينتمي للشركة
+    const customer = await getSharedPrismaClient().customer.findUnique({
+      where: { id: customerId },
+      select: { id: true, companyId: true }
+    });
+
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'العميل غير موجود'
+      });
+    }
+
+    if (customer.companyId !== companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول لهذا العميل'
+      });
+    }
+
+    // جلب آخر المحادثات
+    const conversations = await getSharedPrismaClient().conversation.findMany({
+      where: {
+        customerId: customerId,
+        companyId: companyId
+      },
+      select: {
+        id: true,
+        platform: true,
+        lastMessageAt: true,
+        createdAt: true
+      },
+      orderBy: { lastMessageAt: 'desc' },
+      take: 10
+    });
+
+    // جلب آخر الطلبات
+    const orders = await getSharedPrismaClient().order.findMany({
+      where: {
+        customerId: customerId,
+        companyId: companyId
+      },
+      select: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        total: true,
+        createdAt: true
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 10
+    });
+
+    // دمج النشاطات وترتيبها حسب التاريخ
+    const activities = [
+      ...conversations.map(conv => ({
+        type: 'conversation',
+        id: conv.id,
+        platform: conv.platform,
+        timestamp: conv.lastMessageAt || conv.createdAt,
+        data: conv
+      })),
+      ...orders.map(order => ({
+        type: 'order',
+        id: order.id,
+        orderNumber: order.orderNumber,
+        status: order.status,
+        total: parseFloat(order.total),
+        timestamp: order.createdAt,
+        data: order
+      }))
+    ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    res.json({
+      success: true,
+      data: activities
+    });
+  } catch (error) {
+    console.error('❌ Error fetching customer activity:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في جلب سجل النشاطات',
+      error: error.message
+    });
+  }
+};
+
+// 📝 جلب ملاحظات العميل
+const getCustomerNotes = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+      });
+    }
+
+    const { customerId } = req.params;
+
+    if (!customerId) {
+      return res.status(400).json({
+        success: false,
+        message: 'معرف العميل مطلوب'
+      });
+    }
+
+    // التحقق من أن العميل ينتمي للشركة
+    const customer = await getSharedPrismaClient().customer.findUnique({
+      where: { id: customerId },
+      select: { id: true, companyId: true }
+    });
+
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'العميل غير موجود'
+      });
+    }
+
+    if (customer.companyId !== companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول لهذا العميل'
+      });
+    }
+
+    const notes = await getSharedPrismaClient().customerNote.findMany({
+      where: { customerId },
+      include: {
+        author: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json({
+      success: true,
+      data: notes
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching customer notes:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في جلب الملاحظات',
+      error: error.message
+    });
+  }
+};
+
+// 📝 إضافة ملاحظة جديدة
+const addCustomerNote = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+    const authorId = req.user?.userId || req.user?.id;
+
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+      });
+    }
+
+    const { customerId } = req.params;
+    const { content } = req.body;
+
+    if (!customerId || !content) {
+      return res.status(400).json({
+        success: false,
+        message: 'معرف العميل ونص الملاحظة مطلوبان'
+      });
+    }
+
+    // التحقق من أن العميل ينتمي للشركة
+    const customer = await getSharedPrismaClient().customer.findUnique({
+      where: { id: customerId },
+      select: { id: true, companyId: true }
+    });
+
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'العميل غير موجود'
+      });
+    }
+
+    if (customer.companyId !== companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول لهذا العميل'
+      });
+    }
+
+    const note = await getSharedPrismaClient().customerNote.create({
+      data: {
+        customerId,
+        authorId,
+        content
+      },
+      include: {
+        author: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true
+          }
+        }
+      }
+    });
+
+    res.json({
+      success: true,
+      data: note,
+      message: 'تم إضافة الملاحظة بنجاح'
+    });
+
+  } catch (error) {
+    console.error('❌ Error adding customer note:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في إضافة الملاحظة',
+      error: error.message
+    });
+  }
+};
+
+// 🗑️ حذف ملاحظة
+const deleteCustomerNote = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+    const userId = req.user?.userId || req.user?.id;
+
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+      });
+    }
+
+    const { noteId } = req.params;
+
+    const note = await getSharedPrismaClient().customerNote.findUnique({
+      where: { id: noteId },
+      include: {
+        customer: {
+          select: { companyId: true }
+        }
+      }
+    });
+
+    if (!note) {
+      return res.status(404).json({
+        success: false,
+        message: 'الملاحظة غير موجودة'
+      });
+    }
+
+    if (note.customer.companyId !== companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول لهذه الملاحظة'
+      });
+    }
+
+    await getSharedPrismaClient().customerNote.delete({
+      where: { id: noteId }
+    });
+
+    res.json({
+      success: true,
+      message: 'تم حذف الملاحظة بنجاح'
+    });
+
+  } catch (error) {
+    console.error('❌ Error deleting customer note:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في حذف الملاحظة',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getAllCustomer,
   deleteAllConversations,
@@ -623,5 +936,9 @@ module.exports = {
   unblockCustomerOnPage,
   getBlockedCustomersOnPage,
   checkCustomerBlockStatus,
-  getCustomerOrders
+  getCustomerOrders,
+  getCustomerActivity,
+  getCustomerNotes,
+  addCustomerNote,
+  deleteCustomerNote
 }

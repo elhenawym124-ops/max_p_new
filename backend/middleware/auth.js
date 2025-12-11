@@ -113,8 +113,11 @@ const requireAuth = async (req, res, next) => {
       company: user.company
     };
 
-    // Security logging
-    //console.log(`[SECURITY] Authenticated access: ${user.email} (${user.companyId}) - ${req.method} ${req.path}`);
+    // Security logging (development only - in production, use proper logging service)
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[AUTH] Authenticated access: ${user.email} (${user.companyId}) - ${req.method} ${req.path}`);
+      console.log(`[AUTH] req.user set:`, { id: req.user.id, email: req.user.email, companyId: req.user.companyId });
+    }
 
     next();
   } catch (error) {

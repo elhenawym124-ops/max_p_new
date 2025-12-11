@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useCurrency } from '../../hooks/useCurrency';
 import { getCurrencyByCode } from '../../utils/currency';
@@ -105,6 +105,7 @@ const ProductNewFinal: React.FC = () => {
   const [loadingProduct, setLoadingProduct] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('basic');
 
   const [formData, setFormData] = useState<ProductFormData>({
@@ -184,11 +185,9 @@ const ProductNewFinal: React.FC = () => {
     fetchCategories();
   }, []);
 
-  // تحميل بيانات المنتج عند التعديل
-  useEffect(() => {
+  // دالة تحميل بيانات المنتج (يمكن استدعاؤها من أي مكان)
+  const fetchProduct = useCallback(async () => {
     if (!isEditMode || !id) return;
-
-    const fetchProduct = async () => {
       setLoadingProduct(true);
       try {
         const response = await apiClient.get(`/products/${id}`);
@@ -233,36 +232,82 @@ const ProductNewFinal: React.FC = () => {
             setUploadedImages(imgs || []);
           }
 
+          // تحميل الـ attributes من metadata أولاً (إذا كانت موجودة)
+          let savedAttributes: ProductAttribute[] = [];
+          if (product.metadata) {
+            try {
+              const metadata = typeof product.metadata === 'string'
+                ? JSON.parse(product.metadata)
+                : product.metadata;
+              
+              if (metadata.attributes && Array.isArray(metadata.attributes) && metadata.attributes.length > 0) {
+                savedAttributes = metadata.attributes;
+                setAttributes(savedAttributes);
+              }
+            } catch (e) {
+              console.error('Error parsing product metadata for attributes:', e);
+            }
+          }
+
           // تحميل المتغيرات
           if (product.variants && product.variants.length > 0) {
-            const loadedVariants = product.variants.map((v: any) => ({
-              id: v.id,
-              name: v.name || '',
-              type: v.type || 'color',
-              sku: v.sku || '',
-              price: v.price ? parseFloat(v.price) : undefined,
-              comparePrice: v.comparePrice ? parseFloat(v.comparePrice) : undefined,
-              cost: v.cost ? parseFloat(v.cost) : undefined,
-              images: v.images ? (typeof v.images === 'string' ? JSON.parse(v.images) : v.images) : [],
-              stock: v.stock || 0,
-              trackInventory: v.trackInventory !== false,
-              isActive: v.isActive !== false,
-              sortOrder: v.sortOrder || 0,
-              metadata: v.metadata,
-              image: v.image,
-              description: v.description || '',
-              weight: v.weight ? parseFloat(v.weight) : undefined,
-              dimensions: v.dimensions ? (typeof v.dimensions === 'string' ? JSON.parse(v.dimensions) : v.dimensions) : {},
-              shippingClass: v.shippingClass || 'standard',
-              allowBackorders: v.allowBackorders || false,
-              lowStockThreshold: v.lowStockThreshold || 5,
-              attributeValues: v.attributeValues ? (typeof v.attributeValues === 'string' ? JSON.parse(v.attributeValues) : v.attributeValues) : {},
-            }));
+            const loadedVariants = product.variants.map((v: any) => {
+              // معالجة metadata
+              let parsedMetadata = null;
+              let attributeValues = {};
+              let description = '';
+              let dimensions = {};
+              let weight = undefined;
+              let shippingClass = 'standard';
+              let allowBackorders = false;
+              let lowStockThreshold = 5;
+              let image = null;
+              
+              if (v.metadata) {
+                try {
+                  parsedMetadata = typeof v.metadata === 'string' ? JSON.parse(v.metadata) : v.metadata;
+                  attributeValues = parsedMetadata.attributeValues || {};
+                  description = parsedMetadata.description || '';
+                  dimensions = parsedMetadata.dimensions || {};
+                  weight = parsedMetadata.weight;
+                  shippingClass = parsedMetadata.shippingClass || 'standard';
+                  allowBackorders = parsedMetadata.allowBackorders || false;
+                  lowStockThreshold = parsedMetadata.lowStockThreshold || 5;
+                  image = parsedMetadata.image || null;
+                } catch (e) {
+                  // ignore parse errors
+                }
+              }
+              
+              return {
+                id: v.id,
+                name: v.name || '',
+                type: v.type || 'color',
+                sku: v.sku || '',
+                price: v.price ? parseFloat(v.price) : undefined,
+                comparePrice: v.comparePrice ? parseFloat(v.comparePrice) : undefined,
+                cost: v.cost ? parseFloat(v.cost) : undefined,
+                images: v.images ? (typeof v.images === 'string' ? JSON.parse(v.images) : v.images) : [],
+                stock: v.stock || 0,
+                trackInventory: v.trackInventory !== false,
+                isActive: v.isActive !== false,
+                sortOrder: v.sortOrder || 0,
+                metadata: v.metadata,
+                image: image || v.image,
+                description: description || v.description || '',
+                weight: weight || (v.weight ? parseFloat(v.weight) : undefined),
+                dimensions: Object.keys(dimensions).length > 0 ? dimensions : (v.dimensions ? (typeof v.dimensions === 'string' ? JSON.parse(v.dimensions) : v.dimensions) : {}),
+                shippingClass: shippingClass || v.shippingClass || 'standard',
+                allowBackorders: allowBackorders || v.allowBackorders || false,
+                lowStockThreshold: lowStockThreshold || v.lowStockThreshold || 5,
+                attributeValues: Object.keys(attributeValues).length > 0 ? attributeValues : (v.attributeValues ? (typeof v.attributeValues === 'string' ? JSON.parse(v.attributeValues) : v.attributeValues) : {}),
+              };
+            });
             setVariants(loadedVariants);
             setShowVariants(true);
 
-            // استخراج الـ attributes من المتغيرات إذا لم تكن موجودة
-            if (loadedVariants.length > 0) {
+            // استخراج الـ attributes من المتغيرات فقط إذا لم تكن موجودة في metadata
+            if (loadedVariants.length > 0 && savedAttributes.length === 0) {
               const extractedAttributes: { [key: string]: Set<string> } = {};
               
               loadedVariants.forEach((variant: any) => {
@@ -377,10 +422,12 @@ const ProductNewFinal: React.FC = () => {
       } finally {
         setLoadingProduct(false);
       }
-    };
-
-    fetchProduct();
   }, [id, isEditMode]);
+
+  // تحميل بيانات المنتج عند التعديل
+  useEffect(() => {
+    fetchProduct();
+  }, [fetchProduct]);
 
   // استخراج الـ attributes من المتغيرات بعد تحميلها
   useEffect(() => {
@@ -625,11 +672,17 @@ const ProductNewFinal: React.FC = () => {
     const newVariants: ProductVariant[] = allCombinations.map((combo, idx) => {
       const attributeValues = combo.reduce((acc, curr) => ({ ...acc, ...curr }), {});
       const name = Object.values(attributeValues).join(' - ');
+      
+      // توليد SKU فريد باستخدام timestamp
+      const timestamp = Date.now();
+      const uniqueSku = formData.sku && formData.sku !== '-' 
+        ? `${formData.sku}-${idx + 1}-${timestamp}` 
+        : `VAR-${timestamp}-${idx + 1}`;
 
       return {
         name,
         type: 'combination',
-        sku: `${formData.sku}-${idx + 1}`,
+        sku: uniqueSku,
         images: [],
         stock: 0,
         trackInventory: formData.trackInventory,
@@ -821,6 +874,47 @@ const ProductNewFinal: React.FC = () => {
   };
 
   // دالة التحقق من صحة البيانات
+  // دالة مساعدة لتنظيف بيانات المتغير قبل الإرسال
+  const cleanVariantData = (variant: ProductVariant): any => {
+    // تحويل images إلى JSON string إذا كان array
+    let imagesStr = null;
+    if (variant.images && Array.isArray(variant.images) && variant.images.length > 0) {
+      imagesStr = JSON.stringify(variant.images);
+    } else if (typeof variant.images === 'string') {
+      imagesStr = variant.images;
+    }
+
+    const variantData: any = {
+      name: variant.name,
+      type: variant.type || 'color',
+      sku: variant.sku || null,
+      price: variant.price !== undefined ? variant.price : null,
+      comparePrice: variant.comparePrice !== undefined ? variant.comparePrice : null,
+      cost: variant.cost !== undefined ? variant.cost : null,
+      images: imagesStr,
+      stock: variant.stock !== undefined ? variant.stock : 0,
+      trackInventory: variant.trackInventory !== undefined ? variant.trackInventory : true,
+      isActive: variant.isActive !== undefined ? variant.isActive : true,
+      sortOrder: variant.sortOrder !== undefined ? variant.sortOrder : 0,
+    };
+
+    // إضافة metadata إذا كان هناك attributeValues أو حقول إضافية
+    if (variant.attributeValues || variant.description || variant.dimensions || variant.weight || variant.shippingClass || variant.allowBackorders || variant.lowStockThreshold || variant.image) {
+      variantData.metadata = JSON.stringify({
+        attributeValues: variant.attributeValues || null,
+        description: variant.description || null,
+        dimensions: variant.dimensions || null,
+        weight: variant.weight || null,
+        shippingClass: variant.shippingClass || null,
+        allowBackorders: variant.allowBackorders || null,
+        lowStockThreshold: variant.lowStockThreshold || null,
+        image: variant.image || null,
+      });
+    }
+
+    return variantData;
+  };
+
   const validateForm = (): string | null => {
     // التحقق من الحقول المطلوبة
     if (!formData.name || formData.name.trim() === '') {
@@ -920,7 +1014,7 @@ const ProductNewFinal: React.FC = () => {
               // استبدال base64 بـ URL
               processedDescription = processedDescription.replace(base64Data, imageUrl);
             }
-          } catch (error) {
+          } catch (error: any) {
             console.error('❌ [ProductNewFinal] Error converting base64 image:', error);
             // نترك الصورة base64 كما هي إذا فشل التحويل
           }
@@ -949,7 +1043,10 @@ const ProductNewFinal: React.FC = () => {
         weight: formData.weight || null,
         dimensions: formData.dimensions || null,
         images: uploadedImages,
-        metadata: JSON.stringify({ variantSettings }),
+        metadata: JSON.stringify({ 
+          variantSettings,
+          attributes: attributes // حفظ الـ attributes في metadata
+        }),
       };
 
       let result;
@@ -962,16 +1059,24 @@ const ProductNewFinal: React.FC = () => {
         if (result.success) {
           // تحديث المتغيرات
           for (const variant of variants) {
-            if (variant.id) {
-              // تحديث متغير موجود - استخدام PUT للمتغيرات
-              await apiClient.put(`/products/${id}/variants/${variant.id}`, variant);
-            } else {
-              // إنشاء متغير جديد
-              await productApi.createVariant(id, variant);
+            const cleanedVariant = cleanVariantData(variant);
+            try {
+              if (variant.id) {
+                // تحديث متغير موجود - استخدام PUT للمتغيرات
+                await apiClient.put(`/products/${id}/variants/${variant.id}`, cleanedVariant);
+              } else {
+                // إنشاء متغير جديد
+                await productApi.createVariant(id, cleanedVariant);
+              }
+            } catch (variantError: any) {
+              console.error(`❌ [VARIANT] Error processing variant:`, variantError);
             }
           }
-          setSuccess(true);
-          setTimeout(() => navigate('/products'), 2000);
+          // إعادة تحميل بيانات المنتج بدلاً من إعادة التوجيه
+          setSuccessMessage('تم تحديث المنتج بنجاح!');
+          setTimeout(() => setSuccessMessage(null), 3000);
+          // إعادة تحميل بيانات المنتج لتحديث المتغيرات
+          await fetchProduct();
         } else {
           setError(result.message || 'فشل في تحديث المنتج');
         }
@@ -984,7 +1089,13 @@ const ProductNewFinal: React.FC = () => {
           const productId = result.data?.id;
           if (variants.length > 0 && productId) {
             for (const variant of variants) {
-              await productApi.createVariant(productId, variant);
+              try {
+                // تنظيف البيانات المرسلة - إرسال الحقول المتوقعة فقط من الـ backend
+                const variantData = cleanVariantData(variant);
+                await productApi.createVariant(productId, variantData);
+              } catch (variantError: any) {
+                console.error(`Error creating variant:`, variantError);
+              }
             }
           }
           setSuccess(true);
@@ -1025,7 +1136,8 @@ const ProductNewFinal: React.FC = () => {
     );
   }
 
-  if (success) {
+  // عرض شاشة النجاح فقط عند إنشاء منتج جديد، وليس عند التعديل
+  if (success && !isEditMode) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
@@ -1033,7 +1145,7 @@ const ProductNewFinal: React.FC = () => {
             <PlusIcon className="h-6 w-6 text-green-600" />
           </div>
           <h3 className="mt-2 text-sm font-medium text-gray-900">
-            {isEditMode ? 'تم تحديث المنتج بنجاح!' : 'تم إنشاء المنتج بنجاح!'}
+            تم إنشاء المنتج بنجاح!
           </h3>
         </div>
       </div>
@@ -1114,6 +1226,31 @@ const ProductNewFinal: React.FC = () => {
             </div>
 
             <div className="flex-1 space-y-6">
+              {successMessage && (
+                <div className="bg-green-50 border-2 border-green-300 rounded-lg p-4 shadow-sm">
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0">
+                      <svg className="h-6 w-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div className="mr-3 flex-1">
+                      <h3 className="text-sm font-bold text-green-800">نجح!</h3>
+                      <p className="mt-1 text-sm text-green-700">{successMessage}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSuccessMessage(null)}
+                      className="mr-auto text-green-500 hover:text-green-700"
+                    >
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {error && (
                 <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 shadow-sm">
                   <div className="flex items-start">

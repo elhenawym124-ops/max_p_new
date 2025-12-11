@@ -155,11 +155,26 @@ export const productApi = {
     return apiFetch(`products/${productId}/variants`);
   },
 
-  createVariant: (productId: string, data: any) => {
-    return apiFetch(`products/${productId}/variants`, {
+  createVariant: async (productId: string, data: any) => {
+    console.log('📤 [API] Creating variant for product:', productId);
+    console.log('📤 [API] Variant data:', data);
+    
+    const response = await apiFetch(`products/${productId}/variants`, {
       method: 'POST',
       body: JSON.stringify(data)
     });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('❌ [API] Variant creation failed:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorData
+      });
+      throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    return response;
   },
 
   updateVariant: (variantId: string, data: any) => {

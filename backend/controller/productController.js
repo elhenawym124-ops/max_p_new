@@ -16,6 +16,29 @@ const getAllProducts = async (req, res) => {
             });
         }
 
+        // Extract pagination parameters
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // Extract sorting parameters
+        const sortBy = req.query.sortBy || 'createdAt';
+        const sortOrder = req.query.sortOrder || 'desc';
+
+        // Build orderBy object
+        const orderBy = {};
+        const validSortFields = ['name', 'price', 'stock', 'createdAt', 'updatedAt'];
+        if (validSortFields.includes(sortBy)) {
+            orderBy[sortBy] = sortOrder;
+        } else {
+            orderBy.createdAt = 'desc'; // default
+        }
+
+        // Get total count for pagination
+        const total = await getSharedPrismaClient().product.count({
+            where: { companyId }
+        });
+
         //console.log('📦 Fetching products for company:', companyId);
 
         const products = await getSharedPrismaClient().product.findMany({
@@ -30,12 +53,20 @@ const getAllProducts = async (req, res) => {
                     ]
                 }
             },
-            orderBy: { createdAt: 'desc' }
+            orderBy: orderBy,
+            skip: skip,
+            take: limit
         });
 
         res.json({
             success: true,
             data: products,
+            pagination: {
+                page: page,
+                limit: limit,
+                total: total,
+                totalPages: Math.ceil(total / limit)
+            },
             companyId: companyId,
             message: `تم جلب ${products.length} منتج للشركة`
         });
@@ -595,9 +626,6 @@ const deleteSingleProduct = async(req , res)=>{
 
 const createProduct = async(req , res)=>{
       try {
-    //console.log('🔍 [server] POST /api/v1/products');
-    //console.log('📤 [server] Request body:', req.body);
-
     // التحقق من المصادقة والشركة
     const companyId = req.user?.companyId;
     if (!companyId) {
@@ -634,8 +662,6 @@ const createProduct = async(req , res)=>{
         });
       }
     }
-
-    //console.log('📦 Creating product for company:', companyId);
 
     // معالجة الفئة - التحقق من وجودها
     let categoryId = null;
@@ -677,7 +703,6 @@ const createProduct = async(req , res)=>{
       }
     });
 
-    //console.log(' [server] Product created successfully:', product.name);
     res.json({
       success: true,
       data: product,
