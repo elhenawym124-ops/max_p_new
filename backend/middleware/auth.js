@@ -117,6 +117,22 @@ const requireAuth = async (req, res, next) => {
     if (process.env.NODE_ENV !== 'production') {
       console.log(`[AUTH] Authenticated access: ${user.email} (${user.companyId}) - ${req.method} ${req.path}`);
       console.log(`[AUTH] req.user set:`, { id: req.user.id, email: req.user.email, companyId: req.user.companyId });
+      console.log(`[AUTH] Full req.user object:`, JSON.stringify(req.user, null, 2));
+    }
+
+    // Ensure companyId is set (critical check)
+    if (!req.user.companyId) {
+      console.error('[AUTH ERROR] User authenticated but companyId is missing:', {
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+        companyId: user.companyId,
+        path: req.path
+      });
+      return res.status(403).json({ 
+        error: 'User must be associated with a company',
+        code: 'COMPANY_REQUIRED'
+      });
     }
 
     next();

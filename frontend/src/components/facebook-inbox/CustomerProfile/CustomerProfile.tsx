@@ -3,6 +3,7 @@ import { User, Phone, Mail, Clock, ShoppingBag, Activity, Calendar } from 'lucid
 import { format } from 'date-fns';
 import { arSA } from 'date-fns/locale';
 import { useCustomerProfile } from '../../../hooks/inbox/useCustomerProfile';
+import { useCompany } from '../../../contexts/CompanyContext';
 import { InboxConversation } from '../../types/inbox.types';
 import TagInput from '../TagInput/TagInput';
 
@@ -25,8 +26,11 @@ const CustomerProfile: React.FC<CustomerProfileProps> = ({
         activities,
         loading,
         loadCustomerData,
-        calculateLTV
+        calculateLTV,
+
+        customer // Add customer to destructured object
     } = useCustomerProfile();
+    const { company } = useCompany(); // Get company context for currency
 
     useEffect(() => {
         if (conversation?.customerId) {
@@ -62,7 +66,7 @@ const CustomerProfile: React.FC<CustomerProfileProps> = ({
                     </div>
                     <div className="text-center">
                         <p className="text-gray-400 text-xs">القيمة</p>
-                        <p className="font-semibold text-green-600">{ltv.toLocaleString()} ر.س</p>
+                        <p className="font-semibold text-green-600">{ltv.toLocaleString()} {company?.currency || 'ر.س'}</p>
                     </div>
                 </div>
             </div>
@@ -113,13 +117,12 @@ const CustomerProfile: React.FC<CustomerProfileProps> = ({
                                         <div className="flex items-center gap-3 text-sm">
                                             <Phone size={16} className="text-gray-400" />
                                             <span className="text-gray-700 font-medium font-mono" dir="ltr">
-                                                {/* Mock phone if not in conversation object, in real app fetch from customer details */}
-                                                +966 5X XXX XXXX
+                                                {customer?.phone || 'غير متوفر'}
                                             </span>
                                         </div>
                                         <div className="flex items-center gap-3 text-sm">
                                             <Mail size={16} className="text-gray-400" />
-                                            <span className="text-gray-700 truncate">user@example.com</span>
+                                            <span className="text-gray-700 truncate">{customer?.email || 'غير متوفر'}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -181,7 +184,7 @@ const CustomerProfile: React.FC<CustomerProfileProps> = ({
                                             </div>
                                             <div className="flex justify-between items-end border-t border-gray-50 pt-2 mt-2">
                                                 <span className="text-xs text-gray-500">{order.items.length} منتجات</span>
-                                                <span className="font-bold text-blue-600">{order.total} ر.س</span>
+                                                <span className="font-bold text-blue-600">{order.total} {company?.currency || 'ر.س'}</span>
                                             </div>
                                         </div>
                                     ))

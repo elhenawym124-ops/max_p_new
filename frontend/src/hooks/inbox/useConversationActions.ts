@@ -234,7 +234,7 @@ export const useConversationActions = () => {
         forwardMessage,
         toggleMessageStar,
         toggleMessageReaction,
-        toggleMessageReaction,
+
         snoozeConversation,
         toggleAI,
         updating,

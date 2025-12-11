@@ -33,6 +33,7 @@ interface OrderDetails {
   customerName: string;
   customerEmail?: string;
   customerPhone?: string;
+  alternativePhone?: string;
   customerAddress?: string;
   city?: string;
   country?: string;
@@ -94,6 +95,7 @@ const OrderDetails: React.FC = () => {
   const [editForm, setEditForm] = useState({
     customerName: '',
     customerPhone: '',
+    alternativePhone: '',
     customerAddress: '',
     city: '',
     notes: '',
@@ -111,22 +113,12 @@ const OrderDetails: React.FC = () => {
   }, [orderNumber, authLoading, isAuthenticated]);
 
   const fetchOrderDetails = async () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OrderDetails.tsx:113',message:'fetchOrderDetails entry',data:{orderNumber},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     try {
       setLoading(true);
 
       // Use apiClient instead of fetch
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OrderDetails.tsx:118',message:'Before API call',data:{orderNumber},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
       const response = await apiClient.get(`/orders-new/simple/${orderNumber}`);
       const data = response.data;
-
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OrderDetails.tsx:120',message:'API response received',data:{status:response.status,hasData:!!data,success:data?.success,hasOrderData:!!data?.data,orderDataKeys:data?.data?Object.keys(data.data):[]},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
 
       // If not found, try guest public API (fallback logic from original file)
       if (!data.success && response.status === 404) {
@@ -138,32 +130,36 @@ const OrderDetails: React.FC = () => {
 
       if (data.success) {
         const simpleOrder = data.data;
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OrderDetails.tsx:129',message:'Before order transformation',data:{simpleOrderKeys:Object.keys(simpleOrder),hasItems:!!simpleOrder.items,itemsIsArray:Array.isArray(simpleOrder.items),itemsLength:Array.isArray(simpleOrder.items)?simpleOrder.items.length:0,hasNulls:Object.entries(simpleOrder).filter(([k,v])=>v===null||v===undefined).map(([k])=>k)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
         const enhancedOrder: OrderDetails = {
           id: simpleOrder.id,
           orderNumber: simpleOrder.orderNumber,
           customerName: simpleOrder.customerName,
           customerEmail: simpleOrder.customerEmail,
           customerPhone: simpleOrder.customerPhone,
+          alternativePhone: simpleOrder.metadata?.alternativePhone || '',
           customerAddress: simpleOrder.customerAddress || (typeof simpleOrder.shippingAddress === 'string' ? simpleOrder.shippingAddress : simpleOrder.shippingAddress?.address) || '',
           city: simpleOrder.city || simpleOrder.shippingAddress?.city || '',
           country: simpleOrder.shippingAddress?.country || '',
           status: (simpleOrder.status || '').toUpperCase(),
           paymentStatus: (simpleOrder.paymentStatus || 'pending').toUpperCase(),
           paymentMethod: simpleOrder.paymentMethod,
-          items: (Array.isArray(simpleOrder.items) ? simpleOrder.items : []).map((item: any) => ({
-            id: item.id || Math.random().toString(),
-            productId: item.productId || '',
-            productName: item.name || item.productName || 'منتج غير محدد',
-            productColor: item.metadata?.color,
-            productSize: item.metadata?.size,
-            price: parseFloat(item.price) || 0,
-            quantity: parseInt(item.quantity) || 1,
-            total: parseFloat(item.total) || (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1),
-            metadata: item.metadata || {}
-          })),
+          items: (Array.isArray(simpleOrder.items) ? simpleOrder.items : []).map((item: any) => {
+            const price = parseFloat(item.price);
+            const quantity = parseInt(item.quantity);
+            const validPrice = !isNaN(price) && price >= 0 ? price : 0;
+            const validQuantity = !isNaN(quantity) && quantity > 0 ? quantity : 1;
+            return {
+              id: item.id || Math.random().toString(),
+              productId: item.productId || '',
+              productName: item.name || item.productName || 'منتج غير محدد',
+              productColor: item.metadata?.color,
+              productSize: item.metadata?.size,
+              price: validPrice,
+              quantity: validQuantity,
+              total: parseFloat(item.total) || (validPrice * validQuantity),
+              metadata: item.metadata || {}
+            };
+          }),
           subtotal: parseFloat(simpleOrder.subtotal) || 0,
           tax: parseFloat(simpleOrder.tax) || 0,
           shipping: parseFloat(simpleOrder.shipping) || 0,
@@ -176,15 +172,13 @@ const OrderDetails: React.FC = () => {
           createdAt: simpleOrder.createdAt,
           updatedAt: simpleOrder.updatedAt
         };
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OrderDetails.tsx:166',message:'Order transformed, setting state',data:{enhancedOrderKeys:Object.keys(enhancedOrder),itemsCount:enhancedOrder.items.length,hasNullItems:enhancedOrder.items.some(i=>i.price===null||i.total===null)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
         setOrder(enhancedOrder);
 
         // Initialize Edit Form
         setEditForm({
           customerName: enhancedOrder.customerName,
           customerPhone: enhancedOrder.customerPhone || '',
+          alternativePhone: enhancedOrder.alternativePhone || '',
           customerAddress: enhancedOrder.customerAddress || '',
           city: enhancedOrder.city || '',
           notes: enhancedOrder.notes || '',
@@ -192,21 +186,12 @@ const OrderDetails: React.FC = () => {
         });
 
       } else {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OrderDetails.tsx:178',message:'API returned success=false',data:{message:data.message,status:response.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-        // #endregion
         console.error('Failed to fetch order:', data.message);
       }
     } catch (error) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OrderDetails.tsx:181',message:'Error caught',data:{errorMessage:error?.message,errorType:error?.constructor?.name,errorStack:error?.stack?.substring(0,200)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-      // #endregion
       console.error('Error fetching order:', error);
     } finally {
       setLoading(false);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OrderDetails.tsx:184',message:'fetchOrderDetails exit',data:{loading:false},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
     }
   };
 
@@ -238,6 +223,7 @@ const OrderDetails: React.FC = () => {
       const detailsBody = {
         customerName: editForm.customerName,
         customerPhone: editForm.customerPhone,
+        alternativePhone: editForm.alternativePhone,
         shippingAddress: {
           address: editForm.customerAddress,
           city: editForm.city,
@@ -246,42 +232,98 @@ const OrderDetails: React.FC = () => {
         notes: editForm.notes
       };
 
-      await fetch(`${apiUrl}/orders-new/simple/${orderNumber}`, {
+      const detailsResponse = await fetch(`${apiUrl}/orders-new/simple/${orderNumber}`, {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(detailsBody)
       });
 
-      // 2. Update Items (Recalculate totals first)
-      const newItems = editForm.items.map(item => ({
-        ...item,
-        total: item.price * item.quantity
-      }));
+      if (!detailsResponse.ok) {
+        const errorData = await detailsResponse.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP ${detailsResponse.status}: ${detailsResponse.statusText}`);
+      }
 
-      const newSubtotal = newItems.reduce((sum, item) => sum + item.total, 0);
-      const newTotal = newSubtotal + order.shipping + order.tax; // Keeping shipping/tax constant for now (or make editable too)
+      // 2. Update Items (Recalculate totals first)
+      const newItems = editForm.items.map(item => {
+        const price = typeof item.price === 'number' && !isNaN(item.price) ? item.price : 0;
+        const quantity = typeof item.quantity === 'number' && !isNaN(item.quantity) && item.quantity > 0 ? item.quantity : 1;
+        return {
+          ...item,
+          price,
+          quantity,
+          total: price * quantity
+        };
+      });
+
+      const newSubtotal = newItems.reduce((sum, item) => sum + (item.total || 0), 0);
+      const newTotal = newSubtotal + (order.shipping || 0) + (order.tax || 0); // Keeping shipping/tax constant for now (or make editable too)
 
       const itemsBody = {
         items: newItems,
         subtotal: newSubtotal,
         total: newTotal,
-        tax: order.tax,
-        shipping: order.shipping
+        tax: order.tax || 0,
+        shipping: order.shipping || 0
       };
 
-      await fetch(`${apiUrl}/orders-new/simple/${orderNumber}/items`, {
+      const itemsResponse = await fetch(`${apiUrl}/orders-new/simple/${orderNumber}/items`, {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(itemsBody)
       });
 
+      if (!itemsResponse.ok) {
+        const errorData = await itemsResponse.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP ${itemsResponse.status}: ${itemsResponse.statusText}`);
+      }
+
       alert('تم حفظ التغييرات بنجاح');
       setIsEditing(false);
       fetchOrderDetails();
 
-    } catch (e) {
-      console.error(e);
-      alert('فشل حفظ التغييرات');
+    } catch (e: any) {
+      console.error('Error saving changes:', e);
+      alert(e.message || 'فشل حفظ التغييرات');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleUpdateStatusSubmit = async () => {
+    try {
+      setUpdating(true);
+      const response = await apiClient.post(`/orders-new/simple/${orderNumber}/status`, {
+        status: newStatus,
+        notes: statusNotes
+      });
+      if (response.data.success) {
+        setOrder(prev => prev ? { ...prev, status: newStatus.toUpperCase() as any } : null);
+        setShowStatusModal(false);
+        setStatusNotes('');
+        alert('تم تحديث حالة الطلب بنجاح');
+      }
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'فشل تحديث الحالة');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleUpdatePaymentStatusSubmit = async () => {
+    try {
+      setUpdating(true);
+      const response = await apiClient.post(`/orders-new/simple/${orderNumber}/payment-status`, {
+        paymentStatus: newPaymentStatus, // "completed" etc.
+        notes: paymentNotes
+      });
+      if (response.data.success) {
+        setOrder(prev => prev ? { ...prev, paymentStatus: newPaymentStatus.toUpperCase() as any } : null);
+        setShowPaymentModal(false);
+        setPaymentNotes('');
+        alert('تم تحديث حالة الدفع بنجاح');
+      }
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'فشل تحديث حالة الدفع');
     } finally {
       setUpdating(false);
     }
@@ -290,10 +332,16 @@ const OrderDetails: React.FC = () => {
   // --- Item Edit Helpers ---
   const handleItemChange = (index: number, field: string, value: any) => {
     const newItems = [...editForm.items];
-    newItems[index] = { ...newItems[index], [field]: value };
-    // Auto calc total
-    if (field === 'quantity' || field === 'price') {
-      newItems[index].total = newItems[index].quantity * newItems[index].price;
+    // Ensure numeric fields are valid numbers
+    if (field === 'price' || field === 'quantity') {
+      const numValue = typeof value === 'number' && !isNaN(value) ? value : (field === 'quantity' ? 1 : 0);
+      newItems[index] = { ...newItems[index], [field]: numValue };
+      // Auto calc total
+      const price = typeof newItems[index].price === 'number' && !isNaN(newItems[index].price) ? newItems[index].price : 0;
+      const quantity = typeof newItems[index].quantity === 'number' && !isNaN(newItems[index].quantity) ? newItems[index].quantity : 1;
+      newItems[index].total = price * quantity;
+    } else {
+      newItems[index] = { ...newItems[index], [field]: value };
     }
     setEditForm({ ...editForm, items: newItems });
   };
@@ -380,13 +428,19 @@ const OrderDetails: React.FC = () => {
           {/* Order Status (Only View Mode) */}
           <div className="bg-white shadow rounded-lg p-6 flex justify-between items-center">
             <div className="flex items-center gap-2">
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor((order.status || '').toUpperCase())}`}>
+              <button
+                onClick={() => { setNewStatus(order.status || 'PENDING'); setShowStatusModal(true); }}
+                className={`px-3 py-1 rounded-full text-sm font-medium cursor-pointer hover:opacity-80 transition-opacity ${getStatusColor((order.status || '').toUpperCase())}`}
+              >
                 {getStatusText((order.status || '').toUpperCase())}
-              </span>
+              </button>
               <span className="text-gray-400">|</span>
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${order.paymentStatus === 'COMPLETED' || order.paymentStatus === 'PAID' ? 'bg-green-100 text-green-800' : order.paymentStatus === 'FAILED' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
+              <button
+                onClick={() => { setNewPaymentStatus((order.paymentStatus || 'PENDING').toLowerCase() === 'paid' ? 'completed' : (order.paymentStatus || 'PENDING').toLowerCase()); setShowPaymentModal(true); }}
+                className={`px-3 py-1 rounded-full text-sm font-medium cursor-pointer hover:opacity-80 transition-opacity ${order.paymentStatus === 'COMPLETED' || order.paymentStatus === 'PAID' ? 'bg-green-100 text-green-800' : order.paymentStatus === 'FAILED' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}
+              >
                 {order.paymentStatus === 'COMPLETED' || order.paymentStatus === 'PAID' ? 'مدفوع' : order.paymentStatus === 'FAILED' ? 'فشل الدفع' : 'في الانتظار'}
-              </span>
+              </button>
             </div>
             {order.conversationId && (
               <Link to={`/whatsapp?conversationId=${order.conversationId}`} className="text-blue-600 hover:underline flex items-center text-sm">
@@ -413,62 +467,68 @@ const OrderDetails: React.FC = () => {
                 </div>
               ) : (
                 (isEditing ? editForm.items : order.items).map((item, index) => (
-                <div key={index} className="flex flex-col sm:flex-row items-center justify-between p-4 border border-gray-200 rounded-lg gap-4">
+                  <div key={index} className="flex flex-col sm:flex-row items-center justify-between p-4 border border-gray-200 rounded-lg gap-4">
 
-                  {isEditing ? (
-                    // Edit Mode Item
-                    <>
-                      <div className="flex-1 w-full space-y-2">
-                        <input
-                          type="text"
-                          value={item.productName}
-                          onChange={(e) => handleItemChange(index, 'productName', e.target.value)}
-                          className="w-full text-sm border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                          placeholder="اسم المنتج"
-                        />
-                        <div className="flex gap-2">
+                    {isEditing ? (
+                      // Edit Mode Item
+                      <>
+                        <div className="flex-1 w-full space-y-2">
                           <input
-                            type="number"
-                            value={item.price}
-                            onChange={(e) => handleItemChange(index, 'price', parseFloat(e.target.value))}
-                            className="w-24 text-sm border-gray-300 rounded-md"
-                            placeholder="السعر"
+                            type="text"
+                            value={item.productName}
+                            onChange={(e) => handleItemChange(index, 'productName', e.target.value)}
+                            className="w-full text-sm border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="اسم المنتج"
                           />
-                          <span className="self-center text-gray-400">x</span>
-                          <input
-                            type="number"
-                            value={item.quantity}
-                            onChange={(e) => handleItemChange(index, 'quantity', parseInt(e.target.value))}
-                            className="w-20 text-sm border-gray-300 rounded-md"
-                            placeholder="الكمية"
-                          />
+                          <div className="flex gap-2">
+                            <input
+                              type="number"
+                              value={isNaN(item.price) ? '' : item.price}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value);
+                                handleItemChange(index, 'price', isNaN(val) ? 0 : val);
+                              }}
+                              className="w-24 text-sm border-gray-300 rounded-md"
+                              placeholder="السعر"
+                            />
+                            <span className="self-center text-gray-400">x</span>
+                            <input
+                              type="number"
+                              value={isNaN(item.quantity) ? '' : item.quantity}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value);
+                                handleItemChange(index, 'quantity', isNaN(val) ? 1 : val);
+                              }}
+                              className="w-20 text-sm border-gray-300 rounded-md"
+                              placeholder="الكمية"
+                            />
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <span className="font-bold text-gray-900">{formatPrice(item.price * item.quantity, order.currency)}</span>
-                        <button onClick={() => handleRemoveItem(index)} className="text-red-500 hover:text-red-700">
-                          <TrashIcon className="w-5 h-5" />
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    // View Mode Item
-                    <>
-                      <div className="flex-1 text-right">
-                        <h4 className="font-medium text-gray-900">{item.productName}</h4>
-                        <div className="text-sm text-gray-500 mt-1">
-                          {item.quantity} x {formatPrice(item.price, order.currency)}
-                          {item.productColor && <span className="mr-2 px-2 bg-gray-100 rounded text-xs">{item.productColor}</span>}
-                          {item.productSize && <span className="mr-2 px-2 bg-gray-100 rounded text-xs">{item.productSize}</span>}
+                        <div className="flex items-center gap-4">
+                          <span className="font-bold text-gray-900">{formatPrice(item.price * item.quantity, order.currency)}</span>
+                          <button onClick={() => handleRemoveItem(index)} className="text-red-500 hover:text-red-700">
+                            <TrashIcon className="w-5 h-5" />
+                          </button>
                         </div>
-                      </div>
-                      <div className="font-medium text-gray-900">
-                        {formatPrice(item.total, order.currency)}
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))
+                      </>
+                    ) : (
+                      // View Mode Item
+                      <>
+                        <div className="flex-1 text-right">
+                          <h4 className="font-medium text-gray-900">{item.productName}</h4>
+                          <div className="text-sm text-gray-500 mt-1">
+                            {item.quantity} x {formatPrice(item.price, order.currency)}
+                            {item.productColor && <span className="mr-2 px-2 bg-gray-100 rounded text-xs">{item.productColor}</span>}
+                            {item.productSize && <span className="mr-2 px-2 bg-gray-100 rounded text-xs">{item.productSize}</span>}
+                          </div>
+                        </div>
+                        <div className="font-medium text-gray-900">
+                          {formatPrice(item.total, order.currency)}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))
               )}
             </div>
 
@@ -490,7 +550,7 @@ const OrderDetails: React.FC = () => {
           </div>
         </div>
 
-        {/* Sidebar */}
+
         <div className="space-y-8">
           {/* Customer Info */}
           <div className="bg-white shadow rounded-lg p-6">
@@ -515,6 +575,18 @@ const OrderDetails: React.FC = () => {
                 )}
               </div>
               <div>
+                <label className="text-sm font-medium text-gray-500 block mb-1">رقم هاتف بديل</label>
+                {isEditing ? (
+                  <input type="text" value={editForm.alternativePhone} onChange={(e) => setEditForm({ ...editForm, alternativePhone: e.target.value })} className="w-full border-gray-300 rounded-md text-sm" dir="ltr" placeholder="رقم هاتف إضافي" />
+                ) : (
+                  order.alternativePhone ? (
+                    <div className="flex items-center text-gray-900" dir="ltr">
+                      <PhoneIcon className="w-4 h-4 text-gray-400 mr-2" /> {order.alternativePhone}
+                    </div>
+                  ) : <p className="text-gray-400 text-sm">غير محدد</p>
+                )}
+              </div>
+              <div>
                 <label className="text-sm font-medium text-gray-500 block mb-1">العنوان</label>
                 {isEditing ? (
                   <textarea value={editForm.customerAddress} onChange={(e) => setEditForm({ ...editForm, customerAddress: e.target.value })} className="w-full border-gray-300 rounded-md text-sm" rows={3} />
@@ -525,6 +597,56 @@ const OrderDetails: React.FC = () => {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+
+          {/* Timeline */}
+          <div className="bg-white shadow rounded-lg p-6">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">سجل النشاط</h3>
+            <div className="flow-root">
+              <ul className="-mb-8">
+                <li>
+                  <div className="relative pb-8">
+                    <span className="absolute top-4 left-4 -ml-px h-full w-0.5 bg-gray-200" aria-hidden="true"></span>
+                    <div className="relative flex space-x-3 space-x-reverse">
+                      <div>
+                        <span className="h-8 w-8 rounded-full bg-green-500 flex items-center justify-center ring-8 ring-white">
+                          <CheckCircleIcon className="h-5 w-5 text-white" aria-hidden="true" />
+                        </span>
+                      </div>
+                      <div className="min-w-0 flex-1 pt-1.5 flex justify-between space-x-4">
+                        <div>
+                          <p className="text-sm text-gray-500">تم إنشاء الطلب</p>
+                        </div>
+                        <div className="text-right text-sm text-gray-500 whitespace-nowrap">
+                          <time dateTime={order.createdAt}>{formatDate(order.createdAt)}</time>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </li>
+                {order.updatedAt !== order.createdAt && (
+                  <li>
+                    <div className="relative pb-8">
+                      <div className="relative flex space-x-3 space-x-reverse">
+                        <div>
+                          <span className="h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center ring-8 ring-white">
+                            <ClockIcon className="h-5 w-5 text-white" aria-hidden="true" />
+                          </span>
+                        </div>
+                        <div className="min-w-0 flex-1 pt-1.5 flex justify-between space-x-4">
+                          <div>
+                            <p className="text-sm text-gray-500">آخر تحديث</p>
+                          </div>
+                          <div className="text-right text-sm text-gray-500 whitespace-nowrap">
+                            <time dateTime={order.updatedAt}>{formatDate(order.updatedAt)}</time>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                )}
+              </ul>
             </div>
           </div>
 
@@ -539,7 +661,125 @@ const OrderDetails: React.FC = () => {
           </div>
         </div>
       </div>
-    </div>
+
+
+      {/* Status Modal */}
+      {
+        showStatusModal && (
+          <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+            <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+              <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" onClick={() => setShowStatusModal(false)}></div>
+              <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+              <div className="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-right overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
+                <div>
+                  <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100">
+                    <ArrowPathIcon className="h-6 w-6 text-blue-600" aria-hidden="true" />
+                  </div>
+                  <div className="mt-3 text-center sm:mt-5">
+                    <h3 className="text-lg leading-6 font-medium text-gray-900" id="modal-title">تحديث حالة الطلب</h3>
+                    <div className="mt-2">
+                      <select
+                        value={newStatus}
+                        onChange={(e) => setNewStatus(e.target.value)}
+                        className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                      >
+                        <option value="PENDING">قيد الانتظار</option>
+                        <option value="CONFIRMED">مؤكد</option>
+                        <option value="PROCESSING">قيد التجهيز</option>
+                        <option value="SHIPPED">تم الشحن</option>
+                        <option value="DELIVERED">تم التسليم</option>
+                        <option value="CANCELLED">ملغي</option>
+                      </select>
+                      <textarea
+                        value={statusNotes}
+                        onChange={(e) => setStatusNotes(e.target.value)}
+                        rows={3}
+                        className="shadow-sm focus:ring-blue-500 focus:border-blue-500 mt-4 block w-full sm:text-sm border border-gray-300 rounded-md"
+                        placeholder="ملاحظات (اختياري)..."
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-5 sm:mt-6 sm:grid sm:grid-cols-2 sm:gap-3 sm:grid-flow-row-dense">
+                  <button
+                    type="button"
+                    className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:col-start-2 sm:text-sm"
+                    onClick={handleUpdateStatusSubmit}
+                    disabled={updating}
+                  >
+                    {updating ? 'جاري التحديث...' : 'تحديث الحالة'}
+                  </button>
+                  <button
+                    type="button"
+                    className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:col-start-1 sm:text-sm"
+                    onClick={() => setShowStatusModal(false)}
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Payment Modal */}
+      {
+        showPaymentModal && (
+          <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+            <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+              <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" onClick={() => setShowPaymentModal(false)}></div>
+              <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+              <div className="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-right overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
+                <div>
+                  <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100">
+                    <CreditCardIcon className="h-6 w-6 text-green-600" aria-hidden="true" />
+                  </div>
+                  <div className="mt-3 text-center sm:mt-5">
+                    <h3 className="text-lg leading-6 font-medium text-gray-900" id="modal-title">تحديث حالة الدفع</h3>
+                    <div className="mt-2">
+                      <select
+                        value={newPaymentStatus}
+                        onChange={(e) => setNewPaymentStatus(e.target.value)}
+                        className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                      >
+                        <option value="pending">في الانتظار</option>
+                        <option value="completed">تم الدفع</option>
+                        <option value="failed">فشل الدفع</option>
+                      </select>
+                      <textarea
+                        value={paymentNotes}
+                        onChange={(e) => setPaymentNotes(e.target.value)}
+                        rows={3}
+                        className="shadow-sm focus:ring-blue-500 focus:border-blue-500 mt-4 block w-full sm:text-sm border border-gray-300 rounded-md"
+                        placeholder="ملاحظات (اختياري)..."
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-5 sm:mt-6 sm:grid sm:grid-cols-2 sm:gap-3 sm:grid-flow-row-dense">
+                  <button
+                    type="button"
+                    className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 sm:col-start-2 sm:text-sm"
+                    onClick={handleUpdatePaymentStatusSubmit}
+                    disabled={updating}
+                  >
+                    {updating ? 'جاري التحديث...' : 'تحديث الدفع'}
+                  </button>
+                  <button
+                    type="button"
+                    className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:col-start-1 sm:text-sm"
+                    onClick={() => setShowPaymentModal(false)}
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      }
+    </div >
   );
 };
 

@@ -7,10 +7,8 @@ import { apiClient } from '../../services/apiClient';
 import {
   ShoppingBagIcon,
   EyeIcon,
-  TruckIcon,
   CheckCircleIcon,
   XCircleIcon,
-  ClockIcon,
   MagnifyingGlassIcon,
   FunnelIcon,
   ChartBarIcon,
@@ -47,7 +45,7 @@ interface Order {
   shipping: number;
   total: number | null;
   paymentMethod: string;
-  paymentStatus: 'pending' | 'paid' | 'failed';
+  paymentStatus: 'pending' | 'completed' | 'failed' | 'refunded';
   shippingAddress: {
     city: string;
     country: string;
@@ -63,6 +61,37 @@ interface Order {
     [key: string]: any;
   };
 }
+
+const transformOrder = (order: any): Order => ({
+  id: order.id || order.orderNumber || '',
+  orderNumber: order.orderNumber || '',
+  customerName: order.customerName || 'غير محدد',
+  customerEmail: order.customerEmail || '',
+  customerPhone: order.customerPhone || '',
+  status: (order.status || 'pending').toLowerCase() as any,
+  items: Array.isArray(order.items) ? order.items.map((item: any) => ({
+    id: item.id || '',
+    productId: item.productId || '',
+    name: item.name || item.productName || '',
+    price: typeof item.price === 'string' ? parseFloat(item.price) || null : (item.price ?? null),
+    quantity: item.quantity || 0,
+    total: typeof item.total === 'string' ? parseFloat(item.total) || null : (item.total ?? null),
+    metadata: item.metadata || {}
+  })) : [],
+  subtotal: typeof order.subtotal === 'string' ? parseFloat(order.subtotal) || null : (order.subtotal ?? null),
+  tax: typeof order.tax === 'string' ? parseFloat(order.tax) || 0 : (order.tax ?? 0),
+  shipping: typeof order.shipping === 'string' ? parseFloat(order.shipping) || 0 : (order.shipping ?? 0),
+  total: typeof order.total === 'string' ? parseFloat(order.total) || null : (typeof order.subtotal === 'string' ? parseFloat(order.subtotal) || null : (order.total ?? order.subtotal ?? null)),
+  paymentMethod: order.paymentMethod || '',
+  paymentStatus: (order.paymentStatus || 'pending').toLowerCase() as any,
+  shippingAddress: order.shippingAddress || { city: order.city || '', country: '' },
+  trackingNumber: order.trackingNumber || undefined,
+  notes: order.notes || '',
+  createdAt: order.createdAt || new Date().toISOString(),
+  conversationId: order.conversationId || undefined,
+  updatedAt: order.updatedAt || order.createdAt || new Date().toISOString(),
+  metadata: order.metadata || {}
+});
 
 const Orders: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -100,25 +129,12 @@ const Orders: React.FC = () => {
 
     // Listen for new orders
     const handleNewOrder = (newOrder: any) => {
-      // Only add if we are on the first page and no complex filters are active (simplification)
-      // Or just unshift it and let user filter later.
       if (page === 1) {
         setOrders(prev => {
-          // Check if order already exists to avoid duplicates
           if (prev.find(o => o.orderNumber === newOrder.orderNumber)) return prev;
-          const formattedOrder: Order = {
-            ...newOrder,
-            id: newOrder.id,
-            customerName: newOrder.customerName || newOrder.guestName || 'Unknown',
-            customerPhone: newOrder.customerPhone || newOrder.guestPhone || '',
-            // map other fields if necessary
-          };
-          return [formattedOrder, ...prev];
+          return [transformOrder(newOrder), ...prev];
         });
         setTotalOrders(prev => prev + 1);
-      } else {
-        // If not on first page, maybe just show a toast? For now, do nothing or refetch.
-        // fetchOrders(); // Aggressive but ensures consistency
       }
     };
 
@@ -131,6 +147,8 @@ const Orders: React.FC = () => {
 
       setOrders(prev => prev.map(order => {
         if (order.orderNumber === updatedData.orderNumber) {
+          // Check if we need to full transform again or merge
+          // ideally we just merge, but if the update lacks fields, be careful.
           return { ...order, ...updatedData };
         }
         return order;
@@ -138,22 +156,22 @@ const Orders: React.FC = () => {
     };
 
     // Listen for bulk updates
-    const handleBulkUpdate = (data: any) => {
-      // Data contains { orderIds: [], status: ... }
-      // We can just refetch to be safe and easy, or update locally
+    const handleBulkUpdate = () => {
       fetchOrders();
     };
 
     // Listen for deletions
     const handleOrderDelete = (data: { orderId?: string, orderIds?: string[] }) => {
       if (data.orderIds) {
-        setOrders(prev => prev.filter(o => !data.orderIds?.includes(o.orderNumber))); // Assuming assuming backend sends orderNumber in orderIds for bulk
+        setOrders(prev => prev.filter(o => !data.orderIds?.includes(o.orderNumber)));
       } else if (data.orderId) {
-        // Logic if single delete event sent orderId
+        setOrders(prev => prev.filter(o => o.orderNumber !== data.orderId));
+      } else {
+        fetchOrders();
       }
     };
 
-    const handleBulkDelete = (data: any) => {
+    const handleBulkDelete = () => {
       fetchOrders();
     }
 
@@ -171,145 +189,66 @@ const Orders: React.FC = () => {
   }, [socket, isConnected, page]);
 
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:173',message:'useEffect triggered',data:{page,limit,filters,ordersCount:orders.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
-    // #endregion
     fetchOrders();
-  }, [page, limit, filters]); // Fetch when page, limit, or filters change
+  }, [page, limit, filters]);
 
   const fetchOrders = async () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:177',message:'fetchOrders entry',data:{page,limit,filters},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     try {
       setLoading(true);
 
-      // Build Query String
       const queryParams: any = {
         page: page.toString(),
         limit: limit.toString(),
       };
-      
+
       if (filters.status) queryParams.status = filters.status;
       if (filters.paymentStatus) queryParams.paymentStatus = filters.paymentStatus;
       if (filters.search) queryParams.search = filters.search;
       if (filters.startDate) queryParams.startDate = filters.startDate;
       if (filters.endDate) queryParams.endDate = filters.endDate;
 
-      // Debug logging (development only)
       if (import.meta.env.DEV) {
         console.log('[ORDERS] Fetching orders with params:', queryParams);
       }
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:198',message:'Before API call',data:{queryParams},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
-      
+
       const response = await apiClient.get('/orders-new/simple', {
         params: queryParams
       });
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:201',message:'API response received',data:{status:response.status,hasData:!!response.data,success:response.data?.success,dataType:Array.isArray(response.data?.data)?'array':typeof response.data?.data,dataLength:Array.isArray(response.data?.data)?response.data.data.length:0,hasPagination:!!response.data?.pagination},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
-      
-      // Debug logging (development only)
+
       if (import.meta.env.DEV) {
         console.log('[ORDERS] Response received:', { status: response.status, success: response.data?.success });
       }
-      
+
       const data = response.data;
 
-      // #region agent log
-      const firstOrderRaw = data?.data?.[0];
-      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:207',message:'Before data processing',data:{hasSuccess:data?.success,dataIsArray:Array.isArray(data?.data),firstOrderSample:firstOrderRaw?{orderNumber:firstOrderRaw.orderNumber,hasItems:!!firstOrderRaw.items,itemsLength:firstOrderRaw.items?.length,itemsIsArray:Array.isArray(firstOrderRaw.items),firstItem:firstOrderRaw.items?.[0]?{id:firstOrderRaw.items[0].id,name:firstOrderRaw.items[0].name,productName:firstOrderRaw.items[0].productName,price:firstOrderRaw.items[0].price,quantity:firstOrderRaw.items[0].quantity,hasProduct:!!firstOrderRaw.items[0].product}:null,hasTotal:firstOrderRaw.total!==undefined,hasSubtotal:firstOrderRaw.subtotal!==undefined,totalValue:firstOrderRaw.total,subtotalValue:firstOrderRaw.subtotal,totalType:typeof firstOrderRaw.total,subtotalType:typeof firstOrderRaw.subtotal,allKeys:firstOrderRaw?Object.keys(firstOrderRaw):[]}:null},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'L'})}).catch(()=>{});
-      // #endregion
-
       if (data.success) {
-        // #region agent log
-        const ordersData = data.data;
-        const sampleOrder = Array.isArray(ordersData) && ordersData.length > 0 ? ordersData[0] : null;
-        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:209',message:'Processing successful response',data:{ordersCount:Array.isArray(ordersData)?ordersData.length:0,sampleOrderFields:sampleOrder?Object.keys(sampleOrder):[],sampleOrderNulls:sampleOrder?Object.entries(sampleOrder).filter(([k,v])=>v===null||v===undefined).map(([k])=>k):[],pagination:data.pagination},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
-        
-        // Transform and validate orders data
-        const transformedOrders = (Array.isArray(data.data) ? data.data : []).map((order: any) => ({
-          id: order.id || order.orderNumber || '',
-          orderNumber: order.orderNumber || '',
-          customerName: order.customerName || 'غير محدد',
-          customerEmail: order.customerEmail || '',
-          customerPhone: order.customerPhone || '',
-          status: (order.status || 'pending').toLowerCase() as any,
-          items: Array.isArray(order.items) ? order.items.map((item: any) => ({
-            id: item.id || '',
-            productId: item.productId || '',
-            name: item.name || item.productName || '',
-            price: typeof item.price === 'string' ? parseFloat(item.price) || null : (item.price ?? null),
-            quantity: item.quantity || 0,
-            total: typeof item.total === 'string' ? parseFloat(item.total) || null : (item.total ?? null),
-            metadata: item.metadata || {}
-          })) : [],
-          subtotal: typeof order.subtotal === 'string' ? parseFloat(order.subtotal) || null : (order.subtotal ?? null),
-          tax: typeof order.tax === 'string' ? parseFloat(order.tax) || 0 : (order.tax ?? 0),
-          shipping: typeof order.shipping === 'string' ? parseFloat(order.shipping) || 0 : (order.shipping ?? 0),
-          total: typeof order.total === 'string' ? parseFloat(order.total) || null : (typeof order.subtotal === 'string' ? parseFloat(order.subtotal) || null : (order.total ?? order.subtotal ?? null)),
-          paymentMethod: order.paymentMethod || '',
-          paymentStatus: (order.paymentStatus || 'pending').toLowerCase() as any,
-          shippingAddress: order.shippingAddress || { city: order.city || '', country: '' },
-          trackingNumber: order.trackingNumber || undefined,
-          notes: order.notes || '',
-          createdAt: order.createdAt || new Date().toISOString(),
-          conversationId: order.conversationId || undefined,
-          updatedAt: order.updatedAt || order.createdAt || new Date().toISOString(),
-          metadata: order.metadata || {}
-        }));
-        
-        // #region agent log
-        const firstTransformedOrder = transformedOrders[0];
-        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:231',message:'Orders transformed',data:{originalCount:Array.isArray(data.data)?data.data.length:0,transformedCount:transformedOrders.length,firstOrderTotal:firstTransformedOrder?.total,firstOrderSubtotal:firstTransformedOrder?.subtotal,firstOrderTotalType:typeof firstTransformedOrder?.total,firstOrderSubtotalType:typeof firstTransformedOrder?.subtotal,firstOrderHasItems:!!firstTransformedOrder?.items,firstOrderItemsLength:firstTransformedOrder?.items?.length,firstOrderFirstItem:firstTransformedOrder?.items?.[0]?{id:firstTransformedOrder.items[0].id,name:firstTransformedOrder.items[0].name,price:firstTransformedOrder.items[0].price,quantity:firstTransformedOrder.items[0].quantity}:null},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'L'})}).catch(()=>{});
-        // #endregion
-        
+        const transformedOrders = (Array.isArray(data.data) ? data.data : []).map(transformOrder);
+
         setOrders(transformedOrders);
         if (data.pagination) {
           setTotalPages(data.pagination.pages);
           setTotalOrders(data.pagination.total);
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:245',message:'Pagination set',data:{pages:data.pagination.pages,total:data.pagination.total},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-          // #endregion
         } else {
           setTotalPages(1);
           setTotalOrders(transformedOrders.length);
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:248',message:'No pagination, using fallback',data:{dataLength:transformedOrders.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-          // #endregion
         }
-        // Clear selection on page change or filter change
         setSelectedOrders([]);
       } else {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:220',message:'API returned success=false',data:{message:data.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-        // #endregion
         console.error('Failed to fetch orders:', data.message);
       }
     } catch (error: any) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:223',message:'Error caught',data:{errorMessage:error?.message,errorStatus:error?.response?.status,errorData:error?.response?.data,errorType:error?.constructor?.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-      // #endregion
       console.error('Error fetching orders:', error);
       if (error.response?.data?.message) {
         console.error('Error message:', error.response.data.message);
       }
     } finally {
       setLoading(false);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:228',message:'fetchOrders exit',data:{loading:false},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
     }
   };
 
   const handleFilterChange = (key: string, value: string) => {
     setFilters(prev => ({ ...prev, [key]: value }));
-    setPage(1); // Reset to page 1 on filter change
+    setPage(1);
   };
 
   const handlePageChange = (newPage: number) => {
@@ -318,7 +257,6 @@ const Orders: React.FC = () => {
     }
   };
 
-  // Bulk Selection Logic
   const toggleOrderSelection = (orderNumber: string) => {
     setSelectedOrders(prev =>
       prev.includes(orderNumber)
@@ -335,26 +273,18 @@ const Orders: React.FC = () => {
     }
   };
 
-  // Bulk Actions Implementation
   const handleBulkStatusUpdate = async (newStatus: string) => {
     if (!newStatus) return;
     if (!window.confirm(`هل أنت متأكد من تحديث حالة ${selectedOrders.length} طلب إلى "${getStatusText(newStatus)}"?`)) return;
 
     try {
       setBulkProcessing(true);
-      const token = localStorage.getItem('accessToken');
-      const apiUrl = import.meta.env['VITE_API_URL'] || 'http://localhost:3007/api/v1';
-
-      const response = await fetch(`${apiUrl}/orders-new/bulk/status`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ orderIds: selectedOrders, status: newStatus })
+      const response = await apiClient.post('/orders-new/bulk/status', {
+        orderIds: selectedOrders,
+        status: newStatus
       });
 
-      const data = await response.json();
+      const data = response.data;
 
       if (data.success) {
         alert('تم تحديث الطلبات بنجاح');
@@ -363,9 +293,10 @@ const Orders: React.FC = () => {
       } else {
         alert(data.message || 'فشل تحديث الطلبات');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error bulk updating:', error);
-      alert('حدث خطأ أثناء التحديث الجماعي');
+      const errorMessage = error.response?.data?.message || error.message || 'حدث خطأ أثناء التحديث الجماعي';
+      alert(`فشل التحديث: ${errorMessage}`);
     } finally {
       setBulkProcessing(false);
     }
@@ -376,19 +307,11 @@ const Orders: React.FC = () => {
 
     try {
       setBulkProcessing(true);
-      const token = localStorage.getItem('accessToken');
-      const apiUrl = import.meta.env['VITE_API_URL'] || 'http://localhost:3007/api/v1';
-
-      const response = await fetch(`${apiUrl}/orders-new/bulk/delete`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ orderIds: selectedOrders })
+      const response = await apiClient.post('/orders-new/bulk/delete', {
+        orderIds: selectedOrders
       });
 
-      const data = await response.json();
+      const data = response.data;
 
       if (data.success) {
         alert('تم حذف الطلبات بنجاح');
@@ -397,9 +320,10 @@ const Orders: React.FC = () => {
       } else {
         alert(data.message || 'فشل حذف الطلبات');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error bulk deleting:', error);
-      alert('حدث خطأ أثناء الحذف الجماعي');
+      const errorMessage = error.response?.data?.message || error.message || 'حدث خطأ أثناء الحذف الجماعي';
+      alert(`فشل الحذف: ${errorMessage}`);
     } finally {
       setBulkProcessing(false);
     }
@@ -407,10 +331,6 @@ const Orders: React.FC = () => {
 
   const handleExport = async () => {
     try {
-      const token = localStorage.getItem('accessToken');
-      const apiUrl = import.meta.env['VITE_API_URL'] || 'http://localhost:3007/api/v1';
-
-      // Build Query String from current filters
       const queryParams = new URLSearchParams({
         ...(filters.status && { status: filters.status }),
         ...(filters.paymentStatus && { paymentStatus: filters.paymentStatus }),
@@ -419,16 +339,11 @@ const Orders: React.FC = () => {
         ...(filters.endDate && { endDate: filters.endDate }),
       });
 
-      const response = await fetch(`${apiUrl}/orders-new/export?${queryParams.toString()}`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+      const response = await apiClient.get(`/orders-new/export?${queryParams.toString()}`, {
+        responseType: 'blob'
       });
 
-      if (!response.ok) throw new Error('Export failed');
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      const url = window.URL.createObjectURL(new Blob([response.data]));
       const a = document.createElement('a');
       a.href = url;
       a.download = `orders_export_${new Date().toISOString().split('T')[0]}.xlsx`;
@@ -485,18 +400,12 @@ const Orders: React.FC = () => {
     }
   };
 
-  // Legacy single actions (kept for modal usage)
-  const handleDeleteAllOrders = async () => { /* Not commonly used now, kept just in case or remove? Keeping for now */
+  const handleDeleteAllOrders = async () => {
     if (!window.confirm('هل أنت متأكد من حذف جميع الطلبات؟ هذا الإجراء لا يمكن التراجع عنه.')) return;
     try {
       setDeleting(true);
-      const token = localStorage.getItem('accessToken');
-      const apiUrl = import.meta.env['VITE_API_URL'] || 'http://localhost:3007/api/v1';
-      const response = await fetch(`${apiUrl}/orders/delete-all`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await response.json();
+      const response = await apiClient.delete('/orders/delete-all');
+      const data = response.data;
       if (data.success) { fetchOrders(); alert('تم حذف جميع الطلبات بنجاح'); }
       else { alert(data.message || 'فشل حذف الطلبات'); }
     } catch (error) { console.error('Error:', error); alert('خطأ أثناء الحذف'); }
@@ -505,14 +414,10 @@ const Orders: React.FC = () => {
 
   const handleUpdateStatus = async (orderNumber: string, newStatus: string) => {
     try {
-      const token = localStorage.getItem('accessToken');
-      const apiUrl = import.meta.env['VITE_API_URL'] || 'http://localhost:3007/api/v1';
-      const response = await fetch(`${apiUrl}/orders-new/simple/${orderNumber}/status`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus })
+      const response = await apiClient.post(`/orders-new/simple/${orderNumber}/status`, {
+        status: newStatus
       });
-      const data = await response.json();
+      const data = response.data;
       if (data.success) {
         const normalizedStatus = newStatus.toLowerCase();
         setOrders(orders.map(order =>
@@ -521,25 +426,22 @@ const Orders: React.FC = () => {
         if (selectedOrder && selectedOrder.orderNumber === orderNumber) {
           setSelectedOrder({ ...selectedOrder, status: normalizedStatus as any });
         }
-      } else { 
-        alert(data.message || 'فشل تحديث الحالة'); 
+      } else {
+        alert(data.message || 'فشل تحديث الحالة');
       }
-    } catch (error) { 
-      console.error('Error updating status:', error); 
-      alert('خطأ أثناء التحديث'); 
+    } catch (error: any) {
+      console.error('Error updating status:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'خطأ أثناء التحديث';
+      alert(`فشل التحديث: ${errorMessage}`);
     }
   };
 
   const handleUpdatePaymentStatus = async (orderNumber: string, newStatus: string) => {
     try {
-      const token = localStorage.getItem('accessToken');
-      const apiUrl = import.meta.env['VITE_API_URL'] || 'http://localhost:3007/api/v1';
-      const response = await fetch(`${apiUrl}/orders-new/simple/${orderNumber}/payment-status`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paymentStatus: newStatus })
+      const response = await apiClient.post(`/orders-new/simple/${orderNumber}/payment-status`, {
+        paymentStatus: newStatus
       });
-      const data = await response.json();
+      const data = response.data;
       if (data.success) {
         const normalizedStatus = newStatus.toLowerCase();
         setOrders(orders.map(order =>
@@ -548,12 +450,13 @@ const Orders: React.FC = () => {
         if (selectedOrder && selectedOrder.orderNumber === orderNumber) {
           setSelectedOrder({ ...selectedOrder, paymentStatus: normalizedStatus as any });
         }
-      } else { 
-        alert(data.message || 'فشل تحديث حالة الدفع'); 
+      } else {
+        alert(data.message || 'فشل تحديث حالة الدفع');
       }
-    } catch (error) { 
-      console.error('Error updating payment status:', error); 
-      alert('خطأ أثناء تحديث الدفع'); 
+    } catch (error: any) {
+      console.error('Error updating payment status:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'خطأ أثناء تحديث الدفع';
+      alert(`فشل التحديث: ${errorMessage}`);
     }
   };
 
@@ -628,7 +531,7 @@ const Orders: React.FC = () => {
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white"
             >
               <option value="">كل حالات الدفع</option>
-              <option value="paid">تم الدفع</option>
+              <option value="completed">تم الدفع</option>
               <option value="pending">انتظار الدفع</option>
               <option value="failed">فشل الدفع</option>
             </select>
@@ -739,135 +642,91 @@ const Orders: React.FC = () => {
                 </tr>
               ) : (
                 orders.map((order, idx) => {
-                  // #region agent log
-                  if (idx === 0) {
-                    const logData = {
-                      location: 'Orders.tsx:739',
-                      message: 'Rendering orders table',
-                      data: {
-                        ordersCount: orders.length,
-                        firstOrderHasId: !!order.id,
-                        firstOrderHasNumber: !!order.orderNumber,
-                        firstOrderHasName: !!order.customerName,
-                        firstOrderHasTotal: order.total !== null && order.total !== undefined
-                      },
-                      timestamp: Date.now(),
-                      sessionId: 'debug-session',
-                      runId: 'run1',
-                      hypothesisId: 'H'
-                    };
-                    fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(logData)
-                    }).catch(() => {});
-                  }
-                  // #endregion
                   return (
                     <tr key={order.id || idx} className={`hover:bg-gray-50 transition-colors ${selectedOrders.includes(order.orderNumber) ? 'bg-blue-50' : ''}`}>
-                    <td className="px-6 py-4">
-                      <input
-                        type="checkbox"
-                        className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                        checked={selectedOrders.includes(order.orderNumber)}
-                        onChange={() => toggleOrderSelection(order.orderNumber)}
-                      />
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="font-medium text-gray-900">#{order.orderNumber}</span>
-                      {order.metadata?.isGuestOrder && (
-                        <span className="mr-2 px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full">زائر</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col">
-                        <span className="text-gray-900 font-medium">{order.customerName || 'غير محدد'}</span>
-                        {order.customerPhone && (
-                          <span className="text-gray-500 text-sm" dir="ltr">{order.customerPhone}</span>
+                      <td className="px-6 py-4">
+                        <input
+                          type="checkbox"
+                          className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          checked={selectedOrders.includes(order.orderNumber)}
+                          onChange={() => toggleOrderSelection(order.orderNumber)}
+                        />
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="font-medium text-gray-900">#{order.orderNumber}</span>
+                        {order.metadata?.isGuestOrder && (
+                          <span className="mr-2 px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full">زائر</span>
                         )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 font-medium text-gray-900">
-                      {(() => {
-                        try {
-                          // #region agent log
-                          if (idx === 0) {
-                            fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:791',message:'Before amount calculation',data:{orderTotal:order.total,orderSubtotal:order.subtotal,orderTotalType:typeof order.total,orderSubtotalType:typeof order.subtotal,orderNumber:order.orderNumber},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col">
+                          <span className="text-gray-900 font-medium">{order.customerName || 'غير محدد'}</span>
+                          {order.customerPhone && (
+                            <span className="text-gray-500 text-sm" dir="ltr">{order.customerPhone}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 font-medium text-gray-900">
+                        {(() => {
+                          try {
+                            const amount = order.total ?? order.subtotal ?? 0;
+                            const formatted = formatPrice(typeof amount === 'number' ? amount : 0);
+                            return formatted;
+                          } catch (e) {
+                            return '0.00';
                           }
-                          // #endregion
-                          const amount = order.total ?? order.subtotal ?? 0;
-                          // #region agent log
-                          if (idx === 0) {
-                            fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:794',message:'After amount calculation',data:{amount,amountType:typeof amount,isNumber:typeof amount==='number',willFormatAs:typeof amount==='number'?amount:0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
+                        })()}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor((order.status || '').toLowerCase())}`}>
+                          {getStatusText((order.status || '').toLowerCase())}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPaymentStatusColor((order.paymentStatus || 'pending').toLowerCase())}`}>
+                          {getPaymentStatusText((order.paymentStatus || 'pending').toLowerCase())}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-gray-500 text-sm">
+                        {(() => {
+                          try {
+                            return formatDate(order.createdAt || new Date().toISOString());
+                          } catch (e) {
+                            return '-';
                           }
-                          // #endregion
-                          const formatted = formatPrice(typeof amount === 'number' ? amount : 0);
-                          // #region agent log
-                          if (idx === 0) {
-                            fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:797',message:'After formatPrice',data:{formatted,formattedType:typeof formatted},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
-                          }
-                          // #endregion
-                          return formatted;
-                        } catch (e) {
-                          // #region agent log
-                          if (idx === 0) {
-                            fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Orders.tsx:800',message:'Error in formatPrice',data:{errorMessage:e?.message,errorType:typeof e},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
-                          }
-                          // #endregion
-                          return '0.00';
-                        }
-                      })()}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor((order.status || '').toLowerCase())}`}>
-                        {getStatusText((order.status || '').toLowerCase())}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPaymentStatusColor((order.paymentStatus || 'pending').toLowerCase())}`}>
-                        {getPaymentStatusText((order.paymentStatus || 'pending').toLowerCase())}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-gray-500 text-sm">
-                      {(() => {
-                        try {
-                          return formatDate(order.createdAt || new Date().toISOString());
-                        } catch (e) {
-                          return '-';
-                        }
-                      })()}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => {
-                            setSelectedOrder(order);
-                            setShowOrderModal(true);
-                          }}
-                          className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
-                          title="عرض التفاصيل"
-                        >
-                          <EyeIcon className="w-5 h-5" />
-                        </button>
-                        <Link
-                          to={`/orders/details/${order.orderNumber}`}
-                          className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
-                          title="صفحة الطلب"
-                        >
-                          <ShoppingBagIcon className="w-5 h-5" />
-                        </Link>
-                        {order.conversationId && (
-                          <Link
-                            to={`/whatsapp?conversationId=${order.conversationId}`}
-                            className="p-1 text-gray-400 hover:text-green-600 transition-colors"
-                            title="المحادثة"
+                        })()}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              setSelectedOrder(order);
+                              setShowOrderModal(true);
+                            }}
+                            className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                            title="عرض التفاصيل"
                           >
-                            <ChatBubbleLeftRightIcon className="w-5 h-5" />
+                            <EyeIcon className="w-5 h-5" />
+                          </button>
+                          <Link
+                            to={`/orders/details/${order.orderNumber}`}
+                            className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                            title="صفحة الطلب"
+                          >
+                            <ShoppingBagIcon className="w-5 h-5" />
                           </Link>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
+                          {order.conversationId && (
+                            <Link
+                              to={`/whatsapp?conversationId=${order.conversationId}`}
+                              className="p-1 text-gray-400 hover:text-green-600 transition-colors"
+                              title="المحادثة"
+                            >
+                              <ChatBubbleLeftRightIcon className="w-5 h-5" />
+                            </Link>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
                   );
                 })
               )}
@@ -1059,7 +918,7 @@ const Orders: React.FC = () => {
                           className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                         >
                           <option value="pending">انتظار الدفع</option>
-                          <option value="paid">تم الدفع</option>
+                          <option value="completed">تم الدفع</option>
                           <option value="failed">فشل الدفع</option>
                         </select>
                       </div>

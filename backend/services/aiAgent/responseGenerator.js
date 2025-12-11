@@ -2758,7 +2758,6 @@ class ResponseGenerator {
       return { content: null, silentReason: `خطأ في توليد الرد: ${error.message} (نوع الخطأ: ${errorType})` };
     }
   }
-}
 
 
   /**
@@ -2772,106 +2771,107 @@ class ResponseGenerator {
    * @returns {Promise<Array<string>>} - مصفوفة من 3 اقتراحات
    */
   async generateReplySuggestions(conversationMemory, customerData, companyPrompts, ragData, companyId) {
-  try {
-    console.log(`💡 [AI-SUGGESTIONS] Generating suggestions for company ${companyId}`);
-
-    // 1. بناء Prompt خاص للاقتراحات
-    let prompt = `أنت مساعد ذكي لخدمة العملاء. مهمتك هي اقتراح 3 ردود قصيرة ومناسبة وسريعة يمكن للموظف إرسالها للعميل بناءً على سياق المحادثة.\n\n`;
-
-    // إضافة الشخصية (اختياري ولكن مفيد للنبرة)
-    if (companyPrompts.personalityPrompt) {
-      prompt += `شخصية المساعد: ${companyPrompts.personalityPrompt}\n\n`;
-    }
-
-    // إضافة معلومات العميل
-    prompt += `معلومات العميل:\n- الاسم: ${customerData?.name || 'غير محدد'}\n\n`;
-
-    // إضافة سجل المحادثة (آخر 5 رسائل فقط للتركيز)
-    const recentMessages = conversationMemory ? conversationMemory.slice(-5) : [];
-    if (recentMessages.length > 0) {
-      prompt += `سجل المحادثة (الرسائل الأخيرة):\n`;
-      recentMessages.forEach((msg, i) => {
-        const sender = msg.isFromCustomer ? 'العميل' : 'الموظف/النظام';
-        prompt += `${i + 1}. ${sender}: "${msg.content}"\n`;
-      });
-      prompt += `\n`;
-    } else {
-      prompt += `هذه بداية المحادثة. العميل لم يرسل شيئاً بعد أو هذه أول رسالة.\n\n`;
-    }
-
-    // إضافة بيانات RAG (إذا وجدت منتجات أو معلومات ذات صلة)
-    if (ragData && ragData.length > 0) {
-      prompt += `معلومات مساعدة (منتجات/سياسات):\n`;
-      ragData.slice(0, 3).forEach(item => {
-        prompt += `- ${item.content.substring(0, 100)}...\n`;
-      });
-      prompt += `\n`;
-    }
-
-    // التعليمات الصارمة
-    prompt += `التعليمات:\n`;
-    prompt += `1. اقترحي 3 ردود مختلفة (قصيرة، متوسطة، ومفصلة قليلاً).\n`;
-    prompt += `2. يجب أن تكون الردود باللهجة المصرية الطبيعية والودودة (إلا إذا كانت الشخصية تفرض غير ذلك).\n`;
-    prompt += `3. الردود يجب أن تكون جاهزة للإرسال فوراً (لا تضعي أقواس أو شرح).\n`;
-    prompt += `4. المخرجات يجب أن تكون مصفوفة JSON نصية فقط (Array of strings).\n`;
-    prompt += `5. لا تكتبي أي شيء خارج مصفوفة JSON.\n`;
-    prompt += `6. مثال للمخرجات: ["أهلاً يا فندم، إزاي أقدر اساعدك؟", "المقاسات المتاحة حالياً هي 41 و 42", "سعر المنتج 500 جنيه والتوصيل مجاني"]\n\n`;
-    prompt += `المخرجات المطلوبة (JSON Array Only):`;
-
-    // 2. استدعاء النموذج (using existing methods)
-    // نستخدم إعدادات محافظة (Low Temperature) للحصول على تنسيق JSON دقيق
-    const generationConfig = {
-      temperature: 0.3,
-      maxOutputTokens: 500,
-      responseMimeType: "application/json" // Gemini 1.5 supports this
-    };
-
-    const modelManager = this.aiAgentService.getModelManager();
-    const activeKey = await modelManager.getActiveGeminiKeyWithModel(companyId);
-
-    const { GoogleGenerativeAI } = require("@google/generative-ai");
-    const genAI = new GoogleGenerativeAI(activeKey.key);
-    const model = genAI.getGenerativeModel({
-      model: activeKey.model || "gemini-1.5-flash",
-      generationConfig: generationConfig
-    });
-
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
-
-    // 3. معالجة الرد وتحويله إلى مصفوفة
-    let suggestions = [];
     try {
-      // تنظيف النص من علامات markdown إذا وجدت
-      const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-      suggestions = JSON.parse(cleanText);
-    } catch (parseError) {
-      console.warn('⚠️ [AI-SUGGESTIONS] Failed to parse JSON, trying regex fallback', responseText);
-      // محاولة استخراج النصوص بين علامات التنصيص كحل بديل
-      const matches = responseText.match(/"([^"]*)"/g);
-      if (matches) {
-        suggestions = matches.map(s => s.replace(/"/g, ''));
-      } else {
-        // Fallback final: return raw lines
-        suggestions = responseText.split('\n').filter(line => line.length > 5).slice(0, 3);
+      console.log(`💡 [AI-SUGGESTIONS] Generating suggestions for company ${companyId}`);
+
+      // 1. بناء Prompt خاص للاقتراحات
+      let prompt = `أنت مساعد ذكي لخدمة العملاء. مهمتك هي اقتراح 3 ردود قصيرة ومناسبة وسريعة يمكن للموظف إرسالها للعميل بناءً على سياق المحادثة.\n\n`;
+
+      // إضافة الشخصية (اختياري ولكن مفيد للنبرة)
+      if (companyPrompts.personalityPrompt) {
+        prompt += `شخصية المساعد: ${companyPrompts.personalityPrompt}\n\n`;
       }
+
+      // إضافة معلومات العميل
+      prompt += `معلومات العميل:\n- الاسم: ${customerData?.name || 'غير محدد'}\n\n`;
+
+      // إضافة سجل المحادثة (آخر 5 رسائل فقط للتركيز)
+      const recentMessages = conversationMemory ? conversationMemory.slice(-5) : [];
+      if (recentMessages.length > 0) {
+        prompt += `سجل المحادثة (الرسائل الأخيرة):\n`;
+        recentMessages.forEach((msg, i) => {
+          const sender = msg.isFromCustomer ? 'العميل' : 'الموظف/النظام';
+          prompt += `${i + 1}. ${sender}: "${msg.content}"\n`;
+        });
+        prompt += `\n`;
+      } else {
+        prompt += `هذه بداية المحادثة. العميل لم يرسل شيئاً بعد أو هذه أول رسالة.\n\n`;
+      }
+
+      // إضافة بيانات RAG (إذا وجدت منتجات أو معلومات ذات صلة)
+      if (ragData && ragData.length > 0) {
+        prompt += `معلومات مساعدة (منتجات/سياسات):\n`;
+        ragData.slice(0, 3).forEach(item => {
+          prompt += `- ${item.content.substring(0, 100)}...\n`;
+        });
+        prompt += `\n`;
+      }
+
+      // التعليمات الصارمة
+      prompt += `التعليمات:\n`;
+      prompt += `1. اقترحي 3 ردود مختلفة (قصيرة، متوسطة، ومفصلة قليلاً).\n`;
+      prompt += `2. يجب أن تكون الردود باللهجة المصرية الطبيعية والودودة (إلا إذا كانت الشخصية تفرض غير ذلك).\n`;
+      prompt += `3. الردود يجب أن تكون جاهزة للإرسال فوراً (لا تضعي أقواس أو شرح).\n`;
+      prompt += `4. المخرجات يجب أن تكون مصفوفة JSON نصية فقط (Array of strings).\n`;
+      prompt += `5. لا تكتبي أي شيء خارج مصفوفة JSON.\n`;
+      prompt += `6. مثال للمخرجات: ["أهلاً يا فندم، إزاي أقدر اساعدك؟", "المقاسات المتاحة حالياً هي 41 و 42", "سعر المنتج 500 جنيه والتوصيل مجاني"]\n\n`;
+      prompt += `المخرجات المطلوبة (JSON Array Only):`;
+
+      // 2. استدعاء النموذج (using existing methods)
+      // نستخدم إعدادات محافظة (Low Temperature) للحصول على تنسيق JSON دقيق
+      const generationConfig = {
+        temperature: 0.3,
+        maxOutputTokens: 500,
+        responseMimeType: "application/json" // Gemini 1.5 supports this
+      };
+
+      const modelManager = this.aiAgentService.getModelManager();
+      const activeKey = await modelManager.getActiveGeminiKeyWithModel(companyId);
+
+      const { GoogleGenerativeAI } = require("@google/generative-ai");
+      const genAI = new GoogleGenerativeAI(activeKey.key);
+      const model = genAI.getGenerativeModel({
+        model: activeKey.model || "gemini-1.5-flash",
+        generationConfig: generationConfig
+      });
+
+      const result = await model.generateContent(prompt);
+      const responseText = result.response.text();
+
+      // 3. معالجة الرد وتحويله إلى مصفوفة
+      let suggestions = [];
+      try {
+        // تنظيف النص من علامات markdown إذا وجدت
+        const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        suggestions = JSON.parse(cleanText);
+      } catch (parseError) {
+        console.warn('⚠️ [AI-SUGGESTIONS] Failed to parse JSON, trying regex fallback', responseText);
+        // محاولة استخراج النصوص بين علامات التنصيص كحل بديل
+        const matches = responseText.match(/"([^"]*)"/g);
+        if (matches) {
+          suggestions = matches.map(s => s.replace(/"/g, ''));
+        } else {
+          // Fallback final: return raw lines
+          suggestions = responseText.split('\n').filter(line => line.length > 5).slice(0, 3);
+        }
+      }
+
+      // التأكد من أنها مصفوفة
+      if (!Array.isArray(suggestions)) {
+        suggestions = [typeof suggestions === 'string' ? suggestions : "أهلاً بك، كيف يمكنني مساعدتك؟"];
+      }
+
+      return suggestions.slice(0, 3); // ضمان إرجع 3 اقتراحات كحد أقصى
+
+    } catch (error) {
+      console.error('❌ [AI-SUGGESTIONS] Error generating suggestions:', error);
+      // Fallback suggestions
+      return [
+        "أهلاً بك، كيف يمكنني مساعدتك؟",
+        "تفضل، أنا معاك للإجابة على استفساراتك.",
+        "هل لديك أي أسئلة أخرى؟"
+      ];
     }
-
-    // التأكد من أنها مصفوفة
-    if (!Array.isArray(suggestions)) {
-      suggestions = [typeof suggestions === 'string' ? suggestions : "أهلاً بك، كيف يمكنني مساعدتك؟"];
-    }
-
-    return suggestions.slice(0, 3); // ضمان إرجع 3 اقتراحات كحد أقصى
-
-  } catch (error) {
-    console.error('❌ [AI-SUGGESTIONS] Error generating suggestions:', error);
-    // Fallback suggestions
-    return [
-      "أهلاً بك، كيف يمكنني مساعدتك؟",
-      "تفضل، أنا معاك للإجابة على استفساراتك.",
-      "هل لديك أي أسئلة أخرى؟"
-    ];
   }
 }
 

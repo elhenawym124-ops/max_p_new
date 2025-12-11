@@ -1,0 +1,8 @@
+🔍 Checking user with ID: cmem8azlv004eufakbko0wmn1
+✅ User found:
+- Name: ali ali
+- Email: ali@ali.com
+- Role: COMPANY_ADMIN
+- Company ID: cmem8ayyr004cufakqkcsyn97
+- Has Company Relation: true
+❌ Mock Company cmem8azyrr004cufakqkcsyn97 does NOT exist in DB.

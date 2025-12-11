@@ -451,7 +451,43 @@ const updateSingleProduct = async(req , res)=>{
       try {
     //console.log(`🔄 [server] PATCH /api/v1/products/${req.params.id}`, req.body);
 
+    // التحقق من المصادقة والشركة
+    const companyId = req.user?.companyId;
+    if (!companyId) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error(`[PRODUCT-UPDATE] Missing companyId. req.user:`, req.user);
+      }
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+      });
+    }
+
     const { id } = req.params;
+    
+    // Debug logging (development only)
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[PRODUCT-UPDATE] Updating product ${id} for company ${companyId}`);
+    }
+    
+    // التحقق من أن المنتج ينتمي للشركة
+    const existingProduct = await getSharedPrismaClient().product.findFirst({
+      where: {
+        id,
+        companyId
+      }
+    });
+
+    if (!existingProduct) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error(`[PRODUCT-UPDATE] Product ${id} not found or doesn't belong to company ${companyId}`);
+      }
+      return res.status(404).json({
+        success: false,
+        message: 'المنتج غير موجود أو غير مصرح لك بالوصول إليه'
+      });
+    }
+
     const updateData = { ...req.body };
 
     // Handle images array - convert to JSON string if it's an array
@@ -604,7 +640,42 @@ const deleteSingleProduct = async(req , res)=>{
       try {
     //console.log(`🗑️ [server] DELETE /api/v1/products/${req.params.id}`);
 
+    // التحقق من المصادقة والشركة
+    const companyId = req.user?.companyId;
+    if (!companyId) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error(`[PRODUCT-DELETE] Missing companyId. req.user:`, req.user);
+      }
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+      });
+    }
+
     const { id } = req.params;
+
+    // Debug logging (development only)
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[PRODUCT-DELETE] Deleting product ${id} for company ${companyId}`);
+    }
+
+    // التحقق من أن المنتج ينتمي للشركة
+    const existingProduct = await getSharedPrismaClient().product.findFirst({
+      where: {
+        id,
+        companyId
+      }
+    });
+
+    if (!existingProduct) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error(`[PRODUCT-DELETE] Product ${id} not found or doesn't belong to company ${companyId}`);
+      }
+      return res.status(404).json({
+        success: false,
+        message: 'المنتج غير موجود أو غير مصرح لك بالوصول إليه'
+      });
+    }
 
     await getSharedPrismaClient().product.delete({
       where: { id: id }
@@ -629,10 +700,18 @@ const createProduct = async(req , res)=>{
     // التحقق من المصادقة والشركة
     const companyId = req.user?.companyId;
     if (!companyId) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error(`[PRODUCT-CREATE] Missing companyId. req.user:`, req.user);
+      }
       return res.status(403).json({
         success: false,
         message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
       });
+    }
+
+    // Debug logging (development only)
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[PRODUCT-CREATE] Creating product for company ${companyId}`);
     }
 
     const { name, description, price, category, stock, sku, images, tags, hasPromotedAd } = req.body;

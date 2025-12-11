@@ -26,10 +26,22 @@ interface Activity {
     metadata?: string;
 }
 
+interface Customer {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string | null;
+    phone: string | null;
+    avatar: string | null;
+    city: string | null;
+    country: string | null;
+}
+
 export const useCustomerProfile = () => {
     const { companyId } = useCompany();
     const [orders, setOrders] = useState<Order[]>([]);
     const [activities, setActivities] = useState<Activity[]>([]);
+    const [customer, setCustomer] = useState<Customer | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -41,13 +53,30 @@ export const useCustomerProfile = () => {
 
         try {
             // Concurrent fetching
-            const [ordersRes, activityRes] = await Promise.all([
+            const [ordersRes, activityRes, customerRes] = await Promise.all([
                 apiClient.get(`/customers/${customerId}/orders?companyId=${companyId}`),
-                apiClient.get(`/customers/${customerId}/activity?companyId=${companyId}`)
+                apiClient.get(`/customers/${customerId}/activity?companyId=${companyId}`),
+                apiClient.get(`/customers/${customerId}?companyId=${companyId}`)
             ]);
 
             setOrders(ordersRes.data.data || []);
-            setActivities(activityRes.data.data || []);
+            if (customerRes.data.success) {
+                setCustomer(customerRes.data.data);
+            }
+
+
+            // Map backend activity format to frontend interface
+            const rawActivities = activityRes.data.data || [];
+            const mappedActivities = rawActivities.map((act: any) => ({
+                id: act.id,
+                action: act.type,
+                description: act.type === 'order'
+                    ? `طلب جديد #${act.orderNumber} (${act.total} ر.س)`
+                    : `محادثة عبر ${act.platform === 'WHATSAPP' ? 'واتساب' : act.platform === 'MESSENGER' ? 'ماسنجر' : act.platform || 'المنصة'}`,
+                createdAt: act.timestamp || new Date().toISOString(),
+                metadata: JSON.stringify(act.data)
+            }));
+            setActivities(mappedActivities);
         } catch (err: any) {
             console.error('Error fetching customer profile:', err);
             setError('فشل جلب بيانات العميل');
@@ -63,6 +92,7 @@ export const useCustomerProfile = () => {
     }, [orders]);
 
     return {
+        customer,
         orders,
         activities,
         loading,

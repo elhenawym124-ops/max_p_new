@@ -14,6 +14,15 @@ const { getSharedPrismaClient } = require('../services/sharedDatabase');
 router.get('/simple', requireAuth, async (req, res) => {
   try {
     // الحصول على companyId من المستخدم المصادق عليه
+    // التأكد من وجود req.user و companyId (requireAuth يجب أن يضمن ذلك)
+    if (!req.user) {
+      console.error(`[ORDERS] /simple - req.user is null/undefined`);
+      return res.status(401).json({
+        success: false,
+        message: 'غير مصرح - يجب تسجيل الدخول'
+      });
+    }
+
     const companyId = req.user?.companyId;
 
     // Debug logging (development only)
@@ -23,12 +32,17 @@ router.get('/simple', requireAuth, async (req, res) => {
     }
 
     if (!companyId) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.error(`[ORDERS] /simple - Missing companyId. req.user:`, req.user);
-      }
+      console.error(`[ORDERS] /simple - Missing companyId. req.user:`, req.user);
       return res.status(403).json({
         success: false,
-        message: 'غير مصرح - معرف الشركة مطلوب'
+        message: 'غير مصرح - معرف الشركة مطلوب',
+        debug: process.env.NODE_ENV !== 'production' ? {
+          hasUser: !!req.user,
+          userId: req.user?.id,
+          userEmail: req.user?.email,
+          userRole: req.user?.role,
+          companyId: req.user?.companyId
+        } : undefined
       });
     }
 
@@ -123,6 +137,20 @@ router.get('/simple', requireAuth, async (req, res) => {
     }
 
     // تنفيذ الاستعلامات (Top N)
+    // Debug: Log query structure before execution (development only)
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[ORDERS-DEBUG] Query structure:', JSON.stringify({
+        where: whereClause,
+        take: fetchLimit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          customer: { select: { id: true, firstName: true, lastName: true, phone: true, email: true } },
+          items: { include: { product: { select: { id: true, name: true, images: true } } } },
+          conversation: { select: { id: true, channel: true } }
+        }
+      }, null, 2));
+    }
+
     const [regularOrders, guestOrders, totalRegular, totalGuest] = await Promise.all([
       // Fetch Regular Orders
       getSharedPrismaClient().order.findMany({
@@ -154,18 +182,32 @@ router.get('/simple', requireAuth, async (req, res) => {
     ]);
 
     console.log(`📦 [ORDERS] Found ${regularOrders.length} regular, ${guestOrders.length} guest (Top ${fetchLimit})`);
-    
+
     // Debug: Log items for first few orders BEFORE mapping
     if (regularOrders.length > 0) {
       const firstOrder = regularOrders[0];
       console.log(`🔍 [ORDERS-DEBUG] First order BEFORE mapping:`, {
         orderNumber: firstOrder.orderNumber,
+        orderId: firstOrder.id,
         hasItems: !!firstOrder.items,
         itemsIsArray: Array.isArray(firstOrder.items),
         itemsLength: firstOrder.items?.length || 0,
         itemsType: typeof firstOrder.items,
-        itemsValue: firstOrder.items ? (Array.isArray(firstOrder.items) ? 'array' : JSON.stringify(firstOrder.items).substring(0, 100)) : 'null/undefined'
+        itemsValue: firstOrder.items ? (Array.isArray(firstOrder.items) ? 'array' : JSON.stringify(firstOrder.items).substring(0, 100)) : 'null/undefined',
+        firstItemRaw: firstOrder.items?.[0] ? {
+          id: firstOrder.items[0].id,
+          productId: firstOrder.items[0].productId,
+          productName: firstOrder.items[0].productName,
+          hasProduct: !!firstOrder.items[0].product,
+          productNameFromProduct: firstOrder.items[0].product?.name
+        } : null
       });
+
+      // Also check if items exist in database for this order
+      const itemsCount = await getSharedPrismaClient().orderItem.count({
+        where: { orderId: firstOrder.id }
+      });
+      console.log(`🔍 [ORDERS-DEBUG] Items count in database for order ${firstOrder.orderNumber}:`, itemsCount);
     }
 
     // تحويل البيانات (Mapping)
@@ -180,7 +222,7 @@ router.get('/simple', requireAuth, async (req, res) => {
       // PRIORITY: Use order.customerName from WooCommerce first
       // This ensures each order shows the actual customer name from WooCommerce
       let finalCustomerName = '';
-      
+
       // First: Try order.customerName (from WooCommerce)
       if (order.customerName && order.customerName.trim()) {
         finalCustomerName = order.customerName.trim();
@@ -195,7 +237,7 @@ router.get('/simple', requireAuth, async (req, res) => {
       else {
         finalCustomerName = '';
       }
-      
+
       // Debug logging for all orders to help diagnose the issue
       const orderIndex = regularOrders.indexOf(order);
       if (orderIndex < 5) {
@@ -245,7 +287,7 @@ router.get('/simple', requireAuth, async (req, res) => {
         items: Array.isArray(order.items) && order.items.length > 0 ? order.items.map(item => ({
           id: item.id,
           productId: item.productId,
-          name: item.product?.name || JSON.parse(item.metadata || '{}').productName || '',
+          name: item.productName || item.product?.name || JSON.parse(item.metadata || '{}').productName || '',
           price: item.price,
           quantity: item.quantity,
           total: item.total,
@@ -359,16 +401,39 @@ router.get('/simple/stats', async (req, res) => {
 });
 
 // تحديث حالة الطلب البسيط
-router.post('/simple/:orderNumber/status', async (req, res) => {
+router.post('/simple/:orderNumber/status', requireAuth, async (req, res) => {
   try {
     const { orderNumber } = req.params;
     const { status, notes } = req.body;
+
+    // Debug logging
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('🔍 [ORDER-STATUS-UPDATE] Request received:', {
+        orderNumber,
+        hasUser: !!req.user,
+        userId: req.user?.id,
+        companyId: req.user?.companyId,
+        userObject: req.user
+      });
+    }
+
     const companyId = req.user?.companyId;
 
     if (!companyId) {
+      console.error('❌ [ORDER-STATUS-UPDATE] Missing companyId:', {
+        hasUser: !!req.user,
+        user: req.user
+      });
       return res.status(403).json({
         success: false,
-        message: 'غير مصرح - معرف الشركة مطلوب'
+        message: 'غير مصرح - معرف الشركة مطلوب',
+        debug: process.env.NODE_ENV !== 'production' ? {
+          hasUser: !!req.user,
+          userId: req.user?.id,
+          userEmail: req.user?.email,
+          userRole: req.user?.role,
+          companyId: req.user?.companyId
+        } : undefined
       });
     }
 
@@ -437,16 +502,39 @@ router.post('/simple/:orderNumber/status', async (req, res) => {
 });
 
 // تحديث حالة الدفع للطلب البسيط
-router.post('/simple/:orderNumber/payment-status', async (req, res) => {
+router.post('/simple/:orderNumber/payment-status', requireAuth, async (req, res) => {
   try {
     const { orderNumber } = req.params;
     const { paymentStatus, notes } = req.body;
+
+    // Debug logging
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('🔍 [PAYMENT-STATUS-UPDATE] Request received:', {
+        orderNumber,
+        hasUser: !!req.user,
+        userId: req.user?.id,
+        companyId: req.user?.companyId,
+        userObject: req.user
+      });
+    }
+
     const companyId = req.user?.companyId;
 
     if (!companyId) {
+      console.error('❌ [PAYMENT-STATUS-UPDATE] Missing companyId:', {
+        hasUser: !!req.user,
+        user: req.user
+      });
       return res.status(403).json({
         success: false,
-        message: 'غير مصرح - معرف الشركة مطلوب'
+        message: 'غير مصرح - معرف الشركة مطلوب',
+        debug: process.env.NODE_ENV !== 'production' ? {
+          hasUser: !!req.user,
+          userId: req.user?.id,
+          userEmail: req.user?.email,
+          userRole: req.user?.role,
+          companyId: req.user?.companyId
+        } : undefined
       });
     }
 
@@ -554,7 +642,7 @@ router.get('/', async (req, res) => {
                 images: true
               }
             }
-          }
+          },
         },
         conversation: {
           select: {
@@ -606,26 +694,80 @@ router.get('/', async (req, res) => {
 router.get('/simple/:orderNumber', requireAuth, async (req, res) => {
   try {
     const { orderNumber } = req.params;
-    
-    // Debug logging
-    console.log('🔍 [ORDER-DETAIL] Request for order:', orderNumber);
-    console.log('🔍 [ORDER-DETAIL] req.user:', req.user ? { id: req.user.id, email: req.user.email, companyId: req.user.companyId } : 'null');
-    
+
+    // التأكد من وجود req.user (requireAuth يجب أن يضمن ذلك)
+    if (!req.user) {
+      console.error('❌ [ORDER-DETAIL] req.user is null/undefined');
+      return res.status(401).json({
+        success: false,
+        message: 'غير مصرح - يجب تسجيل الدخول'
+      });
+    }
+
+    // Debug logging (development only)
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('🔍 [ORDER-DETAIL] Request for order:', orderNumber);
+      console.log('🔍 [ORDER-DETAIL] req.user:', { id: req.user.id, email: req.user.email, companyId: req.user.companyId });
+    }
+
     const companyId = req.user?.companyId;
 
     if (!companyId) {
-      console.error('❌ [ORDER-DETAIL] Missing companyId!', { 
+      console.error('❌ [ORDER-DETAIL] Missing companyId!', {
         user: req.user,
         hasUser: !!req.user,
-        orderNumber 
+        orderNumber
       });
       return res.status(403).json({
         success: false,
-        message: 'غير مصرح - معرف الشركة مطلوب'
+        message: 'غير مصرح - معرف الشركة مطلوب',
+        debug: process.env.NODE_ENV !== 'production' ? {
+          hasUser: !!req.user,
+          userId: req.user?.id,
+          userEmail: req.user?.email,
+          userRole: req.user?.role,
+          companyId: req.user?.companyId
+        } : undefined
       });
     }
 
     console.log('🔍 [ORDER-DETAIL] Searching for order:', { orderNumber, companyId });
+
+    // Debug: Log query structure before execution (development only)
+    if (process.env.NODE_ENV !== 'production') {
+      const queryStructure = {
+        where: { orderNumber, companyId },
+        include: {
+          customer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phone: true,
+              email: true
+            }
+          },
+          items: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  images: true
+                }
+              }
+            }
+          },
+          conversation: {
+            select: {
+              id: true,
+              channel: true
+            }
+          }
+        }
+      };
+      console.log('[ORDER-DETAIL-DEBUG] Query structure:', JSON.stringify(queryStructure, null, 2));
+    }
 
     // Try to find regular order first
     let order = await getSharedPrismaClient().order.findFirst({
@@ -684,8 +826,8 @@ router.get('/simple/:orderNumber', requireAuth, async (req, res) => {
 
     // If neither found, return 404
     if (!order && !guestOrder) {
-      console.error('❌ [ORDER-DETAIL] Order not found:', { 
-        orderNumber, 
+      console.error('❌ [ORDER-DETAIL] Order not found:', {
+        orderNumber,
         companyId,
         searchedRegular: true,
         searchedGuest: true
@@ -696,6 +838,30 @@ router.get('/simple/:orderNumber', requireAuth, async (req, res) => {
         orderNumber,
         companyId
       });
+    }
+
+    // Debug: Log items for regular order
+    if (order) {
+      console.log(`🔍 [ORDER-DETAIL] Regular order found:`, {
+        orderNumber: order.orderNumber,
+        orderId: order.id,
+        hasItems: !!order.items,
+        itemsIsArray: Array.isArray(order.items),
+        itemsLength: order.items?.length || 0,
+        firstItem: order.items?.[0] ? {
+          id: order.items[0].id,
+          productId: order.items[0].productId,
+          productName: order.items[0].productName,
+          hasProduct: !!order.items[0].product,
+          productNameFromProduct: order.items[0].product?.name
+        } : null
+      });
+
+      // Also check if items exist in database for this order
+      const itemsCount = await getSharedPrismaClient().orderItem.count({
+        where: { orderId: order.id }
+      });
+      console.log(`🔍 [ORDER-DETAIL] Items count in database for order ${order.orderNumber}:`, itemsCount);
     }
 
     let formattedOrder;
@@ -759,7 +925,7 @@ router.get('/simple/:orderNumber', requireAuth, async (req, res) => {
       // تحويل البيانات للصيغة المتوافقة مع الـ frontend
       // PRIORITY: Use order.customerName from WooCommerce first
       let finalCustomerName = '';
-      
+
       // First: Try order.customerName (from WooCommerce)
       if (order.customerName && order.customerName.trim()) {
         finalCustomerName = order.customerName.trim();
@@ -774,7 +940,7 @@ router.get('/simple/:orderNumber', requireAuth, async (req, res) => {
       else {
         finalCustomerName = '';
       }
-      
+
       formattedOrder = {
         id: order.orderNumber,
         orderNumber: order.orderNumber,
@@ -794,7 +960,7 @@ router.get('/simple/:orderNumber', requireAuth, async (req, res) => {
         items: order.items.map(item => ({
           id: item.id,
           productId: item.productId,
-          name: item.product?.name || JSON.parse(item.metadata || '{}').productName || '',
+          name: item.productName || item.product?.name || JSON.parse(item.metadata || '{}').productName || '',
           price: item.price,
           quantity: item.quantity,
           total: item.total,
@@ -1398,11 +1564,11 @@ router.get('/export', async (req, res) => {
 
 module.exports = router;
 
-// Update Order Details (Address, Notes)
-router.put('/simple/:orderNumber', async (req, res) => {
+// Update Order Details (Address, Notes, Alternative Phone)
+router.put('/simple/:orderNumber', requireAuth, async (req, res) => {
   try {
     const { orderNumber } = req.params;
-    const { shippingAddress, notes, customerName, customerPhone } = req.body;
+    const { shippingAddress, notes, customerName, customerPhone, alternativePhone } = req.body;
     const companyId = req.user?.companyId;
 
     if (!companyId) return res.status(403).json({ success: false, message: 'Unauthorized' });
@@ -1413,9 +1579,15 @@ router.put('/simple/:orderNumber', async (req, res) => {
     });
 
     if (regularOrder) {
+      const currentMetadata = regularOrder.metadata ? JSON.parse(regularOrder.metadata) : {};
+      if (alternativePhone !== undefined) {
+        currentMetadata.alternativePhone = alternativePhone;
+      }
+
       const updateData = {
         shippingAddress: JSON.stringify(shippingAddress),
         notes,
+        metadata: JSON.stringify(currentMetadata),
         updatedAt: new Date()
       };
 
@@ -1442,6 +1614,11 @@ router.put('/simple/:orderNumber', async (req, res) => {
     });
 
     if (guestOrder) {
+      const currentMetadata = guestOrder.metadata ? JSON.parse(guestOrder.metadata) : { source: 'storefront', isGuestOrder: true };
+      if (alternativePhone !== undefined) {
+        currentMetadata.alternativePhone = alternativePhone;
+      }
+
       await getSharedPrismaClient().guestOrder.update({
         where: { id: guestOrder.id },
         data: {
@@ -1449,6 +1626,7 @@ router.put('/simple/:orderNumber', async (req, res) => {
           notes,
           guestName: customerName,
           guestPhone: customerPhone,
+          metadata: JSON.stringify(currentMetadata),
           updatedAt: new Date()
         }
       });
@@ -1460,7 +1638,8 @@ router.put('/simple/:orderNumber', async (req, res) => {
           shippingAddress,
           notes,
           customerName,
-          customerPhone
+          customerPhone,
+          metadata: currentMetadata
         });
       }
 
@@ -1476,7 +1655,7 @@ router.put('/simple/:orderNumber', async (req, res) => {
 });
 
 // Update Order Items
-router.put('/simple/:orderNumber/items', async (req, res) => {
+router.put('/simple/:orderNumber/items', requireAuth, async (req, res) => {
   try {
     const { orderNumber } = req.params;
     const { items, total, subtotal, tax, shipping } = req.body; // Expecting full new list of items

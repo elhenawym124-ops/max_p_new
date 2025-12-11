@@ -13,6 +13,9 @@ router.post('/unblock', verifyToken.authenticateToken, customerController.unbloc
 router.get('/blocked/:pageId', verifyToken.authenticateToken, customerController.getBlockedCustomersOnPage);
 router.get('/block-status', verifyToken.authenticateToken, customerController.checkCustomerBlockStatus);
 
+// تفاصيل العميل
+router.get('/:customerId', verifyToken.authenticateToken, customerController.getCustomerDetails);
+
 // جلب طلبات العميل
 router.get('/:customerId/orders', verifyToken.authenticateToken, customerController.getCustomerOrders);
 

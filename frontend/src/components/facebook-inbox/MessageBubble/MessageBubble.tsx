@@ -31,7 +31,7 @@ interface MessageBubbleProps {
 }
 
 const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onForward, onStar, onReaction, onReply, currentUserId }) => {
-    const isCustomer = message.isFromCustomer;
+    const isCustomer = !!message.isFromCustomer;
     const isAI = message.isAiGenerated;
     const [showActions, setShowActions] = useState(false);
     const [showReactionSelector, setShowReactionSelector] = useState(false);
@@ -69,14 +69,14 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onForw
 
     return (
         <div
-            className={`flex ${isCustomer ? 'justify-start' : 'justify-end'} mb-4 group relative`}
+            className={`flex w-full mb-4 group relative`}
             onMouseEnter={() => setShowActions(true)}
             onMouseLeave={() => setShowActions(false)}
         >
             {/* Action Buttons (Left for user, Right for customer) */}
             {showActions && (
                 <div
-                    className={`absolute top-1/2 -translate-y-1/2 flex items-center gap-1 bg-white/80 backdrop-blur-sm rounded-full shadow-sm p-1 z-20 ${isCustomer ? '-right-36' : '-left-36'
+                    className={`absolute top-1/2 -translate-y-1/2 flex items-center gap-1 bg-white/80 backdrop-blur-sm rounded-full shadow-sm p-1 z-20 ${isCustomer ? 'right-full mr-2' : 'left-full ml-2'
                         }`}
                 >
                     {onReaction && (
@@ -144,7 +144,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onForw
                 </div>
             )}
 
-            <div className="max-w-xs lg:max-w-md">
+            <div className={`max-w-xs lg:max-w-md ${isCustomer ? 'ml-auto' : 'mr-auto'}`}>
                 {/* Sender name (for employee/AI messages) */}
                 {!isCustomer && (
                     <div className="text-xs text-gray-500 mb-1 text-left">

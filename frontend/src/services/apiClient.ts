@@ -61,7 +61,7 @@ class ApiClient {
           config.headers.Authorization = `Bearer ${token}`;
         } else if (import.meta.env.DEV) {
           // Mock token for development - updated with correct company ID
-          const mockToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJjbWVtOGF6bHYwMDRldWZha2JrbzB3bW4xIiwiZW1haWwiOiJhbGlAYWxpLmNvbSIsInJvbGUiOiJDT01QQU5ZX0FETUlOIiwiY29tcGFueUlkIjoiY21lbThhenlycjAwNGN1ZmFrcWtjc3luOTciLCJpYXQiOjE3NTYwMDY0MDAsImV4cCI6OTk5OTk5OTk5OX0.mock-signature-for-dev';
+          const mockToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJjbWVtOGF6bHYwMDRldWZha2JrbzB3bW4xIiwiZW1haWwiOiJhbGlAYWxpLmNvbSIsInJvbGUiOiJDT01QQU5ZX0FETUlOIiwiY29tcGFueUlkIjoiY21lbThheXlyMDA0Y3VmYWtxa2NzeW45NyIsImlhdCI6MTc2NTQxOTc2MCwiZXhwIjo0OTIxMTc5NzYwfQ.luOHZEb2BgHS35j2Vn6GiazVwKUOy4Eqm5nR-WmrDVk';
           config.headers.Authorization = `Bearer ${mockToken}`;
           console.log('🔧 Using mock token for development');
         }
@@ -115,6 +115,9 @@ class ApiClient {
             console.error('🔒 Authentication failed - token may be invalid or expired');
           } else if (error.response?.status === 403) {
             console.error('🚫 Access denied - insufficient permissions');
+            console.error('SERVER RESPONSE:', JSON.stringify(error.response.data));
+            // Force logout on 403 to fix permission issues
+            this.handleAuthError();
           } else if (error.response?.status === 503) {
             console.error('⏳ Database temporarily unavailable - will retry');
           } else if (error.response?.status === 500) {
