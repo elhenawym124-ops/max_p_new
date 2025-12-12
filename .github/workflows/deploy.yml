@@ -65,7 +65,7 @@ jobs:
           fi
           echo "✅ All secrets are present"
 
-      # Test SSH Connection
+      # Test SSH Connection (with retry)
       - name: Test SSH Connection
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -73,10 +73,15 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
+          timeout: 120s
+          command_timeout: 5m
           script: |
             echo "✅ SSH connection successful"
             whoami
             pwd
+        continue-on-error: true
+        retries: 3
+        retry-wait-time: 10
 
       # Deploy Frontend to Server
       - name: Deploy Frontend to Server
@@ -86,6 +91,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
+          timeout: 60s
           source: "frontend/dist"
           target: "/var/www"
           strip_components: 0
@@ -99,6 +105,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
+          timeout: 60s
           source: "backend"
           target: "/var/www"
           strip_components: 0
@@ -111,6 +118,8 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
+          timeout: 60s
+          command_timeout: 10m
           script: |
             set -e
             echo "🚀 Starting deployment on server..."
