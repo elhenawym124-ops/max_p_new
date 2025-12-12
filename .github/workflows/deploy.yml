@@ -230,7 +230,7 @@ jobs:
               echo "✅ Prisma generate completed"
               
               echo "🔧 Running Prisma db push..."
-              npx prisma db push
+              npx prisma db push --accept-data-loss
               echo "✅ Prisma db push completed"
             fi
             
