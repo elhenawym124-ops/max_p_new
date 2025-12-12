@@ -140,8 +140,24 @@ jobs:
             # Move backend files
             if [ -d "/var/www/backend" ]; then
               echo "📦 Moving backend files..."
+              
+              # Save .env file if it exists in backend2
+              if [ -f "/var/www/backend2/.env" ]; then
+                echo "💾 Saving existing .env file..."
+                cp /var/www/backend2/.env /tmp/backend_env_backup.env
+              fi
+              
               rm -rf /var/www/backend2
               mv /var/www/backend /var/www/backend2
+              
+              # Restore .env file if it was saved
+              if [ -f "/tmp/backend_env_backup.env" ]; then
+                echo "💾 Restoring .env file..."
+                cp /tmp/backend_env_backup.env /var/www/backend2/.env
+                rm /tmp/backend_env_backup.env
+                echo "✅ .env file restored"
+              fi
+              
               echo "✅ Backend moved successfully"
             else
               echo "⚠️ Backend not found, skipping..."
@@ -166,14 +182,13 @@ jobs:
               
               # Check if .env file exists
               if [ ! -f ".env" ]; then
-                echo "⚠️ .env file not found! Creating template..."
-                echo "# Database Configuration" > .env
-                echo "DATABASE_URL=your_database_url_here" >> .env
-                echo "NODE_ENV=production" >> .env
-                echo "" >> .env
-                echo "⚠️ Please update .env file with your actual DATABASE_URL!"
+                echo "⚠️ .env file not found!"
+                # Don't create template - let user know they need to add it manually
+                echo "⚠️ WARNING: .env file is missing!"
+                echo "⚠️ Please create .env file manually on the server with DATABASE_URL and other required variables"
+                echo "⚠️ The deployment will continue but the application may not work without .env"
               else
-                echo "✅ .env file exists"
+                echo "✅ .env file exists and will be preserved"
               fi
               
               npm ci --only=production || npm install --only=production
