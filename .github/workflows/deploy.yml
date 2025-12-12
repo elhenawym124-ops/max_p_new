@@ -7,7 +7,7 @@ on:
   workflow_dispatch: # للسماح بالتشغيل اليدوي
 
 env:
-  NODE_VERSION: '18'
+  NODE_VERSION: '20'
 
 jobs:
   deploy:
@@ -30,7 +30,8 @@ jobs:
       # Build Frontend
       - name: Install Frontend Dependencies
         working-directory: ./frontend
-        run: npm ci
+        run: |
+          npm ci || npm install
         continue-on-error: false
 
       - name: Build Frontend
@@ -43,7 +44,8 @@ jobs:
       # Build Backend (if needed)
       - name: Install Backend Dependencies
         working-directory: ./backend
-        run: npm ci --only=production
+        run: |
+          npm ci --only=production || npm install --only=production
         continue-on-error: false
 
       # Verify secrets exist
