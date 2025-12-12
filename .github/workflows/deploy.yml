@@ -145,8 +145,8 @@ jobs:
             NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
             if [ "$NODE_VERSION" -lt 20 ]; then
               echo "⚠️ Node.js version is less than 20, updating..."
-              curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-              apt-get install -y nodejs
+              curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+              sudo apt-get install -y nodejs
               echo "✅ Node.js updated to version: $(node -v)"
             else
               echo "✅ Node.js version is OK: $(node -v)"
