@@ -180,15 +180,18 @@ jobs:
               echo "📦 Installing backend dependencies..."
               cd /var/www/backend2
               
-              # Check if .env file exists
+              # Check if .env file exists and is valid
               if [ ! -f ".env" ]; then
                 echo "⚠️ .env file not found!"
-                # Don't create template - let user know they need to add it manually
                 echo "⚠️ WARNING: .env file is missing!"
                 echo "⚠️ Please create .env file manually on the server with DATABASE_URL and other required variables"
                 echo "⚠️ The deployment will continue but the application may not work without .env"
+              elif grep -q "your_database_url_here" .env 2>/dev/null; then
+                echo "⚠️ WARNING: .env file contains placeholder value 'your_database_url_here'"
+                echo "⚠️ Please update DATABASE_URL in .env file with your actual database URL"
+                echo "⚠️ Current .env file will be preserved but needs to be updated manually"
               else
-                echo "✅ .env file exists and will be preserved"
+                echo "✅ .env file exists and appears to be configured"
               fi
               
               npm ci --only=production || npm install --only=production
