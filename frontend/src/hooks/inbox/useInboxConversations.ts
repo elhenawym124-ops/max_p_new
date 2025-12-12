@@ -97,7 +97,7 @@ const parseMessage = (msg: any): Message => {
 };
 
 export const useInboxConversations = () => {
-    const { user } = useAuth();
+    const { user: _user } = useAuth();
     const { companyId } = useCompany();
 
     const [conversations, setConversations] = useState<InboxConversation[]>([]);
@@ -122,7 +122,7 @@ export const useInboxConversations = () => {
     const [apiCounts, setApiCounts] = useState<{ total: number; unreplied: number }>({ total: 0, unreplied: 0 });
 
     // Load conversations
-    const loadConversations = useCallback(async (pageNum = 1, append = false, tab: string = 'all') => {
+    const loadConversations = useCallback(async (pageNum = 1, append = false, tab: string = 'all', search?: string) => {
         if (!companyId) return;
 
         try {
@@ -137,7 +137,8 @@ export const useInboxConversations = () => {
                     companyId,
                     limit: tab === 'unreplied' ? 1000 : 50, // Fetch all unreplied conversations, limit others for performance
                     page: pageNum,
-                    tab: tab
+                    tab: tab,
+                    ...(search && search.trim() ? { search: search.trim() } : {}) // 🆕 Add search parameter
                 }
             });
 
@@ -333,6 +334,9 @@ export const useInboxConversations = () => {
     const selectConversation = useCallback(async (conversation: InboxConversation | null) => {
         setSelectedConversation(conversation);
         if (conversation) {
+            // 🆕 Save selected conversation ID to localStorage for persistence after refresh
+            localStorage.setItem('selectedConversationId', conversation.id);
+            
             loadMessages(conversation.id);
             // 🔧 FIX: Always mark conversation as read when opened (even if unreadCount is 0, to sync with backend)
             // This ensures backend state is updated and unreadCount is recalculated
@@ -349,6 +353,8 @@ export const useInboxConversations = () => {
                 console.error('Failed to mark conversation as read:', error);
             }
         } else {
+            // 🆕 Clear saved conversation ID when deselecting
+            localStorage.removeItem('selectedConversationId');
             setMessages([]);
             currentConversationIdRef.current = null;
         }
@@ -380,6 +386,22 @@ export const useInboxConversations = () => {
         // We let the component trigger the first load to control the tab
     }, []);
 
+    // 🆕 Restore selected conversation from localStorage after conversations are loaded
+    const restoredRef = useRef(false);
+    useEffect(() => {
+        if (restoredRef.current || conversations.length === 0 || selectedConversation) return;
+        
+        const savedConversationId = localStorage.getItem('selectedConversationId');
+        if (savedConversationId) {
+            const savedConversation = conversations.find(c => c.id === savedConversationId);
+            if (savedConversation) {
+                console.log('🔄 Restoring saved conversation:', savedConversationId);
+                selectConversation(savedConversation);
+                restoredRef.current = true;
+            }
+        }
+    }, [conversations, selectedConversation, selectConversation]);
+
     // Selection state
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -402,8 +424,36 @@ export const useInboxConversations = () => {
 
     const addMessage = useCallback((newMessage: any) => {
         setMessages(prev => {
+            // Check if message already exists by ID
             if (prev.some(m => m.id === newMessage.id)) return prev;
+            
             const formatted = parseMessage(newMessage);
+            
+            // 🆕 Check for optimistic message with same content (temp_ ID)
+            // If we find a temp message with same content, replace it with real message
+            const tempIndex = prev.findIndex(m => 
+                m.id.startsWith('temp_') && 
+                m.content === formatted.content &&
+                !m.isFromCustomer
+            );
+            
+            if (tempIndex !== -1) {
+                // Replace temp message with real message
+                const updated = [...prev];
+                updated[tempIndex] = formatted;
+                return updated;
+            }
+            
+            // 🆕 Also check if same content was sent within last 5 seconds (duplicate prevention)
+            const now = new Date().getTime();
+            const isDuplicate = prev.some(m => 
+                m.content === formatted.content &&
+                !m.isFromCustomer &&
+                (now - new Date(m.timestamp).getTime()) < 5000
+            );
+            
+            if (isDuplicate) return prev;
+            
             return [...prev, formatted];
         });
     }, []);
@@ -414,6 +464,32 @@ export const useInboxConversations = () => {
             conv.id === selectedConversation?.id ? { ...conv, ...updates } : conv
         ));
     }, [selectedConversation?.id]);
+
+    // 🆕 Add a single conversation to the list (for URL loading)
+    const addConversationToList = useCallback((conversation: InboxConversation) => {
+        setConversations(prev => {
+            // Check if conversation already exists
+            if (prev.some(c => c.id === conversation.id)) {
+                // Update existing conversation
+                return prev.map(c => c.id === conversation.id ? conversation : c);
+            }
+            // Add to beginning of list
+            return [conversation, ...prev];
+        });
+    }, []);
+
+    // 🆕 Update messages status to 'read' (for read receipts)
+    const markMessagesAsRead = useCallback((watermark: number) => {
+        setMessages(prev => prev.map(msg => {
+            // Only update outgoing messages (not from customer) that are sent/delivered
+            if (!msg.isFromCustomer && 
+                (msg.status === 'sent' || msg.status === 'delivered') &&
+                new Date(msg.timestamp).getTime() <= watermark) {
+                return { ...msg, status: 'read' as const };
+            }
+            return msg;
+        }));
+    }, []);
 
     return {
         conversations,
@@ -435,6 +511,10 @@ export const useInboxConversations = () => {
         toggleSelection,
         selectAll,
         clearSelection,
-        apiCounts
+        apiCounts,
+        // 🆕 Add conversation to list
+        addConversationToList,
+        // 🆕 Mark messages as read (for read receipts)
+        markMessagesAsRead
     };
 };

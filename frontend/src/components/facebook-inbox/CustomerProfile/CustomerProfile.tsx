@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { User, Phone, Mail, Clock, ShoppingBag, Activity, Calendar, RefreshCw } from 'lucide-react';
+import { User, Phone, Mail, Clock, ShoppingBag, Activity, Calendar, RefreshCw, Copy, Check } from 'lucide-react';
+import { NoSymbolIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import { format } from 'date-fns';
 import { arSA } from 'date-fns/locale';
 import { useCustomerProfile } from '../../../hooks/inbox/useCustomerProfile';
@@ -21,6 +22,28 @@ interface CustomerProfileProps {
     currentAssigneeName?: string | null;
     onAssign?: (userId: string | null) => void;
     disabled?: boolean;
+    // 🆕 Open Conversation Callback
+    onOpenConversation?: (conversationId: string) => void;
+    // 🆕 Block Customer Props
+    isBlocked?: boolean;
+    checkingBlockStatus?: boolean;
+    blocking?: boolean;
+    showBlockModal?: boolean;
+    blockReason?: string;
+    onBlockClick?: () => void;
+    onUnblockClick?: () => void;
+    onBlockReasonChange?: (reason: string) => void;
+    onBlockConfirm?: () => void;
+    onBlockCancel?: () => void;
+    // 🆕 Open Conversation Callback (deprecated - using copy instead)
+    onOpenConversation?: (conversationId: string) => void;
+    // 🆕 Sound & Notifications Props
+    soundEnabled?: boolean;
+    notificationsEnabled?: boolean;
+    onSoundToggle?: () => void;
+    onNotificationsToggle?: () => void;
+    // 🆕 Copy Conversation Link
+    onCopyConversationLink?: (conversationId: string) => void;
 }
 
 type Tab = 'info' | 'orders' | 'timeline';
@@ -34,8 +57,29 @@ const CustomerProfile: React.FC<CustomerProfileProps> = ({
     currentAssignee,
     currentAssigneeName,
     onAssign,
-    disabled = false
+    disabled = false,
+    onOpenConversation,
+    // 🆕 Block Customer
+    isBlocked = false,
+    checkingBlockStatus = false,
+    blocking = false,
+    showBlockModal = false,
+    blockReason = '',
+    onBlockClick,
+    onUnblockClick,
+    onBlockReasonChange,
+    onBlockConfirm,
+    onBlockCancel,
+    // 🆕 Sound & Notifications
+    soundEnabled = true,
+    notificationsEnabled = true,
+    onSoundToggle,
+    onNotificationsToggle,
+    // 🆕 Copy Conversation Link
+    onCopyConversationLink
 }) => {
+    // 🆕 State for copy feedback
+    const [copiedId, setCopiedId] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<Tab>('timeline');
     const [syncingMessages, setSyncingMessages] = useState(false);
     const [syncMessage, setSyncMessage] = useState<string | null>(null);
@@ -137,7 +181,7 @@ const CustomerProfile: React.FC<CustomerProfileProps> = ({
 
                 {/* Status & Assignment - moved from header */}
                 {(onStatusChange || onAssign) && (
-                    <div className="px-4 pt-4 border-t border-gray-100 space-y-2">
+                    <div className="px-4 pt-4 border-t border-gray-100 flex items-center justify-center gap-3 flex-wrap">
                         {onStatusChange && (
                             <StatusDropdown
                                 currentStatus={currentStatus || conversation.status}
@@ -152,6 +196,77 @@ const CustomerProfile: React.FC<CustomerProfileProps> = ({
                                 onAssign={onAssign}
                                 disabled={disabled}
                             />
+                        )}
+                    </div>
+                )}
+
+                {/* 🆕 Sound & Notifications Controls */}
+                {(onSoundToggle || onNotificationsToggle) && (
+                    <div className="px-4 pt-3 border-t border-gray-100 flex items-center justify-center gap-2">
+                        {onSoundToggle && (
+                            <button
+                                onClick={onSoundToggle}
+                                className={`p-2 rounded-full hover:bg-gray-100 transition-colors ${soundEnabled ? 'text-blue-600' : 'text-gray-400'}`}
+                                title={soundEnabled ? 'كتم الصوت' : 'تفعيل الصوت'}
+                            >
+                                {soundEnabled ? (
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M3 9v6h4l5 5V4c0-1.1.9-2 2-2h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9zm14 11V5h-2v15h2zm-4.5-7h-2v2h2v-2z" />
+                                    </svg>
+                                ) : (
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
+                                    </svg>
+                                )}
+                            </button>
+                        )}
+
+                        {onNotificationsToggle && (
+                            <button
+                                onClick={onNotificationsToggle}
+                                className={`p-2 rounded-full hover:bg-gray-100 transition-colors ${notificationsEnabled ? 'text-blue-600' : 'text-gray-400'}`}
+                                title={notificationsEnabled ? 'كتم الإشعارات' : 'تفعيل الإشعارات'}
+                            >
+                                {notificationsEnabled ? (
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" />
+                                    </svg>
+                                ) : (
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M20 18.69L7.84 6.14 5.27 3.49 4 4.76l2.8 2.8v.01c-.52.99-.8 2.16-.8 3.42v5l-2 2v1h13.73l2 2L21 19.73l-1-1.04zM12 22c1.11 0 2-.89 2-2h-4c0 1.11.89 2 2 2zm4-7.32V11c0-2.76-1.46-5.02-4-5.42V4.5c0-.83-.67-1.5-1.5-1.5S9 3.67 9 4.5v1.08c-.14.04-.28.08-.42.12L16 13.68z" />
+                                    </svg>
+                                )}
+                            </button>
+                        )}
+                    </div>
+                )}
+
+                {/* 🆕 Block/Unblock Customer Button */}
+                {conversation.pageId && (onBlockClick || onUnblockClick) && (
+                    <div className="px-4 pt-3 border-t border-gray-100">
+                        {checkingBlockStatus ? (
+                            <div className="flex items-center justify-center py-2">
+                                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-600"></div>
+                            </div>
+                        ) : isBlocked ? (
+                            <button
+                                onClick={onUnblockClick}
+                                disabled={blocking}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-2 text-green-600 hover:text-green-700 rounded-lg hover:bg-green-50 border border-green-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                title="إلغاء حظر العميل على الصفحة"
+                            >
+                                <CheckCircleIcon className="w-5 h-5" />
+                                <span className="text-sm font-medium">إلغاء الحظر</span>
+                            </button>
+                        ) : (
+                            <button
+                                onClick={onBlockClick}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-2 text-red-600 hover:text-red-700 rounded-lg hover:bg-red-50 border border-red-200 transition-colors"
+                                title="حظر العميل على الصفحة"
+                            >
+                                <NoSymbolIcon className="w-5 h-5" />
+                                <span className="text-sm font-medium">حظر العميل</span>
+                            </button>
                         )}
                     </div>
                 )}
@@ -386,21 +501,79 @@ const CustomerProfile: React.FC<CustomerProfileProps> = ({
                                         <p>لا يوجد نشاط مسجل</p>
                                     </div>
                                 ) : (
-                                    activities.map((activity) => (
-                                        <div key={activity.id} className="relative pr-6">
-                                            <div className="absolute -right-[29px] top-1 w-3 h-3 rounded-full bg-blue-400 border-2 border-white ring-2 ring-gray-100"></div>
-                                            <p className="text-sm font-medium text-gray-800">{activity.description}</p>
-                                            <p className="text-xs text-gray-500 mt-1">
-                                                {format(new Date(activity.createdAt), 'dd MMM, HH:mm', { locale: arSA })}
-                                            </p>
-                                        </div>
-                                    ))
+                                    activities.map((activity) => {
+                                        // 🆕 Extract conversationId from metadata if available
+                                        let conversationId: string | null = null;
+                                        if (activity.metadata) {
+                                            try {
+                                                const metadata = typeof activity.metadata === 'string' 
+                                                    ? JSON.parse(activity.metadata) 
+                                                    : activity.metadata;
+                                                conversationId = metadata.conversationId || metadata.conversation?.id || null;
+                                            } catch (e) {
+                                                // Ignore parse errors
+                                            }
+                                        }
+
+                                        return (
+                                            <div key={activity.id} className="relative pr-6">
+                                                <div className="absolute -right-[29px] top-1 w-3 h-3 rounded-full bg-blue-400 border-2 border-white ring-2 ring-gray-100"></div>
+                                                <div>
+                                                    <p className="text-sm font-medium text-gray-800">{activity.description}</p>
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        {format(new Date(activity.createdAt), 'dd MMM, HH:mm', { locale: arSA })}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        );
+                                    })
                                 )}
                             </div>
                         )}
                     </>
                 )}
             </div>
+
+            {/* 🆕 Block Customer Modal */}
+            {showBlockModal && onBlockConfirm && onBlockCancel && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+                        <h3 className="text-lg font-semibold mb-4">حظر العميل على صفحة الفيس بوك</h3>
+                        <p className="text-sm text-gray-600 mb-4">
+                            سيتم حظر هذا العميل على صفحة الفيس بوك المحددة ولن يتم استقبال رسائله.
+                        </p>
+
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                سبب الحظر (اختياري)
+                            </label>
+                            <textarea
+                                value={blockReason}
+                                onChange={(e) => onBlockReasonChange?.(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                rows={3}
+                                placeholder="أدخل سبب الحظر..."
+                            />
+                        </div>
+
+                        <div className="flex justify-end space-x-2">
+                            <button
+                                onClick={onBlockCancel}
+                                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                            >
+                                إلغاء
+                            </button>
+                            <button
+                                onClick={onBlockConfirm}
+                                disabled={blocking}
+                                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {blocking ? 'جاري الحظر...' : 'تأكيد الحظر'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

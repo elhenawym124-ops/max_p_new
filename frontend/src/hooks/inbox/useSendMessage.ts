@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { apiClient } from '../../services/apiClient';
 import { uploadService } from '../../services/uploadService';
 
@@ -21,19 +21,45 @@ interface Message {
 export const useSendMessage = () => {
     const [sending, setSending] = useState(false);
     const [uploadingFile, setUploadingFile] = useState(false);
+    
+    // 🆕 Track pending messages count for optimistic UI
+    const pendingMessagesRef = useRef(0);
 
-    // Send text message
+    // 🆕 Send text message with Optimistic UI support
     const sendTextMessage = useCallback(async (
         conversationId: string,
         content: string,
         companyId: string,
-        replyTo?: any
+        replyTo?: any,
+        onOptimisticMessage?: (message: Message) => void,
+        onMessageSent?: (tempId: string, realMessage: Message) => void,
+        onMessageError?: (tempId: string, error: string) => void
     ): Promise<Message | null> => {
         if (!content.trim()) return null;
 
-        try {
-            setSending(true);
+        // 🆕 Create optimistic message with temporary ID
+        const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const optimisticMessage: Message = {
+            id: tempId,
+            content: content.trim(),
+            senderId: 'currentUser',
+            senderName: 'أنت',
+            timestamp: new Date(),
+            type: 'text',
+            isFromCustomer: false,
+            status: 'sending',
+            conversationId,
+        };
 
+        // 🆕 Immediately show optimistic message
+        if (onOptimisticMessage) {
+            onOptimisticMessage(optimisticMessage);
+        }
+
+        pendingMessagesRef.current++;
+        setSending(pendingMessagesRef.current > 0);
+
+        try {
             const response = await apiClient.post(`/conversations/${conversationId}/messages`, {
                 message: content.trim(),
                 type: 'text',
@@ -56,12 +82,22 @@ export const useSendMessage = () => {
                 conversationId: data.conversationId,
             };
 
+            // 🆕 Update optimistic message with real data
+            if (onMessageSent) {
+                onMessageSent(tempId, message);
+            }
+
             return message;
         } catch (error: any) {
             console.error('❌ Error sending message:', error);
+            // 🆕 Mark optimistic message as error
+            if (onMessageError) {
+                onMessageError(tempId, error.message || 'فشل في إرسال الرسالة');
+            }
             throw new Error(error.message || 'فشل في إرسال الرسالة');
         } finally {
-            setSending(false);
+            pendingMessagesRef.current--;
+            setSending(pendingMessagesRef.current > 0);
         }
     }, []);
 
@@ -69,7 +105,7 @@ export const useSendMessage = () => {
     const sendFileMessage = useCallback(async (
         conversationId: string,
         file: File,
-        companyId: string
+        _companyId: string
     ): Promise<Message | null> => {
         try {
             setUploadingFile(true);

@@ -58,23 +58,33 @@ const mediaUpload = multer({
   }
 });
 
+// ⚠️ IMPORTANT: Static routes MUST come BEFORE dynamic /:id routes to avoid conflicts
+
+// 🆕 Bulk Update Route (MUST be before /:id routes)
+router.put('/bulk-update', verifyToken.authenticateToken, conversationController.bulkUpdateConversations);
+
+// 🆕 Statistics Route (MUST be before /:id routes)
+router.get('/stats/daily', verifyToken.authenticateToken, conversationController.getConversationStats);
+
+// Posts routes (must be before /:id routes to avoid conflicts)
+router.get('/posts/ai-identification', verifyToken.authenticateToken, conversationController.getPostsAITracking);
+router.get('/posts/:postId/details', verifyToken.authenticateToken, conversationController.getPostDetails);
+router.put('/posts/:postId/featured-product', verifyToken.authenticateToken, conversationController.updatePostFeaturedProduct);
+
+// Dynamic /:id routes (MUST come AFTER static routes)
 router.delete('/:id', conversationController.deleteConverstation);
-router.post('/:id/messages', verifyToken.authenticateToken, verifyToken.requireCompanyAccess, conversationController.postMessageConverstation); // ✅ FIX: إضافة middleware المصادقة
+router.post('/:id/messages', verifyToken.authenticateToken, verifyToken.requireCompanyAccess, conversationController.postMessageConverstation);
 router.post('/:id/upload', verifyToken.authenticateToken, conversationUpload.array('files', 10), conversationController.uploadFile);
 router.post('/:id/send-existing-image', verifyToken.authenticateToken, conversationController.sendExistingImage);
 router.post('/:id/reply', conversationController.postReply);
 router.get('/:id/health-check', conversationController.checkHealth);
 router.post('/:id/read', verifyToken.authenticateToken, conversationController.markConversationAsRead);
 router.put('/:id/mark-unread', verifyToken.authenticateToken, conversationController.markConversationAsUnread);
-// Posts routes (must be before /:id routes to avoid conflicts)
-router.get('/posts/ai-identification', verifyToken.authenticateToken, conversationController.getPostsAITracking); // 🆕 Get posts with AI identification tracking
-router.get('/posts/:postId/details', verifyToken.authenticateToken, conversationController.getPostDetails); // 🆕 Get post details from Facebook
-router.put('/posts/:postId/featured-product', verifyToken.authenticateToken, conversationController.updatePostFeaturedProduct); // 🆕 Update featured product for a post
 
 // Conversation routes
-router.get('/:id/post-details', verifyToken.authenticateToken, conversationController.getConversationPostDetails); // 🆕 Get post details (lazy loading)
+router.get('/:id/post-details', verifyToken.authenticateToken, conversationController.getConversationPostDetails); // Get post details (lazy loading)
 
-// 🆕 New GET routes
+// New GET routes
 router.get('/', verifyToken.authenticateToken, conversationController.getConversations);
 router.get('/:id', verifyToken.authenticateToken, conversationController.getConversation);
 router.put('/:id', verifyToken.authenticateToken, verifyToken.requireCompanyAccess, conversationController.updateConversation);
@@ -89,12 +99,6 @@ router.put('/:id/messages/:messageId/reaction', verifyToken.authenticateToken, c
 router.post('/:id/snooze', verifyToken.authenticateToken, conversationController.snoozeConversation);
 router.delete('/:id/messages/:messageId', verifyToken.authenticateToken, conversationController.deleteMessage);
 router.post('/:id/messages/location', verifyToken.authenticateToken, conversationController.sendLocationMessage);
-
-// 🆕 Bulk Update Route
-router.put('/bulk-update', verifyToken.authenticateToken, conversationController.bulkUpdateConversations);
-
-// 🆕 Statistics Route
-router.get('/stats/daily', verifyToken.authenticateToken, conversationController.getConversationStats);
 
 // 🆕 Sync Facebook Messages Route
 router.post('/:id/sync-messages', verifyToken.authenticateToken, verifyToken.requireCompanyAccess, conversationController.syncFacebookMessages);

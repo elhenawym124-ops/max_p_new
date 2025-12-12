@@ -225,6 +225,11 @@ const postWebhook = async (req, res) => {
       entry.messaging?.some(msg => msg.referral)
     );
 
+    // 🆕 Check for read receipts (message_reads)
+    const hasReadReceipts = body?.entry?.some(entry =>
+      entry.messaging?.some(msg => msg.read?.watermark)
+    );
+
     if (hasReferralAnywhere) {
       console.log('');
       console.log('🔍 [WEBHOOK-DEBUG] ==================== REFERRAL DETECTED IN WEBHOOK ====================');
@@ -233,9 +238,9 @@ const postWebhook = async (req, res) => {
       console.log('');
     }
 
-    // Skip logging for non-message events (delivery, read, etc.)
-    // BUT: Don't skip if there's a referral (even without message text)
-    if (!hasActualMessages && !hasFeedEvents && !hasReferralAnywhere) {
+    // Skip logging for non-message events (delivery, etc.)
+    // BUT: Don't skip if there's a referral or read receipts
+    if (!hasActualMessages && !hasFeedEvents && !hasReferralAnywhere && !hasReadReceipts) {
       return;
     }
 
@@ -286,6 +291,12 @@ const postWebhook = async (req, res) => {
               // ⚡ Process messages in parallel for better performance
               const messagePromises = entry.messaging.map(async (webhookEvent) => {
                 try {
+
+                  // 🆕 Handle read receipts (message_reads)
+                  if (webhookEvent.read?.watermark) {
+                    await handleReadReceipt(webhookEvent, entry.id);
+                    return;
+                  }
 
                   // Check if this is an echo message (sent from the page itself)
                   const isEchoMessage = webhookEvent.message?.is_echo;
@@ -1214,4 +1225,76 @@ function invalidateAISettingsCache(companyId) {
   }
 }
 
-module.exports = { getWebhook, postWebhook, markMessageAsAI, invalidateAISettingsCache }
+// 🆕 Handle read receipts (message_reads) from Facebook
+async function handleReadReceipt(webhookEvent, pageId) {
+  try {
+    const senderId = webhookEvent.sender?.id; // Customer who read the messages
+    const watermark = webhookEvent.read?.watermark; // Timestamp of last read message
+    
+    if (!senderId || !watermark) {
+      return;
+    }
+
+    console.log(`👁️ [READ-RECEIPT] Customer ${senderId} read messages up to ${new Date(watermark)}`);
+
+    // Get the Facebook page to find companyId
+    const facebookPage = await getCachedFacebookPage(pageId);
+    if (!facebookPage || !facebookPage.companyId) {
+      return;
+    }
+
+    // Find the conversation for this customer
+    const conversation = await safeQuery(async () => {
+      const prisma = getPrisma();
+      return await prisma.conversation.findFirst({
+        where: {
+          companyId: facebookPage.companyId,
+          customer: {
+            facebookId: senderId
+          }
+        },
+        select: { id: true }
+      });
+    }, 1);
+
+    if (!conversation) {
+      return;
+    }
+
+    // Update all messages sent before watermark to 'read' status
+    const updatedCount = await safeQuery(async () => {
+      const prisma = getPrisma();
+      const result = await prisma.message.updateMany({
+        where: {
+          conversationId: conversation.id,
+          isFromCustomer: false,
+          status: { in: ['sent', 'delivered'] },
+          createdAt: { lte: new Date(watermark) }
+        },
+        data: {
+          status: 'read'
+        }
+      });
+      return result.count;
+    }, 1);
+
+    if (updatedCount > 0) {
+      console.log(`✅ [READ-RECEIPT] Marked ${updatedCount} messages as read for conversation ${conversation.id}`);
+
+      // Emit socket event to update frontend
+      const io = socketService.getIO();
+      if (io) {
+        io.to(`company_${facebookPage.companyId}`).emit('messages_read', {
+          conversationId: conversation.id,
+          customerId: senderId,
+          watermark: watermark,
+          readAt: new Date()
+        });
+      }
+    }
+  } catch (error) {
+    console.error('❌ [READ-RECEIPT] Error handling read receipt:', error.message);
+  }
+}
+
+module.exports = { getWebhook, postWebhook, markMessageAsAI, invalidateAISettingsCache, handleReadReceipt };

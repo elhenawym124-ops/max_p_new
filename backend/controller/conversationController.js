@@ -3480,13 +3480,57 @@ const bulkUpdateConversations = async (req, res) => {
       });
     }
 
+    // 🔧 FIX: Map frontend fields to backend fields
+    const prismaUpdates = { ...updates };
+    
+    console.log(`🔧 [BULK-UPDATE] Original updates:`, JSON.stringify(updates));
+    
+    // Handle mark_done action (maps to status: RESOLVED)
+    // Frontend sends { mark_done: null } to mark conversations as done
+    if (prismaUpdates.hasOwnProperty('mark_done')) {
+      console.log(`🔧 [BULK-UPDATE] Converting mark_done to status: RESOLVED`);
+      prismaUpdates.status = 'RESOLVED';
+      delete prismaUpdates.mark_done;
+    }
+    
+    // Map frontend status values to backend enum values
+    if (prismaUpdates.status) {
+      const statusMap = {
+        'open': 'ACTIVE',
+        'pending': 'PENDING',
+        'resolved': 'RESOLVED',
+        'done': 'RESOLVED'
+      };
+      if (statusMap[prismaUpdates.status]) {
+        const originalStatus = prismaUpdates.status;
+        prismaUpdates.status = statusMap[prismaUpdates.status];
+        console.log(`🔧 [BULK-UPDATE] Mapped status ${originalStatus} to ${prismaUpdates.status}`);
+      } else {
+        // If it's already in uppercase format, keep it, otherwise try to uppercase
+        prismaUpdates.status = prismaUpdates.status.toUpperCase();
+      }
+    }
+    
+    // Map frontend field names to backend field names
+    if ('assignedTo' in prismaUpdates) {
+      prismaUpdates.assignedUserId = prismaUpdates.assignedTo;
+      delete prismaUpdates.assignedTo;
+    }
+    
+    // Map priority boolean to integer (2 = high, 1 = normal)
+    if ('priority' in prismaUpdates && typeof prismaUpdates.priority === 'boolean') {
+      prismaUpdates.priority = prismaUpdates.priority ? 2 : 1;
+    }
+
+    console.log(`🔧 [BULK-UPDATE] Final Prisma updates:`, JSON.stringify(prismaUpdates));
+
     // تحديث المحادثات
     const result = await getSharedPrismaClient().conversation.updateMany({
       where: {
         id: { in: conversationIds },
         companyId: companyId
       },
-      data: updates
+      data: prismaUpdates
     });
 
     // Invalidate cache for updated conversations

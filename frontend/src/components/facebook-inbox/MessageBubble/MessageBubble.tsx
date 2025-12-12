@@ -378,12 +378,16 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ message, onDelete, o
                             {formatTime(message.timestamp)}
                         </span>
                         {!isCustomer && (
-                            <span className="text-xs">
-                                {message.status === 'sending' && '⏳'}
-                                {message.status === 'sent' && '✓'}
-                                {message.status === 'delivered' && '✓✓'}
-                                {message.status === 'read' && '✓✓'}
-                                {message.status === 'error' && '❌'}
+                            <span className="text-xs flex items-center gap-0.5">
+                                {message.status === 'sending' && (
+                                    <span className="flex items-center gap-1 text-white/70">
+                                        <span className="animate-spin inline-block w-3 h-3 border border-white/50 border-t-white rounded-full"></span>
+                                    </span>
+                                )}
+                                {message.status === 'sent' && <span className="text-white/90">✓</span>}
+                                {message.status === 'delivered' && <span className="text-white">✓✓</span>}
+                                {message.status === 'read' && <span className="text-blue-200">✓✓</span>}
+                                {message.status === 'error' && <span className="text-red-300">❌</span>}
                             </span>
                         )}
                     </div>

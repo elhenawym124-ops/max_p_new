@@ -100,18 +100,20 @@ export const useConversationActions = () => {
     // Bulk update
     const bulkUpdate = useCallback(async (
         conversationIds: string[],
-        action: 'mark_done' | 'assign' | 'status' | 'add_tags',
+        action: string,
         value: any,
-        companyId: string
+        _companyId?: string
     ) => {
         try {
             setUpdating(true);
 
+            // Build updates object based on action
+            const updates: Record<string, any> = {};
+            updates[action] = value;
+
             const response = await apiClient.put('/conversations/bulk-update', {
-                ids: conversationIds,
-                action,
-                value,
-                companyId
+                conversationIds,
+                updates
             });
 
             return response.data;
