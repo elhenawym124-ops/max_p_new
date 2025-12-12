@@ -203,23 +203,33 @@ const postMessageConverstation = async (req, res) => {
     // ⚡ OPTIMIZATION: Parallel DB queries to reduce latency
     const senderId = req.user?.userId || req.user?.id;
 
+    // 🔧 FIX: Get Prisma client early
+    const prisma = getSharedPrismaClient();
+    if (!prisma) {
+      throw new Error('Prisma client is not initialized');
+    }
+
     const [conversation, user] = await Promise.all([
-      getSharedPrismaClient().conversation.findUnique({
-        where: { id },
-        include: {
-          customer: true
-        }
-      }),
+      executeWithRetry(async () => {
+        return await prisma.conversation.findUnique({
+          where: { id },
+          include: {
+            customer: true
+          }
+        });
+      }, 3),
       // جلب معلومات المستخدم فقط إذا كان موجود
-      senderId ? getSharedPrismaClient().user.findUnique({
-        where: { id: senderId },
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true
-        }
-      }) : Promise.resolve(null)
+      senderId ? executeWithRetry(async () => {
+        return await prisma.user.findUnique({
+          where: { id: senderId },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true
+          }
+        });
+      }, 3) : Promise.resolve(null)
     ]);
 
     // ⚡ Parse metadata once and reuse
@@ -249,9 +259,20 @@ const postMessageConverstation = async (req, res) => {
       metadata: JSON.stringify(conversationMetadata),
       updatedAt: new Date(),
       // 🆕 FIX: Mark as replied (not from customer) so it disappears from "unreplied" tab
-      lastMessageIsFromCustomer: false,
-      unreadCount: 0 // Reset unread count when we reply
+      lastMessageIsFromCustomer: false
     };
+
+    // 🔧 FIX: Calculate actual unread count instead of resetting to 0
+    const actualUnreadCount = await executeWithRetry(async () => {
+      return await prisma.message.count({
+        where: {
+          conversationId: id,
+          isFromCustomer: true,
+          isRead: false
+        }
+      });
+    }, 3);
+    conversationUpdateData.unreadCount = actualUnreadCount;
 
     // Add lastMessage fields if message is not empty
     if (message && message.trim() !== '') {
@@ -260,10 +281,13 @@ const postMessageConverstation = async (req, res) => {
     }
 
     // Single update query instead of 2-3 separate ones
-    await getSharedPrismaClient().conversation.update({
-      where: { id },
-      data: conversationUpdateData
-    });
+    // 🔧 FIX: Use executeWithRetry to handle connection errors
+    const updatedConversation = await executeWithRetry(async () => {
+      return await prisma.conversation.update({
+        where: { id },
+        data: conversationUpdateData
+      });
+    }, 3);
 
     // ⚡ OPTIMIZATION: Cache invalidation moved after update
     if (conversation && conversation.companyId) {
@@ -274,27 +298,30 @@ const postMessageConverstation = async (req, res) => {
     // 💾 حفظ الرسالة فوراً في قاعدة البيانات (INSTANT SAVE)
     let savedMessage = null;
     try {
-      savedMessage = await getSharedPrismaClient().message.create({
-        data: {
-          content: message,
-          type: 'TEXT',
-          conversationId: id,
-          isFromCustomer: false,
-          senderId: senderId, // معرف الموظف
-          metadata: JSON.stringify({
-            platform: conversation.channel ? conversation.channel.toLowerCase() : 'facebook',
-            source: 'manual_reply',
-            employeeId: senderId,
-            employeeName: senderName,
-            isFacebookReply: conversation.channel !== 'TELEGRAM',
-            isTelegramReply: conversation.channel === 'TELEGRAM',
-            timestamp: new Date(),
-            instantSave: true, // علامة لتحديد أن هذه الرسالة تم حفظها فوراً
-            ...(replyTo ? { replyTo } : {}) // Add replyTo logic
-          }),
-          createdAt: new Date()
-        }
-      });
+      // 🔧 FIX: Use executeWithRetry to handle connection errors
+      savedMessage = await executeWithRetry(async () => {
+        return await prisma.message.create({
+          data: {
+            content: message,
+            type: 'TEXT',
+            conversationId: id,
+            isFromCustomer: false,
+            senderId: senderId, // معرف الموظف
+            metadata: JSON.stringify({
+              platform: conversation.channel ? conversation.channel.toLowerCase() : 'facebook',
+              source: 'manual_reply',
+              employeeId: senderId,
+              employeeName: senderName,
+              isFacebookReply: conversation.channel !== 'TELEGRAM',
+              isTelegramReply: conversation.channel === 'TELEGRAM',
+              timestamp: new Date(),
+              instantSave: true, // علامة لتحديد أن هذه الرسالة تم حفظها فوراً
+              ...(replyTo ? { replyTo } : {}) // Add replyTo logic
+            }),
+            createdAt: new Date()
+          }
+        });
+      }, 3);
 
       console.log(`💾 [INSTANT-SAVE] Message saved immediately: ${savedMessage.id}`);
 
@@ -587,21 +614,41 @@ const uploadFile = async (req, res) => {
 
     //console.log(`📎 ${files.length} file(s) uploaded for conversation ${id}`);
 
+    // 🔧 FIX: Get Prisma client early
+    const prisma = getSharedPrismaClient();
+    if (!prisma) {
+      throw new Error('Prisma client is not initialized');
+    }
+
     const uploadedFiles = [];
 
     // Process each file
     for (const file of files) {
       const fileUrl = `/uploads/conversations/${file.filename}`;
 
-      // 🔧 تحسين: استخدام ngrok URL إذا كان متاحاً
+      // 🔧 FIX: Use environment config to determine correct URL
+      // In production, use production domain. In development, Facebook can't access localhost,
+      // so we need to use production domain even in dev (files must be synced to production)
+      const envConfig = require('../config/environment');
       let fullUrl;
-      const ngrokUrl = 'https://www.mokhtarelhenawy.online';
-      if (ngrokUrl && ngrokUrl.startsWith('http')) {
-        // استخدام ngrok للصور ليتمكن Facebook من الوصول إليها
-        fullUrl = `${ngrokUrl}${fileUrl}`;
+      
+      if (envConfig.isProduction) {
+        // Production: Use production domain
+        fullUrl = `${envConfig.backendUrl}${fileUrl}`;
       } else {
-        // العودة للرابط المحلي العادي
-        fullUrl = `${req.protocol}://${req.get('host')}${fileUrl}`;
+        // Development: Use production domain for Facebook API access
+        // Note: Files must be accessible from production domain for Facebook to access them
+        // In development, you may need to sync files or use a tunnel (ngrok) for testing
+        const productionDomain = 'https://www.mokhtarelhenawy.online';
+        fullUrl = `${productionDomain}${fileUrl}`;
+        
+        // ⚠️ WARNING: In development, files uploaded locally won't be accessible from production domain
+        // For testing images in development, you need to either:
+        // 1. Sync files to production server
+        // 2. Use ngrok or similar tunnel to expose local files
+        // 3. Upload files directly to production storage (S3, etc.)
+        console.warn('⚠️ [DEV-UPLOAD] File uploaded in development mode. Facebook API will try to access:', fullUrl);
+        console.warn('⚠️ [DEV-UPLOAD] Make sure this file is accessible from production domain for Facebook to access it.');
       }
 
       // Determine message type
@@ -628,10 +675,12 @@ const uploadFile = async (req, res) => {
       let senderName = 'موظف';
 
       if (senderId) {
-        const user = await getSharedPrismaClient().user.findUnique({
-          where: { id: senderId },
-          select: { firstName: true, lastName: true, email: true }
-        });
+        const user = await executeWithRetry(async () => {
+          return await prisma.user.findUnique({
+            where: { id: senderId },
+            select: { firstName: true, lastName: true, email: true }
+          });
+        }, 3);
         if (user) {
           senderName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'موظف';
         }
@@ -640,7 +689,9 @@ const uploadFile = async (req, res) => {
       // 💾 حفظ الملف فوراً في قاعدة البيانات (INSTANT SAVE)
       let savedFileMessage = null;
       try {
-        savedFileMessage = await getSharedPrismaClient().message.create({
+        // 🔧 FIX: Use executeWithRetry to handle connection errors
+        savedFileMessage = await executeWithRetry(async () => {
+          return await prisma.message.create({
           data: {
             content: fullUrl,
             type: messageType,
@@ -663,6 +714,7 @@ const uploadFile = async (req, res) => {
             createdAt: new Date()
           }
         });
+      }, 3);
 
         console.log(`💾 [INSTANT-SAVE-FILE] ${messageType} saved immediately: ${savedFileMessage.id}`);
 
@@ -699,17 +751,20 @@ const uploadFile = async (req, res) => {
       }
 
       // Update conversation last message
-      await getSharedPrismaClient().conversation.update({
-        where: { id },
-        data: {
-          lastMessageAt: new Date(),
-          lastMessagePreview: messageType === 'IMAGE' ? '📷 صورة' : `📎 ${file.originalname}`,
-          updatedAt: new Date(),
-          // 🆕 FIX: Mark as replied
-          lastMessageIsFromCustomer: false,
-          unreadCount: 0
-        }
-      });
+      // 🔧 FIX: Use executeWithRetry to handle connection errors
+      await executeWithRetry(async () => {
+        return await prisma.conversation.update({
+          where: { id },
+          data: {
+            lastMessageAt: new Date(),
+            lastMessagePreview: messageType === 'IMAGE' ? '📷 صورة' : `📎 ${file.originalname}`,
+            updatedAt: new Date(),
+            // 🆕 FIX: Mark as replied
+            lastMessageIsFromCustomer: false,
+            unreadCount: 0
+          }
+        });
+      }, 3);
 
       // Add to uploaded files array with message ID
       uploadedFiles.push({
@@ -727,10 +782,12 @@ const uploadFile = async (req, res) => {
       let facebookMessageId = null; // Store Facebook message ID
       try {
         //console.log(`🔍 [FACEBOOK-FILE] Checking conversation ${id} for Facebook integration...`);
-        const conversation = await getSharedPrismaClient().conversation.findUnique({
-          where: { id },
-          include: { customer: true }
-        });
+        const conversation = await executeWithRetry(async () => {
+          return await prisma.conversation.findUnique({
+            where: { id },
+            include: { customer: true }
+          });
+        }, 3);
 
         // التحقق من وجود Facebook ID للعميل
         const facebookUserId = conversation?.customer?.facebookId;
@@ -803,16 +860,19 @@ const uploadFile = async (req, res) => {
                 // 🔄 تحديث الملف المحفوظ بـ Facebook Message ID
                 if (facebookMessageId && savedFileMessage) {
                   try {
-                    await getSharedPrismaClient().message.update({
-                      where: { id: savedFileMessage.id },
-                      data: {
-                        metadata: JSON.stringify({
-                          ...JSON.parse(savedFileMessage.metadata),
-                          facebookMessageId: facebookMessageId,
-                          sentToFacebook: true
-                        })
-                      }
-                    });
+                    // 🔧 FIX: Use executeWithRetry to handle connection errors
+                    await executeWithRetry(async () => {
+                      return await prisma.message.update({
+                        where: { id: savedFileMessage.id },
+                        data: {
+                          metadata: JSON.stringify({
+                            ...JSON.parse(savedFileMessage.metadata),
+                            facebookMessageId: facebookMessageId,
+                            sentToFacebook: true
+                          })
+                        }
+                      });
+                    }, 3);
                     console.log(`✅ [UPDATE-FILE] ${messageType} ${savedFileMessage.id} updated with Facebook ID: ${facebookMessageId}`);
                   } catch (updateError) {
                     console.error(`⚠️ [UPDATE-FILE] Failed to update ${messageType} with Facebook ID:`, updateError.message);
@@ -837,16 +897,18 @@ const uploadFile = async (req, res) => {
 
                 // Update conversation with error info for user experience
                 if (result.error === 'NO_MATCHING_USER') {
-                  await getSharedPrismaClient().conversation.update({
-                    where: { id: conversation.id },
-                    data: {
-                      metadata: JSON.stringify({
-                        facebookSendError: 'FACEBOOK_INTEGRATION_ERROR',
-                        facebookErrorMessage: 'حدث خطأ في التكامل مع فيسبوك',
-                        lastFacebookErrorAt: new Date().toISOString()
-                      })
-                    }
-                  });
+                  await executeWithRetry(async () => {
+                    return await prisma.conversation.update({
+                      where: { id: conversation.id },
+                      data: {
+                        metadata: JSON.stringify({
+                          facebookSendError: 'FACEBOOK_INTEGRATION_ERROR',
+                          facebookErrorMessage: 'حدث خطأ في التكامل مع فيسبوك',
+                          lastFacebookErrorAt: new Date().toISOString()
+                        })
+                      }
+                    });
+                  }, 3);
                 }
 
 
@@ -1335,13 +1397,21 @@ const markConversationAsRead = async (req, res) => {
 
     //console.log(`📖 [MARK-READ] Marking conversation ${id} as read for company ${companyId}`);
 
+    // 🔧 FIX: Get Prisma client early
+    const prisma = getSharedPrismaClient();
+    if (!prisma) {
+      throw new Error('Prisma client is not initialized');
+    }
+
     // Verify conversation belongs to this company
-    const conversation = await getSharedPrismaClient().conversation.findFirst({
-      where: {
-        id,
-        companyId
-      }
-    });
+    const conversation = await executeWithRetry(async () => {
+      return await prisma.conversation.findFirst({
+        where: {
+          id,
+          companyId
+        }
+      });
+    }, 3);
 
     if (!conversation) {
       return res.status(404).json({
@@ -1350,29 +1420,102 @@ const markConversationAsRead = async (req, res) => {
       });
     }
 
-    // Update all unread messages from customer to read
-    const result = await getSharedPrismaClient().message.updateMany({
-      where: {
-        conversationId: id,
-        isFromCustomer: true,
-        isRead: false
-      },
-      data: {
-        isRead: true,
-        readAt: new Date()
-      }
-    });
+    // 🔧 FIX: First check how many unread messages exist before updating
+    const unreadMessagesBefore = await executeWithRetry(async () => {
+      return await prisma.message.findMany({
+        where: {
+          conversationId: id,
+          isFromCustomer: true,
+          isRead: false
+        },
+        select: { id: true, content: true, createdAt: true }
+      });
+    }, 3);
 
-    //console.log(`✅ [MARK-READ] Marked ${result.count} messages as read in conversation ${id}`);
+    // Update all unread messages from customer to read
+    const result = await executeWithRetry(async () => {
+      return await prisma.message.updateMany({
+        where: {
+          conversationId: id,
+          isFromCustomer: true,
+          isRead: false
+        },
+        data: {
+          isRead: true,
+          readAt: new Date()
+        }
+      });
+    }, 3);
+
+    // 🔧 FIX: Always update unreadCount based on actual unread messages count
+    // This ensures unreadCount is always in sync with actual message state
+    const unreadCount = await executeWithRetry(async () => {
+      return await prisma.message.count({
+        where: {
+          conversationId: id,
+          isFromCustomer: true,
+          isRead: false
+        }
+      });
+    }, 3);
+
+    // 🔧 FIX: If conversation.unreadCount > 0 but no unread messages found,
+    // it means unreadCount is out of sync - force update to actual count
+    const actualUnreadCount = unreadCount;
+
+    // Also update lastMessageIsFromCustomer if all messages are read
+    // 🔧 FIX: Handle case where conversation has no messages
+    let lastMessage = null;
+    try {
+      lastMessage = await executeWithRetry(async () => {
+        return await prisma.message.findFirst({
+          where: { conversationId: id },
+          orderBy: { createdAt: 'desc' },
+          select: { isFromCustomer: true }
+        });
+      }, 3);
+    } catch (msgError) {
+      console.error('⚠️ [MARK-READ] Error fetching last message:', msgError.message);
+      // Continue without lastMessage - it's optional
+    }
+
+    // 🔧 FIX: Always update unreadCount and lastMessageIsFromCustomer to match actual state
+    // Update lastMessageIsFromCustomer based on the actual last message
+    const updateData = {
+      unreadCount: actualUnreadCount
+    };
+    
+    // Always update lastMessageIsFromCustomer based on the last message
+    if (lastMessage) {
+      updateData.lastMessageIsFromCustomer = lastMessage.isFromCustomer;
+    }
+    // If no messages exist, keep the current value (don't change it)
+    
+    await executeWithRetry(async () => {
+      return await prisma.conversation.update({
+        where: { id },
+        data: updateData
+      });
+    }, 3);
+
+    //console.log(`✅ [MARK-READ] Marked ${result.count} messages as read in conversation ${id}, unreadCount=${unreadCount}`);
 
     res.json({
       success: true,
       message: `تم تحديد ${result.count} رسالة كمقروءة`,
-      markedCount: result.count
+      markedCount: result.count,
+      unreadCount: actualUnreadCount,
+      // 🔧 FIX: Also return conversation data for frontend sync
+      conversation: {
+        id,
+        unreadCount: actualUnreadCount,
+        lastMessageIsFromCustomer: lastMessage ? lastMessage.isFromCustomer : null
+      }
     });
 
   } catch (error) {
     console.error('❌ [MARK-READ] Error marking conversation as read:', error);
+    
     res.status(500).json({
       success: false,
       error: 'خطأ في الخادم',
@@ -2307,6 +2450,7 @@ const getConversations = async (req, res) => {
 
     console.log('🔍 [GET-CONV] Final WHERE clause:', JSON.stringify(where, null, 2));
 
+    // 🔧 FIX: Get Prisma client early and use executeWithRetry
     const prisma = getSharedPrismaClient();
     if (!prisma) {
       throw new Error('Prisma client is not initialized');
@@ -2365,47 +2509,50 @@ const getConversations = async (req, res) => {
     const queryWhere = tabWhere;
 
     try {
-      conversations = await prisma.conversation.findMany({
-        where: queryWhere,
-        include: {
-          customer: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              email: true,
-              facebookId: true,
-              phone: true,
-              avatar: true
+      // 🔧 FIX: Use executeWithRetry to handle connection errors
+      conversations = await executeWithRetry(async () => {
+        return await prisma.conversation.findMany({
+          where: queryWhere,
+          include: {
+            customer: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                facebookId: true,
+                phone: true,
+                avatar: true
+              }
+            },
+            assignedUser: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                avatar: true
+              }
+            },
+            // 🆕 Include last message to check if from customer
+            messages: {
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+              select: {
+                isFromCustomer: true,
+                isRead: true,
+                content: true,
+                type: true
+              }
             }
           },
-          assignedUser: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              email: true,
-              avatar: true
-            }
+          orderBy: {
+            lastMessageAt: 'desc'
           },
-          // 🆕 Include last message to check if from customer
-          messages: {
-            orderBy: { createdAt: 'desc' },
-            take: 1,
-            select: {
-              isFromCustomer: true,
-              isRead: true,
-              content: true,
-              type: true
-            }
-          }
-        },
-        orderBy: {
-          lastMessageAt: 'desc'
-        },
-        skip: skip,
-        take: take
-      });
+          skip: skip,
+          take: take
+        });
+      }, 3);
       console.log(`✅ [GET-CONV] findMany success. Got ${conversations.length} records.`);
     } catch (dbErr) {
       console.error('❌ [GET-CONV] findMany FAILED:', dbErr);
@@ -2415,16 +2562,23 @@ const getConversations = async (req, res) => {
     // 🆕 Count for unreplied should use the same filter
     let unrepliedCount = 0;
     try {
-      total = await prisma.conversation.count({ where: queryWhere });
+      // 🔧 FIX: Use executeWithRetry to handle connection errors
+      total = await executeWithRetry(async () => {
+        return await prisma.conversation.count({ where: queryWhere });
+      }, 3);
 
       // Also get total unreplied count for stats
-      unrepliedCount = await prisma.conversation.count({
-        where: {
-          ...where,
-          status: { in: ['ACTIVE', 'PENDING'] },
-          lastMessageIsFromCustomer: true
-        }
-      });
+      const unrepliedWhere = {
+        ...where,
+        status: { in: ['ACTIVE', 'PENDING'] },
+        lastMessageIsFromCustomer: true
+      };
+      
+      unrepliedCount = await executeWithRetry(async () => {
+        return await prisma.conversation.count({
+          where: unrepliedWhere
+        });
+      }, 3);
 
       console.log(`✅ [GET-CONV] count success. Total: ${total}, Unreplied: ${unrepliedCount}`);
     } catch (cntErr) {
@@ -2432,9 +2586,9 @@ const getConversations = async (req, res) => {
       throw cntErr;
     }
 
-    // Format response
-    console.log('🔄 [GET-CONV] Formatting response...');
-    const formattedConversations = await Promise.all(conversations.map(async (conv, index) => {
+      // Format response
+      console.log('🔄 [GET-CONV] Formatting response...');
+      const formattedConversations = await Promise.all(conversations.map(async (conv, index) => {
       // Extract pageName and pageId
       let pageName = null;
       let pageId = null;
@@ -2464,6 +2618,9 @@ const getConversations = async (req, res) => {
         const lastMsg = conv.messages[0]; // Already ordered by createdAt desc
         lastMessageIsFromCustomer = Boolean(lastMsg.isFromCustomer);
         lastCustomerMessageIsUnread = lastMsg.isFromCustomer === true && lastMsg.isRead === false;
+      } else {
+        // 🔧 FIX: Fallback to database column if messages not included
+        lastMessageIsFromCustomer = Boolean(conv.lastMessageIsFromCustomer);
       }
 
       // Safety check for enum mapping
@@ -2708,19 +2865,25 @@ const getMessages = async (req, res) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     // Fetch messages
+    // 🔧 FIX: Use executeWithRetry to handle connection errors
+    const prisma = getSharedPrismaClient();
     const [messages, total] = await Promise.all([
-      getSharedPrismaClient().message.findMany({
-        where: { conversationId: id },
-        orderBy: { createdAt: 'desc' }, // Get newest first
-        skip,
-        take: parseInt(limit),
-        include: {
-          sender: { // Include sender info (Employee)
-            select: { id: true, firstName: true, lastName: true }
+      executeWithRetry(async () => {
+        return await prisma.message.findMany({
+          where: { conversationId: id },
+          orderBy: { createdAt: 'desc' }, // Get newest first
+          skip,
+          take: parseInt(limit),
+          include: {
+            sender: { // Include sender info (Employee)
+              select: { id: true, firstName: true, lastName: true }
+            }
           }
-        }
-      }),
-      getSharedPrismaClient().message.count({ where: { conversationId: id } })
+        });
+      }, 3),
+      executeWithRetry(async () => {
+        return await prisma.message.count({ where: { conversationId: id } });
+      }, 3)
     ]);
 
     res.json({

@@ -125,10 +125,6 @@ export const useInboxConversations = () => {
     const loadConversations = useCallback(async (pageNum = 1, append = false, tab: string = 'all') => {
         if (!companyId) return;
 
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useInboxConversations.ts:125',message:'Loading conversations - start',data:{pageNum,append,tab,companyId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
-
         try {
             if (pageNum === 1) {
                 setLoading(true);
@@ -139,7 +135,7 @@ export const useInboxConversations = () => {
             const response = await apiClient.get(`/conversations`, {
                 params: {
                     companyId,
-                    limit: 50, // Reduced from 100 for better initial render performance
+                    limit: tab === 'unreplied' ? 1000 : 50, // Fetch all unreplied conversations, limit others for performance
                     page: pageNum,
                     tab: tab
                 }
@@ -149,10 +145,6 @@ export const useInboxConversations = () => {
             const data = result.data || result || [];
             const pagination = result.pagination || {};
             const counts = result.counts || {};
-
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useInboxConversations.ts:147',message:'Conversations API response',data:{tab,count:data.length,total:counts.total,unreplied:counts.unreplied,conversationsWithUnread:data.filter((c:any)=>c.unreadCount>0).length,conversationsLastFromCustomer:data.filter((c:any)=>c.lastMessageIsFromCustomer).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-            // #endregion
 
             // Update API counts
             if (counts.total !== undefined || counts.unreplied !== undefined) {
@@ -307,32 +299,18 @@ export const useInboxConversations = () => {
 
             const formattedMessages: Message[] = data.map(parseMessage);
 
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useInboxConversations.ts:300',message:'Messages loaded from API',data:{conversationId,pageNum,rawCount:data.length,formattedCount:formattedMessages.length,firstMsgTimestamp:formattedMessages[0]?.timestamp,lastMsgTimestamp:formattedMessages[formattedMessages.length-1]?.timestamp,hasMore:pagination.hasNextPage || pagination.hasMore},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-            // #endregion
-
             // Deduplicate
             const messagesMap = new Map<string, Message>();
             formattedMessages.forEach(msg => messagesMap.set(msg.id, msg));
             const deduplicatedMessages = Array.from(messagesMap.values());
 
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useInboxConversations.ts:307',message:'Messages after deduplication',data:{beforeDedup:formattedMessages.length,afterDedup:deduplicatedMessages.length,customerMsgs:deduplicatedMessages.filter(m=>m.isFromCustomer).length,nonCustomerMsgs:deduplicatedMessages.filter(m=>!m.isFromCustomer).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-            // #endregion
-
             if (pageNum === 1) {
                 setMessages(deduplicatedMessages);
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useInboxConversations.ts:312',message:'Set messages (page 1)',data:{count:deduplicatedMessages.length,messageIds:deduplicatedMessages.map(m=>m.id).slice(0,5)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-                // #endregion
             } else {
                 setMessages(prev => {
                     const existingIds = new Set(prev.map(m => m.id));
                     const newMessages = deduplicatedMessages.filter(m => !existingIds.has(m.id));
                     const result = [...newMessages, ...prev];
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useInboxConversations.ts:318',message:'Append older messages',data:{prevCount:prev.length,newCount:newMessages.length,resultCount:result.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-                    // #endregion
                     return result;
                 });
             }
@@ -352,19 +330,29 @@ export const useInboxConversations = () => {
     }, [selectedConversation, hasMoreMessages, loadingMessages, messagesPage, loadMessages]);
 
     // Select conversation
-    const selectConversation = useCallback((conversation: InboxConversation | null) => {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useInboxConversations.ts:355',message:'Selecting conversation',data:{conversationId:conversation?.id,unreadCount:conversation?.unreadCount,lastMessageIsFromCustomer:conversation?.lastMessageIsFromCustomer},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
+    const selectConversation = useCallback(async (conversation: InboxConversation | null) => {
         setSelectedConversation(conversation);
         if (conversation) {
             loadMessages(conversation.id);
-            // Optimistically mark as read in UI if needed, but usually handled by effect or backend
+            // 🔧 FIX: Always mark conversation as read when opened (even if unreadCount is 0, to sync with backend)
+            // This ensures backend state is updated and unreadCount is recalculated
+            try {
+                const response = await apiClient.post(`/conversations/${conversation.id}/read`);
+                // Update local state with response data
+                // 🔧 FIX: Use unreadCount from response (backend calculates it correctly)
+                const newUnreadCount = response.data?.unreadCount ?? response.data?.conversation?.unreadCount ?? 0;
+                setSelectedConversation(prev => prev ? { ...prev, unreadCount: newUnreadCount } : null);
+                setConversations(prev => prev.map(conv =>
+                    conv.id === conversation.id ? { ...conv, unreadCount: newUnreadCount } : conv
+                ));
+            } catch (error: any) {
+                console.error('Failed to mark conversation as read:', error);
+            }
         } else {
             setMessages([]);
             currentConversationIdRef.current = null;
         }
-    }, [loadMessages]);
+    }, [loadMessages, companyId, setConversations]);
 
     // Update selected conversation from list updates
     useEffect(() => {

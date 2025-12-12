@@ -9,13 +9,7 @@ import {
   BookOpen,
   ChevronUp
 } from 'lucide-react';
-import axios from 'axios';
-
-// Get token for API calls
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-};
+import { apiClient } from '../../services/apiClient';
 
 interface TicketCount {
   open: number;
@@ -43,7 +37,7 @@ const FloatingSupportButton: React.FC = () => {
       const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
       if (!token) return;
 
-      const response = await axios.get('/api/v1/support/tickets?limit=1', { headers: getAuthHeaders() });
+      const response = await apiClient.get('/support/tickets?limit=1');
       
       if (response.data.success) {
         // Check if there are any open or in-progress tickets

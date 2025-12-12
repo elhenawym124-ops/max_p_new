@@ -1329,7 +1329,10 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
             status: 'ACTIVE',
             lastMessageAt: timestamp,
             updatedAt: new Date(),
-            metadata: JSON.stringify(updatedMetadata)
+            metadata: JSON.stringify(updatedMetadata),
+            // 🆕 FIX: Msg from customer means it's unreplied
+            lastMessageIsFromCustomer: true,
+            unreadCount: { increment: 1 }
           }
         });
         //console.log(`🔄 Reactivated conversation: ${conversation.id}`);
@@ -1361,7 +1364,10 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
           data: {
             lastMessageAt: timestamp,
             updatedAt: new Date(),
-            metadata: JSON.stringify(updatedMetadata)
+            metadata: JSON.stringify(updatedMetadata),
+            // 🆕 FIX: Message from customer means it's unreplied
+            lastMessageIsFromCustomer: true,
+            unreadCount: { increment: 1 }
           }
         });
 
@@ -1390,7 +1396,10 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
             channel: 'FACEBOOK',
             status: 'ACTIVE',
             lastMessageAt: timestamp,
-            metadata: JSON.stringify(conversationMetadata)
+            metadata: JSON.stringify(conversationMetadata),
+            // 🆕 FIX: New conversation starts as unreplied
+            lastMessageIsFromCustomer: true,
+            unreadCount: 1
           }
         });
 

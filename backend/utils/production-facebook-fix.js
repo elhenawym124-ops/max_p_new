@@ -270,9 +270,12 @@ async function sendProductionFacebookMessage(recipientId, messageContent, messag
 
     // Handle different types of errors
     if (error.response) {
-      console.error(`❌ [PROD-SEND] Facebook API Error Response:`, error.response.data);
+      console.error(`❌ [PROD-SEND] Facebook API Error Response:`, JSON.stringify(error.response.data, null, 2));
       console.error(`❌ [PROD-SEND] Status: ${error.response.status}`);
-      console.error(`❌ [PROD-SEND] Headers:`, error.response.headers);
+      console.error(`❌ [PROD-SEND] Request URL: ${messageContent}`);
+      console.error(`❌ [PROD-SEND] Message Type: ${messageType}`);
+      console.error(`❌ [PROD-SEND] Recipient ID: ${recipientId}`);
+      console.error(`❌ [PROD-SEND] Page ID: ${pageId}`);
 
       // Handle specific Facebook errors
       const fbError = error.response.data?.error;

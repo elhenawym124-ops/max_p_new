@@ -68,13 +68,10 @@ const createEnvironmentConfig = () => {
       // Allow requests with no origin (like mobile apps or curl requests)
       if (!origin) return callback(null, true);
       
-      const allowedPatterns = isDevelopment ? [
+      const allowedPatterns = [
         'http://localhost:3008',
         'http://localhost:3000',
-        'https://mokhtarelhenawy.online',
-        'https://www.mokhtarelhenawy.online',
-        /^https:\/\/[a-zA-Z0-9-]+\.mokhtarelhenawy\.online$/ // All subdomains
-      ] : [
+        'http://localhost:3007',
         'https://mokhtarelhenawy.online',
         'https://www.mokhtarelhenawy.online',
         /^https:\/\/[a-zA-Z0-9-]+\.mokhtarelhenawy\.online$/ // All subdomains

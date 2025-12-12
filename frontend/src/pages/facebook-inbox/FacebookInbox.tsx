@@ -109,9 +109,6 @@ const FacebookInbox: React.FC = () => {
     // Skip initial load since useInboxConversations already loads on mount
     const isInitialMount = useRef(true);
     useEffect(() => {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FacebookInbox.tsx:111',message:'Tab changed - loading conversations',data:{activeTab,isInitialMount:isInitialMount.current,currentConversationsCount:conversations.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
         if (isInitialMount.current) {
             isInitialMount.current = false;
             // First load is handled by the hook's initial state or we can force load here if needed.
@@ -259,9 +256,6 @@ const FacebookInbox: React.FC = () => {
     // Send message handlers
     const handleSendMessage = useCallback(async (content: string) => {
         if (!selectedConversation || !companyId) return;
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FacebookInbox.tsx:257',message:'Sending message - before',data:{conversationId:selectedConversation.id,activeTab,lastMessageIsFromCustomer:selectedConversation.lastMessageIsFromCustomer,unreadCount:selectedConversation.unreadCount},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-        // #endregion
         try {
             await sendTextMessage(selectedConversation.id, content, companyId, replyToMessage);
             setReplyToMessage(null); // Clear reply after sending
@@ -273,18 +267,11 @@ const FacebookInbox: React.FC = () => {
                 lastMessageTime: new Date()
             });
 
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FacebookInbox.tsx:268',message:'Message sent - after updateSelectedConversation',data:{conversationId:selectedConversation.id,lastMessageIsFromCustomer:false},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-            // #endregion
-
             loadMessages(selectedConversation.id);
 
             // 🆕 If in unreplied tab, reload conversations to get fresh data
             // This ensures we fetch new unreplied conversations to replace the one we just replied to
             if (activeTab === 'unreplied') {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FacebookInbox.tsx:274',message:'Reloading unreplied conversations',data:{activeTab,conversationId:selectedConversation.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-                // #endregion
                 setTimeout(() => {
                     loadConversations(1, false, 'unreplied');
                 }, 500); // Small delay to allow backend to update
@@ -568,41 +555,40 @@ const FacebookInbox: React.FC = () => {
         const repliedSet = new Set<string>();
         if (messages.length === 0) return repliedSet;
 
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FacebookInbox.tsx:554',message:'Calculating replied messages - start',data:{totalMessages:messages.length,customerMsgs:messages.filter(m=>m.isFromCustomer).length,nonCustomerMsgs:messages.filter(m=>!m.isFromCustomer).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
+        // 🔧 FIX: Sort messages by timestamp (ascending - oldest first)
+        const sortedMessages = [...messages].sort((a, b) => {
+            const timeA = new Date(a.timestamp).getTime();
+            const timeB = new Date(b.timestamp).getTime();
+            return timeA - timeB;
+        });
 
-        // Sort messages by timestamp
-        const sortedMessages = [...messages].sort((a, b) =>
-            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-        );
-
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FacebookInbox.tsx:562',message:'Messages sorted by timestamp',data:{sortedCount:sortedMessages.length,firstTimestamp:sortedMessages[0]?.timestamp,lastTimestamp:sortedMessages[sortedMessages.length-1]?.timestamp,firstIsCustomer:sortedMessages[0]?.isFromCustomer,lastIsCustomer:sortedMessages[sortedMessages.length-1]?.isFromCustomer},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
-
+        // 🔧 FIX: Track the last reply timestamp to handle multiple customer messages before a reply
+        let lastReplyTime = 0;
+        
         // For each customer message, check if there's a reply after it
         for (let i = 0; i < sortedMessages.length; i++) {
             const msg = sortedMessages[i];
             if (msg.isFromCustomer) {
+                const msgTime = new Date(msg.timestamp).getTime();
                 // Check if there's any non-customer message after this one
                 for (let j = i + 1; j < sortedMessages.length; j++) {
                     const laterMsg = sortedMessages[j];
                     if (!laterMsg.isFromCustomer) {
                         // Found a reply after this customer message
                         repliedSet.add(msg.id);
-                        // #region agent log
-                        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FacebookInbox.tsx:572',message:'Found replied message',data:{customerMsgId:msg.id,customerMsgTime:msg.timestamp,replyMsgId:laterMsg.id,replyMsgTime:laterMsg.timestamp,timeDiff:new Date(laterMsg.timestamp).getTime()-new Date(msg.timestamp).getTime()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-                        // #endregion
+                        lastReplyTime = Math.max(lastReplyTime, new Date(laterMsg.timestamp).getTime());
                         break;
                     }
                 }
+                // 🔧 FIX: Also mark as replied if this message is before the last reply we found
+                if (lastReplyTime > 0 && msgTime < lastReplyTime) {
+                    repliedSet.add(msg.id);
+                }
+            } else {
+                // Update last reply time when we encounter a non-customer message
+                lastReplyTime = Math.max(lastReplyTime, new Date(msg.timestamp).getTime());
             }
         }
-
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FacebookInbox.tsx:579',message:'Replied messages calculation complete',data:{repliedCount:repliedSet.size,repliedIds:Array.from(repliedSet).slice(0,10)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
 
         return repliedSet;
     }, [messages]);
