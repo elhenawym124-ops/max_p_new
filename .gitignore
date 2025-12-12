@@ -11,6 +11,9 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 
+# Exception: Allow backend/.env to be committed for deployment
+!backend/.env
+
 # Database
 *.db
 *.sqlite

@@ -109,7 +109,7 @@ jobs:
           strip_components: 0
           rm: false
 
-      # Deploy .env file separately (if exists)
+      # Deploy .env file separately (if exists in repository)
       - name: Deploy .env file
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -123,6 +123,7 @@ jobs:
           strip_components: 1
           rm: false
         continue-on-error: true
+        if: ${{ hashFiles('backend/.env') != '' }}
 
       - name: Run Deployment Script on Server
         uses: appleboy/ssh-action@v1.0.3
