@@ -183,7 +183,33 @@ jobs:
             # Restart services
             echo "🔄 Restarting services..."
             if command -v pm2 &> /dev/null; then
-              pm2 restart 0 2>/dev/null || pm2 start /var/www/backend2/server.js --name backend || echo "⚠️ PM2 restart failed, but continuing..."
+              # Check PM2 processes
+              echo "📋 Current PM2 processes:"
+              pm2 list
+              
+              # Try to restart by name first, then by id, then start new
+              if pm2 list | grep -q "backend"; then
+                echo "🔄 Restarting backend by name..."
+                pm2 restart backend
+              elif pm2 list | grep -q "backend1"; then
+                echo "🔄 Restarting backend1 by name..."
+                pm2 restart backend1
+              elif [ -n "$(pm2 jlist | jq -r '.[0].name' 2>/dev/null)" ]; then
+                echo "🔄 Restarting first process..."
+                pm2 restart 0
+              else
+                echo "🆕 Starting new backend process..."
+                cd /var/www/backend2
+                pm2 start server.js --name backend
+              fi
+              
+              # Wait a bit for process to start
+              sleep 3
+              
+              # Check if process is running
+              echo "📋 PM2 status after restart:"
+              pm2 list
+              pm2 logs backend --lines 5 --nostream || pm2 logs backend1 --lines 5 --nostream || echo "⚠️ Could not get logs"
             else
               echo "⚠️ PM2 not found, skipping restart"
             fi
