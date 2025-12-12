@@ -65,7 +65,7 @@ jobs:
           fi
           echo "✅ All secrets are present"
 
-      # Test SSH Connection (with retry)
+      # Test SSH Connection
       - name: Test SSH Connection
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -80,8 +80,6 @@ jobs:
             whoami
             pwd
         continue-on-error: true
-        retries: 3
-        retry-wait-time: 10
 
       # Deploy Frontend to Server
       - name: Deploy Frontend to Server
