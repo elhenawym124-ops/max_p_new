@@ -1,13 +1,9 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
-import { useTranslation } from 'react-i18next';
 import InboxTabs from '../../components/facebook-inbox/InboxTabs/InboxTabs';
 import ConversationItem from '../../components/facebook-inbox/ConversationList/ConversationItem';
 import MessageBubble from '../../components/facebook-inbox/MessageBubble/MessageBubble';
 import MessageInput from '../../components/facebook-inbox/MessageInput/MessageInput';
-import StatusDropdown from '../../components/facebook-inbox/StatusDropdown/StatusDropdown';
-import AssignmentDropdown from '../../components/facebook-inbox/AssignmentDropdown/AssignmentDropdown';
 import ConversationActionsBar from '../../components/facebook-inbox/ConversationActionsBar/ConversationActionsBar';
-import TagInput from '../../components/facebook-inbox/TagInput/TagInput';
 import { NotesPanel } from '../../components/facebook-inbox/NotesPanel/NotesPanel';
 import FilterPanel, { FilterState } from '../../components/facebook-inbox/FilterPanel/FilterPanel';
 import StatsDashboard from '../../components/facebook-inbox/StatsDashboard/StatsDashboard';
@@ -16,6 +12,8 @@ import BulkActionsBar from '../../components/facebook-inbox/BulkActionsBar/BulkA
 import ForwardModal from '../../components/facebook-inbox/Modals/ForwardModal';
 import SnoozeModal from '../../components/facebook-inbox/Modals/SnoozeModal';
 import AIToggle from '../../components/facebook-inbox/AIToggle/AIToggle';
+import TextGalleryModal from '../../components/facebook-inbox/TextGallery/TextGalleryModal';
+import ImageGalleryModal from '../../components/facebook-inbox/ImageGallery/ImageGalleryModal';
 import { InboxTab, ConversationStatus, InboxMessage } from '../../types/inbox.types';
 import { useInboxConversations } from '../../hooks/inbox/useInboxConversations';
 import { useSendMessage } from '../../hooks/inbox/useSendMessage';
@@ -28,9 +26,9 @@ import { useCompany } from '../../contexts/CompanyContext';
 import { useAuth } from '../../hooks/useAuthSimple';
 import { StickyNote, Menu, ArrowRight } from 'lucide-react';
 import { apiClient } from '../../services/apiClient';
+import { useDebounce } from '../../hooks/useDebounce';
 
 const FacebookInbox: React.FC = () => {
-    const { t } = useTranslation();
     const { user } = useAuth();
     const { companyId } = useCompany();
     const { socket, isConnected } = useSocket();
@@ -84,9 +82,10 @@ const FacebookInbox: React.FC = () => {
     // Tag management
     const { addTags, updating: updatingTags } = useTagManagement();
 
-    // Local state
-    const [activeTab, setActiveTab] = useState<InboxTab>('all');
+    // Local state - Default to 'unreplied' tab
+    const [activeTab, setActiveTab] = useState<InboxTab>('unreplied');
     const [searchQuery, setSearchQuery] = useState('');
+    const debouncedSearchQuery = useDebounce(searchQuery, 300); // Debounce search for better performance
     const [showFilters, setShowFilters] = useState(false);
     const [showNotes, setShowNotes] = useState(false);
     const [showStats, setShowStats] = useState(false);
@@ -104,51 +103,99 @@ const FacebookInbox: React.FC = () => {
     const [replyToMessage, setReplyToMessage] = useState<any>(null);
     const [snoozeModalOpen, setSnoozeModalOpen] = useState(false);
 
+    // Text Gallery State
+    const [showTextGallery, setShowTextGallery] = useState(false);
+
+    // Image Gallery State
+    const [showImageGallery, setShowImageGallery] = useState(false);
 
     // 🆕 Reload conversations when tab changes (especially for unreplied)
     // Skip initial load since useInboxConversations already loads on mount
     const isInitialMount = useRef(true);
+    const loadConversationsRef = useRef(loadConversations);
+    loadConversationsRef.current = loadConversations; // Keep ref updated
+    
     useEffect(() => {
         if (isInitialMount.current) {
             isInitialMount.current = false;
-            // First load is handled by the hook's initial state or we can force load here if needed.
-            // But hook usually loads 'all'. If activeTab starts as 'all', we are good.
-            // If activeTab can start as something else, we might need to load.
-            // Current hook doesn't auto-load in useEffect, it waits for component.
-            // Actually, the new hook has empty useEffect for initial load: useEffect(() => {}, []);
-            // So we MUST load here even on initial mount if we want data.
-            loadConversations(1, false, activeTab);
+            loadConversationsRef.current(1, false, activeTab);
             return;
         }
 
-        loadConversations(1, false, activeTab);
-    }, [activeTab, loadConversations]);
+        loadConversationsRef.current(1, false, activeTab);
+    }, [activeTab]); // 🔧 OPTIMIZED: Remove loadConversations from dependencies
 
-    // Tab counts - use API counts for unreplied to get accurate total
-    const tabCounts = useMemo(() => ({
-        all: apiCounts.total || conversations.length,
-        unreplied: apiCounts.unreplied || conversations.filter(c =>
-            c.lastMessageIsFromCustomer === true &&
-            c.status !== 'done' &&
-            c.tab !== 'done'
-        ).length,
-        done: conversations.filter(c => c.tab === 'done').length,
-        main: conversations.filter(c => c.tab === 'main').length,
-        general: conversations.filter(c => c.tab === 'general').length,
-        requests: conversations.filter(c => c.tab === 'requests').length,
-        spam: conversations.filter(c => c.tab === 'spam').length,
-    }), [conversations, apiCounts]);
+    // 🔧 OPTIMIZED: Debounce loadConversations to prevent excessive API calls
+    // Move this before handlers that use it
+    const loadConversationsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const loadConversationsRefForDebounce = useRef(loadConversations);
+    loadConversationsRefForDebounce.current = loadConversations; // Keep ref updated
+    
+    const debouncedLoadConversations = useCallback((tab: InboxTab) => {
+        if (loadConversationsTimeoutRef.current) {
+            clearTimeout(loadConversationsTimeoutRef.current);
+        }
+        loadConversationsTimeoutRef.current = setTimeout(() => {
+            loadConversationsRefForDebounce.current(1, false, tab);
+            loadConversationsTimeoutRef.current = null;
+        }, 500); // Debounce by 500ms to batch multiple updates
+    }, []); // 🔧 OPTIMIZED: Empty dependencies, use ref instead
 
-    // Filtered conversations
+    // Tab counts - OPTIMIZED: Single pass calculation instead of multiple filters
+    const tabCounts = useMemo(() => {
+        // Use API counts when available (more accurate)
+        const counts = {
+            all: apiCounts.total || 0,
+            unreplied: apiCounts.unreplied || 0,
+            done: 0,
+            main: 0,
+            general: 0,
+            requests: 0,
+            spam: 0,
+        };
+
+        // 🔧 OPTIMIZED: Single pass through conversations instead of multiple filters
+        if (conversations.length > 0) {
+            for (const conv of conversations) {
+                switch (conv.tab) {
+                    case 'done':
+                        counts.done++;
+                        break;
+                    case 'main':
+                        counts.main++;
+                        break;
+                    case 'general':
+                        counts.general++;
+                        break;
+                    case 'requests':
+                        counts.requests++;
+                        break;
+                    case 'spam':
+                        counts.spam++;
+                        break;
+                }
+            }
+        }
+
+        // Fallback to conversations.length if API count not available
+        if (!apiCounts.total && conversations.length > 0) {
+            counts.all = conversations.length;
+        }
+
+        return counts;
+    }, [conversations, apiCounts]);
+
+    // Filtered conversations - using debounced search query
+    // 🔧 OPTIMIZED: Removed activeTab from dependencies (not used in filtering)
     const filteredConversations = useMemo(() => {
         const filtered = conversations.filter(conv => {
             // 1. Tab filter - REMOVED (Server-side filtering now)
             // We assume 'conversations' contains only items for the current tab
 
 
-            // 2. Search query
-            if (searchQuery) {
-                const query = searchQuery.toLowerCase();
+            // 2. Search query (using debounced value)
+            if (debouncedSearchQuery) {
+                const query = debouncedSearchQuery.toLowerCase();
                 const matchesName = conv.customerName.toLowerCase().includes(query);
                 const matchesMessage = conv.lastMessage.toLowerCase().includes(query);
                 if (!matchesName && !matchesMessage) return false;
@@ -175,7 +222,7 @@ const FacebookInbox: React.FC = () => {
             return true;
         });
         return filtered;
-    }, [conversations, activeTab, searchQuery, filters, user?.id]);
+    }, [conversations, debouncedSearchQuery, filters, user?.id]); // 🔧 Removed activeTab
 
     // Auto-scroll to bottom
     const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -200,14 +247,29 @@ const FacebookInbox: React.FC = () => {
         return scrollHeight - scrollTop - clientHeight < threshold;
     }, []);
 
+    // Track if this is initial load for a conversation
+    const isInitialLoadRef = useRef(true);
+    const lastConversationIdRef = useRef<string | null>(null);
+
     // Scroll to bottom when conversation changes or initial load
     useEffect(() => {
-        if (messages.length > 0 && selectedConversation) {
-            // Always scroll to bottom when opening a conversation
-            setTimeout(() => scrollToBottom(false), 100);
-            wasAtBottomRef.current = true;
+        // Detect conversation change
+        if (selectedConversation?.id !== lastConversationIdRef.current) {
+            isInitialLoadRef.current = true;
+            lastConversationIdRef.current = selectedConversation?.id || null;
         }
-    }, [selectedConversation?.id, scrollToBottom]);
+
+        if (messages.length > 0 && selectedConversation && isInitialLoadRef.current) {
+            // Always scroll to bottom when opening a conversation
+            // Use multiple timeouts to ensure scroll happens after render
+            scrollToBottom(false);
+            setTimeout(() => scrollToBottom(false), 50);
+            setTimeout(() => scrollToBottom(false), 150);
+            setTimeout(() => scrollToBottom(false), 300);
+            wasAtBottomRef.current = true;
+            isInitialLoadRef.current = false;
+        }
+    }, [selectedConversation?.id, messages.length, scrollToBottom]);
 
     // Scroll to bottom on new messages if user was already at bottom
     useEffect(() => {
@@ -267,19 +329,22 @@ const FacebookInbox: React.FC = () => {
                 lastMessageTime: new Date()
             });
 
-            loadMessages(selectedConversation.id);
+            // 🔧 OPTIMIZED: Don't reload messages if socket will handle it
+            // Socket will send new_message event which will update messages automatically
+            // Only reload if socket is not connected
+            if (!isConnected) {
+                loadMessages(selectedConversation.id);
+            }
 
             // 🆕 If in unreplied tab, reload conversations to get fresh data
             // This ensures we fetch new unreplied conversations to replace the one we just replied to
             if (activeTab === 'unreplied') {
-                setTimeout(() => {
-                    loadConversations(1, false, 'unreplied');
-                }, 500); // Small delay to allow backend to update
+                debouncedLoadConversations('unreplied');
             }
         } catch (error) {
             alert('فشل في إرسال الرسالة');
         }
-    }, [selectedConversation, companyId, sendTextMessage, loadMessages, replyToMessage, updateSelectedConversation, activeTab, loadConversations]);
+    }, [selectedConversation, companyId, sendTextMessage, loadMessages, replyToMessage, updateSelectedConversation, activeTab, isConnected, debouncedLoadConversations]);
 
     const handleSendFile = useCallback(async (file: File) => {
         if (!selectedConversation || !companyId) return;
@@ -293,18 +358,180 @@ const FacebookInbox: React.FC = () => {
                 lastMessageTime: new Date()
             });
 
-            loadMessages(selectedConversation.id);
+            // 🔧 OPTIMIZED: Don't reload messages if socket will handle it
+            if (!isConnected) {
+                loadMessages(selectedConversation.id);
+            }
             
             // 🆕 If in unreplied tab, reload conversations to get fresh data
             if (activeTab === 'unreplied') {
-                setTimeout(() => {
-                    loadConversations(1, false, 'unreplied');
-                }, 500);
+                debouncedLoadConversations('unreplied');
             }
         } catch (error) {
             alert('فشل في إرسال الملف');
         }
-    }, [selectedConversation, companyId, sendFileMessage, loadMessages, updateSelectedConversation, activeTab, loadConversations]);
+    }, [selectedConversation, companyId, sendFileMessage, loadMessages, updateSelectedConversation, activeTab, isConnected, debouncedLoadConversations]);
+
+    // Handle text selection from gallery
+    const handleSelectTextFromGallery = useCallback(async (text: { content: string; imageUrls?: string[] }) => {
+        if (!selectedConversation || !companyId) return;
+
+        setShowTextGallery(false);
+
+        try {
+            const messageContent = text.content?.trim() || '';
+            const imageUrls = text.imageUrls || [];
+
+            // If only text, send it normally
+            if (messageContent && imageUrls.length === 0) {
+                await sendTextMessage(selectedConversation.id, messageContent, companyId);
+                updateSelectedConversation({
+                    lastMessageIsFromCustomer: false,
+                    lastMessage: messageContent,
+                    lastMessageTime: new Date()
+                });
+                loadMessages(selectedConversation.id);
+                return;
+            }
+
+            // Send text first if exists
+            if (messageContent) {
+                await sendTextMessage(selectedConversation.id, messageContent, companyId);
+                await new Promise(resolve => setTimeout(resolve, 300));
+            }
+
+            // Send images
+            if (imageUrls.length > 0) {
+                let successCount = 0;
+                for (const imageUrl of imageUrls) {
+                    try {
+                        const urlParts = imageUrl.split('/');
+                        const filename = urlParts[urlParts.length - 1] || 'image.jpg';
+
+                        await apiClient.post(`/conversations/${selectedConversation.id}/send-existing-image`, {
+                            imageUrl,
+                            filename
+                        });
+                        successCount++;
+
+                        if (successCount < imageUrls.length) {
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                        }
+                    } catch (error) {
+                        console.error('Error sending image:', error);
+                    }
+                }
+            }
+
+            // Update state
+            updateSelectedConversation({
+                lastMessageIsFromCustomer: false,
+                lastMessage: messageContent || '📷 صورة',
+                lastMessageTime: new Date()
+            });
+
+            // 🔧 OPTIMIZED: Don't reload messages if socket will handle it
+            if (!isConnected) {
+                setTimeout(() => {
+                    loadMessages(selectedConversation.id);
+                }, 500);
+            }
+
+            // Reload conversations if in unreplied tab
+            if (activeTab === 'unreplied') {
+                debouncedLoadConversations('unreplied');
+            }
+        } catch (error) {
+            console.error('Error sending from text gallery:', error);
+            alert('فشل في إرسال النص');
+        }
+    }, [selectedConversation, companyId, sendTextMessage, loadMessages, updateSelectedConversation, activeTab, isConnected, debouncedLoadConversations]);
+
+    // Handle single image selection from gallery
+    const handleSelectImageFromGallery = useCallback(async (imageUrl: string, filename: string) => {
+        if (!selectedConversation || !companyId) return;
+
+        setShowImageGallery(false);
+
+        try {
+            await apiClient.post(`/conversations/${selectedConversation.id}/send-existing-image`, {
+                imageUrl,
+                filename
+            });
+
+            updateSelectedConversation({
+                lastMessageIsFromCustomer: false,
+                lastMessage: '📷 صورة',
+                lastMessageTime: new Date()
+            });
+
+            if (!isConnected) {
+                setTimeout(() => {
+                    loadMessages(selectedConversation.id);
+                }, 500);
+            }
+
+            if (activeTab === 'unreplied') {
+                debouncedLoadConversations('unreplied');
+            }
+        } catch (error) {
+            console.error('Error sending image from gallery:', error);
+            alert('فشل في إرسال الصورة');
+        }
+    }, [selectedConversation, companyId, loadMessages, updateSelectedConversation, activeTab, isConnected, debouncedLoadConversations]);
+
+    // Handle multiple images selection from gallery
+    const handleSelectMultipleImagesFromGallery = useCallback(async (images: Array<{ url: string; filename: string }>) => {
+        if (!selectedConversation || !companyId || images.length === 0) return;
+
+        setShowImageGallery(false);
+
+        try {
+            let successCount = 0;
+            for (const image of images) {
+                try {
+                    await apiClient.post(`/conversations/${selectedConversation.id}/send-existing-image`, {
+                        imageUrl: image.url,
+                        filename: image.filename
+                    });
+                    successCount++;
+
+                    if (successCount < images.length) {
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
+                } catch (error) {
+                    console.error('Error sending image:', error);
+                }
+            }
+
+            if (successCount > 0) {
+                updateSelectedConversation({
+                    lastMessageIsFromCustomer: false,
+                    lastMessage: `📷 ${successCount} صورة`,
+                    lastMessageTime: new Date()
+                });
+
+                if (!isConnected) {
+                    setTimeout(() => {
+                        loadMessages(selectedConversation.id);
+                    }, 500);
+                }
+
+                if (activeTab === 'unreplied') {
+                    debouncedLoadConversations('unreplied');
+                }
+
+                if (successCount < images.length) {
+                    alert(`⚠️ تم إرسال ${successCount} صورة من ${images.length}`);
+                }
+            } else {
+                alert('فشل في إرسال الصور');
+            }
+        } catch (error) {
+            console.error('Error sending images from gallery:', error);
+            alert('فشل في إرسال الصور');
+        }
+    }, [selectedConversation, companyId, loadMessages, updateSelectedConversation, activeTab, isConnected, debouncedLoadConversations]);
 
     // Bulk Action Handlers
     const handleBulkMarkDone = useCallback(async () => {
@@ -313,13 +540,13 @@ const FacebookInbox: React.FC = () => {
 
         try {
             await bulkUpdate(Array.from(selectedIds), 'mark_done', null, companyId);
-            loadConversations();
+            debouncedLoadConversations(activeTab);
             clearSelection();
             alert('✅ تم إنهاء المحادثات بنجاح');
         } catch (error) {
             alert('فشل في تنفيذ العملية');
         }
-    }, [selectedIds, companyId, bulkUpdate, loadConversations, clearSelection]);
+    }, [selectedIds, companyId, bulkUpdate, activeTab, debouncedLoadConversations, clearSelection]);
 
     const handleBulkAssign = useCallback(() => {
         // TODO: Show assignment modal
@@ -336,32 +563,32 @@ const FacebookInbox: React.FC = () => {
         if (!selectedConversation || !companyId) return;
         try {
             await updateStatus(selectedConversation.id, status, companyId);
-            loadConversations();
+            debouncedLoadConversations(activeTab);
         } catch (error) {
             alert('فشل في تحديث الحالة');
         }
-    }, [selectedConversation, companyId, updateStatus, loadConversations]);
+    }, [selectedConversation, companyId, updateStatus, activeTab, debouncedLoadConversations]);
 
     const handleAssignment = useCallback(async (userId: string | null) => {
         if (!selectedConversation || !companyId) return;
         try {
             await assignConversation(selectedConversation.id, userId, companyId);
-            loadConversations();
+            debouncedLoadConversations(activeTab);
         } catch (error) {
             alert('فشل في تعيين المحادثة');
         }
-    }, [selectedConversation, companyId, assignConversation, loadConversations]);
+    }, [selectedConversation, companyId, assignConversation, activeTab, debouncedLoadConversations]);
 
     const handleMarkDone = useCallback(async () => {
         if (!selectedConversation || !companyId) return;
         try {
             await markAsDone(selectedConversation.id, companyId);
-            loadConversations();
+            debouncedLoadConversations(activeTab);
             alert('✅ تم تحديد المحادثة كمنتهية');
         } catch (error) {
             alert('فشل في تحديث المحادثة');
         }
-    }, [selectedConversation, companyId, markAsDone, loadConversations]);
+    }, [selectedConversation, companyId, markAsDone, activeTab, debouncedLoadConversations]);
 
     const handleTogglePriority = useCallback(async () => {
         if (!selectedConversation || !companyId) return;
@@ -371,22 +598,22 @@ const FacebookInbox: React.FC = () => {
                 !selectedConversation.priority,
                 companyId
             );
-            loadConversations();
+            debouncedLoadConversations(activeTab);
         } catch (error) {
             alert('فشل في تحديث الأولوية');
         }
-    }, [selectedConversation, companyId, togglePriority, loadConversations]);
+    }, [selectedConversation, companyId, togglePriority, activeTab, debouncedLoadConversations]);
 
     // Tags handler
     const handleTagsChange = useCallback(async (tags: string[]) => {
         if (!selectedConversation || !companyId) return;
         try {
             await addTags(selectedConversation.id, tags, companyId);
-            loadConversations();
+            debouncedLoadConversations(activeTab);
         } catch (error) {
             alert('فشل في تحديث التصنيفات');
         }
-    }, [selectedConversation, companyId, addTags, loadConversations]);
+    }, [selectedConversation, companyId, addTags, activeTab, debouncedLoadConversations]);
 
     // Delete message handler
     const handleDeleteMessage = useCallback(async (messageId: string) => {
@@ -460,12 +687,12 @@ const FacebookInbox: React.FC = () => {
         try {
             await snoozeConversation(selectedConversation.id, until, companyId);
             setSnoozeModalOpen(false);
-            loadConversations();
+            debouncedLoadConversations(activeTab);
             alert('✅ تم تأجيل المحادثة بنجاح');
         } catch (error) {
             alert('فشل في تأجيل المحادثة');
         }
-    }, [selectedConversation, companyId, snoozeConversation, loadConversations]);
+    }, [selectedConversation, companyId, snoozeConversation, activeTab, debouncedLoadConversations]);
 
     // AI Toggle Handler
     const handleToggleAI = useCallback(async (enabled: boolean) => {
@@ -475,11 +702,11 @@ const FacebookInbox: React.FC = () => {
         try {
             await toggleAI(selectedConversation.id, enabled);
             // Optimistic update or reload
-            loadConversations(); // Reload to get fresh state including metadata
+            debouncedLoadConversations(activeTab); // Reload to get fresh state including metadata
         } catch (error: any) {
             alert('فشل في تحديث حالة الذكاء الاصطناعي');
         }
-    }, [selectedConversation, companyId, toggleAI, loadConversations]);
+    }, [selectedConversation, companyId, toggleAI, activeTab, debouncedLoadConversations]);
 
     // AI Typing State
     const [isAITyping, setIsAITyping] = useState(false);
@@ -487,6 +714,12 @@ const FacebookInbox: React.FC = () => {
     const [suggestedText, setSuggestedText] = useState('');
 
     // Socket.IO
+    // 🔧 FIX: Use ref to track activeTab for socket handler to avoid stale closure
+    const activeTabRef = useRef<InboxTab>(activeTab);
+    useEffect(() => {
+        activeTabRef.current = activeTab;
+    }, [activeTab]);
+
     useEffect(() => {
         if (!socket || !isConnected) return;
 
@@ -497,7 +730,8 @@ const FacebookInbox: React.FC = () => {
                 setIsAITyping(false);
                 if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
             }
-            loadConversations();
+            // 🔧 OPTIMIZED: Use debounced loadConversations to prevent excessive API calls
+            debouncedLoadConversations(activeTabRef.current);
         };
 
         const handleAITyping = (data: { conversationId: string, isTyping: boolean }) => {
@@ -521,8 +755,9 @@ const FacebookInbox: React.FC = () => {
             socket.off('new_message', handleNewMessage);
             socket.off('ai_typing', handleAITyping);
             if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+            if (loadConversationsTimeoutRef.current) clearTimeout(loadConversationsTimeoutRef.current);
         };
-    }, [socket, isConnected, selectedConversation, addMessage, loadConversations]);
+    }, [socket, isConnected, selectedConversation, addMessage, debouncedLoadConversations]);
 
     // Fetch post details when conversation is selected
     const fetchPostDetails = useCallback(async (conversationId: string) => {
@@ -550,43 +785,35 @@ const FacebookInbox: React.FC = () => {
         }
     }, [selectedConversation?.id, selectedConversation?.postId, selectedConversation?.postDetails, fetchPostDetails]);
 
-    // Calculate which customer messages have been replied to
-    const repliedMessages = useMemo(() => {
+    // Calculate which customer messages have been replied to - OPTIMIZED VERSION
+    const repliedMessages = useMemo((): Set<string> => {
         const repliedSet = new Set<string>();
         if (messages.length === 0) return repliedSet;
 
-        // 🔧 FIX: Sort messages by timestamp (ascending - oldest first)
+        // 🔧 OPTIMIZED: Single pass algorithm - more efficient than nested loops
+        // Sort messages by timestamp once
         const sortedMessages = [...messages].sort((a, b) => {
             const timeA = new Date(a.timestamp).getTime();
             const timeB = new Date(b.timestamp).getTime();
             return timeA - timeB;
         });
 
-        // 🔧 FIX: Track the last reply timestamp to handle multiple customer messages before a reply
+        // Track the last reply timestamp
         let lastReplyTime = 0;
         
-        // For each customer message, check if there's a reply after it
-        for (let i = 0; i < sortedMessages.length; i++) {
+        // Single pass: iterate backwards to mark all customer messages before a reply
+        for (let i = sortedMessages.length - 1; i >= 0; i--) {
             const msg = sortedMessages[i];
-            if (msg.isFromCustomer) {
-                const msgTime = new Date(msg.timestamp).getTime();
-                // Check if there's any non-customer message after this one
-                for (let j = i + 1; j < sortedMessages.length; j++) {
-                    const laterMsg = sortedMessages[j];
-                    if (!laterMsg.isFromCustomer) {
-                        // Found a reply after this customer message
-                        repliedSet.add(msg.id);
-                        lastReplyTime = Math.max(lastReplyTime, new Date(laterMsg.timestamp).getTime());
-                        break;
-                    }
-                }
-                // 🔧 FIX: Also mark as replied if this message is before the last reply we found
-                if (lastReplyTime > 0 && msgTime < lastReplyTime) {
-                    repliedSet.add(msg.id);
-                }
-            } else {
-                // Update last reply time when we encounter a non-customer message
-                lastReplyTime = Math.max(lastReplyTime, new Date(msg.timestamp).getTime());
+            if (!msg) continue; // Safety check
+            
+            const msgTime = new Date(msg.timestamp).getTime();
+            
+            if (!msg.isFromCustomer) {
+                // Found a reply - update last reply time
+                lastReplyTime = Math.max(lastReplyTime, msgTime);
+            } else if (lastReplyTime > 0 && msgTime < lastReplyTime) {
+                // This customer message is before the last reply, so it's been replied to
+                repliedSet.add(msg.id);
             }
         }
 
@@ -608,6 +835,7 @@ const FacebookInbox: React.FC = () => {
                 mainElement.className = originalClasses;
             };
         }
+        return undefined;
     }, []);
 
     return (
@@ -841,12 +1069,15 @@ const FacebookInbox: React.FC = () => {
                                         {Array.from(
                                             new Map(messages.map(msg => [msg.id, msg])).values()
                                         ).map((msg) => {
-                                            const hasBeenReplied = msg.isFromCustomer ? repliedMessages.has(msg.id) : undefined;
+                                            // hasBeenReplied: true if replied, false if not replied, undefined if not a customer message
+                                            const hasBeenReplied = msg.isFromCustomer 
+                                                ? repliedMessages.has(msg.id)
+                                                : undefined;
                                             return (
                                                 <MessageBubble
                                                     key={msg.id}
                                                     message={msg}
-                                                    hasBeenReplied={hasBeenReplied}
+                                                    {...(hasBeenReplied !== undefined && { hasBeenReplied })}
                                                     onDelete={handleDeleteMessage}
                                                     onForward={handleForwardRequest}
                                                     onStar={handleStarMessage}
@@ -867,14 +1098,41 @@ const FacebookInbox: React.FC = () => {
                                 )}
                             </div>
 
-                            {/* Sticky bottom section - AI Suggestions + Message Input */}
+                            {/* Sticky bottom section - AI Suggestions + Saved Texts + Message Input */}
                             <div className="sticky bottom-0 border-t border-gray-200 bg-white z-10 shadow-lg mt-auto">
-                                <AISuggestions
-                                    conversationId={selectedConversation.id}
-                                    onSelectSuggestion={(text) => {
-                                        setSuggestedText(text);
-                                    }}
-                                />
+                                {/* AI Suggestions + Saved Texts Button */}
+                                <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-100">
+                                    <AISuggestions
+                                        conversationId={selectedConversation.id}
+                                        onSelectSuggestion={(text) => {
+                                            setSuggestedText(text);
+                                        }}
+                                    />
+                                    
+                                    {/* Saved Texts Button */}
+                                    <button
+                                        onClick={() => setShowTextGallery(true)}
+                                        className="flex items-center gap-2 px-3 py-2 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg transition-colors border border-green-200"
+                                        title="حافظة النصوص المحفوظة"
+                                    >
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        <span className="text-sm font-medium hidden sm:inline">الردود المحفوظة</span>
+                                    </button>
+
+                                    {/* Saved Images Button */}
+                                    <button
+                                        onClick={() => setShowImageGallery(true)}
+                                        className="flex items-center gap-2 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition-colors border border-blue-200"
+                                        title="حافظة الصور المحفوظة"
+                                    >
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                        <span className="text-sm font-medium hidden sm:inline">الصور المحفوظة</span>
+                                    </button>
+                                </div>
 
                                 <MessageInput
                                     onSendMessage={handleSendMessage}
@@ -917,9 +1175,9 @@ const FacebookInbox: React.FC = () => {
                             onTagsChange={handleTagsChange}
                             updatingTags={updatingTags}
                             currentStatus={selectedConversation.status}
-                            onStatusChange={handleStatusChange}
+                            onStatusChange={(status) => handleStatusChange(status as ConversationStatus)}
                             currentAssignee={selectedConversation.assignedTo}
-                            currentAssigneeName={selectedConversation.assignedToName}
+                            currentAssigneeName={selectedConversation.assignedToName ?? null}
                             onAssign={handleAssignment}
                             disabled={updating}
                         />
@@ -936,6 +1194,21 @@ const FacebookInbox: React.FC = () => {
                     ⚠️ غير متصل
                 </div>
             )}
+
+            {/* Text Gallery Modal */}
+            <TextGalleryModal
+                isOpen={showTextGallery}
+                onClose={() => setShowTextGallery(false)}
+                onSelectText={handleSelectTextFromGallery}
+            />
+
+            {/* Image Gallery Modal */}
+            <ImageGalleryModal
+                isOpen={showImageGallery}
+                onClose={() => setShowImageGallery(false)}
+                onSelectImage={handleSelectImageFromGallery}
+                onSelectMultipleImages={handleSelectMultipleImagesFromGallery}
+            />
         </div>
     );
 };

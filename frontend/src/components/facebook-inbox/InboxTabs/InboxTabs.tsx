@@ -48,7 +48,7 @@ const InboxTabs: React.FC<InboxTabsProps> = ({ activeTab, onTabChange, counts, o
                     >
                         <span>{tab.icon}</span>
                         <span>{tab.label}</span>
-                        {tab.count > 0 && (
+                        {tab.count > 0 && tab.id !== 'all' && (
                             <span className={`
                 px-2 py-0.5 text-xs rounded-full
                 ${activeTab === tab.id

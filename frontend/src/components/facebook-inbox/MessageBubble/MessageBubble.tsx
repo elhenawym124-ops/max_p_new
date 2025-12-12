@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, memo } from 'react';
 import { Trash2, MoreVertical, Reply, Forward, Star, Smile } from 'lucide-react';
 import ReactionSelector from '../Generic/ReactionSelector';
 
@@ -32,7 +32,7 @@ interface MessageBubbleProps {
     hasBeenReplied?: boolean; // جديد: هل تم الرد على هذه الرسالة
 }
 
-const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onForward, onStar, onReaction, onReply, currentUserId, hasBeenReplied }) => {
+const MessageBubble: React.FC<MessageBubbleProps> = memo(({ message, onDelete, onForward, onStar, onReaction, onReply, currentUserId, hasBeenReplied }) => {
     const isCustomer = !!message.isFromCustomer;
     const isAI = message.isAiGenerated;
     const [showActions, setShowActions] = useState(false);
@@ -391,6 +391,19 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onForw
             </div>
         </div>
     );
-};
+}, (prevProps, nextProps) => {
+    // Custom comparison function for better performance
+    return (
+        prevProps.message.id === nextProps.message.id &&
+        prevProps.message.content === nextProps.message.content &&
+        prevProps.message.timestamp.getTime() === nextProps.message.timestamp.getTime() &&
+        prevProps.message.status === nextProps.message.status &&
+        prevProps.message.metadata === nextProps.message.metadata &&
+        prevProps.hasBeenReplied === nextProps.hasBeenReplied &&
+        prevProps.currentUserId === nextProps.currentUserId
+    );
+});
+
+MessageBubble.displayName = 'MessageBubble';
 
 export default MessageBubble;

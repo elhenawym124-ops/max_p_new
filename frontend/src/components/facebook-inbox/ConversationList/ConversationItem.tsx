@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { InboxConversation } from '../../../types/inbox.types';
 
 interface ConversationItemProps {
@@ -9,7 +9,7 @@ interface ConversationItemProps {
     onClick: () => void;
 }
 
-const ConversationItem: React.FC<ConversationItemProps> = ({
+const ConversationItem: React.FC<ConversationItemProps> = memo(({
     conversation,
     isSelected,
     isMultiSelected = false,
@@ -143,6 +143,22 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
             </div>
         </div>
     );
-};
+}, (prevProps, nextProps) => {
+    // Custom comparison function for better performance
+    return (
+        prevProps.conversation.id === nextProps.conversation.id &&
+        prevProps.conversation.lastMessage === nextProps.conversation.lastMessage &&
+        prevProps.conversation.lastMessageTime.getTime() === nextProps.conversation.lastMessageTime.getTime() &&
+        prevProps.conversation.unreadCount === nextProps.conversation.unreadCount &&
+        prevProps.conversation.status === nextProps.conversation.status &&
+        prevProps.conversation.assignedTo === nextProps.conversation.assignedTo &&
+        prevProps.conversation.priority === nextProps.conversation.priority &&
+        prevProps.conversation.tags.length === nextProps.conversation.tags.length &&
+        prevProps.isSelected === nextProps.isSelected &&
+        prevProps.isMultiSelected === nextProps.isMultiSelected
+    );
+});
+
+ConversationItem.displayName = 'ConversationItem';
 
 export default ConversationItem;
