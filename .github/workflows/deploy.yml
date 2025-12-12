@@ -202,20 +202,24 @@ jobs:
               echo "📋 Current PM2 processes:"
               pm2 list
               
-              # Try to restart by name first, then by id, then start new
-              if pm2 list | grep -q "backend"; then
-                echo "🔄 Restarting backend by name..."
-                pm2 restart backend
-              elif pm2 list | grep -q "backend1"; then
+              # Try to restart by name first (check backend1 first as it's the actual name)
+              if pm2 list | grep -q "backend1"; then
                 echo "🔄 Restarting backend1 by name..."
                 pm2 restart backend1
-              elif [ -n "$(pm2 jlist | jq -r '.[0].name' 2>/dev/null)" ]; then
-                echo "🔄 Restarting first process..."
-                pm2 restart 0
+              elif pm2 list | grep -q "backend"; then
+                echo "🔄 Restarting backend by name..."
+                pm2 restart backend
+              elif pm2 list | grep -q "maxp-backend"; then
+                echo "🔄 Restarting maxp-backend by name..."
+                pm2 restart maxp-backend
               else
-                echo "🆕 Starting new backend process..."
-                cd /var/www/backend2
-                pm2 start server.js --name backend
+                # Try to restart by id (process 0 is backend1)
+                echo "🔄 Restarting process by ID (0)..."
+                pm2 restart 0 || {
+                  echo "🆕 Starting new backend process..."
+                  cd /var/www/backend2
+                  pm2 start server.js --name backend1
+                }
               fi
               
               # Wait a bit for process to start
@@ -224,7 +228,20 @@ jobs:
               # Check if process is running
               echo "📋 PM2 status after restart:"
               pm2 list
-              pm2 logs backend --lines 5 --nostream || pm2 logs backend1 --lines 5 --nostream || echo "⚠️ Could not get logs"
+              
+              # Try to get logs from any backend process
+              if pm2 list | grep -q "backend1"; then
+                echo "📋 Backend1 logs (last 10 lines):"
+                pm2 logs backend1 --lines 10 --nostream || echo "⚠️ Could not get backend1 logs"
+              elif pm2 list | grep -q "backend"; then
+                echo "📋 Backend logs (last 10 lines):"
+                pm2 logs backend --lines 10 --nostream || echo "⚠️ Could not get backend logs"
+              elif pm2 list | grep -q "maxp-backend"; then
+                echo "📋 Maxp-backend logs (last 10 lines):"
+                pm2 logs maxp-backend --lines 10 --nostream || echo "⚠️ Could not get maxp-backend logs"
+              else
+                echo "⚠️ Could not find backend process to show logs"
+              fi
             else
               echo "⚠️ PM2 not found, skipping restart"
             fi
