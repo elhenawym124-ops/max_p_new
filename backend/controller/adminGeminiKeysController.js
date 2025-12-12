@@ -3,7 +3,7 @@ const { getSharedPrismaClient } = require('../services/sharedDatabase');
 
 // Helper function to generate unique IDs
 function generateId() {
-  return 'cm' + Math.random().toString(36).substr(2, 9) + Math.random().toString(36).substr(2, 9);
+    return 'cm' + Math.random().toString(36).substr(2, 9) + Math.random().toString(36).substr(2, 9);
 }
 
 // Helper function to test Gemini key
@@ -31,7 +31,7 @@ async function testGeminiKey(apiKey, model) {
 
         const { GoogleGenerativeAI } = require('@google/generative-ai');
         const genAI = new GoogleGenerativeAI(apiKey);
-        
+
         // ✅ استخدام نموذج بسيط للاختبار
         const testModel = genAI.getGenerativeModel({ model: model || 'gemini-2.5-flash' });
 
@@ -47,7 +47,7 @@ async function testGeminiKey(apiKey, model) {
         };
     } catch (error) {
         console.error('❌ API key validation failed:', error.message);
-        
+
         // ✅ تحديد نوع الخطأ
         let errorMessage = error.message;
         if (error.message.includes('API_KEY_INVALID') || error.message.includes('API key not valid')) {
@@ -62,7 +62,7 @@ async function testGeminiKey(apiKey, model) {
                 response: 'المفتاح صالح لكن الكوتة منتهية مؤقتاً'
             };
         }
-        
+
         return {
             success: false,
             model: model || 'gemini-2.5-flash',
@@ -80,11 +80,11 @@ const getAllGeminiKeys = async (req, res) => {
         console.log('🔍 [ADMIN-GEMINI-KEYS] Query params:', { type, companyId });
 
         let whereClause = {};
-        
+
         // Build where clause with keyType support (Prisma Client now supports it)
 
         console.log('🔍 [ADMIN-GEMINI-KEYS] Where clause:', whereClause);
-        console.log('🔍 [ADMIN-GEMINI-KEYS] Prisma client:', prisma ? 'exists' : 'missing');
+
 
         // Build proper where clause with keyType support
         if (type === 'CENTRAL') {
@@ -311,7 +311,7 @@ const addGeminiKey = async (req, res) => {
         // Validate keyType
         const validKeyType = keyType === 'CENTRAL' ? 'CENTRAL' : 'COMPANY';
         console.log('🔍 [ADMIN-GEMINI-KEYS] Valid keyType:', validKeyType);
-        
+
         // For CENTRAL keys, companyId must be null
         // For COMPANY keys, companyId is required
         if (validKeyType === 'CENTRAL' && companyId) {
@@ -332,7 +332,7 @@ const addGeminiKey = async (req, res) => {
         const existingKey = await getSharedPrismaClient().geminiKey.findUnique({
             where: { apiKey }
         });
-        
+
         if (existingKey) {
             return res.status(400).json({
                 success: false,
@@ -360,7 +360,7 @@ const addGeminiKey = async (req, res) => {
             if (validKeyType === 'CENTRAL') {
                 // Count central keys
                 const centralKeyCount = await getSharedPrismaClient().geminiKey.count({
-                    where: { 
+                    where: {
                         keyType: 'CENTRAL',
                         companyId: null
                     }
@@ -369,7 +369,7 @@ const addGeminiKey = async (req, res) => {
             } else {
                 // Count company keys
                 const companyKeyCount = await getSharedPrismaClient().geminiKey.count({
-                    where: { 
+                    where: {
                         keyType: 'COMPANY',
                         companyId: companyId
                     }
@@ -393,16 +393,16 @@ const addGeminiKey = async (req, res) => {
         }
 
         const keyId = generateId();
-        const defaultDescription = validKeyType === 'CENTRAL' 
-            ? `مفتاح مركزي رقم ${priority}` 
+        const defaultDescription = validKeyType === 'CENTRAL'
+            ? `مفتاح مركزي رقم ${priority}`
             : `مفتاح رقم ${priority} - يدعم جميع النماذج`;
-        
+
         const isFirstKey = priority === 1;
 
         // Create the key using Prisma Client (now supports keyType)
         const finalCompanyId = validKeyType === 'CENTRAL' ? null : companyId;
         const descValue = description || defaultDescription || '';
-        
+
         console.log('🔍 [ADMIN-GEMINI-KEYS] Creating key with getSharedPrismaClient()...');
         let newKey;
         try {
@@ -463,7 +463,7 @@ const addGeminiKey = async (req, res) => {
             { model: 'gemini-3-pro', rpm: 2, tpm: 125000, rpd: 50, priority: 90, isEnabled: false },
             { model: 'gemini-3-pro-preview', rpm: 2, tpm: 125000, rpd: 50, priority: 91, isEnabled: false },
             { model: 'gemini-2.0-flash-exp', rpm: 10, tpm: 250000, rpd: 50, priority: 92, isEnabled: false },
-            
+
             // نماذج Gemma (غير متوفرة في Google AI Studio API)
             { model: 'gemma-3-27b', rpm: 30, tpm: 15000, rpd: 14400, priority: 93, isEnabled: false },
             { model: 'gemma-3-12b', rpm: 30, tpm: 15000, rpd: 14400, priority: 94, isEnabled: false },
@@ -483,7 +483,7 @@ const addGeminiKey = async (req, res) => {
             try {
                 // استخدام TPM كـ limit افتراضي للتوافق
                 const defaultLimit = modelInfo.tpm || 250000;
-                
+
                 await getSharedPrismaClient().geminiKeyModel.create({
                     data: {
                         id: generateId(),
@@ -533,7 +533,7 @@ const addGeminiKey = async (req, res) => {
         });
     } catch (error) {
         console.error('❌ [CRITICAL] Error adding Gemini key:', error);
-        
+
         if (error.code === 'P2002') {
             return res.status(400).json({
                 success: false,
@@ -541,7 +541,7 @@ const addGeminiKey = async (req, res) => {
                 errorCode: 'DUPLICATE_API_KEY'
             });
         }
-        
+
         res.status(500).json({
             success: false,
             error: 'Failed to add Gemini key',
@@ -731,31 +731,31 @@ const testGeminiKey2 = async (req, res) => {
 const clearModelCaches = async (req, res) => {
     try {
         console.log('🧹 [ADMIN-GEMINI-KEYS] clearModelCaches called');
-        
+
         // الحصول على ModelManager مباشرة
         const ModelManager = require('../services/aiAgent/modelManager');
         const aiAgentService = require('../aiAgentService');
-        
+
         // إنشاء instance مؤقت لمسح الـ cache
         const modelManager = new ModelManager(aiAgentService);
-        
+
         // ✅ مسح الـ caches في الـ instance الجديد
         const result = modelManager.clearAllCaches();
-        
+
         // ✅ أيضاً مسح exhaustedModelsCache في aiAgentService
         if (aiAgentService.exhaustedModelsCache) {
             const exhaustedCount = aiAgentService.exhaustedModelsCache.size;
             aiAgentService.exhaustedModelsCache.clear();
             result.aiAgentExhaustedCache = exhaustedCount;
         }
-        
+
         res.json({
             success: true,
             message: '✅ تم مسح جميع الـ caches بنجاح. قد تحتاج لإعادة تشغيل السيرفر لمسح الـ caches في الذاكرة.',
             data: result,
             note: 'لضمان مسح كامل، أعد تشغيل السيرفر'
         });
-        
+
     } catch (error) {
         console.error('❌ Error clearing caches:', error);
         res.status(500).json({

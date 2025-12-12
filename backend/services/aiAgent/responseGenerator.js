@@ -1906,8 +1906,39 @@ class ResponseGenerator {
         error.message?.includes('Service Unavailable') ||
         error.message?.includes('overloaded');
 
-      // ✅ FIX 7: استخدام while loop مع حد أقصى للمحاولات
-      if (is503Error && triedModels.size < MAX_FALLBACK_ATTEMPTS) {
+      // ✅ FIX: فحص إذا كان خطأ 429 (Quota Exceeded)
+      const is429Error = error.status === 429 ||
+        error.message?.includes('429') ||
+        error.message?.includes('Too Many Requests') ||
+        error.message?.includes('quota');
+
+      // ✅ FIX: إذا كان الخطأ 429، نقوم بتحديث حالة النموذج كمستنفد
+      if (is429Error) {
+        console.warn(`⚠️ [AI-RESPONSE] Primary model ${geminiConfig.model} failed with 429 (Quota Exceeded). Marking as exhausted.`);
+
+        let quotaValue = null;
+        try {
+          const errorDetails = error.errorDetails || [];
+          for (const detail of errorDetails) {
+            if (detail['@type'] === 'type.googleapis.com/google.rpc.QuotaFailure') {
+              const violations = detail.violations || [];
+              for (const violation of violations) {
+                if (violation.quotaValue) {
+                  quotaValue = violation.quotaValue;
+                }
+              }
+            }
+          }
+        } catch (parseError) {
+          console.warn('⚠️ [AI-RESPONSE-429] Could not parse error details:', parseError);
+        }
+
+        const modelId = geminiConfig?.modelId || null;
+        await this.aiAgentService.markModelAsExhaustedFrom429(geminiConfig.model, quotaValue, companyId, modelId);
+      }
+
+      // ✅ FIX 7: استخدام while loop مع حد أقصى للمحاولات (للخطأين 503 و 429)
+      if ((is503Error || is429Error) && triedModels.size < MAX_FALLBACK_ATTEMPTS) {
         console.log(`🔄 [503-ERROR] Model is overloaded. Attempting to switch to backup model (attempt ${triedModels.size + 1}/${MAX_FALLBACK_ATTEMPTS})...`);
 
         // ✅ FIX 2: محاولة الحصول على نموذج بديل مع استثناء النماذج المجربة

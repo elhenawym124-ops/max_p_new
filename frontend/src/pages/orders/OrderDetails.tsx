@@ -117,7 +117,7 @@ const OrderDetails: React.FC = () => {
       setLoading(true);
 
       // Use apiClient instead of fetch
-      const response = await apiClient.get(`/orders-new/simple/${orderNumber}`);
+      const response = await apiClient.get(`/orders-enhanced/${orderNumber}`);
       const data = response.data;
 
       // If not found, try guest public API (fallback logic from original file)

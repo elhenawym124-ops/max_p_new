@@ -969,6 +969,7 @@ app.use("/api/v1/shipping-zones/", shippingZoneRoutes)
 app.use("/api/v1/conversations/", conversationRoutes)
 app.use("/api/v1/customers/", customerRoutes)
 app.use("/api/v1/orders/", orderRoutes)
+app.use("/api/v1/orders-enhanced/", enhancedOrderRoutes)
 app.use("/api/v1/opportunities/", opportunitiesRoutes)
 app.use("/api/v1/tasks/", taskRoutes)
 app.use("/api/v1/projects/", projectRoutes)
@@ -1491,7 +1492,8 @@ app.use('/api/v1/orders-new', orderRoutes2);
 app.use('/api/v1/orders-enhanced', enhancedOrderRoutes);
 
 const successLearningRoutes = require('./routes/successLearning');
-app.use('/api/v1/success-learning', successLearningRoutes);
+// Add authentication middleware to ensure req.user is populated
+app.use('/api/v1/success-learning', require('./utils/verifyToken').authenticateToken, successLearningRoutes);
 
 
 const autoPatternRoutes = require('./routes/autoPatternRoutes');
@@ -1521,9 +1523,11 @@ app.get('/api/v1/conversations',
   verifyToken.authenticateToken,
   verifyToken.requireCompanyAccess,
   async (req, res) => {
+    console.log('🔍 [CONVERSATIONS-ENDPOINT] Route hit! Starting endpoint execution');
     try {
       // التحقق من المصادقة والشركة
       const companyId = req.user?.companyId;
+      console.log('🔍 [CONVERSATIONS-ENDPOINT] Company ID:', companyId);
       if (!companyId) {
         return res.status(403).json({
           success: false,
@@ -1659,7 +1663,8 @@ app.get('/api/v1/conversations',
       });
 
       // Transform data to match frontend format
-      const transformedConversations = await Promise.all(conversations.map(async conv => {
+      console.log(`🔍 [CONVERSATIONS-ENDPOINT] Starting transformation for ${conversations.length} conversations`);
+      const transformedConversations = await Promise.all(conversations.map(async (conv, index) => {
         // استخراج حالة AI من metadata
         let aiEnabled = true; // افتراضي
         let pageName = null; // اسم الصفحة
@@ -1704,6 +1709,98 @@ app.get('/api/v1/conversations',
               }
             }
 
+            // إذا لم يكن لدينا pageId في metadata، حاول استخراجه من أول رسالة في المحادثة
+            if (!pageId && conv.channel === 'FACEBOOK') {
+              try {
+                const prisma = getPrisma();
+                const firstMessage = await prisma.message.findFirst({
+                  where: { conversationId: conv.id },
+                  orderBy: { createdAt: 'asc' },
+                  select: { metadata: true }
+                });
+                
+                if (firstMessage && firstMessage.metadata) {
+                  try {
+                    const msgMetadata = typeof firstMessage.metadata === 'string' 
+                      ? JSON.parse(firstMessage.metadata) 
+                      : firstMessage.metadata;
+                    if (msgMetadata.pageId) {
+                      pageId = msgMetadata.pageId;
+                      // حاول جلب pageName
+                      if (!pageName && pageId) {
+                        const facebookPage = await prisma.facebookPage.findUnique({
+                          where: { pageId: pageId },
+                          select: { pageName: true }
+                        });
+                        if (facebookPage) {
+                          pageName = facebookPage.pageName;
+                        }
+                      }
+                    }
+                  } catch (e) {
+                    // ignore
+                  }
+                }
+
+                // إذا لم نجد pageId في الرسالة، حاول من Customer
+                if (!pageId) {
+                  try {
+                    const customer = await prisma.customer.findUnique({
+                      where: { id: conv.customerId },
+                      select: { metadata: true }
+                    });
+                    if (customer && customer.metadata) {
+                      try {
+                        const customerMetadata = typeof customer.metadata === 'string'
+                          ? JSON.parse(customer.metadata)
+                          : customer.metadata;
+                        if (customerMetadata.facebookPageId) {
+                          pageId = customerMetadata.facebookPageId;
+                          // حاول جلب pageName
+                          if (!pageName && pageId) {
+                            const facebookPage = await prisma.facebookPage.findUnique({
+                              where: { pageId: pageId },
+                              select: { pageName: true }
+                            });
+                            if (facebookPage) {
+                              pageName = facebookPage.pageName;
+                            }
+                          }
+                        }
+                      } catch (e) {
+                        // ignore
+                      }
+                    }
+                  } catch (e) {
+                    // ignore
+                  }
+                }
+
+                // إذا لم نجد pageId، حاول البحث عن أي صفحة Facebook مرتبطة بالشركة
+                if (!pageId && !pageName && conv.companyId) {
+                  try {
+                    const prisma = getPrisma();
+                    const companyPage = await prisma.facebookPage.findFirst({
+                      where: {
+                        companyId: conv.companyId,
+                        status: 'connected'
+                      },
+                      select: { pageId: true, pageName: true },
+                      orderBy: { connectedAt: 'desc' }
+                    });
+                    if (companyPage) {
+                      pageId = companyPage.pageId;
+                      pageName = companyPage.pageName;
+                    }
+                  } catch (e) {
+                    // ignore
+                  }
+                }
+              } catch (e) {
+                // ignore
+              }
+            }
+
             //console.log(`🔍 [AI-DEBUG] Conversation ${conv.id}: metadata=${conv.metadata}, aiEnabled=${aiEnabled}, pageName=${pageName}`);
           } catch (error) {
             console.warn('⚠️ Could not parse conversation metadata:', error);
@@ -1712,38 +1809,32 @@ app.get('/api/v1/conversations',
           //console.log(`🔍 [AI-DEBUG] Conversation ${conv.id}: no metadata, using default aiEnabled=${aiEnabled}`);
         }
 
-        // 🔧 FIX: Fallback لجلب آخر رسالة فعلية من جدول messages لو lastMessagePreview فارغ
+        // 🔧 FIX: Always fetch the actual last message to get accurate lastMessageIsFromCustomer
         let lastMessagePreview = conv.lastMessagePreview;
         let derivedLastMessageTime = conv.lastMessageAt || conv.createdAt;
-        let lastMessageIsFromCustomer = (conv.messages && conv.messages.length > 0) ? Boolean(conv.messages[0].isFromCustomer) : false; // ⚡ NEW: تتبع من أرسل آخر رسالة
-        let lastCustomerMessageIsUnread = (conv.messages && conv.messages.length > 0) ? (conv.messages[0].isFromCustomer === true && conv.messages[0].isRead === false) : false;
+        let lastMessageIsFromCustomer = false; // Will be determined from actual last message
+        let lastCustomerMessageIsUnread = false;
 
-        if (
-          !lastMessagePreview ||
-          lastMessagePreview === 'لا توجد رسائل' ||
-          lastMessagePreview.trim() === '' ||
-          lastMessagePreview.trim().length < 2 ||
-          /^[✓✗×\s]+$/.test(lastMessagePreview.trim())
-        ) {
-          try {
-            // جلب جميع الرسائل وفلترتها في الكود (أبسط وأضمن)
-            const prisma = getPrisma();
-            const messages = await prisma.message.findMany({
-              where: { conversationId: conv.id },
-              orderBy: { createdAt: 'desc' },
-              take: 50, // جلب آخر 50 رسالة
-              select: { content: true, type: true, createdAt: true, isFromCustomer: true, isRead: true } // ⚡ إضافة isFromCustomer
-            });
+        // Always fetch the actual last message to ensure accurate lastMessageIsFromCustomer
+        try {
+          const prisma = getPrisma();
+          const messages = await prisma.message.findMany({
+            where: { conversationId: conv.id },
+            orderBy: { createdAt: 'desc' },
+            take: 50, // جلب آخر 50 رسالة
+            select: { content: true, type: true, createdAt: true, isFromCustomer: true, isRead: true }
+          });
 
-            // البحث عن أول رسالة فيها محتوى فعلي
+          if (messages && messages.length > 0) {
+            // البحث عن أول رسالة فيها محتوى فعلي (هذه هي آخر رسالة فعلية)
             let lastMessage = null;
             for (const msg of messages) {
               const msgType = (msg.type || '').toString().toUpperCase();
               if (msgType === 'IMAGE') {
-                lastMessage = { content: '📷 صورة', type: 'IMAGE', createdAt: msg.createdAt, isFromCustomer: msg.isFromCustomer, isRead: msg.isRead }; // ⚡ حفظ isFromCustomer
+                lastMessage = { content: '📷 صورة', type: 'IMAGE', createdAt: msg.createdAt, isFromCustomer: msg.isFromCustomer, isRead: msg.isRead };
                 break;
               } else if (msgType === 'FILE') {
-                lastMessage = { content: '📎 ملف', type: 'FILE', createdAt: msg.createdAt, isFromCustomer: msg.isFromCustomer, isRead: msg.isRead }; // ⚡ حفظ isFromCustomer
+                lastMessage = { content: '📎 ملف', type: 'FILE', createdAt: msg.createdAt, isFromCustomer: msg.isFromCustomer, isRead: msg.isRead };
                 break;
               } else if (msgType === 'TEXT') {
                 const trimmedContent = (msg.content || '').trim();
@@ -1762,20 +1853,45 @@ app.get('/api/v1/conversations',
               }
             }
 
-            if (lastMessage && lastMessage.content) {
-              lastMessagePreview = lastMessage.type === 'IMAGE' ? '📷 صورة' :
-                lastMessage.type === 'FILE' ? '📎 ملف' :
-                  (lastMessage.content.length > 100 ? lastMessage.content.substring(0, 100) + '...' : lastMessage.content);
-              derivedLastMessageTime = lastMessage.createdAt || derivedLastMessageTime;
-              lastMessageIsFromCustomer = lastMessage.isFromCustomer || false; // ⚡ حفظ من أرسل آخر رسالة
+            if (lastMessage) {
+              // Always update lastMessageIsFromCustomer from the actual last message
+              lastMessageIsFromCustomer = Boolean(lastMessage.isFromCustomer);
               lastCustomerMessageIsUnread = lastMessage.isFromCustomer === true && lastMessage.isRead === false;
-              console.log(`✅ [FALLBACK] Retrieved last meaningful message for conversation ${conv.id}: ${lastMessagePreview.substring(0, 50)}...`);
+
+              // Update lastMessagePreview only if it's missing or invalid
+              if (
+                !lastMessagePreview ||
+                lastMessagePreview === 'لا توجد رسائل' ||
+                lastMessagePreview.trim() === '' ||
+                lastMessagePreview.trim().length < 2 ||
+                /^[✓✗×\s]+$/.test(lastMessagePreview.trim())
+              ) {
+                lastMessagePreview = lastMessage.type === 'IMAGE' ? '📷 صورة' :
+                  lastMessage.type === 'FILE' ? '📎 ملف' :
+                    (lastMessage.content.length > 100 ? lastMessage.content.substring(0, 100) + '...' : lastMessage.content);
+                derivedLastMessageTime = lastMessage.createdAt || derivedLastMessageTime;
+              }
             } else {
-              lastMessagePreview = 'لا توجد رسائل';
-              console.log(`⚠️ [FALLBACK] No meaningful messages found for conversation ${conv.id}`);
+              // No meaningful message found, use defaults
+              if (!lastMessagePreview || lastMessagePreview === 'لا توجد رسائل') {
+                lastMessagePreview = 'لا توجد رسائل';
+              }
             }
-          } catch (error) {
-            console.warn(`⚠️ [FALLBACK] Failed to get last message for conversation ${conv.id}:`, error.message);
+          } else {
+            // No messages at all
+            if (!lastMessagePreview || lastMessagePreview === 'لا توجد رسائل') {
+              lastMessagePreview = 'لا توجد رسائل';
+            }
+          }
+        } catch (error) {
+          console.warn(`⚠️ [LAST-MESSAGE] Failed to get last message for conversation ${conv.id}:`, error.message);
+          // Fallback to using conv.messages[0] if available
+          if (conv.messages && conv.messages.length > 0) {
+            lastMessageIsFromCustomer = Boolean(conv.messages[0].isFromCustomer);
+            lastCustomerMessageIsUnread = conv.messages[0].isFromCustomer === true && conv.messages[0].isRead === false;
+          }
+          // Keep existing lastMessagePreview if error occurred
+          if (!lastMessagePreview || lastMessagePreview === 'لا توجد رسائل') {
             lastMessagePreview = 'لا توجد رسائل';
           }
         }
@@ -1798,7 +1914,10 @@ app.get('/api/v1/conversations',
           customerOrders: [],
           lastRepliedBy: conv.assignedUser ? `${conv.assignedUser.firstName} ${conv.assignedUser.lastName}` : null,
           aiEnabled: aiEnabled,
-          pageName: pageName, // إضافة اسم الصفحة
+          pageName: (() => {
+            const channelLower = (conv.channel || '').toLowerCase();
+            return pageName || (channelLower === 'facebook' ? 'Facebook' : null);
+          })(),
           pageId: pageId, // إضافة معرف الصفحة
           adSource: adSource, // ✅ إضافة معلومات الإعلان
           postId: postId, // 🆕 إضافة معرف المنشور
@@ -2088,13 +2207,13 @@ app.get('/api/v1/conversations/:id/messages',
             });
             convertedTimestamp = new Date().toISOString();
           }
-          
+
           // 🔍 DEBUG: Log the converted timestamp
           if (!convertedTimestamp || typeof convertedTimestamp !== 'string') {
             console.error(`❌ [TIMESTAMP] Invalid convertedTimestamp for message ${msg.id}:`, convertedTimestamp);
             convertedTimestamp = new Date().toISOString(); // Force fallback
           }
-          
+
           // 🔍 DEBUG: Log timestamp for first message
           if (messages.indexOf(msg) === 0) {
             console.log('🔍 [DEBUG] First message timestamp conversion:', {
@@ -2129,7 +2248,7 @@ app.get('/api/v1/conversations/:id/messages',
                   isAiGenerated = metadata.isAIGenerated || metadata.isAutoGenerated || false;
                   isFacebookReply = metadata.platform === 'facebook' && !msg.isFromCustomer; // Outgoing Facebook messages
                   facebookMessageId = metadata.facebookMessageId || null; // Store Facebook message ID
-                  
+
                   // استخراج معلومات الرد (reply)
                   replyToResolvedMessageId = metadata.replyToResolvedMessageId || metadata.replyToMessageId || null;
                   replyToContentSnippet = metadata.replyToContentSnippet || metadata.replyToContent || null;
@@ -2209,7 +2328,7 @@ app.get('/api/v1/conversations/:id/messages',
             const firstName = msg.sender.firstName || '';
             const lastName = msg.sender.lastName || '';
             const fullName = `${firstName} ${lastName}`.trim();
-            
+
             if (fullName) {
               senderInfo = {
                 id: msg.sender.id,
@@ -2217,7 +2336,7 @@ app.get('/api/v1/conversations/:id/messages',
               };
             }
           }
-          
+
           // إذا لم يكن هناك senderInfo من sender، جرب metadata
           if (!senderInfo && !msg.isFromCustomer && msg.metadata) {
             // محاولة قراءة من metadata للرسائل القديمة

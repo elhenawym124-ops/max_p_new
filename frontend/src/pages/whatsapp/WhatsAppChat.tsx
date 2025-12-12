@@ -222,6 +222,32 @@ const WhatsAppChat: React.FC = () => {
     });
   }, [messagesData]);
 
+  // Filter out reactions from the main message list
+  const visibleMessages = useMemo(() => {
+    return messages.filter(m => m.messageType !== 'REACTION');
+  }, [messages]);
+
+  // Aggregate reactions by original message ID
+  const reactionsMap = useMemo(() => {
+    const map = new Map<string, Array<{ emoji: string, sender: string, fromMe: boolean }>>();
+    messages.forEach(m => {
+      if (m.messageType === 'REACTION' && m.quotedMessageId && m.content) {
+        const targetId = m.quotedMessageId;
+        if (!map.has(targetId)) {
+          map.set(targetId, []);
+        }
+        // Use participant for group members, or derive sender name
+        // For now, we store basic info.
+        map.get(targetId)?.push({
+          emoji: m.content,
+          sender: m.fromMe ? 'You' : (m.participant || m.remoteJid),
+          fromMe: m.fromMe
+        });
+      }
+    });
+    return map;
+  }, [messages]);
+
   const { data: quickReplies = [] } = useWhatsAppQuickReplies();
 
   // Mutations
@@ -247,10 +273,14 @@ const WhatsAppChat: React.FC = () => {
 
       if (searchQuery === 'individual:') return !c.jid.endsWith('@g.us');
       if (searchQuery === 'group:') return c.jid.endsWith('@g.us');
+
+      // Filter out empty chats or chats where the last message is a reaction (cleanup)
+      if (!c.lastMessage && !c.isGroup) return false;
+      if (c.lastMessage?.messageType === 'REACTION') return false;
+
       if (!searchQuery) return true;
       const displayName = getContactName(c);
-      return (displayName || c.phoneNumber).toLowerCase().includes(searchQuery.toLowerCase());
-      return (displayName || c.phoneNumber).toLowerCase().includes(searchQuery.toLowerCase());
+      return (displayName || c.phoneNumber || '').toLowerCase().includes(searchQuery.toLowerCase());
     });
   }, [conversations, chatFilter, searchQuery, getContactName]);
 
@@ -285,7 +315,7 @@ const WhatsAppChat: React.FC = () => {
     scrollToBottom: scrollToBottomFn,
     scrollToTop: scrollToTopFn
   } = useVirtualMessages(
-    messages,
+    visibleMessages,
     messagesContainerRef,
     {
       estimateSize: 60,
@@ -971,7 +1001,45 @@ const WhatsAppChat: React.FC = () => {
       </Box>
     );
 
-    return content;
+    // Render reactions if any
+    const reactions = reactionsMap.get(message.messageId);
+
+    return (
+      <Box sx={{ position: 'relative' }}>
+        {content}
+        {reactions && reactions.length > 0 && (
+          <Box
+            sx={{
+              position: 'absolute',
+              bottom: -15,
+              right: message.fromMe ? 0 : 'auto',
+              left: message.fromMe ? 'auto' : 0,
+              bgcolor: 'background.paper',
+              boxShadow: 1,
+              borderRadius: 4,
+              px: 0.5,
+              py: 0.25,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+              zIndex: 1,
+              border: '1px solid',
+              borderColor: 'divider'
+            }}
+          >
+            {/* Display up to 3 unique reactions */}
+            {Array.from(new Set(reactions.map(r => r.emoji))).slice(0, 3).map((emoji, idx) => (
+              <Typography key={idx} variant="caption" sx={{ fontSize: '1rem', lineHeight: 1 }}>{emoji}</Typography>
+            ))}
+            {reactions.length > 1 && (
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', ml: 0.5 }}>
+                {reactions.length}
+              </Typography>
+            )}
+          </Box>
+        )}
+      </Box>
+    );
   };
 
   const handleSendMessage = async () => {

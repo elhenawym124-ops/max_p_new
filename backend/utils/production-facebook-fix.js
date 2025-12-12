@@ -22,7 +22,7 @@ const axios = require('axios');
 async function validateFacebookRecipientStrict(recipientId, pageId, accessToken) {
   try {
     //console.log(`🔍 [PROD-VALIDATION] Validating recipient ${recipientId} for page ${pageId}`);
-    
+
     // 1. Basic validation
     if (!recipientId || typeof recipientId !== 'string' || recipientId.trim() === '') {
       return {
@@ -160,21 +160,21 @@ async function sendProductionFacebookMessage(recipientId, messageContent, messag
     //console.log(`📱 Recipient: ${recipientId}, Page: ${pageId}, Type: ${messageType}`);
     //console.log(`🔐 Access Token Available: ${!!accessToken}`);
     //console.log(`📄 Access Token Length: ${accessToken?.length || 0}`);
-    
+
     // STEP 1: Strict validation (this will prevent 2018001 errors)
     const validation = await validateFacebookRecipientStrict(recipientId, pageId, accessToken);
-    
+
     if (!validation.valid || !validation.canSend) {
       console.error(`❌ [PROD-SEND] Validation failed - BLOCKING message send`);
       console.error(`📝 [PROD-SEND] Reason: ${validation.message}`);
-      
+
       if (validation.solutions) {
         //console.log('🔧 [PROD-SEND] Solutions:');
         validation.solutions.forEach(solution => {
           //console.log(`   - ${solution}`);
         });
       }
-      
+
       // Return validation error instead of attempting to send
       return {
         success: false,
@@ -218,6 +218,24 @@ async function sendProductionFacebookMessage(recipientId, messageContent, messag
           is_reusable: true
         }
       };
+    } else if (messageType === 'VIDEO') {
+      // For video messages
+      messageData.message.attachment = {
+        type: "video",
+        payload: {
+          url: messageContent,
+          is_reusable: true
+        }
+      };
+    } else if (messageType === 'AUDIO') {
+      // For audio messages
+      messageData.message.attachment = {
+        type: "audio",
+        payload: {
+          url: messageContent,
+          is_reusable: true
+        }
+      };
     } else {
       // Default to text for unknown types
       messageData.message.text = messageContent;
@@ -249,19 +267,19 @@ async function sendProductionFacebookMessage(recipientId, messageContent, messag
 
   } catch (error) {
     console.error(`❌ [PROD-SEND] Error sending Facebook message:`, error.message);
-    
+
     // Handle different types of errors
     if (error.response) {
       console.error(`❌ [PROD-SEND] Facebook API Error Response:`, error.response.data);
       console.error(`❌ [PROD-SEND] Status: ${error.response.status}`);
       console.error(`❌ [PROD-SEND] Headers:`, error.response.headers);
-      
+
       // Handle specific Facebook errors
       const fbError = error.response.data?.error;
       if (fbError) {
         return handleProductionFacebookError(fbError, recipientId, pageId);
       }
-      
+
       return {
         success: false,
         error: 'FACEBOOK_API_ERROR',
@@ -296,11 +314,11 @@ async function sendProductionFacebookMessage(recipientId, messageContent, messag
  */
 function handleProductionFacebookError(fbError, recipientId, pageId) {
   //console.log(`🔧 [PROD-ERROR] Handling Facebook error:`, fbError);
-  
+
   const errorCode = fbError?.code;
   const errorSubcode = fbError?.error_subcode;
   const errorMessage = fbError?.message || 'خطأ غير معروف';
-  
+
   // Common Facebook error patterns
   if (errorCode === 190) {
     // Access token error

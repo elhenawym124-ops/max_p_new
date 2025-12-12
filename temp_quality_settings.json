@@ -1,0 +1,8 @@
+{
+  "qualityEvaluationEnabled": true,
+  "autoReplyEnabled": false,
+  "confidenceThreshold": 0.7,
+  "multimodalEnabled": true,
+  "ragEnabled": true,
+  "createdAt": "2025-12-11T22:51:22.260Z"
+}

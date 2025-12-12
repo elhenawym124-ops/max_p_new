@@ -23,16 +23,16 @@ class EnhancedOrderService {
 
       // التحقق من وجود العميل
       const customer = await this.findOrCreateCustomer(data);
-      
+
       // التحقق من وجود المحادثة
       const conversation = await this.findConversation(data.conversationId);
-      
+
       // إنشاء رقم الطلب
       const orderNumber = await this.generateOrderNumber(data.companyId);
-      
+
       // حساب التكاليف (async الآن)
       const costs = await this.calculateOrderCosts(data);
-      
+
       // تحضير بيانات الطلب
       const orderData = await this.prepareOrderData({
         ...data,
@@ -41,7 +41,7 @@ class EnhancedOrderService {
         orderNumber,
         costs
       });
-      
+
       // إنشاء الطلب في قاعدة البيانات
       const order = await this.createOrderInDatabase(orderData);
       console.log(order)
@@ -49,10 +49,10 @@ class EnhancedOrderService {
       if (conversation) {
         await this.addOrderNoteToConversation(conversation.id, order.orderNumber);
       }
-      
+
       // تسجيل الإحصائيات
       await this.logOrderCreation(order);
-      
+
       // 🛒 تصدير تلقائي لـ WooCommerce (في الخلفية)
       try {
         const wooExportService = getWooCommerceAutoExportService();
@@ -60,18 +60,18 @@ class EnhancedOrderService {
       } catch (wooError) {
         console.log('⚠️ [ENHANCED-ORDER] WooCommerce auto-export skipped:', wooError.message);
       }
-      
+
       console.log('✅ [ENHANCED-ORDER] تم إنشاء الطلب بنجاح:', order.orderNumber);
-      
+
       // تحويل الـ Decimal fields لـ numbers قبل الإرجاع
       const transformedOrder = this.transformOrderForResponse(order);
-      
+
       return {
         success: true,
         order: transformedOrder,
         message: 'تم إنشاء الطلب بنجاح'
       };
-      
+
     } catch (error) {
       console.error('❌ [ENHANCED-ORDER] خطأ في إنشاء الطلب:', error);
       return {
@@ -88,44 +88,44 @@ class EnhancedOrderService {
   async findOrCreateCustomer(data) {
     try {
       let customer = null;
-      
+
       // البحث بـ customerId أولاً
       if (data.customerId) {
-        customer = await this.safeQuery(() => 
+        customer = await this.safeQuery(() =>
           this.prisma.customer.findUnique({
             where: { id: data.customerId }
           })
         );
       }
-      
+
       // البحث بـ facebookId إذا لم نجد العميل
       if (!customer && data.customerId && data.customerId.match(/^\d+$/)) {
-        customer = await this.safeQuery(() => 
+        customer = await this.safeQuery(() =>
           this.prisma.customer.findUnique({
             where: { facebookId: data.customerId }
           })
         );
       }
-      
+
       // البحث برقم الهاتف
       if (!customer && data.customerPhone) {
-        customer = await this.safeQuery(() => 
+        customer = await this.safeQuery(() =>
           this.prisma.customer.findFirst({
-            where: { 
+            where: {
               phone: data.customerPhone,
               companyId: data.companyId
             }
           })
         );
       }
-      
+
       // إنشاء عميل جديد إذا لم نجده
       if (!customer) {
         //console.log('👤 [ENHANCED-ORDER] إنشاء عميل جديد...');
-        
+
         const customerName = this.parseCustomerName(data.customerName);
-        
-        customer = await this.safeQuery(() => 
+
+        customer = await this.safeQuery(() =>
           this.prisma.customer.create({
             data: {
               firstName: customerName.firstName,
@@ -145,14 +145,14 @@ class EnhancedOrderService {
             }
           })
         );
-        
+
         //console.log('✅ [ENHANCED-ORDER] تم إنشاء عميل جديد:', customer.id);
       } else {
         //console.log('👤 [ENHANCED-ORDER] تم العثور على العميل:', customer.id);
       }
-      
+
       return customer;
-      
+
     } catch (error) {
       console.error('❌ [ENHANCED-ORDER] خطأ في البحث عن العميل:', error);
       throw error;
@@ -169,9 +169,9 @@ class EnhancedOrderService {
         lastName: 'جديد'
       };
     }
-    
+
     const nameParts = fullName.trim().split(' ');
-    
+
     return {
       firstName: nameParts[0] || 'عميل',
       lastName: nameParts.slice(1).join(' ') || 'جديد'
@@ -183,20 +183,20 @@ class EnhancedOrderService {
    */
   async findConversation(conversationId) {
     if (!conversationId) return null;
-    
+
     try {
-      const conversation = await this.safeQuery(() => 
+      const conversation = await this.safeQuery(() =>
         this.prisma.conversation.findUnique({
           where: { id: conversationId }
         })
       );
-      
+
       if (conversation) {
         //console.log('💬 [ENHANCED-ORDER] تم العثور على المحادثة:', conversationId);
       } else {
         //console.log('⚠️ [ENHANCED-ORDER] لم يتم العثور على المحادثة:', conversationId);
       }
-      
+
       return conversation;
     } catch (error) {
       console.error('❌ [ENHANCED-ORDER] خطأ في البحث عن المحادثة:', error);
@@ -210,15 +210,15 @@ class EnhancedOrderService {
   async generateOrderNumber(companyId) {
     const today = new Date();
     const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
-    
+
     // ✅ محاولة توليد رقم فريد مع retry logic
     let attempts = 0;
     const maxAttempts = 5;
-    
+
     while (attempts < maxAttempts) {
       try {
         // البحث عن آخر طلب اليوم
-        const lastOrder = await this.safeQuery(() => 
+        const lastOrder = await this.safeQuery(() =>
           this.prisma.order.findFirst({
             where: {
               companyId: companyId,
@@ -230,41 +230,41 @@ class EnhancedOrderService {
             orderBy: { createdAt: 'desc' }
           })
         );
-        
+
         let sequence = 1;
         if (lastOrder) {
           const lastSequence = parseInt(lastOrder.orderNumber.slice(-3));
           sequence = lastSequence + 1;
         }
-        
+
         // ✅ إضافة random suffix لتجنب التكرار في حالة race condition
         const randomSuffix = Math.floor(Math.random() * 100).toString().padStart(2, '0');
         const orderNumber = `ORD-${dateStr}-${sequence.toString().padStart(3, '0')}-${randomSuffix}`;
-        
+
         // ✅ التحقق من عدم وجود الرقم
-        const existing = await this.safeQuery(() => 
+        const existing = await this.safeQuery(() =>
           this.prisma.order.findUnique({
             where: { orderNumber }
           })
         );
-        
+
         if (!existing) {
           return orderNumber;
         }
-        
+
         attempts++;
         console.log(`⚠️ [ORDER-NUMBER] رقم مكرر، محاولة ${attempts}/${maxAttempts}`);
-        
+
       } catch (error) {
         attempts++;
         console.error(`❌ [ORDER-NUMBER] خطأ في المحاولة ${attempts}:`, error.message);
-        
+
         if (attempts >= maxAttempts) {
           throw error;
         }
       }
     }
-    
+
     // ✅ Fallback: استخدام timestamp دقيق
     const timestamp = Date.now();
     return `ORD-${dateStr}-${timestamp.toString().slice(-6)}`;
@@ -274,27 +274,43 @@ class EnhancedOrderService {
    * حساب تكاليف الطلب
    */
   async calculateOrderCosts(data) {
-    const productPrice = parseFloat(data.productPrice) || 349;
-    const quantity = parseInt(data.quantity) || 1;
-    const subtotal = productPrice * quantity;
-    
-    console.log(`💰 [COSTS-CALC] بدء حساب التكاليف - المدينة: "${data.city}" | السعر: ${productPrice} | الكمية: ${quantity}`);
-    
+    let subtotal = 0;
+    let quantity = 0;
+    let productPrice = 0; // For legacy return structure
+
+    if (data.products && Array.isArray(data.products) && data.products.length > 0) {
+      // Calculate from products array
+      subtotal = data.products.reduce((sum, item) => {
+        const price = parseFloat(item.price) || 0;
+        const qty = parseInt(item.quantity) || 1;
+        return sum + (price * qty);
+      }, 0);
+      quantity = data.products.reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0);
+      productPrice = subtotal; // Just a placeholder for return object
+    } else {
+      // Legacy single product
+      productPrice = parseFloat(data.productPrice) || 349;
+      quantity = parseInt(data.quantity) || 1;
+      subtotal = productPrice * quantity;
+    }
+
+    console.log(`💰 [COSTS-CALC] بدء حساب التكاليف - المدينة: "${data.city}" | المجموع الفرعي: ${subtotal} | الكمية: ${quantity}`);
+
     // حساب الشحن من قاعدة البيانات
     const shipping = await this.calculateShipping(data.city, subtotal, data.companyId);
-    
+
     console.log(`📦 [COSTS-CALC] نتيجة حساب الشحن: ${shipping} جنيه`);
-    
+
     // حساب الضرائب (0% حالياً)
     const tax = 0;
-    
+
     // حساب الخصم
     const discount = 0;
-    
+
     const total = subtotal + shipping + tax - discount;
-    
+
     console.log(`✅ [COSTS-CALC] النتيجة النهائية - المجموع: ${subtotal} | الشحن: ${shipping} | الإجمالي: ${total}`);
-    
+
     return {
       productPrice,
       quantity,
@@ -314,7 +330,7 @@ class EnhancedOrderService {
     console.log(`📍 [SHIPPING-CALC] المدينة: "${city}"`);
     console.log(`💰 [SHIPPING-CALC] المبلغ: ${subtotal} جنيه`);
     console.log(`🏢 [SHIPPING-CALC] الشركة: ${companyId}`);
-    
+
     if (!city || city === 'غير محدد') {
       console.log(`⚠️ [SHIPPING-CALC] المدينة غير محددة، استخدام السعر الافتراضي: 50 جنيه`);
       console.log(`🚚 [SHIPPING-CALC] ===== انتهى الحساب =====\n`);
@@ -331,9 +347,9 @@ class EnhancedOrderService {
       // استخدام خدمة الشحن للبحث في قاعدة البيانات
       const shippingService = require('./shippingService');
       console.log(`🔍 [SHIPPING-CALC] البحث في قاعدة البيانات...`);
-      
+
       const shippingInfo = await shippingService.findShippingInfo(city, companyId);
-      
+
       console.log(`📦 [SHIPPING-CALC] نتيجة البحث:`, JSON.stringify(shippingInfo, null, 2));
 
       if (shippingInfo && shippingInfo.found) {
@@ -341,10 +357,10 @@ class EnhancedOrderService {
         console.log(`✅ [SHIPPING-CALC] تم العثور على سعر الشحن: ${finalPrice} جنيه`);
         console.log(`⏰ [SHIPPING-CALC] مدة التوصيل: ${shippingInfo.deliveryTime}`);
         console.log(`🚚 [SHIPPING-CALC] ===== انتهى الحساب =====\n`);
-        
+
         // حفظ مدة التوصيل لاستخدامها لاحقاً
         this.lastShippingInfo = shippingInfo;
-        
+
         return finalPrice;
       } else {
         console.log(`⚠️ [SHIPPING-CALC] لم يتم العثور على المدينة في قاعدة البيانات`);
@@ -367,18 +383,18 @@ class EnhancedOrderService {
    */
   async prepareOrderData({ customer, conversation, orderNumber, costs, ...data }) {
     console.log('📋 [PREPARE-ORDER] تحضير بيانات الطلب - التكاليف:', costs);
-    
+
     return {
       orderNumber,
       customerId: customer.id,
       conversationId: conversation?.id || null,
       companyId: data.companyId,
-      
+
       // حالة الطلب
       status: 'PENDING',
       paymentStatus: 'PENDING',
       paymentMethod: 'CASH',
-      
+
       // التكاليف - تحويل لـ numbers صريح
       subtotal: parseFloat(costs.subtotal) || 0,
       tax: parseFloat(costs.tax) || 0,
@@ -386,14 +402,14 @@ class EnhancedOrderService {
       discount: parseFloat(costs.discount) || 0,
       total: parseFloat(costs.total) || 0,
       currency: 'EGP',
-      
+
       // معلومات العميل من الـ AI
       customerName: data.customerName || `${customer.firstName} ${customer.lastName}`,
       customerPhone: data.customerPhone || customer.phone,
       customerEmail: data.customerEmail || customer.email,
       city: data.city || 'غير محدد',
       customerAddress: data.customerAddress || '',
-      
+
       // عناوين الشحن والفواتير
       shippingAddress: JSON.stringify({
         city: data.city || 'غير محدد',
@@ -407,7 +423,7 @@ class EnhancedOrderService {
         phone: data.customerPhone || customer.phone,
         country: 'مصر'
       }),
-      
+
       // معلومات جودة البيانات
       dataQuality: JSON.stringify(data.dataQuality || {}),
       extractionMethod: data.extractionMethod || 'ai_enhanced',
@@ -415,17 +431,17 @@ class EnhancedOrderService {
       validationStatus: 'pending',
       sourceType: 'ai_conversation',
       extractionTimestamp: new Date(),
-      
+
       // ملاحظات
       notes: this.buildOrderNotes(data),
-      
+
       // ✅ تمرير بيانات المنتج لـ createOrderItems
       productName: data.productName,
       productColor: data.productColor,
       productSize: data.productSize,
       productPrice: costs.productPrice,
       quantity: data.quantity || 1,
-      
+
       // metadata
       metadata: JSON.stringify({
         conversationId: data.conversationId,
@@ -453,21 +469,21 @@ class EnhancedOrderService {
   buildOrderNotes(data) {
     let notes = `طلب تلقائي من المحادثة\n`;
     notes += `معرف المحادثة: ${data.conversationId}\n`;
-    
+
     if (data.confidence) {
       notes += `مستوى الثقة: ${(data.confidence * 100).toFixed(0)}%\n`;
     }
-    
+
     if (data.notes) {
       notes += `ملاحظات إضافية: ${data.notes}\n`;
     }
-    
+
     if (data.validation && data.validation.warnings && data.validation.warnings.length > 0) {
       notes += `تحذيرات: ${data.validation.warnings.join(', ')}\n`;
     }
-    
+
     notes += `تاريخ الإنشاء: ${new Date().toLocaleString('ar-EG')}`;
-    
+
     return notes;
   }
 
@@ -498,7 +514,7 @@ class EnhancedOrderService {
         total: cleanOrderData.total
       });
 
-      const order = await this.safeQuery(() => 
+      const order = await this.safeQuery(() =>
         this.prisma.order.create({
           data: cleanOrderData,
           include: {
@@ -521,7 +537,7 @@ class EnhancedOrderService {
       await this.createOrderItems(order.id, { ...productData, companyId: orderData.companyId });
 
       // إعادة جلب الطلب مع العناصر
-      const completeOrder = await this.safeQuery(() => 
+      const completeOrder = await this.safeQuery(() =>
         this.prisma.order.findUnique({
           where: { id: order.id },
           include: {
@@ -554,13 +570,13 @@ class EnhancedOrderService {
       // ✅ دعم المنتجات المتعددة
       if (orderData.products && Array.isArray(orderData.products)) {
         console.log('📦 [ENHANCED-ORDER] إنشاء عناصر متعددة:', orderData.products.length);
-        
+
         const createdItems = [];
         for (const productItem of orderData.products) {
           // البحث عن المنتج في الكتالوج
           let product = null;
           if (productItem.productId) {
-            product = await this.safeQuery(() => 
+            product = await this.safeQuery(() =>
               this.prisma.product.findUnique({
                 where: { id: productItem.productId }
               })
@@ -591,19 +607,19 @@ class EnhancedOrderService {
             })
           };
 
-          const orderItem = await this.safeQuery(() => 
+          const orderItem = await this.safeQuery(() =>
             this.prisma.orderItem.create({
               data: itemData
             })
           );
-          
+
           createdItems.push(orderItem);
         }
-        
+
         console.log('✅ [ENHANCED-ORDER] تم إنشاء', createdItems.length, 'عنصر');
         return createdItems;
       }
-      
+
       // ✅ منتج واحد (الطريقة القديمة)
       // البحث عن المنتج في الكتالوج
       let product = null;
@@ -650,7 +666,7 @@ class EnhancedOrderService {
         })
       };
 
-      const orderItem = await this.safeQuery(() => 
+      const orderItem = await this.safeQuery(() =>
         this.prisma.orderItem.create({
           data: itemData
         })
@@ -673,7 +689,7 @@ class EnhancedOrderService {
       if (!productName || !companyId) return null;
 
       // البحث المباشر بدون mode
-      let product = await this.safeQuery(() => 
+      let product = await this.safeQuery(() =>
         this.prisma.product.findFirst({
           where: {
             name: {
@@ -690,7 +706,7 @@ class EnhancedOrderService {
         const keywords = productName.split(' ').filter(word => word.length > 2);
 
         for (const keyword of keywords) {
-          product = await this.safeQuery(() => 
+          product = await this.safeQuery(() =>
             this.prisma.product.findFirst({
               where: {
                 OR: [
@@ -739,7 +755,7 @@ class EnhancedOrderService {
         updatedAt: new Date()
       };
 
-      const updatedConversation = await this.safeQuery(() => 
+      const updatedConversation = await this.safeQuery(() =>
         this.prisma.conversation.update({
           where: { id: conversationId },
           data: updateData,
@@ -781,7 +797,7 @@ class EnhancedOrderService {
         updateData.lastMessagePreview = `تم إنشاء الطلب ${orderNumber} بنجاح`;
       }
 
-      const updatedConversation = await this.safeQuery(() => 
+      const updatedConversation = await this.safeQuery(() =>
         this.prisma.conversation.update({
           where: { id: conversationId },
           data: updateData,
@@ -799,7 +815,7 @@ class EnhancedOrderService {
 
       // إضافة رسالة نظام للمحادثة
       if (orderNumber) {
-        await this.safeQuery(() => 
+        await this.safeQuery(() =>
           this.addSystemMessageToConversation(conversationId, orderNumber)
         );
       }
@@ -820,7 +836,7 @@ class EnhancedOrderService {
    */
   async addSystemMessageToConversation(conversationId, orderNumber) {
     try {
-      await this.safeQuery(() => 
+      await this.safeQuery(() =>
         this.prisma.message.create({
           data: {
             conversationId: conversationId,
@@ -853,7 +869,7 @@ class EnhancedOrderService {
 
       // إنشاء إشعار للمستخدم المسؤول عن المحادثة
       if (conversation.assignedUserId) {
-        await this.safeQuery(() => 
+        await this.safeQuery(() =>
           this.prisma.notification.create({
             data: {
               userId: conversation.assignedUserId,
@@ -873,7 +889,7 @@ class EnhancedOrderService {
       }
 
       // إنشاء إشعار عام لجميع المديرين
-      const managers = await this.safeQuery(() => 
+      const managers = await this.safeQuery(() =>
         this.prisma.user.findMany({
           where: {
             companyId: conversation.companyId,
@@ -885,7 +901,7 @@ class EnhancedOrderService {
 
       for (const manager of managers) {
         if (manager.id !== conversation.assignedUserId) {
-          await this.safeQuery(() => 
+          await this.safeQuery(() =>
             this.prisma.notification.create({
               data: {
                 userId: manager.id,

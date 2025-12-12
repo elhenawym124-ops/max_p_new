@@ -5,33 +5,23 @@ const { getSharedPrismaClient } = require('../services/sharedDatabase');
 
 // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 
-// Authentication middleware
-const requireAuth = (req, res, next) => {
-  if (!req.user) {
-    return res.status(401).json({
-      success: false,
-      message: 'مطلوب تسجيل الدخول للوصول لهذا المورد',
-      code: 'AUTHENTICATION_REQUIRED'
-    });
-  }
-  next();
-};
+const { requireAuth } = require('../middleware/auth');
 
 // Apply authentication to all routes
 router.use(requireAuth);
 
 // دالة لتحويل payment method إلى القيم المطلوبة في schema
 function mapPaymentMethod(method) {
-    const mapping = {
-        'cash': 'CASH',
-        'cash_on_delivery': 'CASH',
-        'CASH_ON_DELIVERY': 'CASH',
-        'credit_card': 'CREDIT_CARD',
-        'bank_transfer': 'BANK_TRANSFER',
-        'paypal': 'PAYPAL',
-        'stripe': 'STRIPE'
-    };
-    return mapping[method?.toLowerCase()] || 'CASH';
+  const mapping = {
+    'cash': 'CASH',
+    'cash_on_delivery': 'CASH',
+    'CASH_ON_DELIVERY': 'CASH',
+    'credit_card': 'CREDIT_CARD',
+    'bank_transfer': 'BANK_TRANSFER',
+    'paypal': 'PAYPAL',
+    'stripe': 'STRIPE'
+  };
+  return mapping[method?.toLowerCase()] || 'CASH';
 }
 
 /**
@@ -54,7 +44,7 @@ router.get('/', async (req, res) => {
       extractionMethod,
       export: isExport
     } = req.query;
-    
+
     // استخدام companyId من المستخدم المسجل دخوله
     const companyId = req.user.companyId;
 
@@ -65,7 +55,7 @@ router.get('/', async (req, res) => {
         code: 'COMPANY_ID_REQUIRED'
       });
     }
-    
+
     const result = await enhancedOrderService.getEnhancedOrders(companyId, {
       page: parseInt(page),
       limit: parseInt(limit),
@@ -77,7 +67,7 @@ router.get('/', async (req, res) => {
       minConfidence: minConfidence ? parseFloat(minConfidence) : undefined,
       extractionMethod
     });
-    
+
     await enhancedOrderService.disconnect();
 
     // إذا كان طلب تصدير، إنشاء ملف Excel
@@ -144,7 +134,7 @@ router.get('/', async (req, res) => {
         message: 'تم جلب الطلبات بنجاح'
       });
     }
-    
+
   } catch (error) {
     console.error('❌ خطأ في جلب الطلبات المحسنة:', error);
     res.status(500).json({
@@ -160,140 +150,140 @@ router.get('/', async (req, res) => {
  * POST /api/v1/orders-enhanced/migrate-from-files
  */
 router.post('/migrate-from-files', async (req, res) => {
-    try {
-        const fs = require('fs');
-        const path = require('path');
+  try {
+    const fs = require('fs');
+    const path = require('path');
 
-        //console.log('🚀 بدء نقل الطلبات من الملفات...');
+    //console.log('🚀 بدء نقل الطلبات من الملفات...');
 
-        const ordersDir = path.join(__dirname, '../../orders');
+    const ordersDir = path.join(__dirname, '../../orders');
 
-        if (!fs.existsSync(ordersDir)) {
-            return res.status(404).json({
-                success: false,
-                error: 'مجلد الطلبات غير موجود'
-            });
-        }
-
-        const files = fs.readdirSync(ordersDir).filter(file => file.endsWith('.json'));
-        //console.log(`📁 تم العثور على ${files.length} ملف طلب`);
-
-        let migratedCount = 0;
-        let skippedCount = 0;
-        let errorCount = 0;
-        const errors = [];
-
-        // نقل آخر 10 طلبات فقط للاختبار
-        const recentFiles = files.slice(-10);
-
-        for (const file of recentFiles) {
-            try {
-                const filePath = path.join(ordersDir, file);
-                const orderData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-
-                // تحقق من وجود الطلب
-                const existingOrder = await getSharedPrismaClient().order.findUnique({
-                    where: { orderNumber: orderData.orderNumber }
-                });
-
-                if (existingOrder) {
-                    //console.log(`⏭️  تم تخطي ${orderData.orderNumber}`);
-                    skippedCount++;
-                    continue;
-                }
-
-                // إنشاء عميل
-                let customer = await getSharedPrismaClient().customer.findFirst({
-                    where: {
-                        OR: [
-                            { firstName: orderData.customerName || 'عميل غير محدد' },
-                            { phone: orderData.customerPhone || '' }
-                        ]
-                    }
-                });
-
-                if (!customer) {
-                    customer = await getSharedPrismaClient().customer.create({
-                        data: {
-                            firstName: orderData.customerName || 'عميل غير محدد',
-                            lastName: '',
-                            phone: orderData.customerPhone || '',
-                            email: orderData.customerEmail || '',
-                            companyId: 'cmdt8nrjq003vufuss47dqc45'
-                        }
-                    });
-                }
-
-                // إنشاء الطلب
-                const newOrder = await getSharedPrismaClient().order.create({
-                    data: {
-                        orderNumber: orderData.orderNumber,
-                        customerId: customer.id,
-                        companyId: 'cmdt8nrjq003vufuss47dqc45', // Company ID الافتراضي
-                        total: orderData.total || 0,
-                        subtotal: orderData.subtotal || 0,
-                        status: (orderData.status || 'pending').toUpperCase(),
-                        paymentStatus: (orderData.paymentStatus || 'pending').toUpperCase(),
-                        paymentMethod: mapPaymentMethod(orderData.paymentMethod || 'cash'),
-                        shippingAddress: typeof orderData.shippingAddress === 'object'
-                            ? JSON.stringify(orderData.shippingAddress)
-                            : orderData.shippingAddress || '',
-                        notes: orderData.notes || '',
-                        extractionMethod: 'file_migration',
-                        confidence: 0.8,
-                        sourceType: 'migrated',
-                        conversationId: orderData.items?.[0]?.metadata?.conversationId || null,
-                        createdAt: new Date(orderData.createdAt || Date.now())
-                    }
-                });
-
-                // إضافة عناصر الطلب
-                if (orderData.items && orderData.items.length > 0) {
-                    for (const item of orderData.items) {
-                        await getSharedPrismaClient().orderItem.create({
-                            data: {
-                                orderId: newOrder.id,
-                                productName: item.name || 'منتج غير محدد',
-                                productColor: item.metadata?.color || '',
-                                productSize: item.metadata?.size || '',
-                                price: item.price || 0,
-                                quantity: item.quantity || 1,
-                                total: item.total || 0
-                            }
-                        });
-                    }
-                }
-
-                //console.log(`✅ تم نقل ${orderData.orderNumber}`);
-                migratedCount++;
-
-            } catch (error) {
-                console.error(`❌ خطأ في ${file}:`, error.message);
-                errorCount++;
-                errors.push({ file, error: error.message });
-            }
-        }
-
-        res.json({
-            success: true,
-            message: 'تم نقل الطلبات بنجاح',
-            stats: {
-                total: recentFiles.length,
-                migrated: migratedCount,
-                skipped: skippedCount,
-                errors: errorCount
-            },
-            errors
-        });
-
-    } catch (error) {
-        console.error('❌ خطأ في نقل الطلبات:', error);
-        res.status(500).json({
-            success: false,
-            error: 'فشل في نقل الطلبات',
-            details: error.message
-        });
+    if (!fs.existsSync(ordersDir)) {
+      return res.status(404).json({
+        success: false,
+        error: 'مجلد الطلبات غير موجود'
+      });
     }
+
+    const files = fs.readdirSync(ordersDir).filter(file => file.endsWith('.json'));
+    //console.log(`📁 تم العثور على ${files.length} ملف طلب`);
+
+    let migratedCount = 0;
+    let skippedCount = 0;
+    let errorCount = 0;
+    const errors = [];
+
+    // نقل آخر 10 طلبات فقط للاختبار
+    const recentFiles = files.slice(-10);
+
+    for (const file of recentFiles) {
+      try {
+        const filePath = path.join(ordersDir, file);
+        const orderData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+
+        // تحقق من وجود الطلب
+        const existingOrder = await getSharedPrismaClient().order.findUnique({
+          where: { orderNumber: orderData.orderNumber }
+        });
+
+        if (existingOrder) {
+          //console.log(`⏭️  تم تخطي ${orderData.orderNumber}`);
+          skippedCount++;
+          continue;
+        }
+
+        // إنشاء عميل
+        let customer = await getSharedPrismaClient().customer.findFirst({
+          where: {
+            OR: [
+              { firstName: orderData.customerName || 'عميل غير محدد' },
+              { phone: orderData.customerPhone || '' }
+            ]
+          }
+        });
+
+        if (!customer) {
+          customer = await getSharedPrismaClient().customer.create({
+            data: {
+              firstName: orderData.customerName || 'عميل غير محدد',
+              lastName: '',
+              phone: orderData.customerPhone || '',
+              email: orderData.customerEmail || '',
+              companyId: 'cmdt8nrjq003vufuss47dqc45'
+            }
+          });
+        }
+
+        // إنشاء الطلب
+        const newOrder = await getSharedPrismaClient().order.create({
+          data: {
+            orderNumber: orderData.orderNumber,
+            customerId: customer.id,
+            companyId: 'cmdt8nrjq003vufuss47dqc45', // Company ID الافتراضي
+            total: orderData.total || 0,
+            subtotal: orderData.subtotal || 0,
+            status: (orderData.status || 'pending').toUpperCase(),
+            paymentStatus: (orderData.paymentStatus || 'pending').toUpperCase(),
+            paymentMethod: mapPaymentMethod(orderData.paymentMethod || 'cash'),
+            shippingAddress: typeof orderData.shippingAddress === 'object'
+              ? JSON.stringify(orderData.shippingAddress)
+              : orderData.shippingAddress || '',
+            notes: orderData.notes || '',
+            extractionMethod: 'file_migration',
+            confidence: 0.8,
+            sourceType: 'migrated',
+            conversationId: orderData.items?.[0]?.metadata?.conversationId || null,
+            createdAt: new Date(orderData.createdAt || Date.now())
+          }
+        });
+
+        // إضافة عناصر الطلب
+        if (orderData.items && orderData.items.length > 0) {
+          for (const item of orderData.items) {
+            await getSharedPrismaClient().orderItem.create({
+              data: {
+                orderId: newOrder.id,
+                productName: item.name || 'منتج غير محدد',
+                productColor: item.metadata?.color || '',
+                productSize: item.metadata?.size || '',
+                price: item.price || 0,
+                quantity: item.quantity || 1,
+                total: item.total || 0
+              }
+            });
+          }
+        }
+
+        //console.log(`✅ تم نقل ${orderData.orderNumber}`);
+        migratedCount++;
+
+      } catch (error) {
+        console.error(`❌ خطأ في ${file}:`, error.message);
+        errorCount++;
+        errors.push({ file, error: error.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'تم نقل الطلبات بنجاح',
+      stats: {
+        total: recentFiles.length,
+        migrated: migratedCount,
+        skipped: skippedCount,
+        errors: errorCount
+      },
+      errors
+    });
+
+  } catch (error) {
+    console.error('❌ خطأ في نقل الطلبات:', error);
+    res.status(500).json({
+      success: false,
+      error: 'فشل في نقل الطلبات',
+      details: error.message
+    });
+  }
 });
 
 /**
@@ -303,20 +293,20 @@ router.post('/migrate-from-files', async (req, res) => {
 router.get('/stats', async (req, res) => {
   try {
     const enhancedOrderService = new EnhancedOrderService();
-    
+
     const { dateFrom, dateTo } = req.query;
     const companyId = req.user.companyId;
-    
+
     const stats = await enhancedOrderService.getOrderStats(companyId, dateFrom, dateTo);
-    
+
     await enhancedOrderService.disconnect();
-    
+
     res.json({
       success: true,
       data: stats,
       message: 'تم جلب الإحصائيات بنجاح'
     });
-    
+
   } catch (error) {
     console.error('❌ خطأ في جلب إحصائيات الطلبات:', error);
     res.status(500).json({
@@ -335,7 +325,7 @@ router.get('/:id', async (req, res) => {
   try {
     const enhancedOrderService = new EnhancedOrderService();
     const { id } = req.params;
-    
+
     const order = await enhancedOrderService.getSharedPrismaClient().order.findUnique({
       where: { id },
       include: {
@@ -349,22 +339,22 @@ router.get('/:id', async (req, res) => {
         }
       }
     });
-    
+
     await enhancedOrderService.disconnect();
-    
+
     if (!order) {
       return res.status(404).json({
         success: false,
         message: 'الطلب غير موجود'
       });
     }
-    
+
     res.json({
       success: true,
       data: order,
       message: 'تم جلب الطلب بنجاح'
     });
-    
+
   } catch (error) {
     console.error('❌ خطأ في جلب الطلب:', error);
     res.status(500).json({
@@ -379,26 +369,32 @@ router.get('/:id', async (req, res) => {
  * إنشاء طلب محسن يدوياً
  * POST /api/v1/orders-enhanced
  */
+console.log('🚧 [ENHANCED-ORDERS] Route initialization');
 router.post('/', async (req, res) => {
   try {
+    console.log('📝 [ENHANCED-ORDERS] Received POST / request');
+    // Auth check handled by middleware
+    // console.log('👤 [ENHANCED-ORDERS] User:', req.user ? `${req.user.email} (${req.user.companyId})` : 'UNDEFINED');
+
     const enhancedOrderService = new EnhancedOrderService();
-    
+
     const orderData = {
       ...req.body,
       companyId: req.user.companyId,
       extractionMethod: 'manual'
     };
-    
+
+    console.log('📦 [ENHANCED-ORDERS] Processing order data:', JSON.stringify(orderData.products || orderData.productName, null, 2));
+
     const result = await enhancedOrderService.createEnhancedOrder(orderData);
-    
+
     await enhancedOrderService.disconnect();
-    
+
     if (result.success) {
       res.status(201).json(result);
     } else {
       res.status(400).json(result);
     }
-    
   } catch (error) {
     console.error('❌ خطأ في إنشاء الطلب:', error);
     res.status(500).json({
@@ -418,7 +414,7 @@ router.patch('/:id/status', async (req, res) => {
     const enhancedOrderService = new EnhancedOrderService();
     const { id } = req.params;
     const { status, notes } = req.body;
-    
+
     const updatedOrder = await enhancedOrderService.getSharedPrismaClient().order.update({
       where: { id },
       data: {
@@ -432,15 +428,15 @@ router.patch('/:id/status', async (req, res) => {
         items: true
       }
     });
-    
+
     await enhancedOrderService.disconnect();
-    
+
     res.json({
       success: true,
       data: updatedOrder,
       message: 'تم تحديث حالة الطلب بنجاح'
     });
-    
+
   } catch (error) {
     console.error('❌ خطأ في تحديث حالة الطلب:', error);
     res.status(500).json({
@@ -460,7 +456,7 @@ router.patch('/:id/validation', async (req, res) => {
     const enhancedOrderService = new EnhancedOrderService();
     const { id } = req.params;
     const { validationStatus, notes } = req.body;
-    
+
     const updatedOrder = await enhancedOrderService.getSharedPrismaClient().order.update({
       where: { id },
       data: {
@@ -469,15 +465,15 @@ router.patch('/:id/validation', async (req, res) => {
         updatedAt: new Date()
       }
     });
-    
+
     await enhancedOrderService.disconnect();
-    
+
     res.json({
       success: true,
       data: updatedOrder,
       message: 'تم تحديث حالة التحقق بنجاح'
     });
-    
+
   } catch (error) {
     console.error('❌ خطأ في تحديث حالة التحقق:', error);
     res.status(500).json({
@@ -496,11 +492,11 @@ router.delete('/:id', async (req, res) => {
   try {
     const enhancedOrderService = new EnhancedOrderService();
     const { id } = req.params;
-    
+
     // FIXED: Add company isolation for security
     // حذف عناصر الطلب أولاً
     // SECURITY WARNING: Ensure companyId filter is included
-      await enhancedOrderService.getSharedPrismaClient().orderItem.deleteMany({
+    await enhancedOrderService.getSharedPrismaClient().orderItem.deleteMany({
       where: {
         orderId: id,
         order: {
@@ -508,19 +504,19 @@ router.delete('/:id', async (req, res) => {
         }
       }
     });
-    
+
     // حذف الطلب
     await enhancedOrderService.getSharedPrismaClient().order.delete({
       where: { id }
     });
-    
+
     await enhancedOrderService.disconnect();
-    
+
     res.json({
       success: true,
       message: 'تم حذف الطلب بنجاح'
     });
-    
+
   } catch (error) {
     console.error('❌ خطأ في حذف الطلب:', error);
     res.status(500).json({
@@ -614,17 +610,17 @@ router.get('/compare/systems', async (req, res) => {
     const enhancedOrderService = new EnhancedOrderService();
     const SimpleOrderService = require('../services/simpleOrderService');
     const simpleOrderService = new SimpleOrderService();
-    
+
     const companyId = req.user.companyId;
-    
+
     // جلب إحصائيات النظام المحسن
     const enhancedStats = await enhancedOrderService.getOrderStats(companyId);
-    
+
     // جلب إحصائيات النظام القديم
     const simpleStats = await simpleOrderService.getDataQualityStats();
-    
+
     await enhancedOrderService.disconnect();
-    
+
     res.json({
       success: true,
       data: {
@@ -638,7 +634,7 @@ router.get('/compare/systems', async (req, res) => {
       },
       message: 'تم جلب مقارنة الأنظمة بنجاح'
     });
-    
+
   } catch (error) {
     console.error('❌ خطأ في مقارنة الأنظمة:', error);
     res.status(500).json({

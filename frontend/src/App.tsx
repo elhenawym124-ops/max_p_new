@@ -151,6 +151,7 @@ import MyTickets from './pages/support/MyTickets';
 import TicketDetails from './pages/support/TicketDetails';
 import FAQ from './pages/support/FAQ';
 import SupportAdmin from './pages/admin/SupportAdmin';
+import ManualOrderPage from './pages/admin/ManualOrder/ManualOrderPage';
 
 // Activity Log System
 import MyActivity from './pages/MyActivity';
@@ -398,6 +399,7 @@ const AppContent = () => {
               <Route path="/orders/details/:id" element={<Layout><OrderDetails /></Layout>} />
               <Route path="/orders/enhanced/:id" element={<Layout><OrderDetails /></Layout>} />
               <Route path="/orders/woocommerce-sync" element={<Layout><WooCommerceSync /></Layout>} />
+              <Route path="/orders/manual" element={<Layout><ManualOrderPage /></Layout>} />
               <Route path="/settings/orders" element={<Layout><OrderSettings /></Layout>} />
               <Route path="/settings/facebook-oauth" element={<Layout><FacebookOAuth /></Layout>} />
               <Route path="/orders/stats" element={<Layout><OrderStats /></Layout>} />
@@ -592,6 +594,8 @@ const AppContent = () => {
               <Route path="/posts/*" element={<Navigate to="/auth/login" replace />} />
               <Route path="/messenger-chat" element={<Navigate to="/auth/login" replace />} />
               <Route path="/conversations-improved" element={<Navigate to="/auth/login" replace />} />
+              <Route path="/facebook-inbox" element={<Navigate to="/auth/login" replace />} />
+              <Route path="/facebook/create-post" element={<Navigate to="/auth/login" replace />} />
               <Route path="/categories" element={<Navigate to="/auth/login" replace />} />
               <Route path="/appointments" element={<Navigate to="/auth/login" replace />} />
               <Route path="/tasks" element={<Navigate to="/auth/login" replace />} />

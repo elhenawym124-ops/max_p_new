@@ -4,6 +4,7 @@ const customerController = require('../controller/customerController');
 const verifyToken = require("../utils/verifyToken")
 
 router.get('/', verifyToken.authenticateToken, customerController.getAllCustomer);
+router.get('/search', verifyToken.authenticateToken, customerController.searchCustomers); // ✅ Add search route
 router.delete('/cus', customerController.deleteAllCustomers);
 router.delete('/con', customerController.deleteAllConversations);
 

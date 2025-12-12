@@ -8,7 +8,7 @@ interface Message {
     senderId: string;
     senderName: string;
     timestamp: Date;
-    type: 'text' | 'image' | 'file' | 'IMAGE' | 'FILE';
+    type: 'text' | 'image' | 'file' | 'video' | 'audio' | 'template' | 'IMAGE' | 'FILE' | 'VIDEO' | 'AUDIO' | 'TEMPLATE';
     isFromCustomer: boolean;
     status: 'sending' | 'sent' | 'delivered' | 'read' | 'error';
     conversationId: string;
@@ -17,6 +17,7 @@ interface Message {
     fileSize?: number;
     isAiGenerated?: boolean;
     metadata?: any;
+    attachments?: any[];
     isStarred?: boolean; // We will map this from metadata in parent or handle it here
 }
 
@@ -28,9 +29,10 @@ interface MessageBubbleProps {
     onReaction?: (messageId: string, reaction: string) => void;
     onReply?: (message: Message) => void;
     currentUserId?: string;
+    hasBeenReplied?: boolean; // جديد: هل تم الرد على هذه الرسالة
 }
 
-const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onForward, onStar, onReaction, onReply, currentUserId }) => {
+const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onForward, onStar, onReaction, onReply, currentUserId, hasBeenReplied }) => {
     const isCustomer = !!message.isFromCustomer;
     const isAI = message.isAiGenerated;
     const [showActions, setShowActions] = useState(false);
@@ -54,10 +56,45 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onForw
     const reactionCounts = metadata?.reactions || {};
 
     const formatTime = (date: Date) => {
-        return new Date(date).toLocaleTimeString('ar-SA', {
+        const now = new Date();
+        const messageDate = new Date(date);
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const msgDay = new Date(messageDate.getFullYear(), messageDate.getMonth(), messageDate.getDate());
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        
+        const diffDays = Math.floor((today.getTime() - msgDay.getTime()) / (1000 * 60 * 60 * 24));
+        
+        const timeStr = messageDate.toLocaleTimeString('ar-EG', {
             hour: '2-digit',
-            minute: '2-digit'
+            minute: '2-digit',
+            calendar: 'gregory'
         });
+        
+        if (diffDays === 0) {
+            // Today
+            return timeStr;
+        } else if (diffDays === 1) {
+            // Yesterday
+            return `أمس ${timeStr}`;
+        } else if (diffDays < 7) {
+            // Within this week
+            return messageDate.toLocaleDateString('ar-EG', {
+                weekday: 'short',
+                hour: '2-digit',
+                minute: '2-digit',
+                calendar: 'gregory'
+            });
+        } else {
+            // Older
+            return messageDate.toLocaleDateString('ar-EG', {
+                day: 'numeric',
+                month: 'short',
+                hour: '2-digit',
+                minute: '2-digit',
+                calendar: 'gregory'
+            });
+        }
     };
 
     const formatFileSize = (bytes?: number) => {
@@ -144,7 +181,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onForw
                 </div>
             )}
 
-            <div className={`max-w-xs lg:max-w-md ${isCustomer ? 'ml-auto' : 'mr-auto'}`}>
+            <div className={`max-w-[85%] sm:max-w-xs lg:max-w-md ${isCustomer ? 'ml-auto' : 'mr-auto'}`}>
                 {/* Sender name (for employee/AI messages) */}
                 {!isCustomer && (
                     <div className="text-xs text-gray-500 mb-1 text-left">
@@ -153,9 +190,19 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onForw
                     </div>
                 )}
 
+                {/* Unreplied indicator for customer messages */}
+                {isCustomer && hasBeenReplied === false && (
+                    <div className="flex items-center gap-1 mb-1 text-xs text-red-600 font-medium">
+                        <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                        <span>غير مردود عليها</span>
+                    </div>
+                )}
+
                 <div
                     className={`px-4 py-2 rounded-2xl ${isCustomer
-                        ? 'bg-gray-200 text-gray-900 rounded-br-sm'
+                        ? hasBeenReplied === false 
+                            ? 'bg-gray-200 text-gray-900 rounded-br-sm border-2 border-red-300' 
+                            : 'bg-gray-200 text-gray-900 rounded-br-sm'
                         : isAI
                             ? 'bg-green-500 text-white rounded-bl-sm'
                             : 'bg-blue-600 text-white rounded-bl-sm'
@@ -172,11 +219,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onForw
                     )}
 
                     {/* Image message */}
-                    {(message.type === 'image' || message.type === 'IMAGE') && message.fileUrl && (
+                    {(message.type === 'image' || message.type === 'IMAGE') && (message.fileUrl || (typeof message.content === 'string' && message.content.startsWith('http'))) && (
                         <div className="mb-2">
                             <img
-                                src={message.fileUrl}
-                                alt={message.content}
+                                src={message.fileUrl || message.content}
+                                alt="صورة"
                                 loading="lazy"
                                 className="rounded-lg max-w-full h-auto"
                                 style={{ maxHeight: '300px' }}
@@ -184,10 +231,85 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onForw
                         </div>
                     )}
 
+                    {/* Video message */}
+                    {(message.type === 'video' || message.type === 'VIDEO') && (message.fileUrl || (typeof message.content === 'string' && message.content.startsWith('http'))) && (
+                        <div className="mb-2">
+                            <video
+                                src={message.fileUrl || message.content}
+                                controls
+                                className="rounded-lg max-w-full h-auto"
+                                style={{ maxHeight: '300px' }}
+                            />
+                        </div>
+                    )}
+
+                    {/* Audio message */}
+                    {(message.type === 'audio' || message.type === 'AUDIO') && (message.fileUrl || (typeof message.content === 'string' && message.content.startsWith('http'))) && (
+                        <div className="mb-2">
+                            <audio
+                                src={message.fileUrl || message.content}
+                                controls
+                                className="w-full min-w-[200px]"
+                            />
+                        </div>
+                    )}
+
+                    {/* Template/Check for buttons in metadata or attachments */}
+                    {((message.type === 'template' || message.type === 'TEMPLATE') || (message.attachments && message.attachments.length > 0)) && (
+                        <div className="mb-2 flex flex-col gap-2">
+                            {message.attachments?.map((att: any, i: number) => {
+                                // Skip standard media as they might be handled above, unless we want to show everything from attachments
+                                if (att.type === 'image' || att.type === 'IMAGE') return null;
+                                if (att.type === 'video' || att.type === 'VIDEO') return null;
+                                if (att.type === 'audio' || att.type === 'AUDIO') return null;
+
+                                // Handle template
+                                if (att.payload && att.payload.template_type === 'generic') {
+                                    return (
+                                        <div key={i} className="flex flex-col gap-2 overflow-hidden rounded-lg border border-white/20">
+                                            {att.payload.elements?.map((el: any, j: number) => (
+                                                <div key={j} className="bg-black/10 p-2">
+                                                    {el.image_url && <img src={el.image_url} alt="" className="w-full h-32 object-cover rounded mb-2" />}
+                                                    {el.title && <div className="font-bold text-sm mb-1">{el.title}</div>}
+                                                    {el.subtitle && <div className="text-xs opacity-80 mb-2">{el.subtitle}</div>}
+                                                    <div className="flex flex-col gap-1">
+                                                        {el.buttons && el.buttons.map((btn: any, k: number) => (
+                                                            <a key={k} href={btn.url} target="_blank" rel="noopener noreferrer" className="block text-center bg-white/20 hover:bg-white/30 py-1.5 px-3 rounded text-xs transition-colors truncate">
+                                                                {btn.title} {btn.type === 'web_url' ? '🔗' : ''}
+                                                            </a>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    );
+                                }
+
+                                // Handle button template
+                                if (att.payload && att.payload.template_type === 'button') {
+                                    return (
+                                        <div key={i} className="flex flex-col gap-2">
+                                            <div className="text-sm opacity-90 mb-1">{att.payload.text}</div>
+                                            <div className="flex flex-col gap-1">
+                                                {att.payload.buttons && att.payload.buttons.map((btn: any, k: number) => (
+                                                    <a key={k} href={btn.url} target="_blank" rel="noopener noreferrer" className="block text-center bg-white/20 hover:bg-white/30 py-1.5 px-3 rounded text-xs transition-colors truncate">
+                                                        {btn.title}
+                                                    </a>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                }
+
+                                return null;
+                            })}
+                        </div>
+                    )}
+
                     {/* File message */}
-                    {(message.type === 'file' || message.type === 'FILE') && message.fileUrl && (
+                    {(message.type === 'file' || message.type === 'FILE') && (message.fileUrl || (typeof message.content === 'string' && message.content.startsWith('http'))) && (
                         <a
-                            href={message.fileUrl}
+                            href={message.fileUrl || message.content}
                             target="_blank"
                             rel="noopener noreferrer"
                             className={`flex items-center gap-2 p-2 rounded-lg mb-2 ${isCustomer ? 'bg-gray-300' : 'bg-white/20'
@@ -211,9 +333,31 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onForw
                     )}
 
                     {/* Text content */}
-                    <p className="text-sm whitespace-pre-wrap break-words">
-                        {message.content}
-                    </p>
+                    {message.content && (
+                        (() => {
+                            // Check if content has embedded URL (format: "text |TYPE_URL|url")
+                            if (message.content.includes('|IMAGE_URL|') || message.content.includes('|FILE_URL|') || message.content.includes('|VIDEO_URL|') || message.content.includes('|AUDIO_URL|')) {
+                                const textPart = message.content.split(/(\|(IMAGE|FILE|VIDEO|AUDIO)_URL\|)/)[0].trim();
+                                return textPart ? (
+                                    <p className="text-sm whitespace-pre-wrap break-words mb-2">
+                                        {textPart}
+                                    </p>
+                                ) : null;
+                            }
+                            // Regular text content (not a URL)
+                            // Don't show content as text if it's a URL and the message type is media
+                            const isMediaType = ['IMAGE', 'VIDEO', 'AUDIO', 'FILE', 'image', 'video', 'audio', 'file'].includes(message.type);
+                            const contentIsUrl = typeof message.content === 'string' && message.content.startsWith('http');
+                            if (message.content !== message.fileUrl && !(isMediaType && contentIsUrl)) {
+                                return (
+                                    <p className="text-sm whitespace-pre-wrap break-words">
+                                        {message.content}
+                                    </p>
+                                );
+                            }
+                            return null;
+                        })()
+                    )}
 
                     {/* Reactions Display */}
                     {Object.keys(reactionCounts).length > 0 && (

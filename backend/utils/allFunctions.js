@@ -647,7 +647,10 @@ async function handleFacebookComment(commentData, pageId = null) {
                 channel: 'FACEBOOK',
                 status: 'ACTIVE',
                 lastMessageAt: new Date(),
-                metadata: JSON.stringify(conversationMetadata)
+                metadata: JSON.stringify(conversationMetadata),
+                // 🆕 FIX: Bot reply means not from customer
+                lastMessageIsFromCustomer: false,
+                unreadCount: 0
               }
             });
           } else if (conversation.status === 'RESOLVED') {
@@ -657,7 +660,10 @@ async function handleFacebookComment(commentData, pageId = null) {
               data: {
                 status: 'ACTIVE',
                 lastMessageAt: new Date(),
-                updatedAt: new Date()
+                updatedAt: new Date(),
+                // 🆕 FIX: Bot reply means not from customer
+                lastMessageIsFromCustomer: false,
+                unreadCount: 0
               }
             });
           }
@@ -853,7 +859,10 @@ async function handleFacebookComment(commentData, pageId = null) {
                 channel: 'FACEBOOK',
                 status: 'ACTIVE',
                 lastMessageAt: new Date(),
-                metadata: JSON.stringify(conversationMetadata)
+                metadata: JSON.stringify(conversationMetadata),
+                // 🆕 FIX: Bot reply means not from customer
+                lastMessageIsFromCustomer: false,
+                unreadCount: 0
               }
             });
           } else if (conversation.status === 'RESOLVED') {
@@ -863,7 +872,10 @@ async function handleFacebookComment(commentData, pageId = null) {
               data: {
                 status: 'ACTIVE',
                 lastMessageAt: new Date(),
-                updatedAt: new Date()
+                updatedAt: new Date(),
+                // 🆕 FIX: Bot reply means not from customer
+                lastMessageIsFromCustomer: false,
+                unreadCount: 0
               }
             });
           }
@@ -1392,15 +1404,61 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
       let attachmentsData = [];
 
       if (attachments && attachments.length > 0) {
-        const attachment = attachments[0];
-        if (attachment.type === 'image') {
-          messageType = 'IMAGE';
-          content = attachment.payload.url;
-        } else if (attachment.type === 'file') {
-          messageType = 'FILE';
-          content = attachment.payload.url;
-        }
+        // حفظ جميع المرفقات
         attachmentsData = attachments;
+
+        // تحديد نوع الرسالة بناءً على أول مرفق
+        const attachment = attachments[0];
+        const attachmentType = attachment.type.toLowerCase();
+
+        if (attachmentType === 'image') {
+          messageType = 'IMAGE';
+          content = attachment.payload?.url || content;
+        } else if (attachmentType === 'video') {
+          messageType = 'VIDEO';
+          content = attachment.payload?.url || content;
+        } else if (attachmentType === 'audio') {
+          messageType = 'AUDIO';
+          content = attachment.payload?.url || content;
+        } else if (attachmentType === 'file') {
+          messageType = 'FILE';
+          content = attachment.payload?.url || content;
+        } else if (attachmentType === 'template') {
+          // معالجة الرسائل التي تحتوي على أزرار (template)
+          messageType = 'TEMPLATE';
+          const template = attachment.payload;
+
+          // استخراج المحتوى من template
+          if (template?.template_type === 'generic' && template?.elements && template.elements.length > 0) {
+            const element = template.elements[0];
+            // استخدام عنوان العنصر أو النص كمحتوى
+            content = element.title || element.subtitle || messageText || '[رسالة منتج]';
+
+            // حفظ معلومات إضافية في attachmentsData
+            if (!messageText && element.title) {
+              content = element.title;
+            }
+          } else if (template?.template_type === 'button') {
+            // رسالة مع أزرار فقط
+            content = template.text || messageText || '[رسالة مع أزرار]';
+          } else {
+            content = messageText || '[رسالة template]';
+          }
+        } else if (attachmentType === 'fallback') {
+          // بعض الرسائل تأتي كـ fallback
+          messageType = 'FILE';
+          content = attachment.payload?.url || attachment.url || messageText || '[مرفق]';
+        } else {
+          // أي نوع آخر غير معروف
+          console.log(`⚠️ [ATTACHMENT] نوع مرفق غير معروف: ${attachmentType}`);
+          messageType = 'FILE';
+          content = attachment.payload?.url || messageText || `[${attachmentType}]`;
+        }
+
+        // إذا كان هناك أكثر من مرفق، نسجل ذلك
+        if (attachments.length > 1) {
+          console.log(`📎 [ATTACHMENTS] الرسالة تحتوي على ${attachments.length} مرفقات`);
+        }
       }
 
       // 🆕 Handle referral events without message (OPEN_THREAD events)
@@ -1542,6 +1600,9 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
       console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${afterSaveTime - saveStartTime}ms] 💾 [HANDLE] Message saved to DB: ${newMessage.id} from ${customer.firstName} ${customer.lastName}`);
       console.log(`⏱️ [TIMING-${messageId.slice(-8)}] [${afterSaveTime - handleStartTime}ms] ⏱️ [HANDLE] Total time to save message`);
 
+      // 🆕 Update lastMessageIsFromCustomer (this is a customer message)
+      await updateConversationLastMessageStatus(conversation.id, true);
+
       // ⚡ OPTIMIZATION: Send socket event IMMEDIATELY after saving message
       // Don't wait for conversation update - send message first, update conversation in background
       const socketStartTime = Date.now();
@@ -1625,7 +1686,7 @@ async function handleFacebookMessage(webhookEvent, currentPageId = null) {
           // Clear lastSenderName when customer sends a message
           delete metadata.lastSenderName;
           delete metadata.lastSenderId;
-          
+
           return prisma.conversation.update({
             where: { id: conversation.id },
             data: {
@@ -2746,6 +2807,55 @@ async function diagnoseFacebookSending(recipientId, messageContent, pageId = nul
   }
 }
 
+// 🆕 دالة مركزية لتحديث lastMessageIsFromCustomer في المحادثة
+async function updateConversationLastMessageStatus(conversationId, isFromCustomer) {
+  if (!conversationId) return;
+
+  try {
+    const prisma = getPrisma();
+
+    const updateData = {
+      lastMessageIsFromCustomer: Boolean(isFromCustomer),
+      lastMessageAt: new Date()
+    };
+
+    // إذا كانت الرسالة من العميل، زيادة عداد الرسائل غير المقروءة
+    if (isFromCustomer) {
+      updateData.unreadCount = { increment: 1 };
+    }
+
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: updateData
+    });
+
+    console.log(`✅ [CONV-UPDATE] Updated conversation ${conversationId}: lastMessageIsFromCustomer=${isFromCustomer}`);
+  } catch (error) {
+    console.error(`❌ [CONV-UPDATE] Failed to update conversation ${conversationId}:`, error.message);
+  }
+}
+
+// 🆕 دالة لإعادة تعيين عداد الرسائل غير المقروءة عند الرد
+async function resetConversationUnreadCount(conversationId) {
+  if (!conversationId) return;
+
+  try {
+    const prisma = getPrisma();
+
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        unreadCount: 0,
+        lastMessageIsFromCustomer: false
+      }
+    });
+
+    console.log(`✅ [CONV-UPDATE] Reset unread count for conversation ${conversationId}`);
+  } catch (error) {
+    console.error(`❌ [CONV-UPDATE] Failed to reset unread count for ${conversationId}:`, error.message);
+  }
+}
+
 module.exports = {
   sendFacebookMessage,
   handleMessageDirectly,
@@ -2754,8 +2864,10 @@ module.exports = {
   updatePageTokenCache,
   diagnoseFacebookSending,
   fetchFacebookUserProfile,
-  handleFacebookComment,  // Export the new comment function
-  generateAICommentResponse,  // Export the AI function
-  sendFacebookCommentReply,   // Export the reply function
-  deleteFacebookComment      // Export the new delete function
+  handleFacebookComment,
+  generateAICommentResponse,
+  sendFacebookCommentReply,
+  deleteFacebookComment,
+  updateConversationLastMessageStatus,
+  resetConversationUnreadCount
 };

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronDownIcon, UserCircleIcon, CheckIcon } from '@heroicons/react/24/outline';
+import { apiClient } from '../../../services/apiClient';
 
 interface TeamMember {
     id: string;
@@ -26,14 +27,28 @@ const AssignmentDropdown: React.FC<AssignmentDropdownProps> = ({
     const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
     const [loading, setLoading] = useState(false);
 
-    // In a real app, fetch team members from API
+    // Fetch team members from API
     useEffect(() => {
-        // Mock data for now
-        setTeamMembers([
-            { id: '1', firstName: 'أحمد', lastName: 'محمد', email: 'ahmad@example.com' },
-            { id: '2', firstName: 'سارة', lastName: 'علي', email: 'sara@example.com' },
-            { id: '3', firstName: 'محمود', lastName: 'حسن', email: 'mahmoud@example.com' },
-        ]);
+        const fetchTeamMembers = async () => {
+            try {
+                setLoading(true);
+                const response = await apiClient.get('/tasks/company-users');
+                if (response.data?.success && response.data?.data) {
+                    const users = response.data.data.map((user: any) => ({
+                        id: user.id,
+                        firstName: user.firstName || '',
+                        lastName: user.lastName || '',
+                        email: user.email || ''
+                    }));
+                    setTeamMembers(users);
+                }
+            } catch (error) {
+                console.error('Error fetching team members:', error);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchTeamMembers();
     }, []);
 
     const handleSelect = (userId: string | null) => {

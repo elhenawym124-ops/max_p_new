@@ -2,6 +2,8 @@ const { getSharedPrismaClient, initializeSharedDatabase, executeWithRetry } = re
 // const prisma = getSharedPrismaClient(); // ❌ Removed to prevent early loading issues
 const socketService = require('../services/socketService');
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 const MessageHealthChecker = require('../utils/messageHealthChecker');
 // Import production Facebook fix functions
 const { sendProductionFacebookMessage } = require('../utils/production-facebook-fix');
@@ -245,7 +247,10 @@ const postMessageConverstation = async (req, res) => {
     // ⚡ OPTIMIZATION: Combine all conversation updates into one query
     const conversationUpdateData = {
       metadata: JSON.stringify(conversationMetadata),
-      updatedAt: new Date()
+      updatedAt: new Date(),
+      // 🆕 FIX: Mark as replied (not from customer) so it disappears from "unreplied" tab
+      lastMessageIsFromCustomer: false,
+      unreadCount: 0 // Reset unread count when we reply
     };
 
     // Add lastMessage fields if message is not empty
@@ -600,7 +605,14 @@ const uploadFile = async (req, res) => {
       }
 
       // Determine message type
-      const messageType = file.mimetype.startsWith('image/') ? 'IMAGE' : 'FILE';
+      let messageType = 'FILE';
+      if (file.mimetype.startsWith('image/')) {
+        messageType = 'IMAGE';
+      } else if (file.mimetype.startsWith('video/')) {
+        messageType = 'VIDEO';
+      } else if (file.mimetype.startsWith('audio/')) {
+        messageType = 'AUDIO';
+      }
 
       // Create attachment object
       const attachment = {
@@ -692,7 +704,10 @@ const uploadFile = async (req, res) => {
         data: {
           lastMessageAt: new Date(),
           lastMessagePreview: messageType === 'IMAGE' ? '📷 صورة' : `📎 ${file.originalname}`,
-          updatedAt: new Date()
+          updatedAt: new Date(),
+          // 🆕 FIX: Mark as replied
+          lastMessageIsFromCustomer: false,
+          unreadCount: 0
         }
       });
 
@@ -994,7 +1009,10 @@ const postReply = async (req, res) => {
         data: {
           lastMessageAt: new Date(),
           lastMessagePreview: message.length > 100 ? message.substring(0, 100) + '...' : message,
-          updatedAt: new Date()
+          updatedAt: new Date(),
+          // 🆕 FIX: Mark as replied
+          lastMessageIsFromCustomer: false,
+          unreadCount: 0
         }
       });
     } catch (saveError) {
@@ -2246,7 +2264,7 @@ const updatePostFeaturedProduct = async (req, res) => {
 // 🆕 Get all conversations with pagination and filtering
 const getConversations = async (req, res) => {
   try {
-    const { page = 1, limit = 20, status, search, platform, unread } = req.query;
+    const { page = 1, limit = 20, status, search, platform, unread, tab } = req.query;
     const companyId = req.user?.companyId;
 
     if (!companyId) {
@@ -2299,9 +2317,56 @@ const getConversations = async (req, res) => {
 
     // Split promise for better error isolation
     let conversations, total;
+
+    // 🆕 For unreplied tab, we now use the database column directly!
+    // Extended logic for ALL tabs to ensure server-side filtering works
+    let tabWhere = { ...where };
+
+    if (tab === 'unreplied') {
+      tabWhere = {
+        ...where,
+        status: { in: ['ACTIVE', 'PENDING'] },
+        lastMessageIsFromCustomer: true
+      };
+    } else if (tab === 'done' || tab === 'resolved') {
+      // 🆕 FIX: Use valid enum values - RESOLVED and CLOSED
+      tabWhere = {
+        ...where,
+        status: { in: ['RESOLVED', 'CLOSED'] }
+      };
+    } else if (tab === 'spam') {
+      // SPAM is not a valid status enum, so we filter by metadata or skip
+      // For now, just use CLOSED as fallback
+      tabWhere = {
+        ...where,
+        status: 'CLOSED'
+      };
+    } else if (['main', 'general', 'requests'].includes(tab)) {
+      // These are likely mapped to specific internal logic or metadata
+      // For now, treat them as ACTIVE but ideally we filter by metadata.tab if that Schema exists
+      // or simple fallback to all active
+      tabWhere = {
+        ...where,
+        status: { in: ['ACTIVE', 'PENDING'] }
+      };
+      // Note: strict metadata filtering might require raw query or JsonFilter (if enabled)
+    } else {
+      // 'all' or undefined - usually excludes RESOLVED/CLOSED
+      // But user might want literally ALL. Usually 'Inbox' implies active.
+      // Let's default to Active/Pending for 'all' tab in inbox view, exclude Resolved/Closed.
+      // 🆕 FIX: Use valid enum values: ACTIVE, PENDING, RESOLVED, CLOSED
+      tabWhere = {
+        ...where,
+        status: { in: ['ACTIVE', 'PENDING'] }
+      };
+    }
+
+    // For unreplied, filter directly from database using the new column
+    const queryWhere = tabWhere;
+
     try {
       conversations = await prisma.conversation.findMany({
-        where,
+        where: queryWhere,
         include: {
           customer: {
             select: {
@@ -2313,13 +2378,33 @@ const getConversations = async (req, res) => {
               phone: true,
               avatar: true
             }
+          },
+          assignedUser: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              avatar: true
+            }
+          },
+          // 🆕 Include last message to check if from customer
+          messages: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: {
+              isFromCustomer: true,
+              isRead: true,
+              content: true,
+              type: true
+            }
           }
         },
         orderBy: {
           lastMessageAt: 'desc'
         },
-        skip,
-        take
+        skip: skip,
+        take: take
       });
       console.log(`✅ [GET-CONV] findMany success. Got ${conversations.length} records.`);
     } catch (dbErr) {
@@ -2327,9 +2412,21 @@ const getConversations = async (req, res) => {
       throw dbErr;
     }
 
+    // 🆕 Count for unreplied should use the same filter
+    let unrepliedCount = 0;
     try {
-      total = await prisma.conversation.count({ where });
-      console.log(`✅ [GET-CONV] count success. Total: ${total}`);
+      total = await prisma.conversation.count({ where: queryWhere });
+
+      // Also get total unreplied count for stats
+      unrepliedCount = await prisma.conversation.count({
+        where: {
+          ...where,
+          status: { in: ['ACTIVE', 'PENDING'] },
+          lastMessageIsFromCustomer: true
+        }
+      });
+
+      console.log(`✅ [GET-CONV] count success. Total: ${total}, Unreplied: ${unrepliedCount}`);
     } catch (cntErr) {
       console.error('❌ [GET-CONV] count FAILED:', cntErr);
       throw cntErr;
@@ -2337,9 +2434,50 @@ const getConversations = async (req, res) => {
 
     // Format response
     console.log('🔄 [GET-CONV] Formatting response...');
-    const formattedConversations = conversations.map(conv => {
+    const formattedConversations = await Promise.all(conversations.map(async (conv, index) => {
+      // Extract pageName and pageId
+      let pageName = null;
+      let pageId = null;
+
+      if (conv.metadata) {
+        try {
+          const metadata = JSON.parse(conv.metadata);
+          pageName = metadata.pageName || null;
+          pageId = metadata.pageId || null;
+        } catch (e) {
+          // ignore parse errors
+        }
+      }
+
+      // ⚡ PERFORMANCE FIX: Skip expensive queries - just use default for FACEBOOK
+      // The pageId/pageName should already be in conversation metadata from when message was saved
+      if (!pageName && conv.channel === 'FACEBOOK') {
+        pageName = 'Facebook';
+      }
+
+      // 🔧 FIX: Use included messages instead of fetching separately (much faster!)
+      let lastMessageIsFromCustomer = false;
+      let lastCustomerMessageIsUnread = false;
+
+      // Use the included messages array (already fetched with the conversation)
+      if (conv.messages && conv.messages.length > 0) {
+        const lastMsg = conv.messages[0]; // Already ordered by createdAt desc
+        lastMessageIsFromCustomer = Boolean(lastMsg.isFromCustomer);
+        lastCustomerMessageIsUnread = lastMsg.isFromCustomer === true && lastMsg.isRead === false;
+      }
+
       // Safety check for enum mapping
       const platformStr = conv.channel ? String(conv.channel).toLowerCase() : 'unknown';
+
+      // Map status from database enum to frontend format
+      const statusMap = {
+        'ACTIVE': 'open',
+        'PENDING': 'pending',
+        'RESOLVED': 'resolved',
+        'DONE': 'done'
+      };
+      const frontendStatus = statusMap[conv.status] || conv.status?.toLowerCase() || 'open';
+
       return {
         id: conv.id,
         customerId: conv.customerId,
@@ -2350,20 +2488,32 @@ const getConversations = async (req, res) => {
         unreadCount: conv.unreadCount || 0,
         platform: platformStr,
         isOnline: false, // Socket will update
-        lastMessageIsFromCustomer: false, // Need to fetch last message to be sure, or rely on metadata
-        metadata: conv.metadata
+        lastMessageIsFromCustomer: lastMessageIsFromCustomer,
+        lastCustomerMessageIsUnread: lastCustomerMessageIsUnread,
+        status: frontendStatus,
+        assignedTo: conv.assignedUserId || null,
+        assignedToName: conv.assignedUser ? `${conv.assignedUser.firstName || ''} ${conv.assignedUser.lastName || ''}`.trim() : null,
+        priority: conv.priority > 1,
+        metadata: conv.metadata,
+        pageName: pageName,
+        pageId: pageId
       };
-    });
+    }));
 
+    // 🆕 Now filtering is done directly in database query - no need for local filtering!
     res.json({
       success: true,
       data: formattedConversations,
       pagination: {
-        total,
+        total: total,
         page: parseInt(page),
         limit: parseInt(limit),
         totalPages: Math.ceil(total / parseInt(limit)),
         hasNextPage: (skip + take) < total
+      },
+      counts: {
+        total: total,
+        unreplied: unrepliedCount // 🆕 From database count
       }
     });
 
@@ -2420,6 +2570,117 @@ const getConversation = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Error getting conversation:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// 🆕 Update conversation (status, assignment, etc.)
+const updateConversation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, assignedTo, priority, tab } = req.body;
+    const companyId = req.user?.companyId;
+
+    if (!companyId) {
+      return res.status(403).json({ success: false, message: 'Company ID required' });
+    }
+
+    const prisma = getSharedPrismaClient();
+
+    // Verify conversation exists and belongs to company
+    const conversation = await prisma.conversation.findFirst({
+      where: { id, companyId }
+    });
+
+    if (!conversation) {
+      return res.status(404).json({ success: false, message: 'Conversation not found' });
+    }
+
+    // Build update data
+    const updateData = {};
+
+    // Update status
+    if (status !== undefined) {
+      // Map frontend status to database status
+      const statusMap = {
+        'open': 'ACTIVE',
+        'pending': 'PENDING',
+        'resolved': 'RESOLVED',
+        'done': 'RESOLVED'
+      };
+      updateData.status = statusMap[status] || status.toUpperCase();
+    }
+
+    // Update assignment
+    if (assignedTo !== undefined) {
+      updateData.assignedUserId = assignedTo || null;
+    }
+
+    // Update priority
+    if (priority !== undefined) {
+      updateData.priority = priority ? 2 : 1; // 2 = high, 1 = normal
+    }
+
+    // Update metadata if tab is provided
+    if (tab !== undefined) {
+      let metadata = {};
+      try {
+        metadata = conversation.metadata ? JSON.parse(conversation.metadata) : {};
+      } catch (e) { }
+
+      metadata.tab = tab;
+      updateData.metadata = JSON.stringify(metadata);
+    }
+
+    // Update conversation
+    const updated = await prisma.conversation.update({
+      where: { id },
+      data: updateData,
+      include: {
+        customer: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+            avatar: true
+          }
+        },
+        assignedUser: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            avatar: true
+          }
+        }
+      }
+    });
+
+    // Helper to parse metadata
+    let metadata = {};
+    try {
+      metadata = updated.metadata ? JSON.parse(updated.metadata) : {};
+    } catch (e) { }
+
+    res.json({
+      success: true,
+      data: {
+        id: updated.id,
+        status: updated.status?.toLowerCase(),
+        assignedTo: updated.assignedUserId,
+        assignedToName: updated.assignedUser ? `${updated.assignedUser.firstName} ${updated.assignedUser.lastName}`.trim() : null,
+        priority: updated.priority > 1,
+        tab: metadata.tab || null,
+        customerId: updated.customerId,
+        customerName: updated.customer ? `${updated.customer.firstName || ''} ${updated.customer.lastName || ''}`.trim() : 'Unknown'
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error updating conversation:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -2583,7 +2844,10 @@ const sendMediaMessage = async (req, res) => {
       data: {
         lastMessageAt: new Date(),
         lastMessagePreview: caption || `[${fileType}]`,
-        isRead: false
+        isRead: false,
+        // 🆕 FIX: Mark as replied (not from customer) so it disappears from "unreplied" tab
+        lastMessageIsFromCustomer: false,
+        unreadCount: 0
       }
     });
 
@@ -2964,7 +3228,10 @@ const sendLocationMessage = async (req, res) => {
       data: {
         lastMessageAt: new Date(),
         lastMessagePreview: '[Location]',
-        isRead: false
+        isRead: false,
+        // 🆕 FIX: Mark as replied
+        lastMessageIsFromCustomer: false,
+        unreadCount: 0
       }
     });
 
@@ -3132,6 +3399,793 @@ const snoozeConversation = async (req, res) => {
   }
 };
 
+// Get conversation statistics
+const getConversationStats = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        error: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+      });
+    }
+
+    const prisma = getSharedPrismaClient();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // 1. عدد المحادثات الجديدة (التي لم يتم الرد عليها)
+    const newConversations = await prisma.conversation.count({
+      where: {
+        companyId: companyId,
+        status: { not: 'RESOLVED' },
+        // المحادثات التي آخر رسالة فيها من العميل
+        // سنستخدم metadata أو نفحص lastMessage
+        // للبساطة، سنستخدم unreadCount > 0 أو نفحص الرسائل
+        unreadCount: { gt: 0 }
+      }
+    });
+
+    // طريقة أخرى: عد المحادثات التي آخر رسالة فيها من العميل
+    // سنحتاج إلى فحص الرسائل الأخيرة
+    const allActiveConversations = await prisma.conversation.findMany({
+      where: {
+        companyId: companyId,
+        status: { not: 'RESOLVED' }
+      },
+      include: {
+        messages: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: {
+            isFromCustomer: true,
+            createdAt: true
+          }
+        }
+      }
+    });
+
+    // عد المحادثات التي آخر رسالة فيها من العميل (جديدة)
+    let newConversationsCount = 0;
+    allActiveConversations.forEach(conv => {
+      if (conv.messages.length > 0 && conv.messages[0].isFromCustomer) {
+        newConversationsCount++;
+      }
+    });
+
+    // 2. عدد المحادثات التي رد عليها كل موظف اليوم
+    const todayMessages = await prisma.message.findMany({
+      where: {
+        conversation: {
+          companyId: companyId
+        },
+        isFromCustomer: false,
+        senderId: { not: null }, // فقط الرسائل من الموظفين (ليست من AI)
+        createdAt: {
+          gte: today
+        }
+      },
+      select: {
+        conversationId: true,
+        senderId: true,
+        metadata: true,
+        createdAt: true
+      }
+    });
+
+    // تجميع المحادثات الفريدة لكل موظف
+    const employeeReplies = {};
+
+    for (const msg of todayMessages) {
+      let employeeId = msg.senderId;
+      let employeeName = 'غير معروف';
+
+      // محاولة استخراج اسم الموظف من metadata
+      if (msg.metadata) {
+        try {
+          const metadata = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
+          if (metadata.employeeId) employeeId = metadata.employeeId;
+          if (metadata.employeeName) employeeName = metadata.employeeName;
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      // جلب اسم الموظف من قاعدة البيانات إذا لم يكن موجوداً في metadata
+      if (!employeeReplies[employeeId]) {
+        try {
+          const user = await prisma.user.findUnique({
+            where: { id: employeeId },
+            select: { firstName: true, lastName: true, email: true }
+          });
+          if (user) {
+            employeeName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'غير معروف';
+          }
+        } catch (e) {
+          // ignore
+        }
+        employeeReplies[employeeId] = {
+          name: employeeName,
+          count: 0,
+          conversationIds: new Set()
+        };
+      }
+
+      // إضافة المحادثة إلى مجموعة الموظف (فقط مرة واحدة لكل محادثة)
+      employeeReplies[employeeId].conversationIds.add(msg.conversationId);
+    }
+
+    // حساب العدد النهائي لكل موظف
+    const employeeStats = Object.entries(employeeReplies).map(([id, data]) => ({
+      employeeId: id,
+      employeeName: data.name,
+      conversationsRepliedTo: data.conversationIds.size
+    })).sort((a, b) => b.conversationsRepliedTo - a.conversationsRepliedTo);
+
+    res.json({
+      success: true,
+      data: {
+        newConversationsCount,
+        employeeRepliesToday: employeeStats,
+        totalEmployeesReplied: employeeStats.length,
+        date: today.toISOString().split('T')[0]
+      }
+    });
+
+  } catch (error) {
+    console.error('Error getting conversation stats:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'فشل في جلب الإحصائيات'
+    });
+  }
+};
+
+// Sync Facebook messages from Facebook Graph API
+const syncFacebookMessages = async (req, res) => {
+  try {
+    const { id: conversationId } = req.params;
+    const companyId = req.user?.companyId;
+
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Company ID is required'
+      });
+    }
+
+    const prisma = getSharedPrismaClient();
+
+    // Get conversation with customer info
+    const conversation = await prisma.conversation.findFirst({
+      where: {
+        id: conversationId,
+        companyId: companyId,
+        channel: 'FACEBOOK'
+      },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            facebookId: true
+          }
+        }
+      }
+    });
+
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        message: 'المحادثة غير موجودة أو ليست محادثة Facebook'
+      });
+    }
+
+    if (!conversation.customer?.facebookId) {
+      return res.status(400).json({
+        success: false,
+        message: 'العميل لا يملك معرف Facebook'
+      });
+    }
+
+    // Get pageId from conversation metadata or pageId field
+    let pageId = null;
+    if (conversation.metadata) {
+      try {
+        const metadata = JSON.parse(conversation.metadata);
+        pageId = metadata.pageId;
+      } catch (e) {
+        // ignore parse error
+      }
+    }
+
+    if (!pageId) {
+      // Try to get pageId from conversation.pageId if exists
+      // Or find first connected Facebook page for the company
+      const defaultPage = await prisma.facebookPage.findFirst({
+        where: {
+          companyId: companyId,
+          status: 'connected'
+        },
+        orderBy: { connectedAt: 'desc' }
+      });
+      if (defaultPage) {
+        pageId = defaultPage.pageId;
+      }
+    }
+
+    if (!pageId) {
+      return res.status(400).json({
+        success: false,
+        message: 'لا توجد صفحة Facebook متصلة'
+      });
+    }
+
+    // Get page access token
+    const pageData = await getPageToken(pageId);
+    if (!pageData || !pageData.pageAccessToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'لا يمكن الوصول إلى صفحة Facebook'
+      });
+    }
+
+    const psid = conversation.customer.facebookId;
+    const accessToken = pageData.pageAccessToken;
+
+    // Fetch messages from Facebook Graph API
+    // Steps: 1) Get conversation ID using PSID, 2) Fetch messages from conversation
+    let allMessages = [];
+
+    try {
+      // Step 1: Get conversation ID using page conversations endpoint with user_id filter
+      const conversationsUrl = `https://graph.facebook.com/v18.0/${pageId}/conversations?user_id=${psid}&fields=id&access_token=${accessToken}`;
+
+      const conversationsResponse = await axios.get(conversationsUrl);
+
+      if (!conversationsResponse.data?.data || conversationsResponse.data.data.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'لم يتم العثور على محادثة في Facebook لهذا العميل',
+          info: 'تأكد من أن المحادثة موجودة في صفحة Facebook'
+        });
+      }
+
+      const conversationId = conversationsResponse.data.data[0].id;
+
+      // Step 2: Fetch messages from the conversation
+      // Increase limit to reduce number of API calls
+      // Include attachments with full details, and shares for interactive messages
+      let messagesUrl = `https://graph.facebook.com/v18.0/${conversationId}/messages?fields=id,message,from,to,created_time,attachments{id,type,file_url,url,mime_type,name,image_data{url},payload{template_type,text,buttons{type,title,url,payload}}},sticker,shares&limit=50&access_token=${accessToken}`;
+
+      let pageCount = 0;
+      const maxPages = 3; // Limit to 3 pages (150 messages max) to prevent timeout
+
+      while (messagesUrl && pageCount < maxPages) {
+        const messagesResponse = await axios.get(messagesUrl, {
+          timeout: 30000 // 30 seconds timeout per request
+        });
+        const messagesData = messagesResponse.data;
+
+        if (messagesData.data && Array.isArray(messagesData.data)) {
+          console.log(`📥 [SYNC-FB-MESSAGES] Fetched ${messagesData.data.length} messages from page ${pageCount + 1}`);
+
+          // Count messages with attachments in this batch
+          const messagesWithAttachments = messagesData.data.filter(m => m.attachments?.data?.length > 0);
+          const messagesWithButtons = messagesData.data.filter(m =>
+            m.attachments?.data?.[0]?.payload?.buttons?.length > 0
+          );
+          console.log(`   📎 Messages with attachments: ${messagesWithAttachments.length}`);
+          console.log(`   🔘 Messages with buttons: ${messagesWithButtons.length}`);
+
+          // Log first message with attachments for debugging
+          if (messagesWithAttachments.length > 0 && pageCount === 0) {
+            const sampleMsg = messagesWithAttachments[0];
+            console.log(`   🔍 [SAMPLE-ATTACHMENT] First message with attachment:`, {
+              messageId: sampleMsg.id,
+              attachmentType: sampleMsg.attachments.data[0].type,
+              hasFileUrl: !!sampleMsg.attachments.data[0].file_url,
+              hasUrl: !!sampleMsg.attachments.data[0].url,
+              hasPayload: !!sampleMsg.attachments.data[0].payload,
+              payloadKeys: sampleMsg.attachments.data[0].payload ? Object.keys(sampleMsg.attachments.data[0].payload) : [],
+              fullAttachment: JSON.stringify(sampleMsg.attachments.data[0], null, 2).substring(0, 500)
+            });
+          }
+
+          allMessages = allMessages.concat(messagesData.data);
+        }
+
+        // Check for next page
+        if (messagesData.paging && messagesData.paging.next) {
+          messagesUrl = messagesData.paging.next;
+          pageCount++;
+        } else {
+          messagesUrl = null;
+        }
+      }
+
+      if (allMessages.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'لا توجد رسائل في هذه المحادثة',
+          info: 'المحادثة موجودة ولكن لا تحتوي على رسائل'
+        });
+      }
+
+    } catch (facebookError) {
+      console.error('❌ [SYNC-FB-MESSAGES] Error fetching messages from Facebook:', facebookError.response?.data || facebookError.message);
+      console.error('❌ [SYNC-FB-MESSAGES] Error details:', {
+        status: facebookError.response?.status,
+        statusText: facebookError.response?.statusText,
+        data: facebookError.response?.data,
+        message: facebookError.message
+      });
+
+      // Provide helpful error message based on error type
+      const errorData = facebookError.response?.data?.error;
+
+      if (errorData) {
+        // Permission errors
+        if (errorData.code === 100 || errorData.type === 'OAuthException') {
+          return res.status(403).json({
+            success: false,
+            message: 'لا توجد صلاحيات كافية لجلب الرسائل من Facebook',
+            error: errorData.message || 'Facebook API permissions required',
+            info: 'تأكد من أن الصفحة لديها صلاحيات pages_messaging'
+          });
+        }
+
+        // Not found errors
+        if (errorData.code === 803 || facebookError.response.status === 404) {
+          return res.status(404).json({
+            success: false,
+            message: 'لم يتم العثور على المحادثة أو الرسائل',
+            error: errorData.message
+          });
+        }
+      }
+
+      // Return error with details
+      const errorMessage = errorData?.message || facebookError.message || 'فشل في جلب الرسائل من Facebook';
+      return res.status(500).json({
+        success: false,
+        message: errorMessage,
+        error: errorMessage,
+        code: errorData?.code || facebookError.response?.status || 500,
+        type: errorData?.type || 'UNKNOWN_ERROR'
+      });
+    }
+
+    // Process and save messages to database
+    // First, get all existing Facebook message IDs to avoid duplicate checks in loop
+    const existingMessages = await prisma.message.findMany({
+      where: {
+        conversationId: conversationId,
+        metadata: {
+          contains: 'facebookMessageId'
+        }
+      },
+      select: {
+        id: true,
+        metadata: true
+      }
+    });
+
+    // Extract existing Facebook message IDs
+    const existingFacebookIds = new Set();
+    existingMessages.forEach(msg => {
+      try {
+        const metadata = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
+        if (metadata.facebookMessageId) {
+          existingFacebookIds.add(metadata.facebookMessageId);
+        }
+      } catch (e) {
+        // ignore
+      }
+    });
+
+    let skippedCount = 0;
+    let errorCount = 0;
+    const messagesToSave = [];
+
+    for (const fbMessage of allMessages) {
+      try {
+        // Calculate message index early for logging
+        const messageIndex = allMessages.indexOf(fbMessage);
+
+        // Check if message already exists using the Set (much faster)
+        if (existingFacebookIds.has(fbMessage.id)) {
+          skippedCount++;
+          continue;
+        }
+
+        // Determine message type and content
+        let messageType = 'TEXT';
+        let content = fbMessage.message || '';
+
+        // Check for attachments first (includes images, files, and template messages with buttons)
+        if (fbMessage.attachments && fbMessage.attachments.data && fbMessage.attachments.data.length > 0) {
+          const attachment = fbMessage.attachments.data[0];
+
+          // Determine attachment type - Facebook API may not always include 'type' field
+          // Infer type from available fields: type, mime_type, or presence of image_data
+          let attachmentType = attachment.type;
+          if (!attachmentType) {
+            // Infer from mime_type
+            if (attachment.mime_type) {
+              if (attachment.mime_type.startsWith('image/')) {
+                attachmentType = 'image';
+              } else if (attachment.mime_type.startsWith('video/')) {
+                attachmentType = 'video';
+              } else if (attachment.mime_type.startsWith('audio/')) {
+                attachmentType = 'audio';
+              } else {
+                attachmentType = 'file';
+              }
+            } else if (attachment.image_data) {
+              // Has image_data but no type - assume image
+              attachmentType = 'image';
+            } else if (attachment.payload) {
+              // Has payload - could be template
+              attachmentType = attachment.payload.template_type ? 'template' : 'file';
+            } else {
+              attachmentType = 'file'; // Default
+            }
+          }
+
+          // CRITICAL: If image_data.url exists, treat as image regardless of attachmentType
+          // Facebook API sometimes doesn't set 'type' correctly but provides image_data
+          if (attachment.image_data?.url && attachmentType !== 'template') {
+            attachmentType = 'image';
+          }
+
+          // Handle template messages (e.g., messages with buttons)
+          if (attachmentType === 'template' && attachment.payload) {
+            messageType = 'TEXT'; // Keep as TEXT to show the message content
+            const templatePayload = attachment.payload;
+
+            // Extract template text
+            let templateText = templatePayload.text || fbMessage.message || '';
+
+            // Extract buttons if they exist
+            if (templatePayload.buttons && Array.isArray(templatePayload.buttons) && templatePayload.buttons.length > 0) {
+              const buttonsText = templatePayload.buttons.map((btn, idx) => {
+                return `${idx + 1}. ${btn.title || btn.text || 'زر'}`;
+              }).join('\n');
+              templateText += '\n\n' + '🔘 الأزرار:\n' + buttonsText;
+            }
+
+            content = templateText || 'رسالة تفاعلية';
+
+          } else if (attachmentType === 'image' || attachmentType === 'animated_image') {
+            messageType = 'IMAGE';
+            // Try multiple possible URL fields (Facebook API may use different field names)
+            // Priority: image_data.url (most reliable), then file_url, then url
+            const imageUrl = attachment.image_data?.url ||
+              attachment.file_url ||
+              attachment.url ||
+              attachment.payload?.url ||
+              attachment.image?.url ||
+              '';
+            content = imageUrl;
+            // Keep message text if exists (for captions)
+            if (fbMessage.message && fbMessage.message.trim()) {
+              content = fbMessage.message + ' |IMAGE_URL|' + imageUrl;
+            }
+
+            // If URL is missing, try to fetch attachment separately
+            if (!imageUrl) {
+              // Try fetching attachment by ID if we have it
+              if (attachment.id) {
+                try {
+                  const attachmentUrl = `https://graph.facebook.com/v18.0/${attachment.id}?fields=url,image_data{url}&access_token=${accessToken}`;
+                  const attachmentResponse = await axios.get(attachmentUrl, { timeout: 5000 });
+                  const fetchedUrl = attachmentResponse.data?.image_data?.url || attachmentResponse.data?.url;
+                  if (fetchedUrl) {
+                    content = fetchedUrl;
+                    if (fbMessage.message && fbMessage.message.trim()) {
+                      content = fbMessage.message + ' |IMAGE_URL|' + fetchedUrl;
+                    }
+                  }
+                } catch (fetchError) {
+                  // Try fetching the message separately as fallback
+                  try {
+                    const messageDetailsUrl = `https://graph.facebook.com/v18.0/${fbMessage.id}?fields=attachments{id,image_data{url},file_url,url}&access_token=${accessToken}`;
+                    const messageDetailsResponse = await axios.get(messageDetailsUrl, { timeout: 5000 });
+                    if (messageDetailsResponse.data?.attachments?.data?.[0]) {
+                      const detailedAttachment = messageDetailsResponse.data.attachments.data[0];
+                      const detailedImageUrl = detailedAttachment.image_data?.url || detailedAttachment.file_url || detailedAttachment.url;
+                      if (detailedImageUrl) {
+                        content = detailedImageUrl;
+                        if (fbMessage.message && fbMessage.message.trim()) {
+                          content = fbMessage.message + ' |IMAGE_URL|' + detailedImageUrl;
+                        }
+                      }
+                    }
+                  } catch (messageFetchError) {
+                  }
+                }
+              } else {
+                // No attachment ID, try message fetch
+                try {
+                  const messageDetailsUrl = `https://graph.facebook.com/v18.0/${fbMessage.id}?fields=attachments{id,image_data{url},file_url,url}&access_token=${accessToken}`;
+                  const messageDetailsResponse = await axios.get(messageDetailsUrl, { timeout: 5000 });
+                  if (messageDetailsResponse.data?.attachments?.data?.[0]) {
+                    const detailedAttachment = messageDetailsResponse.data.attachments.data[0];
+                    const detailedImageUrl = detailedAttachment.image_data?.url || detailedAttachment.file_url || detailedAttachment.url;
+                    if (detailedImageUrl) {
+                      content = detailedImageUrl;
+                      if (fbMessage.message && fbMessage.message.trim()) {
+                        content = fbMessage.message + ' |IMAGE_URL|' + detailedImageUrl;
+                      }
+                    }
+                  }
+                } catch (messageFetchError) {
+                  // Failed to fetch message details, continue
+                }
+              }
+            }
+          } else if (attachmentType === 'file') {
+            messageType = 'FILE';
+            const fileUrl = attachment.file_url || attachment.url || attachment.payload?.url || attachment.name || '';
+            content = fileUrl;
+            if (fbMessage.message && fbMessage.message.trim()) {
+              content = fbMessage.message + ' |FILE_URL|' + fileUrl;
+            }
+          } else if (attachmentType === 'video') {
+            messageType = 'FILE'; // Treat video as file
+            const videoUrl = attachment.file_url || attachment.url || attachment.payload?.url || '';
+            content = videoUrl;
+            if (fbMessage.message && fbMessage.message.trim()) {
+              content = fbMessage.message + ' |VIDEO_URL|' + videoUrl;
+            }
+          } else if (attachmentType === 'audio') {
+            messageType = 'FILE'; // Treat audio as file
+            const audioUrl = attachment.file_url || attachment.url || attachment.payload?.url || '';
+            content = audioUrl;
+            if (fbMessage.message && fbMessage.message.trim()) {
+              content = fbMessage.message + ' |AUDIO_URL|' + audioUrl;
+            }
+          } else if (attachmentType === 'sticker') {
+            messageType = 'IMAGE';
+            content = attachment.url || attachment.file_url || attachment.payload?.url || '';
+          } else {
+            // Unknown attachment type - check if it has image_data, treat as image
+            if (attachment.image_data?.url) {
+              messageType = 'IMAGE';
+              const imageUrl = attachment.image_data.url;
+              content = imageUrl;
+              if (fbMessage.message && fbMessage.message.trim()) {
+                content = fbMessage.message + ' |IMAGE_URL|' + imageUrl;
+              }
+            } else {
+              // Unknown attachment type - try to extract URL or use message text
+              const url = attachment.file_url || attachment.url || attachment.payload?.url || '';
+              content = url || fbMessage.message || 'مرفق';
+            }
+          }
+        } else if (fbMessage.sticker) {
+          messageType = 'IMAGE';
+          content = fbMessage.sticker.url || fbMessage.sticker.file_url || '';
+        } else if (fbMessage.shares) {
+          // Handle shared content (links, posts, etc.)
+          messageType = 'TEXT';
+          if (fbMessage.message && fbMessage.message.trim()) {
+            content = fbMessage.message;
+          } else {
+            content = 'محتوى مشترك';
+          }
+        }
+
+        // If no content and no attachments, check if it's a system message or empty
+        // For sent messages from page, Facebook might not include message field in some cases
+        // Check if there's any text content in the message object
+        if (!content || content.trim() === '') {
+          // Try to extract from message field if it exists but wasn't captured
+          if (fbMessage.message && fbMessage.message.trim()) {
+            content = fbMessage.message.trim();
+          } else if (messageType === 'TEXT') {
+            // For text messages without content, check if it's a system message
+            // Facebook sometimes sends empty messages for system events
+            content = 'رسالة بدون نص';
+          }
+        }
+
+        // Determine if message is from customer
+        // In Facebook API:
+        // - When customer sends: from.id = PSID (customer's page-scoped ID), to.data[0].id = pageId
+        // - When page sends: from.id = pageId, to.data[0].id = PSID
+        // So: message is from customer if from.id === psid (and NOT pageId)
+        let finalIsFromCustomer = false;
+        let decisionReason = '';
+
+        if (fbMessage.from && fbMessage.from.id) {
+          const fromId = fbMessage.from.id;
+
+          // Primary check: if from.id equals PSID, it's from customer
+          if (fromId === psid) {
+            finalIsFromCustomer = true;
+            decisionReason = 'fromId === psid';
+          } else if (fromId === pageId) {
+            // If from.id equals pageId, it's definitely from page (not customer)
+            finalIsFromCustomer = false;
+            decisionReason = 'fromId === pageId';
+          } else {
+            // Fallback: check 'to' field
+            // If message is sent TO PSID, then it's FROM page (because page sends TO customer)
+            // If message is sent TO pageId, then it's FROM customer (because customer sends TO page)
+            if (fbMessage.to && fbMessage.to.data && fbMessage.to.data.length > 0) {
+              const toIds = fbMessage.to.data.map(t => t.id);
+              const isSentToPsid = toIds.includes(psid);
+              const isSentToPageId = toIds.includes(pageId);
+
+              if (isSentToPsid && !isSentToPageId) {
+                // Sent to PSID only → from page
+                finalIsFromCustomer = false;
+                decisionReason = 'to.includes(psid) only';
+              } else if (isSentToPageId && !isSentToPsid) {
+                // Sent to pageId only → from customer
+                finalIsFromCustomer = true;
+                decisionReason = 'to.includes(pageId) only';
+              } else {
+                // Ambiguous case - default to false (assume from page)
+                finalIsFromCustomer = false;
+                decisionReason = 'ambiguous - default false';
+              }
+            } else {
+              decisionReason = 'no to field - default false';
+            }
+          }
+        } else {
+          decisionReason = 'no from field - default false';
+        }
+
+        // Parse created_time
+        const createdAt = fbMessage.created_time ? new Date(fbMessage.created_time) : new Date();
+
+        // Prepare content for saving (do this BEFORE logging)
+        let finalContent = content;
+        if (messageType === 'IMAGE' && !finalContent) {
+          finalContent = '📷 صورة';
+        } else if (messageType === 'FILE' && !finalContent) {
+          finalContent = '📎 ملف';
+        } else if (messageType === 'TEXT' && (!finalContent || finalContent.trim() === '')) {
+          finalContent = 'رسالة';
+        }
+
+
+        // Add to batch for bulk insert
+        messagesToSave.push({
+          content: finalContent,
+          type: messageType,
+          conversationId: conversationId,
+          isFromCustomer: finalIsFromCustomer,
+          isRead: false, // Mark as unread for old messages
+          metadata: JSON.stringify({
+            platform: 'facebook',
+            source: 'graph_api_sync',
+            facebookMessageId: fbMessage.id,
+            syncedAt: new Date().toISOString(),
+            fromId: fbMessage.from?.id || null,
+            toIds: fbMessage.to?.data?.map(t => t.id) || [],
+            originalMessage: fbMessage.message || null, // Store original message text if exists
+            hasAttachments: !!(fbMessage.attachments || fbMessage.sticker),
+            hasButtons: !!(fbMessage.attachments?.data?.[0]?.type === 'template' && fbMessage.attachments.data[0].payload?.buttons),
+            shares: fbMessage.shares || null,
+            // Store full attachment data for reference
+            attachmentDetails: fbMessage.attachments?.data || null
+          }),
+          createdAt: createdAt
+        });
+
+      } catch (parseError) {
+        console.error(`Error parsing message ${fbMessage.id}:`, parseError);
+        errorCount++;
+        // Continue with next message
+      }
+    }
+
+    // Bulk save messages to database (much faster than individual creates)
+    let savedCount = 0;
+
+    // Console summary for debugging
+    const customerMessages = messagesToSave.filter(m => m.isFromCustomer);
+    const pageMessages = messagesToSave.filter(m => !m.isFromCustomer);
+    const messagesWithAttachments = messagesToSave.filter(m => {
+      try {
+        const meta = JSON.parse(m.metadata);
+        return meta.hasAttachments || meta.hasButtons;
+      } catch { return false; }
+    });
+
+    console.log(`📊 [SYNC-SUMMARY] Messages to save:`, {
+      total: messagesToSave.length,
+      fromCustomer: customerMessages.length,
+      fromPage: pageMessages.length,
+      withAttachments: messagesWithAttachments.length,
+      messageTypes: messagesToSave.reduce((acc, m) => {
+        acc[m.type] = (acc[m.type] || 0) + 1;
+        return acc;
+      }, {})
+    });
+
+    if (messagesToSave.length > 0) {
+      try {
+        // Use createMany for bulk insert (faster)
+        const result = await prisma.message.createMany({
+          data: messagesToSave,
+          skipDuplicates: true // Skip duplicates if any
+        });
+        savedCount = result.count;
+
+        console.log(`✅ [SYNC-FB-MESSAGES] Saved ${savedCount} messages in bulk`);
+      } catch (bulkSaveError) {
+        console.error('❌ [SYNC-FB-MESSAGES] Error in bulk save, trying individual saves:', bulkSaveError);
+        // Fallback to individual saves if bulk fails
+        for (const msgData of messagesToSave) {
+          try {
+            await prisma.message.create({ data: msgData });
+            savedCount++;
+          } catch (indError) {
+            console.error('❌ [SYNC-FB-MESSAGES] Error saving individual message:', indError);
+            errorCount++;
+          }
+        }
+      }
+    }
+
+    // Update conversation last message time
+    if (savedCount > 0) {
+      try {
+        await prisma.conversation.update({
+          where: { id: conversationId },
+          data: {
+            updatedAt: new Date()
+          }
+        });
+      } catch (updateError) {
+        console.error('Error updating conversation:', updateError);
+      }
+    }
+
+    // Always return success if we fetched messages, even if some failed to save
+    const successMessage = savedCount > 0
+      ? `تم جلب ${savedCount} رسالة جديدة وتم تخطي ${skippedCount} رسالة موجودة${errorCount > 0 ? ` وفشل حفظ ${errorCount} رسالة` : ''}`
+      : `تم جلب ${allMessages.length} رسالة ولكنها موجودة مسبقاً (تم تخطي ${skippedCount} رسالة)${errorCount > 0 ? ` وفشل حفظ ${errorCount} رسالة` : ''}`;
+
+    res.json({
+      success: true,
+      message: successMessage,
+      data: {
+        totalFetched: allMessages.length,
+        saved: savedCount,
+        skipped: skippedCount,
+        errors: errorCount
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ [SYNC-FB-MESSAGES] Error syncing Facebook messages:', error);
+    console.error('❌ [SYNC-FB-MESSAGES] Error stack:', error.stack);
+
+    // Provide more detailed error message
+    let errorMessage = 'حدث خطأ أثناء جلب الرسائل';
+    if (error.message) {
+      errorMessage = error.message;
+    }
+    if (error.response?.data?.error?.message) {
+      errorMessage = error.response.data.error.message;
+    }
+
+    res.status(500).json({
+      success: false,
+      message: errorMessage,
+      error: error.message || 'Unknown error',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+};
+
 module.exports = {
   deleteConverstation,
   postMessageConverstation,
@@ -3148,6 +4202,7 @@ module.exports = {
   // New exports
   getConversations,
   getConversation,
+  updateConversation,
   getMessages,
   // Media and message management
   sendMediaMessage,
@@ -3157,5 +4212,8 @@ module.exports = {
   toggleMessageReaction,
   snoozeConversation,
   sendLocationMessage,
-  bulkUpdateConversations
+  bulkUpdateConversations,
+  // Statistics
+  getConversationStats,
+  syncFacebookMessages
 };

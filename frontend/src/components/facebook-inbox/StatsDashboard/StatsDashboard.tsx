@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -9,9 +9,9 @@ import {
     Legend,
     ArcElement
 } from 'chart.js';
-import { Bar, Doughnut } from 'react-chartjs-2';
 import { InboxConversation } from '../../types/inbox.types';
 import { XMarkIcon } from '@heroicons/react/24/outline';
+import { apiClient } from '../../../services/apiClient';
 
 ChartJS.register(
     CategoryScale,
@@ -30,92 +30,34 @@ interface StatsDashboardProps {
 }
 
 const StatsDashboard: React.FC<StatsDashboardProps> = ({ isOpen, onClose, conversations }) => {
-    if (!isOpen) return null;
+    const [stats, setStats] = useState<{
+        newConversationsCount: number;
+        employeeRepliesToday: Array<{ employeeId: string; employeeName: string; conversationsRepliedTo: number }>;
+    } | null>(null);
+    const [loadingStats, setLoadingStats] = useState(false);
 
-    // 1. Status Distribution
-    const statusData = useMemo(() => {
-        const counts = {
-            open: 0,
-            pending: 0,
-            resolved: 0,
-            done: 0
-        };
-        conversations.forEach(c => {
-            if (counts[c.status] !== undefined) {
-                counts[c.status]++;
+    // Fetch statistics when modal opens
+    useEffect(() => {
+        if (isOpen) {
+            fetchStats();
+        }
+    }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const fetchStats = async () => {
+        try {
+            setLoadingStats(true);
+            const response = await apiClient.get('/conversations/stats/daily');
+            if (response.data?.success) {
+                setStats(response.data.data);
             }
-        });
+        } catch (error) {
+            console.error('Error fetching stats:', error);
+        } finally {
+            setLoadingStats(false);
+        }
+    };
 
-        return {
-            labels: ['مفتوحة', 'معلقة', 'تم الحل', 'منتهية'],
-            datasets: [
-                {
-                    label: 'توزيع الحالات',
-                    data: [counts.open, counts.pending, counts.resolved, counts.done],
-                    backgroundColor: [
-                        'rgba(59, 130, 246, 0.6)', // Blue
-                        'rgba(245, 158, 11, 0.6)', // Yellow
-                        'rgba(16, 185, 129, 0.6)', // Green
-                        'rgba(107, 114, 128, 0.6)', // Gray
-                    ],
-                    borderColor: [
-                        'rgba(59, 130, 246, 1)',
-                        'rgba(245, 158, 11, 1)',
-                        'rgba(16, 185, 129, 1)',
-                        'rgba(107, 114, 128, 1)',
-                    ],
-                    borderWidth: 1,
-                },
-            ],
-        };
-    }, [conversations]);
-
-    // 2. Volume by Time (Mock logic based on lastMessageTime)
-    const volumeData = useMemo(() => {
-        const today = new Date();
-        const last7Days = Array.from({ length: 7 }, (_, i) => {
-            const d = new Date();
-            d.setDate(today.getDate() - i);
-            return d.toISOString().split('T')[0];
-        }).reverse();
-
-        const counts = last7Days.map(date => {
-            return conversations.filter(c =>
-                new Date(c.lastMessageTime).toISOString().split('T')[0] === date
-            ).length;
-        });
-
-        return {
-            labels: last7Days.map(d => d.slice(5)), // MM-DD
-            datasets: [
-                {
-                    label: 'نشاط المحادثات (آخر 7 أيام)',
-                    data: counts,
-                    backgroundColor: 'rgba(99, 102, 241, 0.5)',
-                },
-            ],
-        };
-    }, [conversations]);
-
-    // 3. Team Performance (Assigned conversations)
-    const teamData = useMemo(() => {
-        const assigneeCounts: Record<string, number> = {};
-        conversations.forEach(c => {
-            const name = c.assignedToName || 'غير معين';
-            assigneeCounts[name] = (assigneeCounts[name] || 0) + 1;
-        });
-
-        return {
-            labels: Object.keys(assigneeCounts),
-            datasets: [
-                {
-                    label: 'المحادثات المعينة',
-                    data: Object.values(assigneeCounts),
-                    backgroundColor: 'rgba(236, 72, 153, 0.5)',
-                },
-            ],
-        };
-    }, [conversations]);
+    if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -129,41 +71,63 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ isOpen, onClose, conver
                 </div>
 
                 {/* Content */}
-                <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8 flex-1">
-                    {/* Status Chart */}
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                        <h3 className="text-lg font-medium mb-4 text-center">حالة المحادثات</h3>
-                        <div className="h-64 flex justify-center">
-                            <Doughnut data={statusData} options={{ maintainAspectRatio: false }} />
+                <div className="p-6 space-y-6 flex-1">
+                    {/* New Conversations Count */}
+                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-lg border border-blue-200">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h3 className="text-sm font-medium text-gray-600 mb-1">المحادثات الجديدة</h3>
+                                <p className="text-4xl font-bold text-blue-600">
+                                    {loadingStats ? (
+                                        <span className="text-lg">جاري التحميل...</span>
+                                    ) : (
+                                        stats?.newConversationsCount ?? conversations.filter(c => 
+                                            c.lastMessageIsFromCustomer === true && 
+                                            c.status !== 'done'
+                                        ).length
+                                    )}
+                                </p>
+                                <p className="text-sm text-gray-500 mt-2">المحادثات التي لم يتم الرد عليها</p>
+                            </div>
+                            <div className="text-6xl opacity-20">💬</div>
                         </div>
                     </div>
 
-                    {/* Volume Chart */}
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                        <h3 className="text-lg font-medium mb-4 text-center">النشاط اليومي</h3>
-                        <div className="h-64">
-                            <Bar
-                                data={volumeData}
-                                options={{
-                                    maintainAspectRatio: false,
-                                    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
-                                }}
-                            />
-                        </div>
-                    </div>
-
-                    {/* Team Performance */}
-                    <div className="bg-gray-50 p-4 rounded-lg md:col-span-2">
-                        <h3 className="text-lg font-medium mb-4 text-center">أداء الفريق (التعيينات)</h3>
-                        <div className="h-64">
-                            <Bar
-                                data={teamData}
-                                options={{
-                                    maintainAspectRatio: false,
-                                    indexAxis: 'y',
-                                }}
-                            />
-                        </div>
+                    {/* Employee Replies Today */}
+                    <div className="bg-white border border-gray-200 rounded-lg p-6">
+                        <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                            <span>📈</span>
+                            <span>ردود الموظفين اليوم</span>
+                        </h3>
+                        {loadingStats ? (
+                            <div className="flex justify-center py-8">
+                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                            </div>
+                        ) : stats?.employeeRepliesToday && stats.employeeRepliesToday.length > 0 ? (
+                            <div className="space-y-3">
+                                {stats.employeeRepliesToday.map((employee, index) => (
+                                    <div key={employee.employeeId || index} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center text-white font-bold">
+                                                {employee.employeeName.charAt(0).toUpperCase()}
+                                            </div>
+                                            <div>
+                                                <p className="font-semibold text-gray-800">{employee.employeeName}</p>
+                                                <p className="text-xs text-gray-500">موظف</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-2xl font-bold text-purple-600">{employee.conversationsRepliedTo}</p>
+                                            <p className="text-xs text-gray-500">محادثة</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center py-8 text-gray-500">
+                                <p>لا توجد ردود اليوم</p>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

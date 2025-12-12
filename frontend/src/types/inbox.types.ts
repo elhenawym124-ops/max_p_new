@@ -1,5 +1,5 @@
 // Facebook Inbox Types
-export type InboxTab = 'all' | 'done' | 'main' | 'general' | 'requests' | 'spam';
+export type InboxTab = 'all' | 'done' | 'main' | 'general' | 'requests' | 'spam' | 'unreplied';
 export type ConversationStatus = 'open' | 'pending' | 'resolved' | 'done';
 
 export interface Tag {
@@ -78,6 +78,16 @@ export interface InboxConversation {
     aiEnabled?: boolean;
     lastMessageIsFromCustomer?: boolean;
     hasUnreadMessages?: boolean;
+    // Post information
+    postId?: string;
+    postDetails?: {
+        postId?: string;
+        message?: string;
+        permalinkUrl?: string;
+        fullPicture?: string;
+        hasImages?: boolean;
+        imageUrls?: string[];
+    } | null;
 }
 
 export interface InboxFilters {
@@ -106,7 +116,7 @@ export interface InboxMessage {
     senderId: string;
     senderName: string;
     timestamp: Date;
-    type: 'text' | 'image' | 'file' | 'IMAGE' | 'FILE';
+    type: 'text' | 'image' | 'file' | 'video' | 'audio' | 'template' | 'IMAGE' | 'FILE' | 'VIDEO' | 'AUDIO' | 'TEMPLATE';
     isFromCustomer: boolean;
     status: 'sending' | 'sent' | 'delivered' | 'read' | 'error';
     conversationId: string;
@@ -115,5 +125,6 @@ export interface InboxMessage {
     fileSize?: number;
     isAiGenerated?: boolean;
     metadata?: any;
+    attachments?: any[]; // Add attachments array for checking buttons etc
     isStarred?: boolean;
 }

@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import InboxHeader from '../../components/facebook-inbox/InboxHeader/InboxHeader';
 import InboxTabs from '../../components/facebook-inbox/InboxTabs/InboxTabs';
 import ConversationItem from '../../components/facebook-inbox/ConversationList/ConversationItem';
 import MessageBubble from '../../components/facebook-inbox/MessageBubble/MessageBubble';
@@ -27,7 +26,8 @@ import TypingIndicator from '../../components/facebook-inbox/TypingIndicator/Typ
 import AISuggestions from '../../components/facebook-inbox/AISuggestions/AISuggestions';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useAuth } from '../../hooks/useAuthSimple';
-import { StickyNote, BarChart3 } from 'lucide-react';
+import { StickyNote, Menu, ArrowRight } from 'lucide-react';
+import { apiClient } from '../../services/apiClient';
 
 const FacebookInbox: React.FC = () => {
     const { t } = useTranslation();
@@ -49,10 +49,17 @@ const FacebookInbox: React.FC = () => {
         loadMoreMessages,
         addMessage,
         hasMore,
+        // Conversations pagination
+        hasMoreConversations,
+        loadMoreConversations,
+        // Update selected conversation
+        updateSelectedConversation,
         // Selection
         selectedIds,
         toggleSelection,
-        clearSelection
+        clearSelection,
+        // 🆕 API counts for accurate tab counts
+        apiCounts
     } = useInboxConversations();
 
     // Send message
@@ -83,6 +90,7 @@ const FacebookInbox: React.FC = () => {
     const [showFilters, setShowFilters] = useState(false);
     const [showNotes, setShowNotes] = useState(false);
     const [showStats, setShowStats] = useState(false);
+    const [showSidebar, setShowSidebar] = useState(true); // للتحكم في إظهار/إخفاء Sidebar على الموبايل
     const [filters, setFilters] = useState<FilterState>({
         unreadOnly: false,
         assignedTo: 'all',
@@ -96,23 +104,50 @@ const FacebookInbox: React.FC = () => {
     const [replyToMessage, setReplyToMessage] = useState<any>(null);
     const [snoozeModalOpen, setSnoozeModalOpen] = useState(false);
 
-    const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    // Tab counts
+    // 🆕 Reload conversations when tab changes (especially for unreplied)
+    // Skip initial load since useInboxConversations already loads on mount
+    const isInitialMount = useRef(true);
+    useEffect(() => {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FacebookInbox.tsx:111',message:'Tab changed - loading conversations',data:{activeTab,isInitialMount:isInitialMount.current,currentConversationsCount:conversations.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
+        if (isInitialMount.current) {
+            isInitialMount.current = false;
+            // First load is handled by the hook's initial state or we can force load here if needed.
+            // But hook usually loads 'all'. If activeTab starts as 'all', we are good.
+            // If activeTab can start as something else, we might need to load.
+            // Current hook doesn't auto-load in useEffect, it waits for component.
+            // Actually, the new hook has empty useEffect for initial load: useEffect(() => {}, []);
+            // So we MUST load here even on initial mount if we want data.
+            loadConversations(1, false, activeTab);
+            return;
+        }
+
+        loadConversations(1, false, activeTab);
+    }, [activeTab, loadConversations]);
+
+    // Tab counts - use API counts for unreplied to get accurate total
     const tabCounts = useMemo(() => ({
-        all: conversations.length,
+        all: apiCounts.total || conversations.length,
+        unreplied: apiCounts.unreplied || conversations.filter(c =>
+            c.lastMessageIsFromCustomer === true &&
+            c.status !== 'done' &&
+            c.tab !== 'done'
+        ).length,
         done: conversations.filter(c => c.tab === 'done').length,
         main: conversations.filter(c => c.tab === 'main').length,
         general: conversations.filter(c => c.tab === 'general').length,
         requests: conversations.filter(c => c.tab === 'requests').length,
         spam: conversations.filter(c => c.tab === 'spam').length,
-    }), [conversations]);
+    }), [conversations, apiCounts]);
 
     // Filtered conversations
     const filteredConversations = useMemo(() => {
-        return conversations.filter(conv => {
-            // 1. Tab filter
-            if (activeTab !== 'all' && conv.tab !== activeTab) return false;
+        const filtered = conversations.filter(conv => {
+            // 1. Tab filter - REMOVED (Server-side filtering now)
+            // We assume 'conversations' contains only items for the current tab
+
 
             // 2. Search query
             if (searchQuery) {
@@ -142,86 +177,147 @@ const FacebookInbox: React.FC = () => {
 
             return true;
         });
+        return filtered;
     }, [conversations, activeTab, searchQuery, filters, user?.id]);
 
-    // Auto-scroll
-    const scrollToBottom = useCallback(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, []);
-
-    // Scroll to bottom on NEW messages only if at bottom
-    // We need a smarter scroll logic for infinite scroll
+    // Auto-scroll to bottom
     const messagesContainerRef = useRef<HTMLDivElement>(null);
-    const [shouldScrollToBottom, setShouldScrollToBottom] = useState(true);
     const prevMessagesLength = useRef(0);
     const oldScrollHeightRef = useRef(0);
+    const wasAtBottomRef = useRef(true);
 
-    // Initial scroll to bottom
-    useEffect(() => {
-        if (messages.length > 0 && prevMessagesLength.current === 0) {
-            setTimeout(scrollToBottom, 50);
+    // Scroll to bottom helper
+    const scrollToBottom = useCallback((smooth = true) => {
+        const container = messagesContainerRef.current;
+        if (container) {
+            container.scrollTo({
+                top: container.scrollHeight,
+                behavior: smooth ? 'smooth' : 'auto'
+            });
         }
-    }, [messages, scrollToBottom]);
+    }, []);
 
+    // Check if user is at bottom of scroll
+    const isAtBottom = useCallback((container: HTMLDivElement, threshold = 100) => {
+        const { scrollTop, scrollHeight, clientHeight } = container;
+        return scrollHeight - scrollTop - clientHeight < threshold;
+    }, []);
+
+    // Scroll to bottom when conversation changes or initial load
+    useEffect(() => {
+        if (messages.length > 0 && selectedConversation) {
+            // Always scroll to bottom when opening a conversation
+            setTimeout(() => scrollToBottom(false), 100);
+            wasAtBottomRef.current = true;
+        }
+    }, [selectedConversation?.id, scrollToBottom]);
+
+    // Scroll to bottom on new messages if user was already at bottom
+    useEffect(() => {
+        const container = messagesContainerRef.current;
+        if (!container || messages.length === 0) return;
+
+        // If new message was added (length increased) and user was at bottom
+        if (messages.length > prevMessagesLength.current && wasAtBottomRef.current) {
+            setTimeout(() => scrollToBottom(true), 50);
+        }
+
+        prevMessagesLength.current = messages.length;
+    }, [messages.length, scrollToBottom]);
+
+    // Handle scroll events - detect if user is at bottom and load more when scrolling up
     const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-        const { scrollTop, scrollHeight } = e.currentTarget;
+        const container = e.currentTarget;
 
-        // Load more if near top
-        if (scrollTop < 50 && hasMore && !loadingMessages) {
-            oldScrollHeightRef.current = scrollHeight; // Capture scroll height
+        // Check if at bottom
+        wasAtBottomRef.current = isAtBottom(container);
+
+        // Load more messages when scrolling to top
+        if (container.scrollTop < 200 && hasMore && !loadingMessages) {
+            const oldScrollHeight = container.scrollHeight;
+            oldScrollHeightRef.current = oldScrollHeight;
             loadMoreMessages();
         }
-    }, [hasMore, loadingMessages, loadMoreMessages]);
+    }, [hasMore, loadingMessages, loadMoreMessages, isAtBottom]);
 
-
+    // Restore scroll position after loading older messages
     useLayoutEffect(() => {
         const container = messagesContainerRef.current;
-        if (!container) return;
+        if (!container || !oldScrollHeightRef.current) return;
 
-        // If messages increased (probably prepended)
+        // If messages increased and we were loading more (old scroll height exists)
         if (messages.length > prevMessagesLength.current && prevMessagesLength.current > 0) {
-            // Restore scroll position
-            if (oldScrollHeightRef.current > 0) {
-                const newScrollHeight = container.scrollHeight;
-                const diff = newScrollHeight - oldScrollHeightRef.current;
-                container.scrollTop = diff; // Jump to previous visual position
-                oldScrollHeightRef.current = 0;
-            }
+            const newScrollHeight = container.scrollHeight;
+            const diff = newScrollHeight - oldScrollHeightRef.current;
+            container.scrollTop = diff;
+            oldScrollHeightRef.current = 0;
         }
-        prevMessagesLength.current = messages.length;
-    }, [messages]);
+    }, [messages.length]);
 
-    // Original auto-scroll
-    useEffect(() => {
-        if (messages.length > 0) {
-            // Only scroll to bottom if it's a new message or initial load
-            // This conflicts with infinite scroll prepend.
-            // We'll rely on explicit scroll to bottom for sending.
-        }
-    }, [messages, scrollToBottom]);
 
     // Send message handlers
     // Send message handlers
     const handleSendMessage = useCallback(async (content: string) => {
         if (!selectedConversation || !companyId) return;
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FacebookInbox.tsx:257',message:'Sending message - before',data:{conversationId:selectedConversation.id,activeTab,lastMessageIsFromCustomer:selectedConversation.lastMessageIsFromCustomer,unreadCount:selectedConversation.unreadCount},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
         try {
             await sendTextMessage(selectedConversation.id, content, companyId, replyToMessage);
             setReplyToMessage(null); // Clear reply after sending
+
+            // 🆕 Update conversation state - message is now from us (not customer)
+            updateSelectedConversation({
+                lastMessageIsFromCustomer: false,
+                lastMessage: content.length > 100 ? content.substring(0, 100) + '...' : content,
+                lastMessageTime: new Date()
+            });
+
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FacebookInbox.tsx:268',message:'Message sent - after updateSelectedConversation',data:{conversationId:selectedConversation.id,lastMessageIsFromCustomer:false},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+            // #endregion
+
             loadMessages(selectedConversation.id);
+
+            // 🆕 If in unreplied tab, reload conversations to get fresh data
+            // This ensures we fetch new unreplied conversations to replace the one we just replied to
+            if (activeTab === 'unreplied') {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FacebookInbox.tsx:274',message:'Reloading unreplied conversations',data:{activeTab,conversationId:selectedConversation.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+                // #endregion
+                setTimeout(() => {
+                    loadConversations(1, false, 'unreplied');
+                }, 500); // Small delay to allow backend to update
+            }
         } catch (error) {
             alert('فشل في إرسال الرسالة');
         }
-    }, [selectedConversation, companyId, sendTextMessage, loadMessages, replyToMessage]);
+    }, [selectedConversation, companyId, sendTextMessage, loadMessages, replyToMessage, updateSelectedConversation, activeTab, loadConversations]);
 
     const handleSendFile = useCallback(async (file: File) => {
         if (!selectedConversation || !companyId) return;
         try {
             await sendFileMessage(selectedConversation.id, file, companyId);
+
+            // 🆕 Update conversation state - message is now from us (not customer)
+            updateSelectedConversation({
+                lastMessageIsFromCustomer: false,
+                lastMessage: `📎 ${file.name}`,
+                lastMessageTime: new Date()
+            });
+
             loadMessages(selectedConversation.id);
+            
+            // 🆕 If in unreplied tab, reload conversations to get fresh data
+            if (activeTab === 'unreplied') {
+                setTimeout(() => {
+                    loadConversations(1, false, 'unreplied');
+                }, 500);
+            }
         } catch (error) {
             alert('فشل في إرسال الملف');
         }
-    }, [selectedConversation, companyId, sendFileMessage, loadMessages]);
+    }, [selectedConversation, companyId, sendFileMessage, loadMessages, updateSelectedConversation, activeTab, loadConversations]);
 
     // Bulk Action Handlers
     const handleBulkMarkDone = useCallback(async () => {
@@ -386,12 +482,14 @@ const FacebookInbox: React.FC = () => {
 
     // AI Toggle Handler
     const handleToggleAI = useCallback(async (enabled: boolean) => {
-        if (!selectedConversation || !companyId) return;
+        if (!selectedConversation || !companyId) {
+            return;
+        }
         try {
             await toggleAI(selectedConversation.id, enabled);
             // Optimistic update or reload
             loadConversations(); // Reload to get fresh state including metadata
-        } catch (error) {
+        } catch (error: any) {
             alert('فشل في تحديث حالة الذكاء الاصطناعي');
         }
     }, [selectedConversation, companyId, toggleAI, loadConversations]);
@@ -439,35 +537,104 @@ const FacebookInbox: React.FC = () => {
         };
     }, [socket, isConnected, selectedConversation, addMessage, loadConversations]);
 
-    return (
-        <div className="flex flex-col h-screen bg-gray-50">
-            <div className="relative">
-                <InboxHeader
-                    pageName="صفحة الفيسبوك"
-                    onSearch={setSearchQuery}
-                    onToggleFilters={() => setShowFilters(!showFilters)}
-                />
-                <button
-                    onClick={() => setShowStats(true)}
-                    className="absolute left-4 top-1/2 transform -translate-y-1/2 p-2 hover:bg-gray-100 rounded-full text-gray-600 transition-colors"
-                    title="الإحصائيات"
-                >
-                    <BarChart3 className="w-5 h-5" />
-                </button>
-                <div className="absolute left-14 top-1/2 transform -translate-y-1/2">
-                    <a
-                        href="/facebook/create-post"
-                        className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 flex items-center"
-                    >
-                        <span>نشر بوست +</span>
-                    </a>
-                </div>
-            </div>
+    // Fetch post details when conversation is selected
+    const fetchPostDetails = useCallback(async (conversationId: string) => {
+        try {
+            const response = await apiClient.get(`/conversations/${conversationId}/post-details`);
 
+            if (response.data?.success && response.data?.data) {
+                const postDetails = response.data.data;
+
+                // Update selectedConversation with post details
+                updateSelectedConversation({ postDetails });
+            }
+        } catch (error: any) {
+            // Silently fail if 404 (post details not found) - it's optional
+            if (error.response?.status !== 404) {
+                console.error('Error fetching post details:', error);
+            }
+        }
+    }, [updateSelectedConversation]);
+
+    // Fetch post details when conversation with postId is selected
+    useEffect(() => {
+        if (selectedConversation?.postId && !selectedConversation?.postDetails) {
+            fetchPostDetails(selectedConversation.id);
+        }
+    }, [selectedConversation?.id, selectedConversation?.postId, selectedConversation?.postDetails, fetchPostDetails]);
+
+    // Calculate which customer messages have been replied to
+    const repliedMessages = useMemo(() => {
+        const repliedSet = new Set<string>();
+        if (messages.length === 0) return repliedSet;
+
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FacebookInbox.tsx:554',message:'Calculating replied messages - start',data:{totalMessages:messages.length,customerMsgs:messages.filter(m=>m.isFromCustomer).length,nonCustomerMsgs:messages.filter(m=>!m.isFromCustomer).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
+
+        // Sort messages by timestamp
+        const sortedMessages = [...messages].sort((a, b) =>
+            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
+
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FacebookInbox.tsx:562',message:'Messages sorted by timestamp',data:{sortedCount:sortedMessages.length,firstTimestamp:sortedMessages[0]?.timestamp,lastTimestamp:sortedMessages[sortedMessages.length-1]?.timestamp,firstIsCustomer:sortedMessages[0]?.isFromCustomer,lastIsCustomer:sortedMessages[sortedMessages.length-1]?.isFromCustomer},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
+
+        // For each customer message, check if there's a reply after it
+        for (let i = 0; i < sortedMessages.length; i++) {
+            const msg = sortedMessages[i];
+            if (msg.isFromCustomer) {
+                // Check if there's any non-customer message after this one
+                for (let j = i + 1; j < sortedMessages.length; j++) {
+                    const laterMsg = sortedMessages[j];
+                    if (!laterMsg.isFromCustomer) {
+                        // Found a reply after this customer message
+                        repliedSet.add(msg.id);
+                        // #region agent log
+                        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FacebookInbox.tsx:572',message:'Found replied message',data:{customerMsgId:msg.id,customerMsgTime:msg.timestamp,replyMsgId:laterMsg.id,replyMsgTime:laterMsg.timestamp,timeDiff:new Date(laterMsg.timestamp).getTime()-new Date(msg.timestamp).getTime()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                        // #endregion
+                        break;
+                    }
+                }
+            }
+        }
+
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/a55d618d-6d33-466a-80f4-02d0851beecb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FacebookInbox.tsx:579',message:'Replied messages calculation complete',data:{repliedCount:repliedSet.size,repliedIds:Array.from(repliedSet).slice(0,10)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
+
+        return repliedSet;
+    }, [messages]);
+
+    // إزالة padding و overflow من parent main element في Layout
+    useEffect(() => {
+        const mainElement = document.querySelector('main');
+        if (mainElement) {
+            // حفظ الـ classes الأصلية
+            const originalClasses = mainElement.className;
+            // إزالة padding و overflow وإضافة overflow-hidden و h-full
+            mainElement.classList.remove('p-6', 'overflow-y-auto');
+            mainElement.classList.add('p-0', 'overflow-hidden', 'flex-1', 'h-full');
+
+            return () => {
+                // استعادة الـ classes الأصلية عند إغلاق الصفحة
+                mainElement.className = originalClasses;
+            };
+        }
+    }, []);
+
+    return (
+        <div className="flex flex-col h-full bg-gray-50 overflow-hidden w-full">
             <InboxTabs
                 activeTab={activeTab}
-                onTabChange={setActiveTab}
+                onTabChange={(newTab) => {
+                    setActiveTab(newTab);
+                }}
                 counts={tabCounts}
+                onSearch={setSearchQuery}
+                onToggleFilters={() => setShowFilters(!showFilters)}
+                onShowStats={() => setShowStats(true)}
             />
 
             <StatsDashboard
@@ -499,8 +666,25 @@ const FacebookInbox: React.FC = () => {
                     />
                 )}
 
+                {/* Mobile Sidebar Overlay */}
+                {showSidebar && (
+                    <div
+                        className="md:hidden fixed inset-0 bg-black bg-opacity-50 z-20"
+                        onClick={() => setShowSidebar(false)}
+                    />
+                )}
+
                 {/* Left: Conversations */}
-                <div className="w-80 border-r border-gray-200 bg-white flex flex-col relative">
+                <div className={`
+                    ${showSidebar ? 'translate-x-0' : '-translate-x-full'}
+                    md:translate-x-0
+                    fixed md:relative
+                    inset-y-0 left-0
+                    w-full sm:w-80 md:w-72 lg:w-80
+                    z-30
+                    border-r border-gray-200 bg-white flex flex-col
+                    transition-transform duration-300 ease-in-out
+                `}>
                     {/* Bulk Actions Bar Overlay */}
                     <BulkActionsBar
                         selectedCount={selectedIds.size}
@@ -523,8 +707,18 @@ const FacebookInbox: React.FC = () => {
                         })}
                     />
 
-                    <div className="flex-1 overflow-y-auto">
-                        {loading ? (
+                    <div
+                        className="flex-1 overflow-y-auto"
+                        onScroll={(e) => {
+                            const target = e.currentTarget;
+                            const { scrollTop, scrollHeight, clientHeight } = target;
+                            // Load more when near bottom (within 200px)
+                            if (scrollHeight - scrollTop - clientHeight < 200 && hasMoreConversations && !loading) {
+                                loadMoreConversations();
+                            }
+                        }}
+                    >
+                        {loading && conversations.length === 0 ? (
                             <div className="flex items-center justify-center h-full">
                                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
                             </div>
@@ -537,7 +731,10 @@ const FacebookInbox: React.FC = () => {
                             </div>
                         ) : (
                             <div>
-                                {filteredConversations.map((conv) => (
+                                {/* Deduplicate conversations by ID to prevent duplicate key warnings */}
+                                {Array.from(
+                                    new Map(filteredConversations.map(conv => [conv.id, conv])).values()
+                                ).map((conv) => (
                                     <ConversationItem
                                         key={conv.id}
                                         conversation={conv}
@@ -550,18 +747,36 @@ const FacebookInbox: React.FC = () => {
                                         onClick={() => selectConversation(conv)}
                                     />
                                 ))}
+                                {/* Loading more conversations indicator */}
+                                {loading && conversations.length > 0 && (
+                                    <div className="flex justify-center p-4">
+                                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-400"></div>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
                 </div>
 
                 {/* Center: Chat */}
-                <div className="flex-1 flex flex-col bg-white">
+                <div className="flex-1 flex flex-col bg-white relative">
                     {selectedConversation ? (
                         <>
-                            {/* Chat Header */}
-                            <div className="border-b border-gray-200 p-4">
-                                <div className="flex items-center justify-between mb-3">
+                            {/* Chat Header - simplified, Status & Assignment moved to sidebar */}
+                            <div className="border-b border-gray-200 p-2 sm:p-3">
+                                <div className="flex items-center justify-between">
+                                    {/* زر الرجوع للموبايل */}
+                                    <button
+                                        onClick={() => {
+                                            setShowSidebar(true);
+                                            selectConversation(null);
+                                        }}
+                                        className="md:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                                        title="رجوع للمحادثات"
+                                    >
+                                        <ArrowRight size={20} className="text-gray-600" />
+                                    </button>
+
                                     <div className="flex items-center gap-3">
                                         {selectedConversation.customerAvatar ? (
                                             <img
@@ -611,27 +826,11 @@ const FacebookInbox: React.FC = () => {
                                         />
                                     </div>
                                 </div>
-
-                                {/* Status & Assignment */}
-                                <div className="flex items-center gap-3">
-                                    <StatusDropdown
-                                        currentStatus={selectedConversation.status}
-                                        onStatusChange={handleStatusChange}
-                                        disabled={updating}
-                                    />
-
-                                    <AssignmentDropdown
-                                        currentAssignee={selectedConversation.assignedTo}
-                                        currentAssigneeName={selectedConversation.assignedToName}
-                                        onAssign={handleAssignment}
-                                        disabled={updating}
-                                    />
-                                </div>
                             </div>
 
-                            {/* Messages */}
+                            {/* Messages Container - scrollable area, messages directly above input */}
                             <div
-                                className="flex-1 overflow-y-auto p-4 bg-gray-50"
+                                className="flex-1 overflow-y-auto p-2 sm:p-4 bg-gray-50 pb-4"
                                 ref={messagesContainerRef}
                                 onScroll={handleScroll}
                             >
@@ -639,24 +838,29 @@ const FacebookInbox: React.FC = () => {
                                     <div className="flex items-center justify-center h-full">
                                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                                     </div>
+                                ) : messages.length === 0 && !loadingMessages ? (
+                                    <div className="flex items-center justify-center h-full py-10">
+                                        <p className="text-gray-500">لا توجد رسائل</p>
+                                    </div>
                                 ) : (
-                                    <div>
-                                        {/* Loading more indicator */}
+                                    <div className="space-y-2">
+                                        {/* Loading more indicator at top when loading older messages */}
                                         {loadingMessages && hasMore && (
                                             <div className="flex justify-center p-2">
                                                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-400"></div>
                                             </div>
                                         )}
 
-                                        {messages.length === 0 && !loadingMessages ? (
-                                            <div className="flex items-center justify-center h-full py-10">
-                                                <p className="text-gray-500">لا توجد رسائل</p>
-                                            </div>
-                                        ) : (
-                                            messages.map((msg) => (
+                                        {/* Messages in normal order (oldest first, newest last) */}
+                                        {Array.from(
+                                            new Map(messages.map(msg => [msg.id, msg])).values()
+                                        ).map((msg) => {
+                                            const hasBeenReplied = msg.isFromCustomer ? repliedMessages.has(msg.id) : undefined;
+                                            return (
                                                 <MessageBubble
                                                     key={msg.id}
                                                     message={msg}
+                                                    hasBeenReplied={hasBeenReplied}
                                                     onDelete={handleDeleteMessage}
                                                     onForward={handleForwardRequest}
                                                     onStar={handleStarMessage}
@@ -664,50 +868,53 @@ const FacebookInbox: React.FC = () => {
                                                     onReply={handleReplyToMessage}
                                                     currentUserId={user?.id || ''}
                                                 />
-                                            ))
-                                        )}
+                                            );
+                                        })}
 
-                                        {/* AI Typing Indicator */}
+                                        {/* AI Typing Indicator at bottom */}
                                         {isAITyping && (
-                                            <div className="mb-2">
+                                            <div className="mt-2">
                                                 <TypingIndicator />
                                             </div>
                                         )}
-                                        <div ref={messagesEndRef} />
                                     </div>
                                 )}
                             </div>
 
-                            <AISuggestions
-                                conversationId={selectedConversation.id}
-                                onSelectSuggestion={(text) => {
-                                    // Handle suggestion selection - maybe update input state?
-                                    // Since MessageInput manages its own state, we might need a way to pass this down.
-                                    // For now, let's assume we can pass a prop to MessageInput or use a ref.
-                                    // Actually, let's just create a temporary state in FacebookInbox to pass to MessageInput?
-                                    // Or better, let's modify MessageInput to accept an initialValue or value prop override.
-                                    // BUT simplest is to let MessageInput handle it via a ref exposed or a context.
-                                    // Let's pass a `suggestedText` state to MessageInput.
-                                    setSuggestedText(text);
-                                }}
-                            />
+                            {/* Sticky bottom section - AI Suggestions + Message Input */}
+                            <div className="sticky bottom-0 border-t border-gray-200 bg-white z-10 shadow-lg mt-auto">
+                                <AISuggestions
+                                    conversationId={selectedConversation.id}
+                                    onSelectSuggestion={(text) => {
+                                        setSuggestedText(text);
+                                    }}
+                                />
 
-                            <MessageInput
-                                onSendMessage={handleSendMessage}
-                                onSendFile={handleSendFile}
-                                sending={sending}
-                                uploadingFile={uploadingFile}
-                                conversation={selectedConversation}
-                                user={user}
-                                replyTo={replyToMessage}
-                                onCancelReply={handleCancelReply}
-                                initialText={suggestedText}
-                                onTextCleared={() => setSuggestedText('')}
-                            />
+                                <MessageInput
+                                    onSendMessage={handleSendMessage}
+                                    onSendFile={handleSendFile}
+                                    sending={sending}
+                                    uploadingFile={uploadingFile}
+                                    conversation={selectedConversation}
+                                    user={user}
+                                    replyTo={replyToMessage}
+                                    onCancelReply={handleCancelReply}
+                                    initialText={suggestedText}
+                                    onTextCleared={() => setSuggestedText('')}
+                                />
+                            </div>
                         </>
                     ) : (
                         <div className="flex items-center justify-center h-full">
                             <div className="text-center">
+                                {/* زر فتح القائمة على الموبايل */}
+                                <button
+                                    onClick={() => setShowSidebar(true)}
+                                    className="md:hidden mb-4 p-4 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 transition-colors"
+                                    title="عرض المحادثات"
+                                >
+                                    <Menu size={24} />
+                                </button>
                                 <div className="text-6xl mb-4">💬</div>
                                 <h3 className="text-lg font-medium text-gray-900 mb-2">اختر محادثة</h3>
                                 <p className="text-sm text-gray-600">اختر محادثة من القائمة</p>
@@ -717,12 +924,18 @@ const FacebookInbox: React.FC = () => {
                 </div>
 
                 {/* Right: Customer Profile */}
-                <div className="hidden xl:block">
+                <div className="hidden xl:block h-full flex flex-col">
                     {selectedConversation ? (
                         <CustomerProfile
                             conversation={selectedConversation}
                             onTagsChange={handleTagsChange}
                             updatingTags={updatingTags}
+                            currentStatus={selectedConversation.status}
+                            onStatusChange={handleStatusChange}
+                            currentAssignee={selectedConversation.assignedTo}
+                            currentAssigneeName={selectedConversation.assignedToName}
+                            onAssign={handleAssignment}
+                            disabled={updating}
                         />
                     ) : (
                         <div className="w-80 h-full border-l border-gray-200 bg-white flex items-center justify-center text-gray-400">

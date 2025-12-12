@@ -77,6 +77,7 @@ router.get('/:id/post-details', verifyToken.authenticateToken, conversationContr
 // 🆕 New GET routes
 router.get('/', verifyToken.authenticateToken, conversationController.getConversations);
 router.get('/:id', verifyToken.authenticateToken, conversationController.getConversation);
+router.put('/:id', verifyToken.authenticateToken, verifyToken.requireCompanyAccess, conversationController.updateConversation);
 router.get('/:id/messages', verifyToken.authenticateToken, conversationController.getMessages);
 
 // 🆕 Media and message management routes
@@ -91,5 +92,11 @@ router.post('/:id/messages/location', verifyToken.authenticateToken, conversatio
 
 // 🆕 Bulk Update Route
 router.put('/bulk-update', verifyToken.authenticateToken, conversationController.bulkUpdateConversations);
+
+// 🆕 Statistics Route
+router.get('/stats/daily', verifyToken.authenticateToken, conversationController.getConversationStats);
+
+// 🆕 Sync Facebook Messages Route
+router.post('/:id/sync-messages', verifyToken.authenticateToken, verifyToken.requireCompanyAccess, conversationController.syncFacebookMessages);
 
 module.exports = router;

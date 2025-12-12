@@ -1,4 +1,5 @@
 import React from 'react';
+import { Search, SlidersHorizontal, BarChart3 } from 'lucide-react';
 import { InboxTab } from '../../../types/inbox.types';
 
 interface InboxTabsProps {
@@ -6,17 +7,22 @@ interface InboxTabsProps {
     onTabChange: (tab: InboxTab) => void;
     counts: {
         all: number;
+        unreplied: number;
         done: number;
         main: number;
         general: number;
         requests: number;
         spam: number;
     };
+    onSearch: (query: string) => void;
+    onToggleFilters: () => void;
+    onShowStats?: () => void;
 }
 
-const InboxTabs: React.FC<InboxTabsProps> = ({ activeTab, onTabChange, counts }) => {
+const InboxTabs: React.FC<InboxTabsProps> = ({ activeTab, onTabChange, counts, onSearch, onToggleFilters, onShowStats }) => {
     const tabs = [
         { id: 'all' as InboxTab, label: 'الكل', icon: '💬', count: counts.all },
+        { id: 'unreplied' as InboxTab, label: 'غير مردود عليها', icon: '⚠️', count: counts.unreplied },
         { id: 'done' as InboxTab, label: 'منتهي', icon: '✅', count: counts.done },
         { id: 'main' as InboxTab, label: 'رئيسي', icon: '⭐', count: counts.main },
         { id: 'general' as InboxTab, label: 'عام', icon: '📋', count: counts.general },
@@ -26,7 +32,8 @@ const InboxTabs: React.FC<InboxTabsProps> = ({ activeTab, onTabChange, counts })
 
     return (
         <div className="border-b border-gray-200 bg-white">
-            <div className="flex space-x-1 space-x-reverse px-4">
+            <div className="flex items-center justify-between px-4">
+                <div className="flex space-x-1 space-x-reverse">
                 {tabs.map((tab) => (
                     <button
                         key={tab.id}
@@ -54,6 +61,41 @@ const InboxTabs: React.FC<InboxTabsProps> = ({ activeTab, onTabChange, counts })
                         )}
                     </button>
                 ))}
+                </div>
+
+                {/* Search, Filter, and Stats buttons */}
+                <div className="flex items-center gap-3">
+                    {/* Stats Button */}
+                    {onShowStats && (
+                        <button
+                            onClick={onShowStats}
+                            className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
+                            title="الإحصائيات"
+                        >
+                            <BarChart3 className="w-5 h-5" />
+                        </button>
+                    )}
+
+                    {/* Search */}
+                    <div className="relative">
+                        <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                        <input
+                            type="text"
+                            placeholder="بحث في المحادثات..."
+                            onChange={(e) => onSearch(e.target.value)}
+                            className="pr-10 pl-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent w-64"
+                        />
+                    </div>
+
+                    {/* Filters Toggle */}
+                    <button
+                        onClick={onToggleFilters}
+                        className="p-2 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors"
+                        title="فلاتر متقدمة"
+                    >
+                        <SlidersHorizontal className="w-5 h-5 text-gray-600" />
+                    </button>
+                </div>
             </div>
         </div>
     );

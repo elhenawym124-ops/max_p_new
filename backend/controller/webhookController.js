@@ -1,6 +1,7 @@
 const { getSharedPrismaClient, safeQuery, healthCheck } = require('../services/sharedDatabase');
 const socketService = require('../services/socketService');
 const { messageQueueManager } = require('../routes/queueRoutes');
+const { updateConversationLastMessageStatus, resetConversationUnreadCount } = require('../utils/allFunctions');
 
 // ⚠️ CRITICAL: Always use safeQuery() instead of direct prisma calls
 // This ensures proper connection management and retry logic
@@ -607,24 +608,52 @@ async function handlePageReply(webhookEvent, pageId = null) {
     // إذا كانت الرسالة تحتوي على attachments فقط بدون نص
     if (hasAttachments && (!messageText || messageText.trim().length === 0)) {
       const attachment = webhookEvent.message.attachments[0];
-      messageType = attachment.type.toUpperCase(); // IMAGE, VIDEO, FILE, TEMPLATE, etc.
+      const attachmentType = attachment.type.toLowerCase();
 
-      // Handle different attachment types
-      if (attachment.type === 'template') {
-        // Extract template content
+      if (attachmentType === 'image') {
+        messageType = 'IMAGE';
+        messageContent = attachment.payload?.url || '[صورة]';
+      } else if (attachmentType === 'video') {
+        messageType = 'VIDEO';
+        messageContent = attachment.payload?.url || '[فيديو]';
+      } else if (attachmentType === 'audio') {
+        messageType = 'AUDIO';
+        messageContent = attachment.payload?.url || '[صوت]';
+      } else if (attachmentType === 'file') {
+        messageType = 'FILE';
+        messageContent = attachment.payload?.url || '[ملف]';
+      } else if (attachmentType === 'template') {
+        // معالجة الرسائل التي تحتوي على أزرار (template)
+        messageType = 'TEMPLATE';
         const template = attachment.payload;
-        if (template.template_type === 'generic' && template.elements && template.elements.length > 0) {
+        
+        // استخراج المحتوى من template
+        if (template?.template_type === 'generic' && template?.elements && template.elements.length > 0) {
           const element = template.elements[0];
-          // Use image URL as content, or button URL if no image
-          messageContent = element.image_url ||
+          // استخدام عنوان العنصر أو النص كمحتوى
+          messageContent = element.title || element.subtitle || element.image_url ||
             (element.buttons && element.buttons[0]?.url) ||
-            '[Template Message]';
+            '[رسالة منتج]';
+        } else if (template?.template_type === 'button') {
+          // رسالة مع أزرار فقط
+          messageContent = template.text || '[رسالة مع أزرار]';
         } else {
-          messageContent = '[Template Message]';
+          messageContent = '[رسالة template]';
         }
+      } else if (attachmentType === 'fallback') {
+        // بعض الرسائل تأتي كـ fallback
+        messageType = 'FILE';
+        messageContent = attachment.payload?.url || attachment.url || '[مرفق]';
       } else {
-        // For other types (IMAGE, VIDEO, FILE, etc.)
+        // أي نوع آخر غير معروف
+        console.log(`⚠️ [PAGE-REPLY-ATTACHMENT] نوع مرفق غير معروف: ${attachmentType}`);
+        messageType = attachment.type.toUpperCase();
         messageContent = attachment.payload?.url || `[${attachment.type}]`;
+      }
+      
+      // إذا كان هناك أكثر من مرفق، نسجل ذلك
+      if (webhookEvent.message.attachments.length > 1) {
+        console.log(`📎 [PAGE-REPLY-ATTACHMENTS] الرسالة تحتوي على ${webhookEvent.message.attachments.length} مرفقات`);
       }
     }
 
@@ -793,6 +822,9 @@ async function handlePageReply(webhookEvent, pageId = null) {
         }
       });
     }, 2); // ⚡ تقليل retries من 5 إلى 2 لتسريع Echo
+
+    // 🆕 Update lastMessageIsFromCustomer (this is a page reply, so false)
+    await updateConversationLastMessageStatus(conversation.id, false);
 
     // تنظيف الـ metadata بعد حفظ الرسالة
     if (senderUserId) {

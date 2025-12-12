@@ -158,6 +158,9 @@ async function extractMessageContent(msg, sock) {
     else if (message.reactionMessage) {
         type = 'REACTION';
         text = message.reactionMessage.text;
+        // Extract the ID of the message being reacted to
+        quotedId = message.reactionMessage.key?.id;
+        // We might also want to know who sent the reaction, which is handled by the main message processing (sender/participant)
     }
     // أزرار تفاعلية
     else if (message.buttonsMessage) {
@@ -884,19 +887,31 @@ async function updateOrCreateContact(sessionId, remoteJid, msg, sock, options = 
         const { isOutgoing = false, isGroupParticipant = false, customerId } = options;
 
         // Ensure JID is normalized using the same logic as MessageHandler
-        const formatJid = (to) => {
-            if (!to) return to;
-            const bareJid = to.split('@')[0].split(':')[0];
-            const cleaned = bareJid.replace(/\D/g, '');
-            return `${cleaned}@s.whatsapp.net`;
-        };
+        const isGroup = remoteJid.endsWith('@g.us');
+        const isLid = remoteJid.includes('@lid');
+        let normalizedJid = remoteJid;
+        let phoneNumber = null;
 
-        const normalizedJid = formatJid(remoteJid);
-        const phoneNumber = normalizedJid.split('@')[0];
-        const isGroup = remoteJid.endsWith('@g.us'); // Keep original for group check if needed, but storage should be normalized for contacts
+        if (isGroup) {
+            // Keep group JID as is, do not try to extract phone number
+            normalizedJid = remoteJid;
+            phoneNumber = null; // Groups don't have a phone number
+        } else if (isLid) {
+            // Keep LID as is, do not extract phone number
+            normalizedJid = remoteJid;
+            phoneNumber = null;
+        } else {
+            // Standard normalization for users
+            // Remove device info (e.g. :12) and ensure @s.whatsapp.net
+            const bareJid = remoteJid.split('@')[0].split(':')[0];
+            // Remove non-numeric chars
+            const cleaned = bareJid.replace(/\D/g, '');
+            normalizedJid = `${cleaned}@s.whatsapp.net`;
+            phoneNumber = cleaned;
+        }
 
         // Use normalizedJid for database operations
-        remoteJid = isGroup ? remoteJid : normalizedJid;
+        remoteJid = normalizedJid;
 
         let pushName = msg.pushName;
 
@@ -2676,6 +2691,8 @@ module.exports = {
     fetchBlocklist,
     fetchPrivacySettings,
     setPrivacy,
+    checkNumber: onWhatsApp, // Export as checkNumber to match controller usage or just onWhatsApp
+    onWhatsApp,
 
     // Status
     getStatus,

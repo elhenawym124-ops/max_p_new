@@ -978,6 +978,55 @@ const getCustomerDetails = async (req, res) => {
   }
 };
 
+// 🔍 البحث عن عملاء
+const searchCustomers = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+      });
+    }
+
+    const { q } = req.query;
+    if (!q) {
+      return res.json({
+        success: true,
+        data: [],
+        message: 'نص البحث فارغ'
+      });
+    }
+
+    const customers = await getSharedPrismaClient().customer.findMany({
+      where: {
+        companyId,
+        OR: [
+          { phone: { contains: q } },
+          { firstName: { contains: q } },
+          { lastName: { contains: q } },
+          { email: { contains: q } }
+        ]
+      },
+      take: 10,
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json({
+      success: true,
+      data: customers,
+      message: `تم العثور على ${customers.length} عميل`
+    });
+  } catch (error) {
+    console.error('❌ Error searching customers:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في البحث عن العملاء',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getAllCustomer,
   deleteAllConversations,
@@ -991,5 +1040,6 @@ module.exports = {
   getCustomerNotes,
   addCustomerNote,
   deleteCustomerNote,
-  getCustomerDetails
+  getCustomerDetails,
+  searchCustomers
 }

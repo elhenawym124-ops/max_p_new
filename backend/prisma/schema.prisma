@@ -265,22 +265,24 @@ model Customer {
 }
 
 model Conversation {
-  id                  String               @id @default(cuid())
-  customerId          String
-  assignedUserId      String?
-  channel             CommunicationChannel
-  status              ConversationStatus   @default(ACTIVE)
-  subject             String?
-  priority            Int                  @default(1)
-  tags                String?
-  lastMessageAt       DateTime?
-  lastMessagePreview  String?
-  isRead              Boolean              @default(false)
-  metadata            String?              @db.Text
-  companyId           String
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  aiEnabled           Boolean              @default(true)
+  id                       String               @id @default(cuid())
+  customerId               String
+  assignedUserId           String?
+  channel                  CommunicationChannel
+  status                   ConversationStatus   @default(ACTIVE)
+  subject                  String?
+  priority                 Int                  @default(1)
+  tags                     String?
+  lastMessageAt            DateTime?
+  lastMessagePreview       String?
+  isRead                   Boolean              @default(false)
+  metadata                 String?              @db.Text
+  companyId                String
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+  aiEnabled                Boolean              @default(true)
+  lastMessageIsFromCustomer Boolean             @default(false)
+  unreadCount              Int                  @default(0)
   broadcastRecipients BroadcastRecipient[]
   assignedUser        User?                @relation(fields: [assignedUserId], references: [id])
   company             Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -295,6 +297,7 @@ model Conversation {
   @@index([status])
   @@index([companyId, lastMessageAt], map: "conversations_company_lastmsg_idx")
   @@index([companyId, status, lastMessageAt], map: "conversations_company_status_lastmsg_idx")
+  @@index([companyId, lastMessageIsFromCustomer, status], map: "conversations_unreplied_idx")
   @@map("conversations")
 }
 

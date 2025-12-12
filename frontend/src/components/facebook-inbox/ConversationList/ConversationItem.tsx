@@ -28,7 +28,11 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
         if (hours < 24) return `${hours} س`;
         if (days < 7) return `${days} يوم`;
 
-        return date.toLocaleDateString('ar-SA', { day: 'numeric', month: 'short' });
+        return date.toLocaleDateString('ar-EG', { 
+            day: 'numeric', 
+            month: 'short',
+            calendar: 'gregory'
+        });
     };
 
     return (
@@ -38,7 +42,9 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
         group relative p-4 cursor-pointer transition-all duration-200 border-b border-gray-100
         ${isSelected
                     ? 'bg-blue-50 border-r-4 border-r-blue-600'
-                    : 'hover:bg-gray-50'
+                    : conversation.unreadCount > 0
+                        ? 'bg-red-50/30 hover:bg-red-50/50 border-r-2 border-r-red-300'
+                        : 'hover:bg-gray-50'
                 }
         ${isMultiSelected ? 'bg-blue-50/50' : ''}
       `}
@@ -84,6 +90,14 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
                 </div>
 
                 <div className="flex-1 min-w-0">
+                    {/* Unread indicator - similar to unreplied messages */}
+                    {conversation.unreadCount > 0 && (
+                        <div className="flex items-center gap-1 mb-1">
+                            <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                            <span className="text-xs text-red-600 font-medium">رسائل جديدة</span>
+                        </div>
+                    )}
+
                     <div className="flex items-center justify-between mb-1">
                         <h4 className={`text-sm truncate ${conversation.unreadCount > 0 ? 'font-bold text-gray-900' : 'font-medium text-gray-800'
                             }`}>
@@ -93,15 +107,6 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
                             {formatTime(conversation.lastMessageTime)}
                         </span>
                     </div>
-
-                    {/* Page name */}
-                    {conversation.pageName && (
-                        <div className="flex items-center gap-1 mb-1">
-                            <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
-                                {conversation.pageName}
-                            </span>
-                        </div>
-                    )}
 
                     {/* Last message */}
                     <p className={`text-sm text-gray-600 truncate ${conversation.unreadCount > 0 ? 'font-medium' : ''
@@ -120,12 +125,6 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
 
                         {conversation.priority && (
                             <span className="text-yellow-500">⭐</span>
-                        )}
-
-                        {conversation.aiEnabled && (
-                            <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded">
-                                🤖 AI
-                            </span>
                         )}
 
                         {conversation.assignedTo && (

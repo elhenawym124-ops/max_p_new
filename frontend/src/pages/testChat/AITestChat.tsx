@@ -14,6 +14,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { testChatService, TestConversation, TestMessage, AITestResponse } from '../../services/testChatService';
 import CompanyProtectedRoute from '../../components/protection/CompanyProtectedRoute';
+import useSocket from '../../hooks/useSocket';
 
 // إضافة معلومات الرد إلى TestMessage
 interface ExtendedTestMessage extends TestMessage {
@@ -45,14 +46,128 @@ const AITestChatContent: React.FC = () => {
   const [deleting, setDeleting] = useState(false);
   const [runningTest, setRunningTest] = useState(false);
   const [testResults, setTestResults] = useState<any>(null);
-  
+
   // ✅ NEW: حالة الدردشات المتعددة
   const [openChats, setOpenChats] = useState<Map<string, OpenChat>>(new Map());
   const [multiChatMode, setMultiChatMode] = useState(false);
   const [sendingToAll, setSendingToAll] = useState(false);
-  
+
+  const { socket, isConnected } = useSocket();
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  // ✅ Socket.IO Integration for Real-time Updates
+  useEffect(() => {
+    if (!socket || !isConnected) return;
+
+    // Handle new message
+    const handleNewMessage = (data: any) => {
+      console.log('📨 [SOCKET] New message received:', data);
+
+      // Update conversations list (last message)
+      setConversations(prev => prev.map(conv => {
+        if (conv.id === data.conversationId) {
+          return {
+            ...conv,
+            lastMessage: data.content || conv.lastMessage,
+            lastMessageTime: new Date()
+          };
+        }
+        return conv;
+      }));
+
+      // Map socket data to ExtendedTestMessage
+      const newMessage: ExtendedTestMessage = {
+        id: data.id,
+        content: data.content,
+        senderId: data.senderId,
+        senderName: data.senderName, // Might need adjustment based on payload
+        createdAt: new Date(data.createdAt),
+        type: data.type || 'text',
+        isFromCustomer: data.isFromCustomer,
+        status: 'sent',
+        conversationId: data.conversationId,
+        aiResponseInfo: data.metadata?.aiResponseInfo || (data.metadata ? JSON.parse(JSON.stringify(data.metadata)) : undefined)
+      };
+
+      // 1. Update Selected Conversation
+      if (selectedConversation && data.conversationId === selectedConversation.id) {
+        setMessages(prev => {
+          // Avoid duplicates
+          if (prev.some(m => m.id === newMessage.id)) return prev;
+
+          // Remove temp message if it matches (by content/type/time approx?)
+          // Usually we rely on API response to replace temp, but socket might arrive too.
+          // For now just append.
+          return [...prev, newMessage];
+        });
+
+        // Stop typing indicator
+        if (!newMessage.isFromCustomer) {
+          setIsAiTyping(false);
+          if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        }
+
+        // Scroll
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+      }
+
+      // 2. Update Open Chats (Multi-mode)
+      if (openChats.has(data.conversationId)) {
+        setOpenChats(prev => {
+          const newMap = new Map(prev);
+          const chat = newMap.get(data.conversationId);
+          if (chat) {
+            // Avoid duplicates check
+            if (chat.messages.some(m => m.id === newMessage.id)) return prev;
+
+            newMap.set(data.conversationId, {
+              ...chat,
+              messages: [...chat.messages, newMessage],
+              isAiTyping: !newMessage.isFromCustomer ? false : chat.isAiTyping
+            });
+          }
+          return newMap;
+        });
+      }
+    };
+
+    // Handle typing status
+    const handleTyping = (data: { conversationId: string, isTyping: boolean }) => {
+      if (selectedConversation && data.conversationId === selectedConversation.id) {
+        setIsAiTyping(data.isTyping);
+
+        if (data.isTyping) {
+          if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+          typingTimeoutRef.current = setTimeout(() => setIsAiTyping(false), 15000);
+        }
+      }
+
+      if (openChats.has(data.conversationId)) {
+        setOpenChats(prev => {
+          const newMap = new Map(prev);
+          const chat = newMap.get(data.conversationId);
+          if (chat) {
+            newMap.set(data.conversationId, { ...chat, isAiTyping: data.isTyping });
+          }
+          return newMap;
+        });
+      }
+    };
+
+    socket.on('new_message', handleNewMessage);
+    socket.on('ai_typing', handleTyping);
+
+    return () => {
+      socket.off('new_message', handleNewMessage);
+      socket.off('ai_typing', handleTyping);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    };
+  }, [socket, isConnected, selectedConversation, openChats]);
 
   // تحميل المحادثات
   const loadConversations = async () => {
@@ -88,7 +203,7 @@ const AITestChatContent: React.FC = () => {
         }
         return mappedMsg;
       }));
-      
+
       // التمرير للأسفل
       setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -133,8 +248,8 @@ const AITestChatContent: React.FC = () => {
       console.log('✅ Message sent, AI response:', result);
 
       // تحديث رسالة المستخدم
-      setMessages(prev => prev.map(msg => 
-        msg.id === tempUserMessage.id 
+      setMessages(prev => prev.map(msg =>
+        msg.id === tempUserMessage.id
           ? { ...result.userMessage, createdAt: new Date(result.userMessage.createdAt) }
           : msg
       ));
@@ -154,10 +269,10 @@ const AITestChatContent: React.FC = () => {
         setConversations(prev => prev.map(conv =>
           conv.id === selectedConversation.id
             ? {
-                ...conv,
-                lastMessage: result.aiMessage?.content || messageContent,
-                lastMessageTime: new Date()
-              }
+              ...conv,
+              lastMessage: result.aiMessage?.content || messageContent,
+              lastMessageTime: new Date()
+            }
             : conv
         ));
       } else if (result.aiResponse?.silent) {
@@ -184,14 +299,14 @@ const AITestChatContent: React.FC = () => {
 
     } catch (error: any) {
       console.error('❌ Error sending message:', error);
-      
+
       // تحديث حالة الرسالة إلى خطأ
       setMessages(prev => prev.map(msg =>
         msg.id === tempUserMessage.id
           ? { ...msg, status: 'error' }
           : msg
       ));
-      
+
       alert(`❌ فشل في إرسال الرسالة:\n\n${error.message}`);
       setNewMessage(messageContent);
     } finally {
@@ -221,13 +336,13 @@ const AITestChatContent: React.FC = () => {
       isAiTyping: false,
       error: null
     };
-    
+
     setOpenChats(prev => {
       const newMap = new Map(prev);
       newMap.set(conversation.id, chatData);
       return newMap;
     });
-    
+
     if (!multiChatMode) {
       setMultiChatMode(true);
     }
@@ -240,7 +355,7 @@ const AITestChatContent: React.FC = () => {
       newMap.delete(conversationId);
       return newMap;
     });
-    
+
     // إذا لم يعد هناك دردشات مفتوحة، إيقاف وضع الدردشات المتعددة
     if (openChats.size === 1) {
       setMultiChatMode(false);
@@ -287,7 +402,7 @@ const AITestChatContent: React.FC = () => {
 
     try {
       const result = await testChatService.sendMessage(conversationId, messageContent);
-      
+
       // تحديث رسالة المستخدم
       setOpenChats(prev => {
         const newMap = new Map(prev);
@@ -337,15 +452,15 @@ const AITestChatContent: React.FC = () => {
       setConversations(prev => prev.map(conv =>
         conv.id === conversationId
           ? {
-              ...conv,
-              lastMessage: result.aiMessage?.content || messageContent,
-              lastMessageTime: new Date()
-            }
+            ...conv,
+            lastMessage: result.aiMessage?.content || messageContent,
+            lastMessageTime: new Date()
+          }
           : conv
       ));
     } catch (error: any) {
       console.error('❌ Error sending message to chat:', error);
-      
+
       setOpenChats(prev => {
         const newMap = new Map(prev);
         const chat = newMap.get(conversationId);
@@ -421,10 +536,10 @@ const AITestChatContent: React.FC = () => {
     try {
       await testChatService.deleteConversation(conversationToDelete.id);
       console.log('✅ Conversation deleted:', conversationToDelete.id);
-      
+
       // إزالة المحادثة من القائمة
       setConversations(prev => prev.filter(conv => conv.id !== conversationToDelete.id));
-      
+
       // إذا كانت المحادثة المحذوفة هي المختارة، اختر الأولى أو امسح الاختيار
       if (selectedConversation?.id === conversationToDelete.id) {
         if (conversations.length > 1) {
@@ -440,7 +555,7 @@ const AITestChatContent: React.FC = () => {
           setMessages([]);
         }
       }
-      
+
       closeDeleteModal();
     } catch (error: any) {
       console.error('❌ Error deleting conversation:', error);
@@ -455,47 +570,47 @@ const AITestChatContent: React.FC = () => {
     try {
       setRunningTest(true);
       setError(null);
-      
+
       console.log('🔍 بدء تحليل شامل...');
-      
+
       // تشغيل التحليل
       const analysisData = await testChatService.analyzeAndFix();
-      
+
       console.log('✅ تم إكمال التحليل:', analysisData);
       setTestResults(analysisData);
-      
+
       // تحميل المحادثات
       await loadConversations();
-      
+
       // فتح المحادثة
       if (analysisData.conversationId) {
         const conversations = await testChatService.getConversations();
         const conversation = conversations.data.find(
           conv => conv.id === analysisData.conversationId
         );
-        
+
         if (conversation) {
           await selectConversation(conversation);
           await loadMessages(analysisData.conversationId);
         }
       }
-      
+
       // عرض النتائج
       const summary = analysisData.summary;
       const problemsCount = analysisData.problems.length;
       const fixesCount = analysisData.fixes.length;
-      
+
       alert(`✅ تم إكمال التحليل الشامل!\n\n` +
-            `📊 النتائج:\n` +
-            `   إجمالي الأسئلة: ${analysisData.totalQuestions}\n` +
-            `   تم التحليل: ${analysisData.analyzed}\n` +
-            `   المشاكل المكتشفة: ${problemsCount}\n` +
-            `   الحلول المقترحة: ${fixesCount}\n\n` +
-            `📈 الإحصائيات:\n` +
-            `   نسبة النجاح: ${summary.successRate}%\n` +
-            `   نسبة المشاكل: ${summary.problemRate}%\n\n` +
-            `💡 التحسينات: ${analysisData.improvements.length}`);
-      
+        `📊 النتائج:\n` +
+        `   إجمالي الأسئلة: ${analysisData.totalQuestions}\n` +
+        `   تم التحليل: ${analysisData.analyzed}\n` +
+        `   المشاكل المكتشفة: ${problemsCount}\n` +
+        `   الحلول المقترحة: ${fixesCount}\n\n` +
+        `📈 الإحصائيات:\n` +
+        `   نسبة النجاح: ${summary.successRate}%\n` +
+        `   نسبة المشاكل: ${summary.problemRate}%\n\n` +
+        `💡 التحسينات: ${analysisData.improvements.length}`);
+
     } catch (error: any) {
       console.error('❌ خطأ في التحليل:', error);
       setError(error.message || 'فشل في التحليل');
@@ -510,52 +625,52 @@ const AITestChatContent: React.FC = () => {
     try {
       setRunningTest(true);
       setError(null);
-      
+
       console.log('🚀 بدء اختبار سريع...');
-      
+
       // تشغيل الاختبار (الـ API سينشئ المحادثة تلقائياً)
       const testData = await testChatService.runQuickTest({
         questionCount: 8
       });
-      
+
       console.log('✅ تم إكمال الاختبار:', testData);
       setTestResults(testData);
-      
+
       // تحميل المحادثات لتحديث القائمة
       await loadConversations();
-      
+
       // البحث عن المحادثة الجديدة وفتحها
       const conversations = await testChatService.getConversations();
       const newConversation = conversations.data.find(
         conv => conv.id === testData.conversationId
       );
-      
+
       if (newConversation) {
         await selectConversation(newConversation);
         await loadMessages(testData.conversationId);
       }
-      
+
       // عرض النتائج
       const results = testData.results;
       const quality = testData.qualityCheck;
       const successRate = ((results.succeeded / results.totalQuestions) * 100).toFixed(1);
-      const qualityRate = quality.withResponse > 0 
+      const qualityRate = quality.withResponse > 0
         ? ((quality.appropriate / quality.withResponse) * 100).toFixed(1)
         : '0';
-      
+
       alert(`✅ تم إكمال الاختبار!\n\n` +
-            `📊 النتائج:\n` +
-            `   إجمالي الأسئلة: ${results.totalQuestions}\n` +
-            `   ✅ نجح: ${results.succeeded}\n` +
-            `   ❌ فشل: ${results.failed}\n` +
-            `   🤐 صامت: ${results.silent}\n` +
-            `   📈 نسبة النجاح: ${successRate}%\n\n` +
-            `🎯 الجودة:\n` +
-            `   ✅ ردود مناسبة: ${quality.appropriate}\n` +
-            `   ⚠️  ردود غير مناسبة: ${quality.inappropriate}\n` +
-            `   📊 نسبة الجودة: ${qualityRate}%\n` +
-            `   ⏱️  متوسط وقت المعالجة: ${quality.averageProcessingTime}ms`);
-      
+        `📊 النتائج:\n` +
+        `   إجمالي الأسئلة: ${results.totalQuestions}\n` +
+        `   ✅ نجح: ${results.succeeded}\n` +
+        `   ❌ فشل: ${results.failed}\n` +
+        `   🤐 صامت: ${results.silent}\n` +
+        `   📈 نسبة النجاح: ${successRate}%\n\n` +
+        `🎯 الجودة:\n` +
+        `   ✅ ردود مناسبة: ${quality.appropriate}\n` +
+        `   ⚠️  ردود غير مناسبة: ${quality.inappropriate}\n` +
+        `   📊 نسبة الجودة: ${qualityRate}%\n` +
+        `   ⏱️  متوسط وقت المعالجة: ${quality.averageProcessingTime}ms`);
+
     } catch (error: any) {
       console.error('❌ خطأ في تشغيل الاختبار:', error);
       setError(error.message || 'فشل في تشغيل الاختبار');
@@ -580,12 +695,12 @@ const AITestChatContent: React.FC = () => {
   const formatTime = (date: Date | string) => {
     // تحويل string إلى Date إذا لزم الأمر
     const dateObj = typeof date === 'string' ? new Date(date) : date;
-    
+
     // التحقق من صحة التاريخ
     if (!(dateObj instanceof Date) || isNaN(dateObj.getTime())) {
       return '--:--';
     }
-    
+
     return dateObj.toLocaleTimeString('ar-SA', {
       hour: '2-digit',
       minute: '2-digit'
@@ -596,12 +711,12 @@ const AITestChatContent: React.FC = () => {
   const formatDate = (date: Date | string) => {
     // تحويل string إلى Date إذا لزم الأمر
     const dateObj = typeof date === 'string' ? new Date(date) : date;
-    
+
     // التحقق من صحة التاريخ
     if (!(dateObj instanceof Date) || isNaN(dateObj.getTime())) {
       return '--';
     }
-    
+
     const today = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
@@ -675,11 +790,10 @@ const AITestChatContent: React.FC = () => {
                 setMultiChatMode(true);
               }
             }}
-            className={`w-full px-4 py-2 rounded-lg transition-colors mb-2 flex items-center justify-center gap-2 ${
-              multiChatMode
-                ? 'bg-red-600 text-white hover:bg-red-700'
-                : 'bg-orange-600 text-white hover:bg-orange-700'
-            }`}
+            className={`w-full px-4 py-2 rounded-lg transition-colors mb-2 flex items-center justify-center gap-2 ${multiChatMode
+              ? 'bg-red-600 text-white hover:bg-red-700'
+              : 'bg-orange-600 text-white hover:bg-orange-700'
+              }`}
           >
             <Squares2X2Icon className="w-5 h-5" />
             {multiChatMode ? 'إغلاق وضع الدردشات المتعددة' : 'فتح عدة دردشات'}
@@ -747,9 +861,8 @@ const AITestChatContent: React.FC = () => {
               <div
                 key={conversation.id}
                 onClick={() => multiChatMode ? openChatInNewWindow(conversation) : selectConversation(conversation)}
-                className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${
-                  selectedConversation?.id === conversation.id ? 'bg-blue-50 border-r-4 border-r-blue-500' : ''
-                } ${openChats.has(conversation.id) ? 'bg-orange-50 border-r-4 border-r-orange-500' : ''}`}
+                className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${selectedConversation?.id === conversation.id ? 'bg-blue-50 border-r-4 border-r-blue-500' : ''
+                  } ${openChats.has(conversation.id) ? 'bg-orange-50 border-r-4 border-r-orange-500' : ''}`}
               >
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
@@ -878,13 +991,12 @@ const AITestChatContent: React.FC = () => {
                             className={`flex ${message.isFromCustomer ? 'justify-start' : 'justify-end'}`}
                           >
                             <div
-                              className={`max-w-[80%] px-3 py-2 rounded-lg text-sm ${
-                                message.isFromCustomer
-                                  ? 'bg-gray-100 text-gray-800'
-                                  : message.content.includes('النظام صامت')
+                              className={`max-w-[80%] px-3 py-2 rounded-lg text-sm ${message.isFromCustomer
+                                ? 'bg-gray-100 text-gray-800'
+                                : message.content.includes('النظام صامت')
                                   ? 'bg-yellow-100 text-yellow-800'
                                   : 'bg-blue-500 text-white'
-                              }`}
+                                }`}
                             >
                               <p>{message.content}</p>
                               {message.aiResponseInfo && (
@@ -1040,18 +1152,17 @@ const AITestChatContent: React.FC = () => {
                     className={`flex ${message.isFromCustomer ? 'justify-start' : 'justify-end'}`}
                   >
                     <div
-                      className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                        message.isFromCustomer
-                          ? 'bg-white border border-gray-200 text-gray-800'
-                          : message.content.includes('النظام صامت')
+                      className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${message.isFromCustomer
+                        ? 'bg-white border border-gray-200 text-gray-800'
+                        : message.content.includes('النظام صامت')
                           ? 'bg-yellow-100 border border-yellow-300 text-yellow-800'
                           : message.isAiGenerated
-                          ? 'bg-green-500 text-white'
-                          : 'bg-blue-500 text-white'
-                      }`}
+                            ? 'bg-green-500 text-white'
+                            : 'bg-blue-500 text-white'
+                        }`}
                     >
                       <p className="text-sm">{message.content}</p>
-                      
+
                       {/* عرض معلومات الرد AI */}
                       {message.aiResponseInfo && (
                         <div className="mt-2 pt-2 border-t border-white/20">
@@ -1083,7 +1194,7 @@ const AITestChatContent: React.FC = () => {
                           </div>
                         </div>
                       )}
-                      
+
                       <div className="flex items-center justify-between text-xs mt-1 opacity-70">
                         <div className="flex items-center gap-1">
                           {!message.isFromCustomer && (

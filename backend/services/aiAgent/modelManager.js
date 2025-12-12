@@ -48,7 +48,7 @@ class ModelManager {
     if (deleted) {
       console.log(`🗑️ [CACHE-INVALIDATE] Invalidated quota cache for ${modelName} (company: ${companyId})`);
     }
-    
+
     // ✅ PERFORMANCE: أيضاً invalidate aggregatedModelsCache لضمان الدقة
     const aggregatedCacheKey = `${modelName}_${companyId}`;
     const aggregatedDeleted = this.aggregatedModelsCache.delete(aggregatedCacheKey);
@@ -83,20 +83,20 @@ class ModelManager {
     const modelsOrderedCount = this.modelsOrderedCache.size;
     const activeModelCount = this.activeModelCache.size;
     const exhaustedCount = this.exhaustedModelsCache.size;
-    
+
     this.quotaCache.clear();
     this.aggregatedModelsCache.clear();
     this.modelsOrderedCache.clear();
     this.activeModelCache.clear();
     this.exhaustedModelsCache.clear();
-    
+
     console.log(`🧹 [CACHE-CLEAR] تم مسح جميع الـ caches:`);
     console.log(`   - quotaCache: ${quotaCount} entries`);
     console.log(`   - aggregatedModelsCache: ${aggregatedCount} entries`);
     console.log(`   - modelsOrderedCache: ${modelsOrderedCount} entries`);
     console.log(`   - activeModelCache: ${activeModelCount} entries`);
     console.log(`   - exhaustedModelsCache: ${exhaustedCount} entries`);
-    
+
     return {
       quotaCache: quotaCount,
       aggregatedModelsCache: aggregatedCount,
@@ -114,26 +114,26 @@ class ModelManager {
     return [
       // ✅ فقط النماذج المستخدمة فعلياً (7 نماذج) مفعلة
       // باقي النماذج معطلة أو مخفية
-      
+
       // نماذج مدفوعة أو تجريبية (غير مستخدمة)
       'gemini-3-pro',
       'gemini-3-pro-preview',
       'gemini-2.5-pro-preview-05-06',
       'gemini-2.0-flash-exp',
-      
+
       // نماذج قديمة (لا تعمل - 404)
       'gemini-1.5-pro',
       'gemini-1.5-flash',
       'gemini-pro',
       'gemini-flash',
       'gemini-2.5-flash-preview-05-20',
-      
+
       // نماذج Live/Audio (غير مستخدمة)
       'gemini-2.5-flash-live',
       'gemini-2.0-flash-live',
       'gemini-2.5-flash-native-audio-dialog',
       'gemini-2.5-flash-tts',
-      
+
       // نماذج Gemma (غير متوفرة في Google AI Studio API)
       'gemma-3-27b',
       'gemma-3-12b',
@@ -144,7 +144,7 @@ class ModelManager {
       'gemma-2-9b-it'
     ];
   }
-  
+
   /**
    * ✅ الحصول على قائمة النماذج المتوفرة في v1beta API
    * بناءً على النماذج المستخدمة فعلياً في Google AI Studio
@@ -180,15 +180,15 @@ class ModelManager {
       const cacheKey = companyId;
       const cached = this.modelsOrderedCache.get(cacheKey);
       const now = Date.now();
-      
+
       if (cached && (now - cached.timestamp) < 60000) {
         console.log(`✅ [MODELS-ORDERED-CACHE] استخدام Cache للنماذج المرتبة (${companyId}) - ${cached.models.length} نموذج`);
         return cached.models;
       }
-      
+
       // قائمة النماذج المعطلة (غير متوفرة في API)
       const disabledModels = this.getDisabledModels();
-      
+
       // الحصول على النماذج من قاعدة البيانات مرتبة حسب الأولوية
       const modelsFromDB = await this.prisma.geminiKeyModel.findMany({
         where: {
@@ -213,30 +213,30 @@ class ModelManager {
       // إزالة التكرارات والحصول على قائمة فريدة مرتبة
       const uniqueModels = [];
       const seenModels = new Set();
-      
+
       for (const record of modelsFromDB) {
         // تخطي النماذج المعطلة
         if (disabledModels.includes(record.model)) {
           continue;
         }
-        
+
         // تخطي النماذج المكررة
         if (seenModels.has(record.model)) {
           continue;
         }
-        
+
         seenModels.add(record.model);
         uniqueModels.push(record.model);
       }
 
       console.log(`📊 [DB-PRIORITY] تم تحميل ${uniqueModels.length} نموذج مرتب من قاعدة البيانات`);
-      
+
       // ✅ PERFORMANCE: حفظ في cache
       this.modelsOrderedCache.set(cacheKey, {
         models: uniqueModels,
         timestamp: now
       });
-      
+
       // إذا لم توجد نماذج في قاعدة البيانات، استخدم القائمة الافتراضية
       if (uniqueModels.length === 0) {
         console.log(`⚠️ [DB-PRIORITY] لا توجد نماذج في قاعدة البيانات، استخدام القائمة الافتراضية`);
@@ -257,7 +257,7 @@ class ModelManager {
       return this.getSupportedModels();
     }
   }
-  
+
   /**
    * الحصول على القيم الافتراضية الصحيحة للنموذج
    */
@@ -267,32 +267,32 @@ class ModelManager {
       'gemini-3-pro': { limit: 125000, rpm: 2, rph: 120, rpd: 50, tpm: 125000 },
       // ✅ القيم الفعلية من Google AI Studio Dashboard
       'gemini-2.5-pro': { limit: 125000, rpm: 2, rph: 120, rpd: 50, tpm: 125000 },
-      
+
       // نماذج Flash
       'gemini-2.5-flash': { limit: 250000, rpm: 10, rph: 600, rpd: 250, tpm: 250000 },
       'gemini-2.5-flash-lite': { limit: 250000, rpm: 15, rph: 900, rpd: 1000, tpm: 250000 },
       'gemini-2.0-flash': { limit: 1000000, rpm: 15, rph: 900, rpd: 200, tpm: 1000000 },
       'gemini-2.0-flash-lite': { limit: 1000000, rpm: 30, rph: 1800, rpd: 200, tpm: 1000000 },
-      
+
       // نماذج متخصصة
       'gemini-robotics-er-1.5-preview': { limit: 250000, rpm: 10, rph: 600, rpd: 250, tpm: 250000 },
       'learnlm-2.0-flash-experimental': { limit: 1500000, rpm: 15, rph: 900, rpd: 1500, tpm: null }, // N/A
-      
+
       // نماذج تجريبية ومدفوعة (قيم تقريبية)
       'gemini-2.0-flash-exp': { limit: 250000, rpm: 10, rph: 600, rpd: 50 },
-      
+
       // نماذج Gemma
       'gemma-3-27b': { limit: 15000, rpm: 30, rph: 1800, rpd: 14400 },
       'gemma-3-12b': { limit: 15000, rpm: 30, rph: 1800, rpd: 14400 },
       'gemma-3-4b': { limit: 15000, rpm: 30, rph: 1800, rpd: 14400 },
       'gemma-3-2b': { limit: 15000, rpm: 30, rph: 1800, rpd: 14400 },
       'gemma-3-1b': { limit: 15000, rpm: 30, rph: 1800, rpd: 14400 },
-      
+
       // نماذج Live
       'gemini-2.5-flash-live': { limit: 1000000, rpm: 15, rph: 900, rpd: 1000 },
       'gemini-2.0-flash-live': { limit: 1000000, rpm: 15, rph: 900, rpd: 200 }
     };
-    
+
     return defaults[modelName] || { limit: 250000, rpm: 10, rph: 600, rpd: 250, tpm: 250000 };
   }
 
@@ -340,7 +340,7 @@ class ModelManager {
     try {
       // ⚠️ IMPORTANT: لا نستدعي this.aiAgentService.getActiveGeminiKey هنا لتجنب حلقة لا نهائية
       // بدلاً من ذلك، نستخدم الكود مباشرة من aiAgentService.js
-      
+
       if (!companyId) {
         console.error('❌ [MODEL-MANAGER] لم يتم تمرير companyId - رفض الطلب للأمان');
         return null;
@@ -351,15 +351,15 @@ class ModelManager {
         const newSystemResult = await this.findBestModelByPriorityWithQuota(companyId);
         if (newSystemResult) {
           console.log(`✅ [MODEL-MANAGER] استخدام النظام الجديد - النموذج: ${newSystemResult.model} (Key: ${newSystemResult.keyName})`);
-          
+
           // تحديث lastUsedGlobalKeyId
           this.lastUsedGlobalKeyId = newSystemResult.keyId;
-          
+
           // تحديث الاستخدام
           if (newSystemResult.modelId) {
             await this.updateModelUsage(newSystemResult.modelId);
           }
-          
+
           return {
             apiKey: newSystemResult.apiKey,
             model: newSystemResult.model,
@@ -445,7 +445,7 @@ class ModelManager {
 
       // البحث عن أفضل نموذج متاح في هذا المفتاح
       const bestModel = await this.findBestAvailableModelInActiveKey(activeKey.id);
-      
+
       if (bestModel) {
         return {
           apiKey: activeKey.apiKey,
@@ -473,7 +473,7 @@ class ModelManager {
       // ⚠️ قائمة النماذج المعطلة مؤقتاً (غير متوفرة في v1beta API)
       // ✅ تم الاختبار الفعلي للتأكد من النماذج التي لا تعمل
       const disabledModels = this.getDisabledModels();
-      
+
       // ✅ قائمة النماذج المتوفرة في v1beta API (تم الاختبار الفعلي)
       const supportedModels = this.getSupportedModels();
 
@@ -491,13 +491,13 @@ class ModelManager {
 
       for (const modelRecord of availableModels) {
         console.log(`🔍 [MODEL-MANAGER] فحص النموذج: ${modelRecord.model} (Priority: ${modelRecord.priority})`);
-        
+
         // ✅ FIX: تخطي النماذج المعطلة مؤقتاً (غير متوفرة في API)
         if (disabledModels.includes(modelRecord.model)) {
           console.warn(`⚠️ [MODEL-MANAGER] Skipping disabled model (not available in API): ${modelRecord.model}`);
           continue;
         }
-        
+
         // ✅ FIX: تخطي النماذج غير المتوفرة في v1beta API
         if (!supportedModels.includes(modelRecord.model)) {
           console.warn(`⚠️ [MODEL-MANAGER] Skipping unsupported model: ${modelRecord.model}`);
@@ -517,10 +517,10 @@ class ModelManager {
           console.warn(`⚠️ [MODEL-MANAGER] خطأ في تحليل JSON للنموذج ${modelRecord.model} (ID: ${modelRecord.id}):`, e.message);
           console.warn(`   Usage string length: ${(modelRecord.usage || '').length}`);
           console.warn(`   Usage string preview: ${(modelRecord.usage || '').substring(0, 200)}...`);
-          
+
           // ⚠️ إذا فشل تحليل JSON، استخدم JSON افتراضي بقيم صحيحة بناءً على النموذج
           console.log(`   🔧 [MODEL-MANAGER] استخدام JSON افتراضي صحيح للنموذج ${modelRecord.model}`);
-          
+
           // الحصول على القيم الافتراضية الصحيحة للنموذج
           const modelDefaults = this.getModelDefaults(modelRecord.model);
           usage = {
@@ -532,7 +532,7 @@ class ModelManager {
             tpm: { used: 0, limit: modelDefaults.tpm || 125000, windowStart: null }, // ✅ إضافة TPM
             resetDate: null
           };
-          
+
           // محاولة إصلاح JSON في قاعدة البيانات
           try {
             await this.prisma.geminiKeyModel.update({
@@ -552,7 +552,7 @@ class ModelManager {
           const now = new Date();
           const rpmWindowStart = new Date(usage.rpm.windowStart);
           const rpmWindowMs = 60 * 1000; // 1 دقيقة
-          
+
           // فقط إذا كانت النافذة لا تزال نشطة (أقل من دقيقة)
           if ((now - rpmWindowStart) < rpmWindowMs) {
             if ((usage.rpm.used || 0) >= usage.rpm.limit) {
@@ -568,7 +568,7 @@ class ModelManager {
           const now = new Date();
           const rphWindowStart = new Date(usage.rph.windowStart);
           const rphWindowMs = 60 * 60 * 1000; // 1 ساعة
-          
+
           // فقط إذا كانت النافذة لا تزال نشطة (أقل من ساعة)
           if ((now - rphWindowStart) < rphWindowMs) {
             if ((usage.rph.used || 0) >= usage.rph.limit) {
@@ -584,7 +584,7 @@ class ModelManager {
           const now = new Date();
           const tpmWindowStart = new Date(usage.tpm.windowStart);
           const tpmWindowMs = 60 * 1000; // 1 دقيقة
-          
+
           // فقط إذا كانت النافذة لا تزال نشطة (أقل من دقيقة)
           if ((now - tpmWindowStart) < tpmWindowMs) {
             if ((usage.tpm.used || 0) >= usage.tpm.limit) {
@@ -600,7 +600,7 @@ class ModelManager {
           const now = new Date();
           const rpdWindowStart = new Date(usage.rpd.windowStart);
           const rpdWindowMs = 24 * 60 * 60 * 1000; // 1 يوم
-          
+
           // ✅ إعادة تعيين RPD تلقائياً إذا انتهت النافذة (أكثر من 24 ساعة)
           if ((now - rpdWindowStart) >= rpdWindowMs) {
             // إعادة تعيين RPD
@@ -609,7 +609,7 @@ class ModelManager {
               limit: usage.rpd.limit || 1000,
               windowStart: null // سيتم ضبطه عند الاستخدام التالي
             };
-            
+
             // حفظ التغييرات في قاعدة البيانات
             try {
               await this.prisma.geminiKeyModel.update({
@@ -624,7 +624,7 @@ class ModelManager {
               console.warn(`⚠️ [MODEL-MANAGER] فشل تحديث RPD: ${updateError.message}`);
             }
           }
-          
+
           // فقط إذا كانت النافذة لا تزال نشطة (أقل من يوم)
           if (usage.rpd.windowStart && (now - new Date(usage.rpd.windowStart)) < rpdWindowMs) {
             if ((usage.rpd.used || 0) >= usage.rpd.limit) {
@@ -679,7 +679,7 @@ class ModelManager {
       // ✅ FIX: إذا تم تمرير modelId، نحدث فقط هذا النموذج المحدد
       // هذا يضمن أننا نحدث فقط المفتاح الذي فشل، وليس جميع المفاتيح
       let modelRecords;
-      
+
       if (modelId) {
         // تحديث فقط النموذج المحدد
         const modelRecord = await this.prisma.geminiKeyModel.findUnique({
@@ -687,20 +687,20 @@ class ModelManager {
           include: { key: true }
         });
         modelRecords = modelRecord ? [modelRecord] : [];
-        
+
         // ✅ FIX: إذا لم يتم العثور على النموذج بالـ modelId، نبحث بالاسم
         if (modelRecords.length === 0) {
           console.warn(`⚠️ [QUOTA-EXHAUSTED] Model with modelId ${modelId} not found, searching by name: ${modelName}`);
-          const whereClause = companyId 
+          const whereClause = companyId
             ? {
-                model: modelName,
-                key: {
-                  companyId: companyId
-                }
+              model: modelName,
+              key: {
+                companyId: companyId
               }
+            }
             : {
-                model: modelName
-              };
+              model: modelName
+            };
           modelRecords = await this.prisma.geminiKeyModel.findMany({
             where: whereClause,
             include: {
@@ -710,16 +710,16 @@ class ModelManager {
         }
       } else {
         // البحث عن جميع النماذج التي تحمل نفس الاسم (للتوافق مع الكود القديم)
-        const whereClause = companyId 
+        const whereClause = companyId
           ? {
-              model: modelName,
-              key: {
-                companyId: companyId
-              }
+            model: modelName,
+            key: {
+              companyId: companyId
             }
+          }
           : {
-              model: modelName
-            };
+            model: modelName
+          };
 
         modelRecords = await this.prisma.geminiKeyModel.findMany({
           where: whereClause,
@@ -848,7 +848,7 @@ class ModelManager {
     // ✅ FIX 5: Optimistic Locking مع retry logic
     const maxRetries = 3;
     let retryCount = 0;
-    
+
     while (retryCount < maxRetries) {
       try {
         if (!modelId) {
@@ -877,7 +877,7 @@ class ModelManager {
 
         const now = new Date();
         const oldUpdatedAt = modelRecord.updatedAt;
-        
+
         // تحديث RPM (Requests Per Minute)
         const rpmWindowMs = 60 * 1000; // 1 دقيقة
         let rpm = usage.rpm || { used: 0, limit: 15, windowStart: null };
@@ -908,17 +908,17 @@ class ModelManager {
         // ✅ تحديث TPM (Tokens Per Minute) - جديد
         const tpmWindowMs = 60 * 1000; // 1 دقيقة
         let tpm = usage.tpm || { used: 0, limit: 125000, windowStart: null };
-        
+
         // الحصول على حد TPM من القيم الافتراضية للنموذج
         const modelDefaults = this.getModelDefaults(modelRecord.model);
         const tpmLimit = tpm.limit || modelDefaults.tpm || 125000;
-        
+
         if (!tpm.windowStart || (now - new Date(tpm.windowStart)) >= tpmWindowMs) {
           // نافذة جديدة - ابدأ من الصفر
-          tpm = { 
-            used: totalTokenCount || 0, 
-            limit: tpmLimit, 
-            windowStart: now.toISOString() 
+          tpm = {
+            used: totalTokenCount || 0,
+            limit: tpmLimit,
+            windowStart: now.toISOString()
           };
         } else {
           // نفس النافذة - أضف للعدد الحالي
@@ -963,7 +963,7 @@ class ModelManager {
         }
 
         console.log(`✅ [USAGE-UPDATE] Updated usage for model ${modelRecord.model} (${modelId}): Total=${newUsage.used}/${usage.limit || 1000000}, RPM=${rpm.used}/${rpm.limit}, RPH=${rph.used}/${rph.limit}, RPD=${rpd.used}/${rpd.limit}, TPM=${tpm.used}/${tpm.limit}`);
-        
+
         // ✅ FIX 3: إبطال cache الكوتة بعد التحديث
         const keyRecord = await this.prisma.geminiKey.findUnique({
           where: { id: modelRecord.keyId },
@@ -972,10 +972,10 @@ class ModelManager {
         if (keyRecord && keyRecord.companyId) {
           this.invalidateQuotaCache(modelRecord.model, keyRecord.companyId);
         }
-        
+
         // ✅ نجح التحديث - الخروج من الـ loop
         return;
-        
+
       } catch (error) {
         retryCount++;
         if (retryCount < maxRetries) {
@@ -1010,24 +1010,24 @@ class ModelManager {
         'gemini-2.5-flash',
         'gemini-2.5-flash-lite',
         'gemini-2.5-flash-tts',
-        
+
         // نماذج Gemini 2.0
         'gemini-2.0-flash',
         'gemini-2.0-flash-lite',
-        
+
         // نماذج Live API
         'gemini-2.5-flash-live',
         'gemini-2.0-flash-live',
         'gemini-2.5-flash-native-audio-dialog',
-        
+
         // نماذج مستقرة 1.5
         'gemini-1.5-pro',
         'gemini-1.5-flash',
-        
+
         // نماذج متخصصة
         'gemini-robotics-er-1.5-preview',
         'learnlm-2.0-flash-experimental',
-        
+
         // نماذج Gemma
         'gemma-3-12b',
         'gemma-3-27b',
@@ -1044,13 +1044,13 @@ class ModelManager {
       const { GoogleGenerativeAI } = require('@google/generative-ai');
       const genAI = new GoogleGenerativeAI(apiKey);
       const testModel = genAI.getGenerativeModel({ model: model });
-      
+
       // ✅ استخدام timeout لتجنب الانتظار الطويل
       const testPromise = testModel.generateContent('Hello');
-      const timeoutPromise = new Promise((_, reject) => 
+      const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Test timeout')), 5000)
       );
-      
+
       const testResponse = await Promise.race([testPromise, timeoutPromise]);
       return testResponse && testResponse.response;
     } catch (error) {
@@ -1089,10 +1089,10 @@ class ModelManager {
       const newSystemResult = await this.findBestModelByPriorityWithQuota(targetCompanyId, excludeModels);
       if (newSystemResult) {
         console.log(`✅ [FIND-NEXT] استخدام النظام الجديد - النموذج: ${newSystemResult.model} (Key: ${newSystemResult.keyName})`);
-        
+
         // تحديث lastUsedGlobalKeyId
         this.lastUsedGlobalKeyId = newSystemResult.keyId;
-        
+
         return {
           apiKey: newSystemResult.apiKey,
           model: newSystemResult.model,
@@ -1133,11 +1133,11 @@ class ModelManager {
 
       // ثانياً: البحث في مفاتيح أخرى للشركة
       const nextKeyWithModel = await this.findNextAvailableKey(targetCompanyId);
-      
+
       if (nextKeyWithModel) {
         // تفعيل المفتاح الجديد
         await this.activateKey(nextKeyWithModel.keyId);
-        
+
         return {
           apiKey: nextKeyWithModel.apiKey,
           model: nextKeyWithModel.model,
@@ -1224,7 +1224,7 @@ class ModelManager {
 
         if (currentUsage < maxRequests) {
           console.log(`✅ [MODEL-MANAGER] findNextModelInKey: نموذج متاح: ${modelRecord.model}`);
-          
+
           await this.prisma.geminiKeyModel.update({
             where: {
               id: modelRecord.id
@@ -1234,7 +1234,7 @@ class ModelManager {
               updatedAt: new Date()
             }
           });
-          
+
           return modelRecord;
         } else {
           console.log(`⚠️ [MODEL-MANAGER] النموذج ${modelRecord.model} تجاوز الحد (${currentUsage}/${maxRequests})`);
@@ -1271,7 +1271,7 @@ class ModelManager {
       for (const key of allKeys) {
         // البحث عن نموذج متاح في هذا المفتاح
         const availableModel = await this.findBestModelInKey(key.id);
-        
+
         if (availableModel) {
           return {
             keyId: key.id,
@@ -1462,7 +1462,7 @@ class ModelManager {
           updatedAt: new Date()
         }
       });
-      
+
       return true;
 
     } catch (error) {
@@ -1481,27 +1481,27 @@ class ModelManager {
    */
   async getCurrentActiveModel(companyId) {
     const startTime = Date.now();
-    
+
     // إذا تم تمرير companyId، احصل على نموذج جديد للشركة المحددة
     if (companyId) {
       // ✅ PERFORMANCE: فحص cache أولاً (TTL: 5 ثواني للطلب الواحد)
       const cacheKey = companyId;
       const cached = this.activeModelCache.get(cacheKey);
       const now = Date.now();
-      
+
       if (cached && (now - cached.timestamp) < 5000) {
         const duration = Date.now() - startTime;
         console.log(`✅ [ACTIVE-MODEL-CACHE] استخدام Cache للنموذج: ${cached.model.model} (Key: ${cached.model.keyName}) - الوقت: ${duration}ms`);
         return cached.model;
       }
-      
+
       console.log(`🔍 [GET-ACTIVE-MODEL] بدء البحث عن نموذج للشركة ${companyId}`);
       const model = await this.getActiveGeminiKeyWithModel(companyId);
       const duration = Date.now() - startTime;
-      
+
       if (model) {
         console.log(`✅ [GET-ACTIVE-MODEL] تم العثور على نموذج: ${model.model} (Key: ${model.keyName}) - الوقت: ${duration}ms`);
-        
+
         // ✅ PERFORMANCE: حفظ في cache
         this.activeModelCache.set(cacheKey, {
           model,
@@ -1554,11 +1554,9 @@ class ModelManager {
    */
   /**
    * ✅ PERFORMANCE: إضافة Cache و Batch Query لتحسين الأداء
-   * Cache TTL: 10 ثواني
-   * Batch Query: جلب البيانات بشكل متوازي
-   */
   async aggregateModelsByPriority(modelName, companyId) {
     try {
+      console.log(`🧹 [DEBUG] aggregateModelsByPriority called for ${modelName}`);
       if (!companyId) {
         console.error('❌ [MODEL-MANAGER] لم يتم تمرير companyId - رفض الطلب للأمان');
         return [];
@@ -1574,6 +1572,7 @@ class ModelManager {
         return cached.models;
       }
 
+      console.log(`🧹 [DEBUG] Fetching models from DB for ${modelName}...`);
       // ✅ PERFORMANCE: Batch Query - جلب البيانات بشكل متوازي
       const [company, companyModels, centralModels] = await Promise.all([
         // 1. التحقق من إعدادات الشركة
@@ -1634,6 +1633,7 @@ class ModelManager {
           ]
         })
       ]);
+      console.log(`🧹 [DEBUG] DB fetch complete for ${modelName}`);
 
       const useCentralKeys = company?.useCentralKeys || false;
       const allModels = [...companyModels];
@@ -1644,7 +1644,7 @@ class ModelManager {
       }
 
       console.log(`📋 [MODEL-MANAGER] تم تجميع ${allModels.length} نموذج من نوع ${modelName} للشركة ${companyId}`);
-      
+
       // ✅ PERFORMANCE: حفظ في cache
       this.aggregatedModelsCache.set(cacheKey, {
         models: allModels,
@@ -1674,7 +1674,7 @@ class ModelManager {
       const cacheKey = `${modelName}_${companyId}`;
       const cached = this.quotaCache.get(cacheKey);
       const now = Date.now();
-      
+
       // ✅ PERFORMANCE: TTL 60 ثانية (الاعتماد على invalidation للدقة)
       if (cached && (now - cached.timestamp) < 60000) {
         return cached.data;
@@ -1682,7 +1682,7 @@ class ModelManager {
 
       // 2. استخدام البيانات المحضرة مسبقاً
       let allModels = preFetchedModels || [];
-      
+
       // ترتيب حسب الأولوية و lastUsed
       allModels.sort((a, b) => {
         const priorityDiff = (a.key.priority || 0) - (b.key.priority || 0);
@@ -1696,7 +1696,7 @@ class ModelManager {
       if (allModels.length === 0) {
         allModels = await this.aggregateModelsByPriority(modelName, companyId);
       }
-      
+
       // 3. استخدام نفس منطق حساب الكوتة
       return await this._calculateQuotaFromModels(modelName, companyId, allModels, now);
 
@@ -1727,7 +1727,7 @@ class ModelManager {
       const cacheKey = `${modelName}_${companyId}`;
       const cached = this.quotaCache.get(cacheKey);
       const now = Date.now();
-      
+
       // ✅ PERFORMANCE: TTL 60 ثانية (الاعتماد على invalidation للدقة)
       if (cached && (now - cached.timestamp) < 60000) {
         console.log(`✅ [QUOTA-CACHE] استخدام Cache للكوتة: ${modelName} (${companyId})`);
@@ -1736,7 +1736,7 @@ class ModelManager {
 
       // 2. تجميع النماذج من كل المفاتيح
       const allModels = await this.aggregateModelsByPriority(modelName, companyId);
-      
+
       // 3. استخدام نفس منطق حساب الكوتة
       return await this._calculateQuotaFromModels(modelName, companyId, allModels, now);
     } catch (error) {
@@ -1775,20 +1775,20 @@ class ModelManager {
         availableModels: [],
         totalModels: 0
       };
-      
+
       const cacheKey = `${modelName}_${companyId}`;
       this.quotaCache.set(cacheKey, {
         timestamp: now,
         data: emptyResult
       });
-      
+
       return emptyResult;
     }
 
     // الحصول على القيم الافتراضية للنموذج
     const modelDefaults = this.getModelDefaults(modelName);
     const nowDate = new Date();
-    
+
     let totalRPM = 0;
     let totalRPMUsed = 0;
     let totalTPM = 0;
@@ -1800,7 +1800,7 @@ class ModelManager {
     // جلب كل الاستثناءات دفعة واحدة (BATCH QUERY)
     const keyIds = allModels.map(m => m.keyId).filter(Boolean);
     const excludedSet = new Set();
-    
+
     if (keyIds.length > 0) {
       const excludedRecords = await this.prisma.excludedModel.findMany({
         where: {
@@ -1811,7 +1811,7 @@ class ModelManager {
         },
         select: { keyId: true }
       });
-      
+
       excludedRecords.forEach(ex => {
         excludedSet.add(ex.keyId);
       });
@@ -1843,15 +1843,15 @@ class ModelManager {
       // RPM
       if (rpmLimit > 0) {
         totalRPM += rpmLimit;
-        
+
         if (usage.rpm && usage.rpm.windowStart) {
           const windowStart = new Date(usage.rpm.windowStart);
           const windowMs = 60 * 1000; // 1 دقيقة
-          
+
           if ((nowDate - windowStart) < windowMs) {
             const rpmUsed = usage.rpm.used || 0;
             totalRPMUsed += rpmUsed;
-            
+
             if (rpmUsed >= rpmLimit) {
               isAvailable = false;
             }
@@ -1862,15 +1862,15 @@ class ModelManager {
       // TPM
       if (tpmLimit > 0) {
         totalTPM += tpmLimit;
-        
+
         if (usage.tpm && usage.tpm.windowStart) {
           const windowStart = new Date(usage.tpm.windowStart);
           const windowMs = 60 * 1000; // 1 دقيقة
-          
+
           if ((nowDate - windowStart) < windowMs) {
             const tpmUsed = usage.tpm.used || 0;
             totalTPMUsed += tpmUsed;
-            
+
             if (tpmUsed >= tpmLimit) {
               isAvailable = false;
             }
@@ -1881,15 +1881,15 @@ class ModelManager {
       // RPD
       if (rpdLimit > 0) {
         totalRPD += rpdLimit;
-        
+
         if (usage.rpd && usage.rpd.windowStart) {
           const windowStart = new Date(usage.rpd.windowStart);
           const windowMs = 24 * 60 * 60 * 1000; // 1 يوم
-          
+
           if ((nowDate - windowStart) < windowMs) {
             const rpdUsed = usage.rpd.used || 0;
             totalRPDUsed += rpdUsed;
-            
+
             if (rpdUsed >= rpdLimit) {
               isAvailable = false;
             }
@@ -1998,7 +1998,7 @@ class ModelManager {
         await this.updateModelLastUsed(selectedModel.id, selectedModel.keyId);
 
         console.log(`🏆 [ROUND-ROBIN] اختيار المفتاح: ${selectedModel.key.name} (Priority: ${priority}, Index: ${selectedIndex}/${models.length}) من ${availableModels.length} مفاتيح`);
-        
+
         return selectedModel;
       }
 
@@ -2032,10 +2032,10 @@ class ModelManager {
       if (!targetLastUsedKeyId) {
         const selectedModel = availableModels[0];
         this.lastUsedGlobalKeyId = selectedModel.keyId;
-        
+
         // تحديث lastUsed في قاعدة البيانات
         await this.updateModelLastUsed(selectedModel.id, selectedModel.keyId);
-        
+
         console.log(`⚠️ [ROUND-ROBIN-DEPRECATED] اختيار أول مفتاح: ${selectedModel.key.name} (${selectedModel.keyId})`);
         return selectedModel;
       }
@@ -2049,9 +2049,9 @@ class ModelManager {
         // لم يتم العثور - استخدم الأول
         const selectedModel = availableModels[0];
         this.lastUsedGlobalKeyId = selectedModel.keyId;
-        
+
         await this.updateModelLastUsed(selectedModel.id, selectedModel.keyId);
-        
+
         console.log(`⚠️ [ROUND-ROBIN-DEPRECATED] آخر مفتاح غير موجود، اختيار أول مفتاح: ${selectedModel.key.name} (${selectedModel.keyId})`);
         return selectedModel;
       }
@@ -2072,7 +2072,7 @@ class ModelManager {
       try {
         // 7. تحديث lastUsedGlobalKeyId أولاً
         this.lastUsedGlobalKeyId = selectedModel.keyId;
-        
+
         // 8. تحديث lastUsed للنموذج المختار
         await this.updateModelLastUsed(selectedModel.id, selectedModel.keyId);
 
@@ -2083,17 +2083,17 @@ class ModelManager {
       } catch (updateError) {
         // إذا فشل التحديث، استخدم النموذج المختار على أي حال
         console.warn(`⚠️ [ROUND-ROBIN] Error updating lastUsed، لكن سيتم استخدام النموذج المختار:`, updateError.message);
-        
+
         // تحديث lastUsedGlobalKeyId على أي حال
         this.lastUsedGlobalKeyId = selectedModel.keyId;
-        
+
         // محاولة تحديث lastUsed بدون Optimistic Locking
         try {
           await this.updateModelLastUsed(selectedModel.id, selectedModel.keyId);
         } catch (err) {
           console.warn(`⚠️ [ROUND-ROBIN] فشل تحديث lastUsed:`, err.message);
         }
-        
+
         return selectedModel;
       }
 
@@ -2176,7 +2176,7 @@ class ModelManager {
   async isModelExcluded(modelName, keyId, companyId) {
     try {
       const cacheKey = `${modelName}_${keyId}_${companyId}`;
-      
+
       // 1. فحص الذاكرة المؤقتة أولاً
       const cached = this.excludedModels.get(cacheKey);
       if (cached) {
@@ -2235,7 +2235,7 @@ class ModelManager {
   async checkAndRetryExcludedModels() {
     try {
       const now = new Date();
-      
+
       // 1. البحث عن النماذج المستثناة التي وصلت retryAt
       const excludedModels = await this.prisma.excludedModel.findMany({
         where: {
@@ -2324,7 +2324,7 @@ class ModelManager {
             tomorrow.setDate(tomorrow.getDate() + 1);
             tomorrow.setHours(0, 0, 0, 0); // بداية اليوم التالي
             newRetryAt = tomorrow;
-            
+
             await this.prisma.excludedModel.update({
               where: { id: excluded.id },
               data: {
@@ -2340,7 +2340,7 @@ class ModelManager {
             tomorrow.setDate(tomorrow.getDate() + 1);
             tomorrow.setHours(0, 0, 0, 0);
             newRetryAt = tomorrow;
-            
+
             await this.prisma.excludedModel.update({
               where: { id: excluded.id },
               data: {
@@ -2401,6 +2401,80 @@ class ModelManager {
   }
 
   /**
+   * الحصول على قائمة النماذج المدعومة مرتبة حسب الأولوية
+   * @param {string} companyId - معرف الشركة
+   * @returns {Promise<Array<string>>} - قائمة بأسماء النماذج مرتبة حسب الأولوية
+   */
+  async getModelsOrderedByPriority(companyId) {
+    try {
+      // 1. التحقق من إعدادات الشركة
+      const company = await this.prisma.company.findUnique({
+        where: { id: companyId },
+        select: { useCentralKeys: true }
+      });
+
+      // 2. جمع النماذج من مفاتيح الشركة
+      const companyModels = await this.prisma.geminiKeyModel.findMany({
+        where: {
+          isEnabled: true,
+          key: {
+            companyId: companyId,
+            keyType: 'COMPANY',
+            isActive: true
+          }
+        },
+        include: {
+          key: {
+            select: { priority: true }
+          }
+        },
+        orderBy: { key: { priority: 'asc' } }
+      });
+
+      // 3. جمع النماذج من المفاتيح المركزية
+      const centralModels = await this.prisma.geminiKeyModel.findMany({
+        where: {
+          isEnabled: true,
+          key: {
+            keyType: 'CENTRAL',
+            companyId: null,
+            isActive: true
+          }
+        },
+        include: {
+          key: {
+            select: { priority: true }
+          }
+        },
+        orderBy: { key: { priority: 'asc' } }
+      });
+
+      const useCentralKeys = company?.useCentralKeys || false;
+      let allModels = [...companyModels];
+
+      if (useCentralKeys || allModels.length === 0) {
+        allModels.push(...centralModels);
+      }
+
+      // 4. ترتيب الكل حسب الأولوية
+      allModels.sort((a, b) => (a.key.priority || 0) - (b.key.priority || 0));
+
+      // 5. استخراج الأسماء الفريدة مع الحفاظ على الترتيب
+      const uniqueModelNames = new Set();
+      for (const m of allModels) {
+        uniqueModelNames.add(m.model);
+      }
+
+      return Array.from(uniqueModelNames);
+
+    } catch (error) {
+      console.error('❌ [MODEL-MANAGER] خطأ في جلب النماذج المرتبة:', error);
+      // Fallback: قائمة افتراضية
+      return ['gemini-2.5-pro', 'gemini-1.5-pro', 'gemini-1.5-flash'];
+    }
+  }
+
+  /**
    * ✅ اختيار أفضل نموذج بناءً على الأولوية والكوتة (النظام الجديد)
    * الخوارزمية:
    * - الحصول على قائمة النماذج المدعومة مرتبة حسب الأولوية
@@ -2418,7 +2492,7 @@ class ModelManager {
    */
   async findBestModelByPriorityWithQuota(companyId, excludeModels = []) {
     const startTime = Date.now();
-    
+
     try {
       if (!companyId) {
         console.error('❌ [MODEL-MANAGER] لم يتم تمرير companyId - رفض الطلب للأمان');
@@ -2429,7 +2503,7 @@ class ModelManager {
       const supportedModels = await this.getModelsOrderedByPriority(companyId);
 
       console.log(`🔍 [QUOTA-PRIORITY] بدء البحث عن أفضل نموذج للشركة ${companyId} من ${supportedModels.length} نموذج (من قاعدة البيانات)`);
-      
+
       if (excludeModels.length > 0) {
         console.log(`🚫 [QUOTA-PRIORITY] Excluding ${excludeModels.length} models from search: ${excludeModels.join(', ')}`);
       }
@@ -2438,20 +2512,20 @@ class ModelManager {
       for (let i = 0; i < supportedModels.length; i++) {
         const modelName = supportedModels[i];
         const modelStartTime = Date.now();
-        
+
         // ✅ FIX 2: تخطي النماذج المستثناة
         if (excludeModels.includes(modelName)) {
           console.log(`🚫 [QUOTA-PRIORITY] [${i + 1}/${supportedModels.length}] ${modelName} - مستثنى من القائمة - تخطي`);
           continue;
         }
-        
+
         // ✅ FIX: إزالة فحص exhaustedModelsCache - الاعتماد على excludedModels فقط
         // السبب: exhaustedModelsCache يستثني النموذج بالكامل، لكن excludedModels يفحص المفاتيح الفردية
         // هذا يسمح باستخدام مفاتيح أخرى لنفس النموذج إذا كانت متاحة
-        
+
         try {
           console.log(`🔍 [QUOTA-PRIORITY] [${i + 1}/${supportedModels.length}] فحص النموذج: ${modelName}`);
-          
+
           // 3. حساب الكوتة الإجمالية
           const quota = await this.calculateTotalQuota(modelName, companyId);
           const modelDuration = Date.now() - modelStartTime;
@@ -2472,7 +2546,7 @@ class ModelManager {
           // 5. فحص RPD (إذا كان 100%، استثناء)
           if (quota.rpdPercentage >= 100) {
             console.log(`⚠️ [QUOTA-PRIORITY] ${modelName} استنفد RPD (${quota.rpdPercentage.toFixed(1)}%) - استثناء`);
-            
+
             // استثناء النموذج من كل المفاتيح المتاحة (فقط إذا لم يكن مستثنى بالفعل)
             for (const modelRecord of quota.availableModels) {
               const alreadyExcluded = await this.isModelExcluded(modelName, modelRecord.keyId, companyId);
@@ -2505,7 +2579,7 @@ class ModelManager {
           if (selectedModel) {
             const totalDuration = Date.now() - startTime;
             console.log(`✅ [QUOTA-PRIORITY] تم اختيار النموذج: ${selectedModel.model} (Key: ${selectedModel.key.name}, Priority: ${selectedModel.priority}) - الوقت الإجمالي: ${totalDuration}ms`);
-            
+
             return {
               apiKey: selectedModel.key.apiKey,
               model: selectedModel.model,
