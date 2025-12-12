@@ -46,15 +46,28 @@ const getTextGallery = async (req, res) => {
     });
 
     // تنسيق البيانات للفرونت إند
-    const formattedTexts = texts.map(text => ({
-      id: text.id,
-      title: text.title || 'بدون عنوان',
-      content: text.content,
-      imageUrls: text.imageUrls || [],
-      isPinned: text.isPinned || false,
-      createdAt: text.createdAt,
-      updatedAt: text.updatedAt
-    }));
+    const formattedTexts = texts.map(text => {
+      // تحويل JSON string إلى array
+      let imageUrlsArray = [];
+      if (text.imageUrls) {
+        try {
+          imageUrlsArray = JSON.parse(text.imageUrls);
+        } catch (e) {
+          // إذا كان string عادي وليس JSON، نجعله array
+          imageUrlsArray = [text.imageUrls];
+        }
+      }
+      
+      return {
+        id: text.id,
+        title: text.title || 'بدون عنوان',
+        content: text.content,
+        imageUrls: Array.isArray(imageUrlsArray) ? imageUrlsArray : [],
+        isPinned: text.isPinned || false,
+        createdAt: text.createdAt,
+        updatedAt: text.updatedAt
+      };
+    });
 
     res.status(200).json({
       success: true,
@@ -111,16 +124,31 @@ const saveTextToGallery = async (req, res) => {
     }
 
     // حفظ النص الجديد مع الصور
+    // تحويل array إلى JSON string
+    const imageUrlsString = imageUrls && Array.isArray(imageUrls) && imageUrls.length > 0 
+      ? JSON.stringify(imageUrls) 
+      : null;
+    
     const newText = await getSharedPrismaClient().textGallery.create({
       data: {
         userId: userId,
         companyId: companyId,
         title: title || null,
         content: content?.trim() || null,
-        imageUrls: imageUrls && imageUrls.length > 0 ? imageUrls : null
+        imageUrls: imageUrlsString
       }
     });
 
+    // تحويل JSON string إلى array للاستجابة
+    let imageUrlsArray = [];
+    if (newText.imageUrls) {
+      try {
+        imageUrlsArray = JSON.parse(newText.imageUrls);
+      } catch (e) {
+        imageUrlsArray = [newText.imageUrls];
+      }
+    }
+    
     res.status(201).json({
       success: true,
       message: 'تم حفظ النص بنجاح',
@@ -128,7 +156,7 @@ const saveTextToGallery = async (req, res) => {
         id: newText.id,
         title: newText.title || 'بدون عنوان',
         content: newText.content,
-        imageUrls: newText.imageUrls || [],
+        imageUrls: Array.isArray(imageUrlsArray) ? imageUrlsArray : [],
         createdAt: newText.createdAt
       }
     });
@@ -185,6 +213,11 @@ const updateTextInGallery = async (req, res) => {
     }
 
     // تحديث النص
+    // تحويل array إلى JSON string
+    const imageUrlsString = imageUrls && Array.isArray(imageUrls) && imageUrls.length > 0 
+      ? JSON.stringify(imageUrls) 
+      : null;
+    
     const updatedText = await getSharedPrismaClient().textGallery.update({
       where: {
         id: textId
@@ -192,11 +225,21 @@ const updateTextInGallery = async (req, res) => {
       data: {
         title: title || null,
         content: content?.trim() || null,
-        imageUrls: imageUrls && imageUrls.length > 0 ? imageUrls : null,
+        imageUrls: imageUrlsString,
         updatedAt: new Date()
       }
     });
 
+    // تحويل JSON string إلى array للاستجابة
+    let imageUrlsArray = [];
+    if (updatedText.imageUrls) {
+      try {
+        imageUrlsArray = JSON.parse(updatedText.imageUrls);
+      } catch (e) {
+        imageUrlsArray = [updatedText.imageUrls];
+      }
+    }
+    
     res.status(200).json({
       success: true,
       message: 'تم تحديث النص بنجاح',
@@ -204,7 +247,7 @@ const updateTextInGallery = async (req, res) => {
         id: updatedText.id,
         title: updatedText.title || 'بدون عنوان',
         content: updatedText.content,
-        imageUrls: updatedText.imageUrls || [],
+        imageUrls: Array.isArray(imageUrlsArray) ? imageUrlsArray : [],
         updatedAt: updatedText.updatedAt
       }
     });
