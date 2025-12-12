@@ -157,21 +157,32 @@ jobs:
             if [ -d "/var/www/backend" ]; then
               echo "📦 Moving backend files..."
               
-              # Save .env file if it exists in backend2
+              # Check if .env exists in the new backend folder (from repository)
+              if [ -f "/var/www/backend/.env" ]; then
+                echo "✅ .env file found in uploaded backend folder - will use it"
+              else
+                echo "⚠️ .env file NOT found in uploaded backend folder"
+              fi
+              
+              # Save .env file if it exists in backend2 (old deployment) - as backup only
               if [ -f "/var/www/backend2/.env" ]; then
-                echo "💾 Saving existing .env file..."
+                echo "💾 Saving existing .env file from backend2 as backup..."
                 cp /var/www/backend2/.env /tmp/backend_env_backup.env
               fi
               
               rm -rf /var/www/backend2
               mv /var/www/backend /var/www/backend2
               
-              # Restore .env file if it was saved
-              if [ -f "/tmp/backend_env_backup.env" ]; then
-                echo "💾 Restoring .env file..."
+              # Priority: Use .env from repository if it exists, otherwise use backup
+              if [ -f "/var/www/backend2/.env" ]; then
+                echo "✅ Using .env file from repository"
+              elif [ -f "/tmp/backend_env_backup.env" ]; then
+                echo "💾 Restoring .env file from backup (repository .env not found)..."
                 cp /tmp/backend_env_backup.env /var/www/backend2/.env
                 rm /tmp/backend_env_backup.env
-                echo "✅ .env file restored"
+                echo "✅ .env file restored from backup"
+              else
+                echo "⚠️ No .env file found - you may need to create it manually"
               fi
               
               echo "✅ Backend moved successfully"
