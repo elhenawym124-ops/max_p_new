@@ -223,6 +223,15 @@ jobs:
               
               npm ci --only=production || npm install --only=production
               echo "✅ Dependencies installed"
+              
+              # Run Prisma commands
+              echo "🔧 Running Prisma generate..."
+              npx prisma generate
+              echo "✅ Prisma generate completed"
+              
+              echo "🔧 Running Prisma db push..."
+              npx prisma db push
+              echo "✅ Prisma db push completed"
             fi
             
             # Restart services
