@@ -52,6 +52,8 @@ jspm_packages/
 
 # dotenv environment variables file
 .env
+# Exception: Allow backend/.env to be committed for deployment
+!backend/.env
 
 # Build outputs
 dist/
