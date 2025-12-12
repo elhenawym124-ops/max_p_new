@@ -230,8 +230,12 @@ jobs:
               echo "✅ Prisma generate completed"
               
               echo "🔧 Running Prisma db push..."
-              npx prisma db push --accept-data-loss
-              echo "✅ Prisma db push completed"
+              if npx prisma db push --accept-data-loss; then
+                echo "✅ Prisma db push completed"
+              else
+                echo "⚠️ Prisma db push failed, but continuing deployment..."
+                echo "⚠️ You may need to run 'npx prisma db push --accept-data-loss' manually on the server"
+              fi
             fi
             
             # Restart services
