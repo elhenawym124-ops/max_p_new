@@ -159,10 +159,23 @@ jobs:
               echo "✅ Node.js version is OK: $(node -v)"
             fi
             
-            # Install/Update dependencies on server
+            # Check if .env file exists
             if [ -d "/var/www/backend2" ]; then
               echo "📦 Installing backend dependencies..."
               cd /var/www/backend2
+              
+              # Check if .env file exists
+              if [ ! -f ".env" ]; then
+                echo "⚠️ .env file not found! Creating template..."
+                echo "# Database Configuration" > .env
+                echo "DATABASE_URL=your_database_url_here" >> .env
+                echo "NODE_ENV=production" >> .env
+                echo "" >> .env
+                echo "⚠️ Please update .env file with your actual DATABASE_URL!"
+              else
+                echo "✅ .env file exists"
+              fi
+              
               npm ci --only=production || npm install --only=production
               echo "✅ Dependencies installed"
             fi

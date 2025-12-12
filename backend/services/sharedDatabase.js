@@ -45,6 +45,11 @@ function createStablePrismaClient() {
   console.log('🔧 [SharedDB] Creating stable PrismaClient...');
 
   const databaseUrl = process.env.DATABASE_URL;
+  
+  if (!databaseUrl) {
+    throw new Error('DATABASE_URL environment variable is not set. Please configure it in your .env file.');
+  }
+  
   const urlWithParams = new URL(databaseUrl);
 
   // ⚡ PERFORMANCE FOCUS: Increased limits to prevent queue buildup
