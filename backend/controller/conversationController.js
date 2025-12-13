@@ -2434,6 +2434,7 @@ const getConversations = async (req, res) => {
       where.status = status;
     }
 
+    // ✅ FIX: فلترة المنصة - إذا لم يتم تحديد platform، نفلتر تلقائياً على FACEBOOK فقط
     if (platform) {
       const validWebPlatforms = ['FACEBOOK', 'WHATSAPP', 'TELEGRAM', 'EMAIL', 'SMS', 'PHONE', 'WEBSITE', 'TEST'];
       const pStr = Array.isArray(platform) ? platform[0] : platform;
@@ -2445,7 +2446,14 @@ const getConversations = async (req, res) => {
         console.log('✅ [GET-CONV] Filter applied: channel=' + normalizedPlatform);
       } else {
         console.log('⚠️ [GET-CONV] Invalid platform ignored:', normalizedPlatform);
+        // ✅ FIX: إذا كان platform غير صحيح، نفلتر على FACEBOOK كـ default
+        where.channel = 'FACEBOOK';
+        console.log('✅ [GET-CONV] Default filter applied: channel=FACEBOOK');
       }
+    } else {
+      // ✅ FIX: إذا لم يتم تحديد platform، نفلتر تلقائياً على FACEBOOK فقط لمنع تسرب محادثات الواتساب
+      where.channel = 'FACEBOOK';
+      console.log('✅ [GET-CONV] No platform specified, default filter applied: channel=FACEBOOK');
     }
 
     console.log('🔍 [GET-CONV] Final WHERE clause:', JSON.stringify(where, null, 2));
@@ -2568,10 +2576,12 @@ const getConversations = async (req, res) => {
       }, 3);
 
       // Also get total unreplied count for stats
+      // ✅ FIX: استخدام نفس where clause مع channel filter
       const unrepliedWhere = {
         ...where,
         status: { in: ['ACTIVE', 'PENDING'] },
         lastMessageIsFromCustomer: true
+        // channel filter موجود بالفعل في where
       };
       
       unrepliedCount = await executeWithRetry(async () => {
