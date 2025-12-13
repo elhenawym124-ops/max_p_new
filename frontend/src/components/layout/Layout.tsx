@@ -115,6 +115,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         { to: '/whatsapp', icon: <ChatBubbleLeftRightIcon className="h-5 w-5" />, label: 'واتساب', badge: 'جديد' },
         { to: '/whatsapp/settings', icon: <Cog6ToothIcon className="h-5 w-5" />, label: 'إعدادات واتساب' },
         { to: '/customers', icon: <UsersIcon className="h-5 w-5" />, label: t('sidebar.customers') },
+        { to: '/external-messages-stats', icon: <ChartBarIcon className="h-5 w-5" />, label: 'إحصائيات الرسائل الخارجية' },
       ]
     },
     {

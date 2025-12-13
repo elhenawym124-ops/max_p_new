@@ -65,6 +65,7 @@ router.put('/bulk-update', verifyToken.authenticateToken, conversationController
 
 // 🆕 Statistics Route (MUST be before /:id routes)
 router.get('/stats/daily', verifyToken.authenticateToken, conversationController.getConversationStats);
+router.get('/external-messages/stats', verifyToken.authenticateToken, verifyToken.requireCompanyAccess, conversationController.getExternalMessagesStats);
 
 // Posts routes (must be before /:id routes to avoid conflicts)
 router.get('/posts/ai-identification', verifyToken.authenticateToken, conversationController.getPostsAITracking);

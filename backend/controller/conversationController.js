@@ -4393,6 +4393,112 @@ const syncFacebookMessages = async (req, res) => {
   }
 };
 
+// Get external messages statistics (messages from external sites without employee name)
+const getExternalMessagesStats = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        error: 'غير مصرح بالوصول - معرف الشركة مطلوب'
+      });
+    }
+
+    // Get date from query parameter, default to today
+    const { date } = req.query;
+    let targetDate = new Date();
+    
+    if (date) {
+      targetDate = new Date(date);
+      if (isNaN(targetDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          error: 'تاريخ غير صحيح. استخدم الصيغة YYYY-MM-DD'
+        });
+      }
+    }
+
+    // Set time to start of day (00:00:00)
+    targetDate.setHours(0, 0, 0, 0);
+    const nextDay = new Date(targetDate);
+    nextDay.setDate(nextDay.getDate() + 1);
+
+    console.log(`📊 [EXTERNAL MSGS STATS] جلب إحصائيات الرسائل الخارجية - الشركة: ${companyId}, التاريخ: ${targetDate.toISOString().split('T')[0]}`);
+
+    const prisma = getSharedPrismaClient();
+
+    // Build where clause for external messages
+    // External messages: isFromCustomer = false AND senderId = null
+    const whereClause = {
+      conversation: {
+        companyId: companyId
+      },
+      isFromCustomer: false,
+      senderId: null,
+      createdAt: {
+        gte: targetDate,
+        lt: nextDay
+      }
+    };
+
+    // 1. Count total external messages
+    const totalMessages = await prisma.message.count({
+      where: whereClause
+    });
+
+    // 2. Get unique conversations that contain external messages
+    const messagesWithConversations = await prisma.message.findMany({
+      where: whereClause,
+      select: {
+        conversationId: true
+      },
+      distinct: ['conversationId']
+    });
+
+    const uniqueConversations = messagesWithConversations.length;
+
+    // 3. Get hourly distribution
+    const messages = await prisma.message.findMany({
+      where: whereClause,
+      select: {
+        createdAt: true
+      }
+    });
+
+    // Initialize hourly distribution array (0-23)
+    const hourlyDistribution = Array.from({ length: 24 }, (_, i) => ({
+      hour: i,
+      count: 0
+    }));
+
+    // Count messages per hour
+    messages.forEach(msg => {
+      const hour = new Date(msg.createdAt).getHours();
+      hourlyDistribution[hour].count++;
+    });
+
+    console.log(`✅ [EXTERNAL MSGS STATS] تم جلب الإحصائيات - الرسائل: ${totalMessages}, المحادثات: ${uniqueConversations}`);
+
+    res.json({
+      success: true,
+      data: {
+        date: targetDate.toISOString().split('T')[0],
+        totalMessages,
+        uniqueConversations,
+        hourlyDistribution
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ [EXTERNAL MSGS STATS] خطأ في جلب إحصائيات الرسائل الخارجية:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'فشل في جلب الإحصائيات'
+    });
+  }
+};
+
 module.exports = {
   deleteConverstation,
   postMessageConverstation,
@@ -4422,5 +4528,6 @@ module.exports = {
   bulkUpdateConversations,
   // Statistics
   getConversationStats,
+  getExternalMessagesStats,
   syncFacebookMessages
 };

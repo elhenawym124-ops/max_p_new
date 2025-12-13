@@ -40,6 +40,7 @@ import ConversationsDashboard from './pages/conversations/ConversationsDashboard
 import ConversationsTest from './pages/conversations/ConversationsTest';
 import ConversationsSimpleTest from './pages/conversations/ConversationsSimpleTest';
 import MessengerChat from './pages/conversations/MessengerChat-final';
+import ExternalMessagesStats from './pages/conversations/ExternalMessagesStats';
 import FacebookInbox from './pages/facebook-inbox/FacebookInbox';
 import FacebookPostCreator from './pages/facebook-inbox/FacebookPostCreator';
 import AITestChat from './pages/testChat/AITestChat';
@@ -368,6 +369,7 @@ const AppContent = () => {
               <Route path="/customers" element={<Layout><CustomerList /></Layout>} />
               {/* <Route path="/conversations" element={<Layout><ConversationsSimple /></Layout>} /> */}
               <Route path="/conversations-improved" element={<Layout><ConversationsImprovedFixed /></Layout>} />
+              <Route path="/external-messages-stats" element={<Layout><ExternalMessagesStats /></Layout>} />
               <Route path="/facebook-inbox" element={<Layout><FacebookInbox /></Layout>} />
               <Route path="/facebook/create-post" element={<Layout><FacebookPostCreator /></Layout>} />
               {/* <Route path="/conversations-dashboard" element={<Layout><ConversationsDashboard /></Layout>} />
