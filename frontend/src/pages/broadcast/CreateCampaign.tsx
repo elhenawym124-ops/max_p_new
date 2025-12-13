@@ -642,7 +642,7 @@ const CreateCampaign: React.FC = () => {
                       <PlusIcon className="h-4 w-4" />
                     </button>
                   </div>
-                  {formData.tags.length > 0 && (
+                  {formData.tags && Array.isArray(formData.tags) && formData.tags.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {formData.tags.map((tag, index) => (
                         <span
@@ -747,7 +747,7 @@ const CreateCampaign: React.FC = () => {
                           ℹ️ المعاينة تعرض مثال مع بيانات وهمية. سيتم استبدال المتغيرات بالبيانات الحقيقية عند الإرسال.
                         </div>
                       )}
-                      {formData.tags.length > 0 && (
+                      {formData.tags && Array.isArray(formData.tags) && formData.tags.length > 0 && (
                         <div className="mt-3 pt-3 border-t border-gray-200">
                           <div className="flex flex-wrap gap-1">
                             {formData.tags.map((tag, index) => (

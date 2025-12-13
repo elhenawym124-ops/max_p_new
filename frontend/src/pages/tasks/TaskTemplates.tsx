@@ -369,7 +369,7 @@ const TaskTemplates: React.FC = () => {
                   )}
                 </div>
 
-                {template.tags && template.tags.length > 0 && (
+                {template.tags && Array.isArray(template.tags) && template.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1 mb-4">
                     {template.tags.map((tag, index) => (
                       <span
@@ -552,7 +552,7 @@ const TaskTemplates: React.FC = () => {
                       إضافة
                     </button>
                   </div>
-                  {newTemplate.tags.length > 0 && (
+                  {newTemplate.tags && Array.isArray(newTemplate.tags) && newTemplate.tags.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-2">
                       {newTemplate.tags.map((tag, index) => (
                         <span

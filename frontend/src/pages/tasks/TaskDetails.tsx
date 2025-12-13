@@ -1307,7 +1307,7 @@ const TaskDetailsPage: React.FC = () => {
           </div>
 
           {/* Tags */}
-          {task.tags && task.tags.length > 0 && (
+          {task.tags && Array.isArray(task.tags) && task.tags.length > 0 && (
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="font-semibold text-gray-900 mb-4">العلامات</h3>
               <div className="flex flex-wrap gap-2">

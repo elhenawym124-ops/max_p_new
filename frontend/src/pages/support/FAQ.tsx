@@ -303,7 +303,7 @@ const FAQ: React.FC = () => {
                               />
 
                               {/* Tags */}
-                              {faq.tags && faq.tags.length > 0 && (
+                              {faq.tags && Array.isArray(faq.tags) && faq.tags.length > 0 && (
                                 <div className="mb-4">
                                   <div className="flex flex-wrap gap-2">
                                     {faq.tags.map((tag, index) => (

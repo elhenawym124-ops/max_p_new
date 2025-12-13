@@ -545,7 +545,7 @@ const AdvancedSearch: React.FC<AdvancedSearchProps> = ({ onSearch, onClose }) =>
               إضافة
             </button>
           </div>
-          {filters.tags.length > 0 && (
+          {filters.tags && Array.isArray(filters.tags) && filters.tags.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-2">
               {filters.tags.map((tag, index) => (
                 <span

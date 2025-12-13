@@ -533,7 +533,7 @@ const Opportunities: React.FC = () => {
                   </div>
                 )}
 
-                {selectedOpportunity.tags.length > 0 && (
+                {selectedOpportunity.tags && Array.isArray(selectedOpportunity.tags) && selectedOpportunity.tags.length > 0 && (
                   <div>
                     <h4 className="font-medium text-gray-900 mb-2">العلامات</h4>
                     <div className="flex flex-wrap gap-2">

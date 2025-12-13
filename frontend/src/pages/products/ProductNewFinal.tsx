@@ -2650,7 +2650,7 @@ const ProductNewFinal: React.FC = () => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">العلامات (Tags)</label>
                     <div className="flex flex-wrap gap-2 mb-3">
-                      {formData.tags.map((tag, index) => (
+                      {formData.tags && Array.isArray(formData.tags) && formData.tags.map((tag, index) => (
                         <span
                           key={index}
                           className="inline-flex items-center pl-3 pr-2 py-1 rounded-full text-sm font-medium bg-indigo-100 text-indigo-800"

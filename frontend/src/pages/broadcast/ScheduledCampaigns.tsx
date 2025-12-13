@@ -303,7 +303,7 @@ const ScheduledCampaigns: React.FC = () => {
                       </div>
                     </div>
 
-                    {campaign.tags.length > 0 && (
+                    {campaign.tags && Array.isArray(campaign.tags) && campaign.tags.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1">
                         {campaign.tags.map((tag, index) => (
                           <span
