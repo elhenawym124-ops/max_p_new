@@ -6,6 +6,7 @@
 const detectEnvironment = () => {
   // فحص متغيرات البيئة أولاً
   if (process.env.NODE_ENV === 'production') {
+    console.log('production');
     return 'production';
   }
   
