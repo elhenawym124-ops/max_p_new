@@ -1683,7 +1683,7 @@ const Tasks: React.FC = () => {
                   </div>
 
                   <div className="mt-4 flex flex-wrap gap-1">
-                    {project.tags.map((tag, index) => (
+                    {project.tags && Array.isArray(project.tags) && project.tags.map((tag, index) => (
                       <span key={index} className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">
                         {tag}
                       </span>
@@ -2341,7 +2341,7 @@ const Tasks: React.FC = () => {
                   </div>
                 </div>
 
-                {selectedTask.tags && selectedTask.tags.length > 0 && (
+                {selectedTask.tags && Array.isArray(selectedTask.tags) && selectedTask.tags.length > 0 && (
                   <div>
                     <span className="text-sm text-gray-500">الوسوم</span>
                     <div className="flex flex-wrap gap-1 mt-1">
@@ -2702,7 +2702,7 @@ const Tasks: React.FC = () => {
                   </div>
                 </div>
 
-                {selectedProject.tags && selectedProject.tags.length > 0 && (
+                {selectedProject.tags && Array.isArray(selectedProject.tags) && selectedProject.tags.length > 0 && (
                   <div>
                     <span className="text-sm text-gray-500">الوسوم</span>
                     <div className="flex flex-wrap gap-1 mt-1">

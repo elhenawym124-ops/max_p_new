@@ -326,7 +326,7 @@ router.get('/:id', async (req, res) => {
     const enhancedOrderService = new EnhancedOrderService();
     const { id } = req.params;
 
-    const order = await enhancedOrderService.getSharedPrismaClient().order.findUnique({
+    const order = await enhancedOrderService.prisma.order.findUnique({
       where: { id },
       include: {
         customer: true,
@@ -415,7 +415,7 @@ router.patch('/:id/status', async (req, res) => {
     const { id } = req.params;
     const { status, notes } = req.body;
 
-    const updatedOrder = await enhancedOrderService.getSharedPrismaClient().order.update({
+    const updatedOrder = await enhancedOrderService.prisma.order.update({
       where: { id },
       data: {
         status,
@@ -457,7 +457,7 @@ router.patch('/:id/validation', async (req, res) => {
     const { id } = req.params;
     const { validationStatus, notes } = req.body;
 
-    const updatedOrder = await enhancedOrderService.getSharedPrismaClient().order.update({
+    const updatedOrder = await enhancedOrderService.prisma.order.update({
       where: { id },
       data: {
         validationStatus,
@@ -496,7 +496,7 @@ router.delete('/:id', async (req, res) => {
     // FIXED: Add company isolation for security
     // حذف عناصر الطلب أولاً
     // SECURITY WARNING: Ensure companyId filter is included
-    await enhancedOrderService.getSharedPrismaClient().orderItem.deleteMany({
+    await enhancedOrderService.prisma.orderItem.deleteMany({
       where: {
         orderId: id,
         order: {
@@ -506,7 +506,7 @@ router.delete('/:id', async (req, res) => {
     });
 
     // حذف الطلب
-    await enhancedOrderService.getSharedPrismaClient().order.delete({
+    await enhancedOrderService.prisma.order.delete({
       where: { id }
     });
 

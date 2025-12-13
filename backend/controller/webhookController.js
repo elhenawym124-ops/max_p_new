@@ -1268,11 +1268,12 @@ async function handleReadReceipt(webhookEvent, pageId) {
         where: {
           conversationId: conversation.id,
           isFromCustomer: false,
-          status: { in: ['sent', 'delivered'] },
+          isRead: false, // Only update unread messages
           createdAt: { lte: new Date(watermark) }
         },
         data: {
-          status: 'read'
+          isRead: true,
+          readAt: new Date()
         }
       });
       return result.count;
