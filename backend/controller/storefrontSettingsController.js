@@ -1663,3 +1663,1145 @@ exports.validatePixelId = async (req, res) => {
     });
   }
 };
+
+// ============================================
+// 🔧 DIAGNOSTICS & TROUBLESHOOTING
+// ============================================
+
+/**
+ * تشخيص شامل لاتصال Facebook Pixel و CAPI
+ * GET /api/v1/storefront-settings/pixel-diagnostics
+ */
+exports.getPixelDiagnostics = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+    const prisma = getPrisma();
+
+    console.log('🔍 [PIXEL-DIAGNOSTICS] Running diagnostics for company:', companyId);
+
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: 'معرف الشركة مطلوب'
+      });
+    }
+
+    const settings = await prisma.storefrontSettings.findUnique({
+      where: { companyId },
+      include: {
+        facebookPixels: true
+      }
+    });
+
+    if (!settings) {
+      return res.status(404).json({
+        success: false,
+        message: 'لم يتم العثور على إعدادات المتجر'
+      });
+    }
+
+    const diagnostics = {
+      timestamp: new Date(),
+      overall: {
+        status: 'unknown',
+        score: 0,
+        issues: [],
+        recommendations: []
+      },
+      pixel: {
+        configured: false,
+        status: 'not_configured',
+        pixelId: null,
+        lastTest: null,
+        issues: []
+      },
+      capi: {
+        configured: false,
+        status: 'not_configured',
+        hasToken: false,
+        tokenStatus: 'unknown',
+        lastTest: null,
+        issues: []
+      },
+      events: {
+        pixelEvents: [],
+        capiEvents: [],
+        deduplicationEnabled: false
+      },
+      multiplePixels: {
+        enabled: false,
+        count: 0,
+        pixels: []
+      }
+    };
+
+    // تشخيص Pixel
+    if (settings.facebookPixelEnabled && settings.facebookPixelId) {
+      diagnostics.pixel.configured = true;
+      diagnostics.pixel.pixelId = settings.facebookPixelId;
+      diagnostics.pixel.status = settings.pixelStatus || 'not_configured';
+      diagnostics.pixel.lastTest = settings.lastPixelTest;
+
+      // فحص صحة Pixel ID
+      if (!/^\d{16}$/.test(settings.facebookPixelId)) {
+        diagnostics.pixel.issues.push({
+          type: 'error',
+          code: 'INVALID_PIXEL_ID',
+          message: 'Pixel ID غير صحيح - يجب أن يكون 16 رقم'
+        });
+      }
+
+      // فحص الأحداث المفعلة
+      const pixelEvents = [];
+      if (settings.pixelTrackPageView) pixelEvents.push('PageView');
+      if (settings.pixelTrackViewContent) pixelEvents.push('ViewContent');
+      if (settings.pixelTrackAddToCart) pixelEvents.push('AddToCart');
+      if (settings.pixelTrackInitiateCheckout) pixelEvents.push('InitiateCheckout');
+      if (settings.pixelTrackPurchase) pixelEvents.push('Purchase');
+      if (settings.pixelTrackSearch) pixelEvents.push('Search');
+      if (settings.pixelTrackAddToWishlist) pixelEvents.push('AddToWishlist');
+      diagnostics.events.pixelEvents = pixelEvents;
+
+      if (pixelEvents.length === 0) {
+        diagnostics.pixel.issues.push({
+          type: 'warning',
+          code: 'NO_EVENTS_ENABLED',
+          message: 'لم يتم تفعيل أي أحداث للتتبع'
+        });
+      }
+    } else {
+      diagnostics.pixel.issues.push({
+        type: 'info',
+        code: 'PIXEL_NOT_CONFIGURED',
+        message: 'Facebook Pixel غير مُكوّن'
+      });
+    }
+
+    // تشخيص CAPI
+    if (settings.facebookConvApiEnabled) {
+      diagnostics.capi.configured = true;
+      diagnostics.capi.status = settings.capiStatus || 'not_configured';
+      diagnostics.capi.hasToken = !!settings.facebookConvApiToken;
+      diagnostics.capi.lastTest = settings.lastCapiTest;
+
+      if (!settings.facebookConvApiToken) {
+        diagnostics.capi.issues.push({
+          type: 'error',
+          code: 'MISSING_ACCESS_TOKEN',
+          message: 'Access Token مفقود - مطلوب لعمل CAPI'
+        });
+      } else {
+        // فحص صلاحية Token
+        const tokenPrefix = settings.facebookConvApiToken.substring(0, 3);
+        if (tokenPrefix !== 'EAA') {
+          diagnostics.capi.issues.push({
+            type: 'warning',
+            code: 'INVALID_TOKEN_FORMAT',
+            message: 'Access Token قد يكون غير صحيح - يجب أن يبدأ بـ EAA'
+          });
+        }
+        diagnostics.capi.tokenStatus = 'valid_format';
+      }
+
+      if (!settings.facebookPixelId) {
+        diagnostics.capi.issues.push({
+          type: 'error',
+          code: 'MISSING_PIXEL_ID',
+          message: 'Pixel ID مطلوب لعمل CAPI'
+        });
+      }
+
+      // فحص الأحداث المفعلة
+      const capiEvents = [];
+      if (settings.capiTrackPageView) capiEvents.push('PageView');
+      if (settings.capiTrackViewContent) capiEvents.push('ViewContent');
+      if (settings.capiTrackAddToCart) capiEvents.push('AddToCart');
+      if (settings.capiTrackInitiateCheckout) capiEvents.push('InitiateCheckout');
+      if (settings.capiTrackPurchase) capiEvents.push('Purchase');
+      if (settings.capiTrackSearch) capiEvents.push('Search');
+      diagnostics.events.capiEvents = capiEvents;
+    }
+
+    // فحص Deduplication
+    diagnostics.events.deduplicationEnabled = settings.eventDeduplicationEnabled;
+    if (settings.facebookPixelEnabled && settings.facebookConvApiEnabled && !settings.eventDeduplicationEnabled) {
+      diagnostics.overall.issues.push({
+        type: 'warning',
+        code: 'DEDUPLICATION_DISABLED',
+        message: 'Deduplication غير مفعل - قد يؤدي لتكرار الأحداث'
+      });
+    }
+
+    // Multiple Pixels
+    if (settings.facebookPixels && settings.facebookPixels.length > 0) {
+      diagnostics.multiplePixels.enabled = true;
+      diagnostics.multiplePixels.count = settings.facebookPixels.length;
+      diagnostics.multiplePixels.pixels = settings.facebookPixels.map(p => ({
+        id: p.id,
+        pixelId: p.pixelId,
+        pixelName: p.pixelName,
+        isActive: p.isActive,
+        isPrimary: p.isPrimary,
+        lastTestResult: p.lastTestResult,
+        lastTestAt: p.lastTestAt,
+        totalEventsSent: p.totalEventsSent,
+        errorCount: p.errorCount,
+        lastError: p.lastError,
+        tokenStatus: p.tokenStatus,
+        eventMatchQuality: p.eventMatchQuality
+      }));
+    }
+
+    // حساب النتيجة الإجمالية
+    let score = 0;
+    if (diagnostics.pixel.configured && diagnostics.pixel.issues.filter(i => i.type === 'error').length === 0) score += 30;
+    if (diagnostics.capi.configured && diagnostics.capi.issues.filter(i => i.type === 'error').length === 0) score += 40;
+    if (diagnostics.events.deduplicationEnabled) score += 10;
+    if (diagnostics.events.pixelEvents.length >= 4) score += 10;
+    if (diagnostics.events.capiEvents.length >= 4) score += 10;
+
+    diagnostics.overall.score = score;
+    diagnostics.overall.status = score >= 80 ? 'excellent' : score >= 60 ? 'good' : score >= 40 ? 'fair' : 'poor';
+
+    // التوصيات
+    if (!diagnostics.capi.configured) {
+      diagnostics.overall.recommendations.push({
+        priority: 'high',
+        message: 'فعّل Conversions API للحصول على دقة تتبع أعلى (90%+)'
+      });
+    }
+    if (!diagnostics.events.deduplicationEnabled && diagnostics.pixel.configured && diagnostics.capi.configured) {
+      diagnostics.overall.recommendations.push({
+        priority: 'medium',
+        message: 'فعّل Deduplication لمنع تكرار الأحداث'
+      });
+    }
+    if (diagnostics.events.pixelEvents.length < 4) {
+      diagnostics.overall.recommendations.push({
+        priority: 'medium',
+        message: 'فعّل المزيد من الأحداث للحصول على بيانات أفضل'
+      });
+    }
+
+    console.log('✅ [PIXEL-DIAGNOSTICS] Diagnostics complete. Score:', score);
+
+    return res.json({
+      success: true,
+      data: diagnostics
+    });
+  } catch (error) {
+    console.error('❌ [PIXEL-DIAGNOSTICS] Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'فشل تشخيص الاتصال',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * فحص صلاحيات Access Token
+ * POST /api/v1/storefront-settings/check-token-permissions
+ */
+exports.checkTokenPermissions = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+    const prisma = getPrisma();
+
+    console.log('🔑 [TOKEN-CHECK] Checking token permissions for company:', companyId);
+
+    const settings = await prisma.storefrontSettings.findUnique({
+      where: { companyId }
+    });
+
+    if (!settings?.facebookConvApiToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Access Token غير موجود'
+      });
+    }
+
+    const token = settings.facebookConvApiToken;
+    const result = {
+      valid: false,
+      permissions: [],
+      expiresAt: null,
+      issues: []
+    };
+
+    try {
+      // فحص Token عبر Facebook Graph API
+      const fetch = require('node-fetch');
+      const debugResponse = await fetch(
+        `https://graph.facebook.com/debug_token?input_token=${token}&access_token=${token}`
+      );
+      const debugData = await debugResponse.json();
+
+      if (debugData.data) {
+        result.valid = debugData.data.is_valid;
+        result.permissions = debugData.data.scopes || [];
+        result.expiresAt = debugData.data.expires_at ? new Date(debugData.data.expires_at * 1000) : null;
+        result.appId = debugData.data.app_id;
+        result.type = debugData.data.type;
+
+        // فحص الصلاحيات المطلوبة
+        const requiredPermissions = ['ads_management', 'ads_read'];
+        const missingPermissions = requiredPermissions.filter(p => !result.permissions.includes(p));
+        
+        if (missingPermissions.length > 0) {
+          result.issues.push({
+            type: 'warning',
+            code: 'MISSING_PERMISSIONS',
+            message: `صلاحيات مفقودة: ${missingPermissions.join(', ')}`
+          });
+        }
+
+        // فحص انتهاء الصلاحية
+        if (result.expiresAt && result.expiresAt < new Date()) {
+          result.issues.push({
+            type: 'error',
+            code: 'TOKEN_EXPIRED',
+            message: 'Token منتهي الصلاحية'
+          });
+          result.valid = false;
+        } else if (result.expiresAt) {
+          const daysUntilExpiry = Math.ceil((result.expiresAt - new Date()) / (1000 * 60 * 60 * 24));
+          if (daysUntilExpiry < 7) {
+            result.issues.push({
+              type: 'warning',
+              code: 'TOKEN_EXPIRING_SOON',
+              message: `Token سينتهي خلال ${daysUntilExpiry} يوم`
+            });
+          }
+        }
+      } else if (debugData.error) {
+        result.issues.push({
+          type: 'error',
+          code: 'TOKEN_INVALID',
+          message: debugData.error.message || 'Token غير صالح'
+        });
+      }
+    } catch (fetchError) {
+      result.issues.push({
+        type: 'error',
+        code: 'NETWORK_ERROR',
+        message: 'فشل الاتصال بـ Facebook API'
+      });
+    }
+
+    console.log('✅ [TOKEN-CHECK] Check complete. Valid:', result.valid);
+
+    return res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('❌ [TOKEN-CHECK] Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'فشل فحص Token',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * التحقق من صحة البيانات المُرسلة
+ * POST /api/v1/storefront-settings/validate-event-data
+ */
+exports.validateEventData = async (req, res) => {
+  try {
+    const { eventName, eventData } = req.body;
+
+    console.log('📊 [EVENT-VALIDATION] Validating event:', eventName);
+
+    const validation = {
+      valid: true,
+      eventName,
+      issues: [],
+      recommendations: [],
+      matchQualityScore: 0
+    };
+
+    // فحص اسم الحدث
+    const validEvents = ['PageView', 'ViewContent', 'AddToCart', 'InitiateCheckout', 'Purchase', 'Search', 'Lead', 'CompleteRegistration', 'AddToWishlist'];
+    if (!validEvents.includes(eventName)) {
+      validation.issues.push({
+        type: 'warning',
+        field: 'eventName',
+        message: `حدث غير معروف: ${eventName}. الأحداث المعتمدة: ${validEvents.join(', ')}`
+      });
+    }
+
+    // فحص البيانات المطلوبة حسب نوع الحدث
+    if (eventData) {
+      let matchScore = 0;
+
+      // فحص user_data
+      if (eventData.user_data) {
+        const userData = eventData.user_data;
+        if (userData.em) matchScore += 15; // Email
+        if (userData.ph) matchScore += 15; // Phone
+        if (userData.fn) matchScore += 10; // First Name
+        if (userData.ln) matchScore += 10; // Last Name
+        if (userData.ct) matchScore += 5;  // City
+        if (userData.st) matchScore += 5;  // State
+        if (userData.zp) matchScore += 5;  // Zip
+        if (userData.country) matchScore += 5; // Country
+        if (userData.external_id) matchScore += 10; // External ID
+        if (userData.client_ip_address) matchScore += 10; // IP
+        if (userData.client_user_agent) matchScore += 10; // User Agent
+      } else {
+        validation.issues.push({
+          type: 'warning',
+          field: 'user_data',
+          message: 'user_data مفقود - سيؤثر على Event Match Quality'
+        });
+      }
+
+      // فحص custom_data للأحداث التجارية
+      if (['Purchase', 'AddToCart', 'InitiateCheckout', 'ViewContent'].includes(eventName)) {
+        if (!eventData.custom_data) {
+          validation.issues.push({
+            type: 'warning',
+            field: 'custom_data',
+            message: 'custom_data مفقود للحدث التجاري'
+          });
+        } else {
+          const customData = eventData.custom_data;
+          if (!customData.value && eventName === 'Purchase') {
+            validation.issues.push({
+              type: 'error',
+              field: 'custom_data.value',
+              message: 'قيمة الشراء مطلوبة لحدث Purchase'
+            });
+            validation.valid = false;
+          }
+          if (!customData.currency) {
+            validation.issues.push({
+              type: 'warning',
+              field: 'custom_data.currency',
+              message: 'العملة غير محددة - سيتم استخدام USD افتراضياً'
+            });
+          }
+          if (!customData.content_ids && !customData.contents) {
+            validation.issues.push({
+              type: 'warning',
+              field: 'custom_data.content_ids',
+              message: 'معرفات المنتجات غير موجودة'
+            });
+          }
+        }
+      }
+
+      // فحص event_id للـ Deduplication
+      if (!eventData.event_id) {
+        validation.issues.push({
+          type: 'warning',
+          field: 'event_id',
+          message: 'event_id مفقود - مطلوب لـ Deduplication'
+        });
+      }
+
+      // فحص event_time
+      if (!eventData.event_time) {
+        validation.issues.push({
+          type: 'warning',
+          field: 'event_time',
+          message: 'event_time مفقود - سيتم استخدام الوقت الحالي'
+        });
+      }
+
+      validation.matchQualityScore = Math.min(matchScore, 100);
+
+      // توصيات لتحسين Match Quality
+      if (matchScore < 50) {
+        validation.recommendations.push('أضف بيانات المستخدم (email, phone) لتحسين Match Quality');
+      }
+      if (matchScore < 70) {
+        validation.recommendations.push('أضف external_id و IP address لتحسين الدقة');
+      }
+    }
+
+    console.log('✅ [EVENT-VALIDATION] Validation complete. Score:', validation.matchQualityScore);
+
+    return res.json({
+      success: true,
+      data: validation
+    });
+  } catch (error) {
+    console.error('❌ [EVENT-VALIDATION] Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'فشل التحقق من البيانات',
+      error: error.message
+    });
+  }
+};
+
+// ============================================
+// 🎯 MULTIPLE PIXELS SUPPORT
+// ============================================
+
+/**
+ * جلب جميع Pixels للشركة
+ * GET /api/v1/storefront-settings/pixels
+ */
+exports.getPixels = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+    const prisma = getPrisma();
+
+    console.log('📋 [PIXELS] Getting pixels for company:', companyId);
+
+    const settings = await prisma.storefrontSettings.findUnique({
+      where: { companyId },
+      include: {
+        facebookPixels: {
+          orderBy: [
+            { isPrimary: 'desc' },
+            { createdAt: 'asc' }
+          ]
+        }
+      }
+    });
+
+    if (!settings) {
+      return res.status(404).json({
+        success: false,
+        message: 'لم يتم العثور على إعدادات المتجر'
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        pixels: settings.facebookPixels || [],
+        primaryPixelId: settings.facebookPixelId,
+        totalCount: settings.facebookPixels?.length || 0
+      }
+    });
+  } catch (error) {
+    console.error('❌ [PIXELS] Error getting pixels:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'فشل جلب Pixels',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * إضافة Pixel جديد
+ * POST /api/v1/storefront-settings/pixels
+ */
+exports.addPixel = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+    const prisma = getPrisma();
+    const {
+      pixelId,
+      pixelName,
+      accessToken,
+      isPrimary,
+      trackPageView,
+      trackViewContent,
+      trackAddToCart,
+      trackInitiateCheckout,
+      trackPurchase,
+      trackSearch,
+      trackAddToWishlist,
+      trackLead,
+      trackCompleteRegistration
+    } = req.body;
+
+    console.log('➕ [PIXELS] Adding new pixel for company:', companyId);
+
+    if (!pixelId || !pixelName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Pixel ID و اسم Pixel مطلوبان'
+      });
+    }
+
+    // التحقق من صحة Pixel ID
+    if (!/^\d{16}$/.test(pixelId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Pixel ID يجب أن يكون 16 رقم'
+      });
+    }
+
+    const settings = await prisma.storefrontSettings.findUnique({
+      where: { companyId }
+    });
+
+    if (!settings) {
+      return res.status(404).json({
+        success: false,
+        message: 'لم يتم العثور على إعدادات المتجر'
+      });
+    }
+
+    // إذا كان Primary، إلغاء Primary من الآخرين
+    if (isPrimary) {
+      await prisma.facebookPixelConfig.updateMany({
+        where: { storefrontSettingsId: settings.id },
+        data: { isPrimary: false }
+      });
+    }
+
+    // إنشاء Pixel جديد
+    const newPixel = await prisma.facebookPixelConfig.create({
+      data: {
+        storefrontSettingsId: settings.id,
+        pixelId,
+        pixelName,
+        accessToken: accessToken || null,
+        isPrimary: isPrimary || false,
+        trackPageView: trackPageView !== false,
+        trackViewContent: trackViewContent !== false,
+        trackAddToCart: trackAddToCart !== false,
+        trackInitiateCheckout: trackInitiateCheckout !== false,
+        trackPurchase: trackPurchase !== false,
+        trackSearch: trackSearch !== false,
+        trackAddToWishlist: trackAddToWishlist || false,
+        trackLead: trackLead || false,
+        trackCompleteRegistration: trackCompleteRegistration || false
+      }
+    });
+
+    // إذا كان Primary، تحديث الإعدادات الرئيسية
+    if (isPrimary) {
+      await prisma.storefrontSettings.update({
+        where: { companyId },
+        data: {
+          facebookPixelId: pixelId,
+          facebookPixelEnabled: true,
+          facebookConvApiToken: accessToken || settings.facebookConvApiToken,
+          facebookConvApiEnabled: !!accessToken
+        }
+      });
+    }
+
+    console.log('✅ [PIXELS] Pixel added:', newPixel.id);
+
+    return res.status(201).json({
+      success: true,
+      message: 'تم إضافة Pixel بنجاح',
+      data: newPixel
+    });
+  } catch (error) {
+    console.error('❌ [PIXELS] Error adding pixel:', error);
+    
+    if (error.code === 'P2002') {
+      return res.status(400).json({
+        success: false,
+        message: 'Pixel ID موجود بالفعل'
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'فشل إضافة Pixel',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * تحديث Pixel
+ * PUT /api/v1/storefront-settings/pixels/:id
+ */
+exports.updatePixel = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+    const { id } = req.params;
+    const prisma = getPrisma();
+    const updateData = req.body;
+
+    console.log('✏️ [PIXELS] Updating pixel:', id);
+
+    const settings = await prisma.storefrontSettings.findUnique({
+      where: { companyId }
+    });
+
+    if (!settings) {
+      return res.status(404).json({
+        success: false,
+        message: 'لم يتم العثور على إعدادات المتجر'
+      });
+    }
+
+    // التحقق من أن Pixel ينتمي للشركة
+    const existingPixel = await prisma.facebookPixelConfig.findFirst({
+      where: {
+        id,
+        storefrontSettingsId: settings.id
+      }
+    });
+
+    if (!existingPixel) {
+      return res.status(404).json({
+        success: false,
+        message: 'Pixel غير موجود'
+      });
+    }
+
+    // إذا تم تعيينه كـ Primary
+    if (updateData.isPrimary && !existingPixel.isPrimary) {
+      await prisma.facebookPixelConfig.updateMany({
+        where: { storefrontSettingsId: settings.id },
+        data: { isPrimary: false }
+      });
+
+      // تحديث الإعدادات الرئيسية
+      await prisma.storefrontSettings.update({
+        where: { companyId },
+        data: {
+          facebookPixelId: existingPixel.pixelId,
+          facebookPixelEnabled: true,
+          facebookConvApiToken: updateData.accessToken || existingPixel.accessToken || settings.facebookConvApiToken,
+          facebookConvApiEnabled: !!(updateData.accessToken || existingPixel.accessToken)
+        }
+      });
+    }
+
+    // تحديث Pixel
+    const allowedFields = [
+      'pixelName', 'accessToken', 'isActive', 'isPrimary',
+      'trackPageView', 'trackViewContent', 'trackAddToCart',
+      'trackInitiateCheckout', 'trackPurchase', 'trackSearch',
+      'trackAddToWishlist', 'trackLead', 'trackCompleteRegistration'
+    ];
+
+    const filteredData = {};
+    for (const field of allowedFields) {
+      if (updateData[field] !== undefined) {
+        filteredData[field] = updateData[field];
+      }
+    }
+
+    const updatedPixel = await prisma.facebookPixelConfig.update({
+      where: { id },
+      data: filteredData
+    });
+
+    console.log('✅ [PIXELS] Pixel updated:', id);
+
+    return res.json({
+      success: true,
+      message: 'تم تحديث Pixel بنجاح',
+      data: updatedPixel
+    });
+  } catch (error) {
+    console.error('❌ [PIXELS] Error updating pixel:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'فشل تحديث Pixel',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * حذف Pixel
+ * DELETE /api/v1/storefront-settings/pixels/:id
+ */
+exports.deletePixel = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+    const { id } = req.params;
+    const prisma = getPrisma();
+
+    console.log('🗑️ [PIXELS] Deleting pixel:', id);
+
+    const settings = await prisma.storefrontSettings.findUnique({
+      where: { companyId }
+    });
+
+    if (!settings) {
+      return res.status(404).json({
+        success: false,
+        message: 'لم يتم العثور على إعدادات المتجر'
+      });
+    }
+
+    // التحقق من أن Pixel ينتمي للشركة
+    const existingPixel = await prisma.facebookPixelConfig.findFirst({
+      where: {
+        id,
+        storefrontSettingsId: settings.id
+      }
+    });
+
+    if (!existingPixel) {
+      return res.status(404).json({
+        success: false,
+        message: 'Pixel غير موجود'
+      });
+    }
+
+    // حذف Pixel
+    await prisma.facebookPixelConfig.delete({
+      where: { id }
+    });
+
+    // إذا كان Primary، إعادة تعيين الإعدادات الرئيسية
+    if (existingPixel.isPrimary) {
+      // البحث عن Pixel آخر ليكون Primary
+      const nextPixel = await prisma.facebookPixelConfig.findFirst({
+        where: { storefrontSettingsId: settings.id },
+        orderBy: { createdAt: 'asc' }
+      });
+
+      if (nextPixel) {
+        await prisma.facebookPixelConfig.update({
+          where: { id: nextPixel.id },
+          data: { isPrimary: true }
+        });
+
+        await prisma.storefrontSettings.update({
+          where: { companyId },
+          data: {
+            facebookPixelId: nextPixel.pixelId,
+            facebookConvApiToken: nextPixel.accessToken
+          }
+        });
+      } else {
+        // لا يوجد Pixels أخرى
+        await prisma.storefrontSettings.update({
+          where: { companyId },
+          data: {
+            facebookPixelId: null,
+            facebookPixelEnabled: false,
+            facebookConvApiEnabled: false
+          }
+        });
+      }
+    }
+
+    console.log('✅ [PIXELS] Pixel deleted:', id);
+
+    return res.json({
+      success: true,
+      message: 'تم حذف Pixel بنجاح'
+    });
+  } catch (error) {
+    console.error('❌ [PIXELS] Error deleting pixel:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'فشل حذف Pixel',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * اختبار Pixel محدد
+ * POST /api/v1/storefront-settings/pixels/:id/test
+ */
+exports.testPixel = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+    const { id } = req.params;
+    const prisma = getPrisma();
+
+    console.log('🧪 [PIXELS] Testing pixel:', id);
+
+    const settings = await prisma.storefrontSettings.findUnique({
+      where: { companyId }
+    });
+
+    if (!settings) {
+      return res.status(404).json({
+        success: false,
+        message: 'لم يتم العثور على إعدادات المتجر'
+      });
+    }
+
+    const pixel = await prisma.facebookPixelConfig.findFirst({
+      where: {
+        id,
+        storefrontSettingsId: settings.id
+      }
+    });
+
+    if (!pixel) {
+      return res.status(404).json({
+        success: false,
+        message: 'Pixel غير موجود'
+      });
+    }
+
+    let testResult = {
+      success: false,
+      message: '',
+      pixelValid: false,
+      tokenValid: false,
+      capiTest: null
+    };
+
+    // فحص Pixel ID
+    if (/^\d{16}$/.test(pixel.pixelId)) {
+      testResult.pixelValid = true;
+    } else {
+      testResult.message = 'Pixel ID غير صحيح';
+    }
+
+    // فحص Token إذا موجود
+    if (pixel.accessToken) {
+      try {
+        const FacebookConversionsService = require('../services/facebookConversionsService');
+        const fbService = new FacebookConversionsService(
+          pixel.pixelId,
+          pixel.accessToken
+        );
+        const capiResult = await fbService.testConnection();
+        testResult.tokenValid = capiResult.success;
+        testResult.capiTest = capiResult;
+      } catch (capiError) {
+        testResult.tokenValid = false;
+        testResult.capiTest = { success: false, message: capiError.message };
+      }
+    }
+
+    testResult.success = testResult.pixelValid && (pixel.accessToken ? testResult.tokenValid : true);
+    testResult.message = testResult.success ? 'اختبار ناجح' : 'فشل الاختبار';
+
+    // تحديث نتيجة الاختبار
+    await prisma.facebookPixelConfig.update({
+      where: { id },
+      data: {
+        lastTestAt: new Date(),
+        lastTestResult: testResult.success ? 'success' : 'failed',
+        tokenStatus: pixel.accessToken ? (testResult.tokenValid ? 'valid' : 'invalid') : 'no_token'
+      }
+    });
+
+    console.log('✅ [PIXELS] Test complete:', testResult.success);
+
+    return res.json({
+      success: true,
+      data: testResult
+    });
+  } catch (error) {
+    console.error('❌ [PIXELS] Error testing pixel:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'فشل اختبار Pixel',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * إنشاء Pixel جديد على Facebook
+ * POST /api/v1/storefront-settings/create-pixel
+ */
+exports.createFacebookPixel = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+    const { pixelName, businessId } = req.body;
+    const prisma = getPrisma();
+
+    console.log('🆕 [CREATE-PIXEL] Creating new pixel for company:', companyId);
+
+    if (!pixelName) {
+      return res.status(400).json({
+        success: false,
+        message: 'اسم Pixel مطلوب'
+      });
+    }
+
+    // جلب Facebook Token من OAuth
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { facebookAccessToken: true, facebookBusinessId: true }
+    });
+
+    if (!company?.facebookAccessToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'يجب ربط حساب Facebook أولاً',
+        needsAuth: true
+      });
+    }
+
+    const accessToken = company.facebookAccessToken;
+    const targetBusinessId = businessId || company.facebookBusinessId;
+
+    if (!targetBusinessId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Business ID مطلوب. يرجى تحديد Business Account'
+      });
+    }
+
+    // إنشاء Pixel عبر Facebook Graph API
+    const fetch = require('node-fetch');
+    
+    const createResponse = await fetch(
+      `https://graph.facebook.com/v18.0/${targetBusinessId}/adspixels`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: pixelName,
+          access_token: accessToken
+        })
+      }
+    );
+
+    const createData = await createResponse.json();
+
+    if (createData.error) {
+      console.error('❌ [CREATE-PIXEL] Facebook API error:', createData.error);
+      return res.status(400).json({
+        success: false,
+        message: createData.error.message || 'فشل إنشاء Pixel',
+        error: createData.error
+      });
+    }
+
+    const newPixelId = createData.id;
+    console.log('✅ [CREATE-PIXEL] Pixel created:', newPixelId);
+
+    // توليد System User Token للـ Pixel (اختياري)
+    let pixelAccessToken = null;
+    try {
+      // محاولة الحصول على token للـ pixel
+      const tokenResponse = await fetch(
+        `https://graph.facebook.com/v18.0/${newPixelId}?fields=id,name&access_token=${accessToken}`
+      );
+      const tokenData = await tokenResponse.json();
+      
+      if (!tokenData.error) {
+        // استخدام نفس الـ access token للـ CAPI
+        pixelAccessToken = accessToken;
+      }
+    } catch (tokenError) {
+      console.warn('⚠️ [CREATE-PIXEL] Could not get pixel token:', tokenError.message);
+    }
+
+    // حفظ Pixel في قاعدة البيانات
+    const settings = await prisma.storefrontSettings.findUnique({
+      where: { companyId }
+    });
+
+    if (settings) {
+      // إضافة للـ Multiple Pixels
+      const pixelConfig = await prisma.facebookPixelConfig.create({
+        data: {
+          storefrontSettingsId: settings.id,
+          pixelId: newPixelId,
+          pixelName: pixelName,
+          accessToken: pixelAccessToken,
+          isActive: true,
+          isPrimary: false,
+          trackPageView: true,
+          trackViewContent: true,
+          trackAddToCart: true,
+          trackInitiateCheckout: true,
+          trackPurchase: true,
+          trackSearch: true
+        }
+      });
+
+      console.log('✅ [CREATE-PIXEL] Pixel saved to database:', pixelConfig.id);
+
+      return res.json({
+        success: true,
+        message: 'تم إنشاء Pixel بنجاح',
+        data: {
+          pixelId: newPixelId,
+          pixelName: pixelName,
+          accessToken: pixelAccessToken ? '***' : null,
+          configId: pixelConfig.id
+        }
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'تم إنشاء Pixel بنجاح',
+      data: {
+        pixelId: newPixelId,
+        pixelName: pixelName,
+        accessToken: pixelAccessToken ? '***' : null
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ [CREATE-PIXEL] Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'فشل إنشاء Pixel',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * جلب Business Accounts المتاحة
+ * GET /api/v1/storefront-settings/business-accounts
+ */
+exports.getBusinessAccounts = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+    const prisma = getPrisma();
+
+    console.log('🏢 [BUSINESS] Fetching business accounts for company:', companyId);
+
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { facebookAccessToken: true, facebookUserId: true }
+    });
+
+    if (!company?.facebookAccessToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'يجب ربط حساب Facebook أولاً',
+        needsAuth: true
+      });
+    }
+
+    const fetch = require('node-fetch');
+    
+    // جلب Business Accounts
+    const response = await fetch(
+      `https://graph.facebook.com/v18.0/me/businesses?access_token=${company.facebookAccessToken}`
+    );
+    const data = await response.json();
+
+    if (data.error) {
+      return res.status(400).json({
+        success: false,
+        message: data.error.message || 'فشل جلب Business Accounts',
+        error: data.error
+      });
+    }
+
+    const businesses = (data.data || []).map(b => ({
+      id: b.id,
+      name: b.name
+    }));
+
+    console.log('✅ [BUSINESS] Found', businesses.length, 'business accounts');
+
+    return res.json({
+      success: true,
+      data: { businesses }
+    });
+
+  } catch (error) {
+    console.error('❌ [BUSINESS] Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'فشل جلب Business Accounts',
+      error: error.message
+    });
+  }
+};

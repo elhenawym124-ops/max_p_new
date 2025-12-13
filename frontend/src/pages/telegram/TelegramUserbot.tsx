@@ -1,11 +1,27 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAuth } from '../../hooks/useAuthSimple';
 import axios from 'axios';
+
+// Media cache to avoid re-downloading the same media
+const mediaCache = new Map<string, { blobUrl: string; mimeType: string; timestamp: number }>();
+const CACHE_MAX_AGE = 30 * 60 * 1000; // 30 minutes
+
+// Cleanup old cache entries periodically
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, value] of mediaCache.entries()) {
+        if (now - value.timestamp > CACHE_MAX_AGE) {
+            URL.revokeObjectURL(value.blobUrl);
+            mediaCache.delete(key);
+        }
+    }
+}, 5 * 60 * 1000); // Check every 5 minutes
 import {
     PaperAirplaneIcon,
     ChatBubbleLeftRightIcon,
     ArrowPathIcon,
-    ExclamationCircleIcon
+    MagnifyingGlassIcon,
+    PhotoIcon
 } from '@heroicons/react/24/outline';
 
 interface Chat {
@@ -26,34 +42,263 @@ interface Message {
     senderId: string | null;
     senderName?: string;
     isOut: boolean;
-    media: boolean | null;
+    media: { type: string } | null | boolean; // Can be object with type, null, or boolean (for backwards compat)
 }
+
+// Internal Media Component - Extracted to prevent re-remounting
+const MediaMessage = ({ msg, userbotId, chatId }: { msg: Message, userbotId: string, chatId?: string }) => {
+    // Create cache key
+    const cacheKey = useMemo(() => `${userbotId}-${chatId}-${msg.id}`, [userbotId, chatId, msg.id]);
+    
+    // Check cache first
+    const cachedMedia = useMemo(() => {
+        const cached = mediaCache.get(cacheKey);
+        if (cached && (Date.now() - cached.timestamp) < CACHE_MAX_AGE) {
+            return cached;
+        }
+        return null;
+    }, [cacheKey]);
+    
+    const [mediaUrl, setMediaUrl] = useState<string | null>(cachedMedia?.blobUrl || null);
+    const [loading, setLoading] = useState(!cachedMedia);
+    const [error, setError] = useState(false);
+    const [mimeType, setMimeType] = useState<string | null>(cachedMedia?.mimeType || null);
+
+    // Determine media type from the media object
+    const getMediaType = () => {
+        if (!msg.media || typeof msg.media !== 'object') return 'unknown';
+        const type = (msg.media as any).type || '';
+        if (type.includes('Photo') || type === 'MessageMediaPhoto') return 'image';
+        if (type.includes('Video') || type === 'MessageMediaVideo') return 'video';
+        if (type.includes('Document') || type === 'MessageMediaDocument') return 'document';
+        if (type.includes('Audio') || type === 'MessageMediaAudio') return 'audio';
+        if (type.includes('WebPage')) return 'webpage';
+        return 'unknown';
+    };
+
+    const mediaType = getMediaType();
+
+    // Check if media is WebPage (link preview) - often not downloadable
+    const isWebPage = mediaType === 'webpage';
+
+    const loadMedia = useCallback(async () => {
+        // Check cache first
+        const cached = mediaCache.get(cacheKey);
+        const hasValidCache = cached && (Date.now() - cached.timestamp) < CACHE_MAX_AGE;
+
+        // Don't auto-load WebPage previews
+        if (isWebPage) {
+            setLoading(false);
+            return;
+        }
+
+        // Use cached media if available
+        if (hasValidCache) {
+            setMediaUrl(cached.blobUrl);
+            setMimeType(cached.mimeType);
+            setLoading(false);
+            return;
+        }
+
+        setLoading(true);
+        setError(false);
+        try {
+            const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+            const apiUrl = `${import.meta.env['VITE_API_URL'] || 'http://localhost:3007'}/api/userbot/message/media`;
+            const params = {
+                userbotConfigId: userbotId,
+                chatId: chatId,
+                messageId: msg.id
+            };
+
+            const response = await axios.get(apiUrl, {
+                params: params,
+                headers: { 'Authorization': `Bearer ${token}` },
+                responseType: 'blob'
+            });
+
+            const url = URL.createObjectURL(response.data);
+            const detectedMimeType = response.data.type || response.headers['content-type'] || 'application/octet-stream';
+            
+            // Cache the media
+            mediaCache.set(cacheKey, {
+                blobUrl: url,
+                mimeType: detectedMimeType,
+                timestamp: Date.now()
+            });
+
+            setMediaUrl(url);
+            setMimeType(detectedMimeType);
+            setLoading(false);
+        } catch (err: any) {
+            console.error("Failed to load media", err);
+            setError(true);
+            setLoading(false);
+        }
+    }, [cacheKey, isWebPage, msg.id, userbotId, chatId, mediaType]);
+
+    useEffect(() => {
+        // Check cache directly (not through cachedMedia which might be stale)
+        const cached = mediaCache.get(cacheKey);
+        const hasValidCache = cached && (Date.now() - cached.timestamp) < CACHE_MAX_AGE;
+        
+        if (isWebPage) {
+            setLoading(false);
+        } else if (hasValidCache) {
+            // Use cached media immediately
+            // Check if mediaUrl needs to be updated (may differ if cache was populated after component mount)
+            setMediaUrl(cached.blobUrl);
+            setMimeType(cached.mimeType);
+            setLoading(false);
+        } else {
+            // No valid cache - need to load media (even if mediaUrl exists, it might be stale/invalid)
+            // loadMedia will check cache again and load from API if needed
+            loadMedia();
+        }
+        
+        // Don't revoke blob URLs here - they're cached and will be cleaned up by the cache cleanup interval
+        return () => {
+            // Note: We don't revoke blob URLs here because they're cached
+            // The cache cleanup will handle revoking old URLs
+        };
+    }, [msg.id, userbotId, chatId, isWebPage, cacheKey, loadMedia]);
+
+    // Determine if mime type indicates image, video, or document
+    // Priority: MIME type (from API) > Telegram media type
+    const isImage = mimeType ? mimeType.startsWith('image/') : (mediaType === 'image');
+    const isVideo = mimeType ? mimeType.startsWith('video/') : (mediaType === 'video');
+    const isAudio = mimeType ? mimeType.startsWith('audio/') : (mediaType === 'audio');
+    
+    // For documents, check if MIME type indicates it's actually an image/video/audio
+    const isDocumentAsImage = mediaType === 'document' && mimeType?.startsWith('image/');
+    const isDocumentAsVideo = mediaType === 'document' && mimeType?.startsWith('video/');
+    const isDocumentAsAudio = mediaType === 'document' && mimeType?.startsWith('audio/');
+    
+    const finalIsImage = isImage || isDocumentAsImage;
+    const finalIsVideo = isVideo || isDocumentAsVideo;
+    const finalIsAudio = isAudio || isDocumentAsAudio;
+
+    if (isWebPage) return null; // Hide WebPage media for now
+
+    if (loading) {
+        return <div className="h-40 w-40 bg-gray-200 animate-pulse rounded flex items-center justify-center"><PhotoIcon className="w-8 h-8 text-gray-400" /></div>;
+    }
+
+    if (error) {
+        return (
+            <div className="flex flex-col items-center justify-center p-2 border border-red-200 rounded bg-red-50 mb-2">
+                <div className="text-xs text-red-500 mb-1">Failed to load media</div>
+                <button
+                    onClick={(e) => { e.stopPropagation(); loadMedia(); }}
+                    className="text-[10px] bg-white border border-red-300 px-2 py-1 rounded hover:bg-red-50 text-red-600 font-medium"
+                >
+                    Retry
+                </button>
+            </div>
+        );
+    }
+
+    if (!mediaUrl) return null;
+
+    // Render based on media type
+    if (finalIsImage) {
+        return (
+            <div className="mb-2 -mx-3 -mt-3 first:mt-0">
+                <img 
+                    src={mediaUrl} 
+                    alt="Media" 
+                    className="w-full rounded-t-lg max-h-96 object-contain cursor-pointer" 
+                    style={{ maxWidth: '400px', display: 'block' }}
+                    onClick={() => window.open(mediaUrl, '_blank')}
+                    onError={() => {
+                        setError(true);
+                    }}
+                />
+            </div>
+        );
+    }
+
+    if (finalIsVideo) {
+        return (
+            <div className="mb-2 -mx-3 -mt-3 first:mt-0">
+                <video 
+                    src={mediaUrl} 
+                    controls 
+                    className="w-full rounded-t-lg max-h-96 cursor-pointer"
+                    style={{ maxWidth: '400px', display: 'block' }}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+        );
+    }
+
+    if (finalIsAudio) {
+        return (
+            <div className="mb-2 p-2 bg-gray-100 rounded-lg">
+                <audio 
+                    src={mediaUrl} 
+                    controls 
+                    className="w-full"
+                >
+                    Your browser does not support the audio tag.
+                </audio>
+            </div>
+        );
+    }
+
+    // For documents or unknown types, show download link
+    return (
+        <div className="mb-2 p-3 border border-gray-300 rounded-lg bg-gray-50">
+            <div className="flex items-center gap-2">
+                <PhotoIcon className="w-5 h-5 text-gray-500" />
+                <span className="text-sm text-gray-700">Media file</span>
+                <a 
+                    href={mediaUrl} 
+                    download 
+                    className="ml-auto text-xs bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    Download
+                </a>
+            </div>
+            {mimeType && (
+                <div className="text-xs text-gray-500 mt-1">{mimeType}</div>
+            )}
+        </div>
+    );
+};
 
 const TelegramUserbot: React.FC = () => {
     const { user } = useAuth();
     const [step, setStep] = useState<'SELECT' | 'LOGIN' | 'VERIFY' | 'CHATS'>('SELECT');
-    
+
     // Userbot Selection
     const [userbots, setUserbots] = useState<any[]>([]);
     const [selectedUserbot, setSelectedUserbot] = useState<string | null>(null);
 
-    // Login Form
-    const [phoneNumber, setPhoneNumber] = useState('');
-    const [phoneCode, setPhoneCode] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState('');
-
     // Chats & Messages
+
     const [chats, setChats] = useState<Chat[]>([]);
     const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
     const [messageText, setMessageText] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
+
+    // Filtered chats
+    const filteredChats = chats.filter(chat =>
+        chat.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (chat.lastMessage && chat.lastMessage.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
 
     // Auto-scroll ref
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3007'}/api/userbot`;
-    const TELEGRAM_API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3007'}/api/v1/telegram`;
+    const API_URL = `${import.meta.env['VITE_API_URL'] || 'http://localhost:3007'}/api/userbot`;
+    const TELEGRAM_API_URL = `${import.meta.env['VITE_API_URL'] || 'http://localhost:3007'}/api/v1/telegram`;
+
+    // ... removed internal MediaMessage ...
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -80,47 +325,33 @@ const TelegramUserbot: React.FC = () => {
 
     const loadUserbots = async () => {
         if (!user?.companyId) return;
-        
+
         try {
             const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
             if (!token) {
-                setError('Authentication required');
+                // Authentication required
                 return;
             }
-            
+
             const response = await axios.get(`${TELEGRAM_API_URL}/userbots`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            
+
             const userbotsList = response.data?.data || response.data || [];
             setUserbots(Array.isArray(userbotsList) ? userbotsList : []);
-            
+
             // Check if any userbot is already logged in (has active session)
-            const loggedInUserbot = userbotsList.find((ub: any) => 
-                ub.sessionString && ub.isActive && ub.clientPhone
+            const loggedInUserbot = userbotsList.find((ub: any) =>
+                ub.sessionString
             );
-            
+
             if (loggedInUserbot) {
                 // Userbot is already logged in, go directly to chats
                 console.log('✅ Found logged in userbot:', loggedInUserbot.id);
                 setSelectedUserbot(loggedInUserbot.id);
                 setStep('CHATS');
-                // Note: fetchChats will be called by useEffect when selectedUserbot and step are set
-            } else if (userbotsList.length === 1 && userbotsList[0]?.id) {
-                // Only one userbot, auto-select it
-                const singleUserbot = userbotsList[0];
-                setSelectedUserbot(singleUserbot.id);
-                // Check if it's already connected
-                if (singleUserbot.sessionString && singleUserbot.isActive && singleUserbot.clientPhone) {
-                    setStep('CHATS');
-                } else {
-                    setStep('LOGIN');
-                }
-            } else if (userbotsList.length > 0) {
-                // Multiple userbots, show selection screen
-                setStep('SELECT');
             } else {
-                // No userbots, show selection screen (which will show "add userbot" message)
+                // No connected userbot found, show selection (which will show "not connected" state if bots exist but aren't connected)
                 setStep('SELECT');
             }
         } catch (error: any) {
@@ -130,80 +361,11 @@ const TelegramUserbot: React.FC = () => {
                 setUserbots([]);
                 setStep('SELECT');
             } else {
-                setError(error.response?.data?.error || 'Failed to load userbots. Please add a userbot in Settings first.');
+                // (error.response?.data?.error || 'Failed to load userbots. Please add a userbot in Settings first.'); // Removed setError
             }
         }
     };
 
-    // 1. Send Login Code
-    const handleSendCode = async () => {
-        if (!selectedUserbot) {
-            setError('Please select a userbot first');
-            return;
-        }
-        
-        setIsLoading(true);
-        setError('');
-        try {
-            const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
-            await axios.post(`${API_URL}/login`, {
-                userbotConfigId: selectedUserbot,
-                phoneNumber
-            }, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            setStep('VERIFY');
-        } catch (err: any) {
-            setError(err.response?.data?.error || 'Failed to send code');
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    // 2. Verify Code
-    const [requiresPassword, setRequiresPassword] = useState(false);
-    const [password, setPassword] = useState('');
-
-    const handleVerify = async () => {
-        if (!selectedUserbot) {
-            setError('Please select a userbot first');
-            return;
-        }
-        
-        setIsLoading(true);
-        setError('');
-        try {
-            const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
-            const response = await axios.post(`${API_URL}/verify`, {
-                userbotConfigId: selectedUserbot,
-                code: phoneCode,
-                password: requiresPassword ? password : undefined
-            }, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            
-            if (response.data.requiresPassword) {
-                setRequiresPassword(true);
-                setError('Two-factor authentication is enabled. Please enter your password.');
-            } else {
-                setStep('CHATS');
-                fetchChats();
-            }
-        } catch (err: any) {
-            if (err.response?.data?.requiresPassword) {
-                setRequiresPassword(true);
-                setError('Two-factor authentication is enabled. Please enter your password.');
-            } else {
-                setError(err.response?.data?.error || 'Verification failed');
-            }
-        } finally {
-            setIsLoading(false);
-        }
-    };
 
     // 3. Fetch Chats
     const fetchChats = async () => {
@@ -211,53 +373,52 @@ const TelegramUserbot: React.FC = () => {
             console.warn('⚠️ Cannot fetch chats: no userbot selected');
             return;
         }
-        
+
         try {
             console.log('📥 Fetching chats for userbot:', selectedUserbot);
             const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
             if (!token) {
-                setError('Authentication token missing');
+                // Authentication token missing
                 return;
             }
-            
+
             const res = await axios.get(`${API_URL}/dialogs?userbotConfigId=${selectedUserbot}`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
             });
-            
+
             if (res.data.success) {
                 console.log('✅ Chats fetched:', res.data.data?.length || 0);
                 setChats(res.data.data || []);
                 setStep('CHATS');
             } else {
                 console.error('❌ Failed to fetch chats:', res.data.error);
-                
+
                 // Check if session expired
                 if (res.data.error === 'AUTH_KEY_UNREGISTERED' || res.data.requiresReauth) {
-                    setError('Session expired. Please login again.');
-                    setStep('LOGIN');
+                    // Session expired.
+                    setStep('SELECT');
                     // Clear any cached userbot selection
                     setSelectedUserbot(null);
                 } else {
-                    setError(res.data.error || res.data.message || 'Failed to fetch chats');
+                    // (res.data.error || res.data.message || 'Failed to fetch chats');
                 }
             }
         } catch (err: any) {
             console.error('❌ Failed to fetch chats:', err);
             const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to fetch chats';
-            
+
             // Check if it's an auth error
             if (errorMessage.includes('AUTH_KEY_UNREGISTERED') || err.response?.data?.requiresReauth) {
-                setError('Session expired. Please login again.');
-                setStep('LOGIN');
+                // Session expired.
+                setStep('SELECT');
                 setSelectedUserbot(null);
             } else {
-                setError(errorMessage);
                 if (step === 'CHATS') {
                     // If we're already on CHATS step, maybe session expired
-                    console.warn('⚠️ Session might be expired, redirecting to login');
-                    setStep('LOGIN');
+                    console.warn('⚠️ Session might be expired, redirecting to select');
+                    setStep('SELECT');
                 }
             }
         }
@@ -269,7 +430,7 @@ const TelegramUserbot: React.FC = () => {
 
         const fetchMessages = async () => {
             if (!selectedUserbot) return;
-            
+
             try {
                 const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
                 const res = await axios.get(`${API_URL}/messages?userbotConfigId=${selectedUserbot}&chatId=${selectedChat.id}`, {
@@ -291,11 +452,7 @@ const TelegramUserbot: React.FC = () => {
     }, [selectedChat, user?.companyId]);
 
     // Check session on mount
-    useEffect(() => {
-        if (user?.companyId) {
-            fetchChats();
-        }
-    }, [user?.companyId]);
+
 
     // 5. Send Message
     const handleSendMessage = async () => {
@@ -330,31 +487,13 @@ const TelegramUserbot: React.FC = () => {
     };
 
     // 6. Logout
-    const handleLogout = async () => {
-        if (!selectedUserbot) return;
-        if (!confirm('Are you sure you want to disconnect?')) return;
-        try {
-            const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
-            await axios.post(`${API_URL}/logout`, {
-                userbotConfigId: selectedUserbot
-            }, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            setStep('SELECT');
-            setChats([]);
-            setSelectedChat(null);
-            setSelectedUserbot(null);
-        } catch (err) {
-            console.error(err);
-        }
-    };
+
 
     // 7. Send File
     const handleSendFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!selectedChat || !e.target.files || e.target.files.length === 0) return;
         const file = e.target.files[0];
+        if (!file) return;
 
         const formData = new FormData();
         formData.append('file', file);
@@ -364,7 +503,7 @@ const TelegramUserbot: React.FC = () => {
         try {
             const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
             await axios.post(`${API_URL}/message/file`, formData, {
-                headers: { 
+                headers: {
                     'Content-Type': 'multipart/form-data',
                     'Authorization': `Bearer ${token}`
                 }
@@ -396,139 +535,64 @@ const TelegramUserbot: React.FC = () => {
                 </div>
             </div>
 
-            {error && (
-                <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-4 flex items-start">
-                    <ExclamationCircleIcon className="h-5 w-5 mr-2 mt-0.5 flex-shrink-0" />
-                    <div className="flex-1">
-                        <div className="font-semibold mb-1">{error}</div>
-                        {error.includes('API credentials') && (
-                            <div className="text-sm text-red-500 mt-2">
-                                💡 <strong>الحل:</strong> أضف API ID و API Hash في <a href="/settings?tab=telegram" className="underline">Telegram Settings</a>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-
             {step === 'SELECT' && (
                 <div className="flex-1 flex justify-center items-center">
-                    <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
-                        <h2 className="text-xl font-bold mb-4">اختر حساب Telegram Userbot</h2>
+                    <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
+                        <h2 className="text-xl font-bold mb-4">Select Userbot</h2>
                         {!userbots || userbots.length === 0 ? (
-                            <div className="text-center py-8">
-                                <p className="text-gray-500 mb-4">لا توجد حسابات Userbot مضافة</p>
-                                <a href="/settings/telegram" className="text-blue-600 hover:underline inline-block mt-4 px-4 py-2 bg-blue-50 rounded-lg">
-                                    ➕ أضف حساب Userbot من الإعدادات
+                            <div className="py-4">
+                                <PaperAirplaneIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                                <p className="text-gray-500 mb-6">No Telegram Userbots connected yet.</p>
+                                <a href="/settings/telegram" className="inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                                    Go to Settings to Connect
                                 </a>
                             </div>
                         ) : (
-                            <div className="space-y-2">
-                                <p className="text-sm text-gray-500 mb-4">اختر الحساب الذي تريد الاتصال به:</p>
+                            <div className="space-y-3">
+                                <p className="text-sm text-gray-500 mb-4">Select an account to start chatting:</p>
                                 {Array.isArray(userbots) && userbots.map((userbot: any) => {
                                     if (!userbot || !userbot.id) return null;
-                                    const isConnected = userbot.sessionString && userbot.isActive && userbot.clientPhone;
+                                    const isConnected = userbot.sessionString;
+
+                                    if (!isConnected) return null; // Only show connected bots
+
                                     return (
                                         <button
                                             key={userbot.id}
                                             onClick={() => {
                                                 setSelectedUserbot(userbot.id);
-                                                if (isConnected) {
+                                                // Check if it's already connected
+                                                if (userbot.sessionString) {
                                                     setStep('CHATS');
-                                                    // fetchChats will be called by useEffect
                                                 } else {
-                                                    setStep('LOGIN');
+                                                    setStep('SELECT');
                                                 }
                                             }}
                                             className="w-full p-4 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
                                         >
                                             <div className="font-semibold flex items-center justify-between">
                                                 <span>{userbot.label || 'Unnamed Userbot'}</span>
-                                                {isConnected && (
-                                                    <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
-                                                        متصل
-                                                    </span>
-                                                )}
+                                                <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
+                                                    Connected
+                                                </span>
                                             </div>
                                             <div className="text-sm text-gray-500 mt-1">
-                                                {userbot.clientPhone || 'غير متصل'}
+                                                {userbot.clientPhone}
                                             </div>
                                         </button>
                                     );
                                 })}
+
+                                {userbots.filter(u => u.sessionString).length === 0 && (
+                                    <div className="py-4">
+                                        <p className="text-amber-600 mb-4">You have added Userbots but none are connected.</p>
+                                        <a href="/settings/telegram" className="text-blue-600 font-medium hover:underline">
+                                            Go to Settings to Complete Setup
+                                        </a>
+                                    </div>
+                                )}
                             </div>
                         )}
-                    </div>
-                </div>
-            )}
-
-            {step === 'LOGIN' && (
-                <div className="flex-1 flex justify-center items-center">
-                    <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
-                        <h2 className="text-xl font-bold mb-4">Log in with Phone</h2>
-                        <input
-                            type="text"
-                            placeholder="+201xxxxxxxxx"
-                            className="w-full p-3 border rounded-lg mb-4"
-                            value={phoneNumber}
-                            onChange={e => setPhoneNumber(e.target.value)}
-                        />
-                        <button
-                            onClick={handleSendCode}
-                            disabled={isLoading}
-                            className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                        >
-                            {isLoading ? 'Sending...' : 'Send Code'}
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {step === 'VERIFY' && (
-                <div className="flex-1 flex justify-center items-center">
-                    <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
-                        <h2 className="text-xl font-bold mb-4">
-                            {requiresPassword ? 'Enter Password (2FA)' : 'Enter Code'}
-                        </h2>
-                        {!requiresPassword ? (
-                            <>
-                                <input
-                                    type="text"
-                                    placeholder="12345"
-                                    className="w-full p-3 border rounded-lg mb-4"
-                                    value={phoneCode}
-                                    onChange={e => setPhoneCode(e.target.value)}
-                                />
-                                <button
-                                    onClick={handleVerify}
-                                    disabled={isLoading}
-                                    className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 disabled:opacity-50"
-                                >
-                                    {isLoading ? 'Verifying...' : 'Verify & Login'}
-                                </button>
-                            </>
-                        ) : (
-                            <>
-                                <input
-                                    type="password"
-                                    placeholder="Enter your 2FA password"
-                                    className="w-full p-3 border rounded-lg mb-4"
-                                    value={password}
-                                    onChange={e => setPassword(e.target.value)}
-                                />
-                                <button
-                                    onClick={handleVerify}
-                                    disabled={isLoading || !password}
-                                    className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 disabled:opacity-50"
-                                >
-                                    {isLoading ? 'Verifying...' : 'Verify with Password'}
-                                </button>
-                            </>
-                        )}
-                        <button onClick={() => {
-                            setStep('LOGIN');
-                            setRequiresPassword(false);
-                            setPassword('');
-                        }} className="w-full mt-2 text-gray-500">Back</button>
                     </div>
                 </div>
             )}
@@ -543,17 +607,29 @@ const TelegramUserbot: React.FC = () => {
                                 <ArrowPathIcon className="h-5 w-5" />
                             </button>
                         </div>
-                        {/* Logout Button */}
+
+                        {/* Search Bar */}
+                        <div className="p-3 border-b bg-white">
+                            <div className="relative">
+                                <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                <input
+                                    type="text"
+                                    placeholder="Search chats..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-2 bg-gray-100 border-none rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Logout should be handled in settings mostly, but let's keep a disconnect or redirect */}
                         <div className="px-4 pb-2">
-                            <button
-                                onClick={handleLogout}
-                                className="text-xs text-red-500 hover:underline w-full text-left"
-                            >
-                                Logout / Disconnect
-                            </button>
+                            <a href="/settings/telegram" className="text-xs text-gray-500 hover:underline block pt-2">
+                                Manage Connections in Settings
+                            </a>
                         </div>
                         <div className="flex-1 overflow-y-auto">
-                            {chats.map(chat => (
+                            {filteredChats.map(chat => (
                                 <div
                                     key={chat.id}
                                     onClick={() => setSelectedChat(chat)}
@@ -592,24 +668,27 @@ const TelegramUserbot: React.FC = () => {
                                     {messages
                                         .sort((a, b) => a.date - b.date) // Sort by date (oldest first)
                                         .map((msg, index) => (
-                                        <div key={`${msg.id}-${index}`} className={`flex ${msg.isOut ? 'justify-end' : 'justify-start'}`}>
-                                            <div className={`max-w-[70%] p-3 rounded-lg shadow-sm ${msg.isOut ? 'bg-blue-600 text-white rounded-br-none' : 'bg-white text-gray-800 rounded-bl-none'
-                                                }`}>
-                                                {/* Sender name for incoming messages */}
-                                                {!msg.isOut && msg.senderName && (
-                                                    <div className={`text-xs font-semibold mb-1 ${msg.isOut ? 'text-blue-200' : 'text-gray-600'}`}>
-                                                        {msg.senderName}
+                                            <div key={`${msg.id}-${index}`} className={`flex ${msg.isOut ? 'justify-end' : 'justify-start'}`}>
+                                                <div className={`max-w-[70%] rounded-lg shadow-sm overflow-hidden ${msg.isOut ? 'bg-blue-600 text-white rounded-br-none' : 'bg-white text-gray-800 rounded-bl-none'
+                                                    } ${msg.media ? 'p-0' : 'p-3'}`}>
+                                                    {/* Sender name for incoming messages */}
+                                                    {!msg.isOut && msg.senderName && (
+                                                        <div className={`text-xs font-semibold mb-1 px-3 pt-3 ${msg.isOut ? 'text-blue-200' : 'text-gray-600'}`}>
+                                                            {msg.senderName}
+                                                        </div>
+                                                    )}
+                                                    {msg.media && selectedUserbot && selectedChat && (
+                                                        <MediaMessage msg={msg} userbotId={selectedUserbot} chatId={selectedChat.id} />
+                                                    )}
+                                                    {!msg.media && <div className="break-words">{msg.text}</div>}
+                                                    {msg.media && msg.text && <div className="break-words mt-2 px-3">{msg.text}</div>}
+                                                    <div className={`text-[10px] mt-1 flex justify-between items-center px-3 pb-2 ${msg.isOut ? 'text-blue-200' : 'text-gray-400'}`}>
+                                                        <span>{new Date(msg.date * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                        {msg.isOut && <span className="ml-2">✓</span>}
                                                     </div>
-                                                )}
-                                                {msg.media && <div className="text-xs opacity-75 mb-1">[Media]</div>}
-                                                <div className="break-words">{msg.text}</div>
-                                                <div className={`text-[10px] mt-1 flex justify-between items-center ${msg.isOut ? 'text-blue-200' : 'text-gray-400'}`}>
-                                                    <span>{new Date(msg.date * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                                    {msg.isOut && <span className="ml-2">✓</span>}
                                                 </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        ))}
                                     <div ref={messagesEndRef} />
                                 </div>
 
@@ -646,8 +725,9 @@ const TelegramUserbot: React.FC = () => {
                         )}
                     </div>
                 </div>
-            )}
-        </div>
+            )
+            }
+        </div >
     );
 };
 

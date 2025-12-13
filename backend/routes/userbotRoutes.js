@@ -238,7 +238,32 @@ router.post('/logout', async (req, res) => {
     }
 });
 
-// 7. Send File (Uses multer for file handling)
+// 7. Get Message Media
+router.get('/message/media', async (req, res) => {
+    try {
+        const companyId = req.user?.companyId;
+        const { userbotConfigId, chatId, messageId } = req.query;
+
+        if (!companyId || !userbotConfigId || !chatId || !messageId) {
+            return res.status(400).json({ error: 'Missing required parameters' });
+        }
+
+        const result = await telegramUserbotService.downloadMedia(userbotConfigId, companyId, chatId, messageId);
+
+        if (result.success && result.buffer) {
+            res.setHeader('Content-Type', result.mimeType || 'application/octet-stream');
+            res.send(result.buffer);
+        } else {
+            console.error('❌ [ROUTE] Media download failed:', result.error);
+            res.status(404).json(result);
+        }
+    } catch (error) {
+        console.error('❌ [ROUTE] Error in /message/media:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 8. Send File (Uses multer for file handling)
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() }); // Store in memory to pass buffer
 

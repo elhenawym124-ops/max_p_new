@@ -2263,11 +2263,55 @@ model StorefrontSettings {
   mobileBottomNavbarShowShop       Boolean   @default(true)
   mobileBottomNavbarShowWishlist   Boolean   @default(true)
   company                          Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  facebookPixels                   FacebookPixelConfig[]
 
   @@index([companyId])
   @@index([facebookPixelEnabled])
   @@index([facebookConvApiEnabled])
   @@map("storefront_settings")
+}
+
+// Multiple Facebook Pixels Support
+model FacebookPixelConfig {
+  id                    String             @id @default(cuid())
+  storefrontSettingsId  String
+  pixelId               String
+  pixelName             String
+  accessToken           String?            @db.Text
+  isActive              Boolean            @default(true)
+  isPrimary             Boolean            @default(false)
+  
+  // Events Configuration
+  trackPageView         Boolean            @default(true)
+  trackViewContent      Boolean            @default(true)
+  trackAddToCart        Boolean            @default(true)
+  trackInitiateCheckout Boolean            @default(true)
+  trackPurchase         Boolean            @default(true)
+  trackSearch           Boolean            @default(true)
+  trackAddToWishlist    Boolean            @default(false)
+  trackLead             Boolean            @default(false)
+  trackCompleteRegistration Boolean        @default(false)
+  
+  // Diagnostics
+  lastTestAt            DateTime?
+  lastTestResult        String?            @default("not_tested")
+  lastEventSentAt       DateTime?
+  totalEventsSent       Int                @default(0)
+  errorCount            Int                @default(0)
+  lastError             String?            @db.Text
+  tokenStatus           String?            @default("unknown")
+  tokenExpiresAt        DateTime?
+  eventMatchQuality     Float?
+  
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  
+  storefrontSettings    StorefrontSettings @relation(fields: [storefrontSettingsId], references: [id], onDelete: Cascade)
+  
+  @@unique([storefrontSettingsId, pixelId])
+  @@index([storefrontSettingsId])
+  @@index([isActive])
+  @@map("facebook_pixel_configs")
 }
 
 model DeliveryOption {

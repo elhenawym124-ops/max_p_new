@@ -22,7 +22,7 @@ const TelegramSettings = () => {
     const [showAddUserbotForm, setShowAddUserbotForm] = useState(false);
 
     // Connection Wizard State
-    const [connectionStep, setConnectionStep] = useState<'INIT' | 'OTP' | '2FA'>('INIT');
+    const [connectionStep, setConnectionStep] = useState<'INIT' | 'OTP' | '2FA' | 'RECONNECT_PHONE'>('INIT');
     const [currentConfigId, setCurrentConfigId] = useState<string | null>(null);
     const [phoneCodeHash, setPhoneCodeHash] = useState<string | null>(null);
 
@@ -87,29 +87,43 @@ const TelegramSettings = () => {
     };
 
     const handleStartConnection = async () => {
-        if (!newUserbotApiId || !newUserbotApiHash || !newUserbotPhone) {
-            toast.error('Please fill in all required fields');
-            return;
-        }
-
         if (!user?.companyId) return;
+
+        // Validation based on mode
+        if (connectionStep === 'INIT') {
+            if (!newUserbotApiId || !newUserbotApiHash || !newUserbotPhone) {
+                toast.error('Please fill in all required fields');
+                return;
+            }
+        } else if (connectionStep === 'RECONNECT_PHONE') {
+            if (!newUserbotPhone) {
+                toast.error('Please enter phone number');
+                return;
+            }
+        }
 
         try {
             setIsLoading(true);
             const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3007';
+            let configId = currentConfigId;
 
-            // 1. Create Userbot Config
-            const createResponse = await axios.post(`${apiUrl}/api/v1/telegram/userbots`, {
-                label: newUserbotLabel || 'Telegram Userbot',
-                apiId: newUserbotApiId,
-                apiHash: newUserbotApiHash
-            }, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            // 1. Create Userbot Config (Only if INIT)
+            if (connectionStep === 'INIT') {
+                const createResponse = await axios.post(`${apiUrl}/api/v1/telegram/userbots`, {
+                    label: newUserbotLabel || 'Telegram Userbot',
+                    apiId: newUserbotApiId,
+                    apiHash: newUserbotApiHash
+                }, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                configId = createResponse.data.data.id;
+                setCurrentConfigId(configId);
+            }
 
-            const configId = createResponse.data.data.id;
-            setCurrentConfigId(configId);
+            if (!configId) {
+                throw new Error("Configuration ID missing");
+            }
 
             // 2. Request Login Code
             const loginResponse = await axios.post(`${apiUrl}/api/userbot/login`, {
@@ -132,6 +146,14 @@ const TelegramSettings = () => {
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const handleAskReconnect = (userbot: any) => {
+        setCurrentConfigId(userbot.id);
+        setNewUserbotPhone(userbot.clientPhone || '');
+        setNewUserbotLabel(userbot.label || '');
+        setConnectionStep('RECONNECT_PHONE');
+        setShowAddUserbotForm(true);
     };
 
     const handleVerifyCode = async () => {
@@ -252,8 +274,8 @@ const TelegramSettings = () => {
                 <button
                     onClick={() => setActiveTab('bots')}
                     className={`px-4 py-2 font-medium transition-colors ${activeTab === 'bots'
-                            ? 'text-blue-600 border-b-2 border-blue-600'
-                            : 'text-gray-500 hover:text-gray-700'
+                        ? 'text-blue-600 border-b-2 border-blue-600'
+                        : 'text-gray-500 hover:text-gray-700'
                         }`}
                 >
                     Telegram Bots
@@ -261,8 +283,8 @@ const TelegramSettings = () => {
                 <button
                     onClick={() => setActiveTab('userbots')}
                     className={`px-4 py-2 font-medium transition-colors ${activeTab === 'userbots'
-                            ? 'text-blue-600 border-b-2 border-blue-600'
-                            : 'text-gray-500 hover:text-gray-700'
+                        ? 'text-blue-600 border-b-2 border-blue-600'
+                        : 'text-gray-500 hover:text-gray-700'
                         }`}
                 >
                     Telegram Userbots
@@ -456,6 +478,15 @@ const TelegramSettings = () => {
                                 >
                                     Delete
                                 </button>
+                                {!userbot.sessionString && (
+                                    <button
+                                        onClick={() => handleAskReconnect(userbot)}
+                                        disabled={isLoading}
+                                        className="ml-2 px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-lg font-medium transition-colors border border-gray-200 hover:border-blue-100 text-sm"
+                                    >
+                                        Connect
+                                    </button>
+                                )}
                             </div>
                         ))}
                     </div>
@@ -466,6 +497,7 @@ const TelegramSettings = () => {
                             <div className="flex justify-between items-center mb-4">
                                 <h2 className="text-xl font-bold text-gray-900">
                                     {connectionStep === 'INIT' && 'Add New Userbot'}
+                                    {connectionStep === 'RECONNECT_PHONE' && 'Reconnect Userbot'}
                                     {connectionStep === 'OTP' && 'Verify Phone Number'}
                                     {connectionStep === '2FA' && 'Two-Step Verification'}
                                 </h2>
@@ -543,8 +575,8 @@ const TelegramSettings = () => {
                                                 onClick={handleStartConnection}
                                                 disabled={isLoading || !newUserbotApiId || !newUserbotApiHash || !newUserbotPhone}
                                                 className={`flex-1 py-3 rounded-lg font-medium text-white transition-all ${isLoading || !newUserbotApiId || !newUserbotApiHash || !newUserbotPhone
-                                                        ? 'bg-green-300 cursor-not-allowed'
-                                                        : 'bg-green-600 hover:bg-green-700 shadow-md'
+                                                    ? 'bg-green-300 cursor-not-allowed'
+                                                    : 'bg-green-600 hover:bg-green-700 shadow-md'
                                                     }`}
                                             >
                                                 {isLoading ? 'Sending Code...' : 'Next & Send Code'}
@@ -587,11 +619,56 @@ const TelegramSettings = () => {
                                                 onClick={handleVerifyCode}
                                                 disabled={isLoading || !verificationCode}
                                                 className={`flex-1 py-3 rounded-lg font-medium text-white transition-all ${isLoading || !verificationCode
-                                                        ? 'bg-green-300 cursor-not-allowed'
-                                                        : 'bg-green-600 hover:bg-green-700 shadow-md'
+                                                    ? 'bg-green-300 cursor-not-allowed'
+                                                    : 'bg-green-600 hover:bg-green-700 shadow-md'
                                                     }`}
                                             >
                                                 {isLoading ? 'Verifying...' : 'Verify Code'}
+                                            </button>
+                                            <button
+                                                onClick={resetForm}
+                                                disabled={isLoading}
+                                                className="px-6 py-3 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* Step 1.5: Reconnect (Phone Only) */}
+                                {connectionStep === 'RECONNECT_PHONE' && (
+                                    <>
+                                        <div>
+                                            <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg mb-4">
+                                                <p className="text-blue-800 text-sm">
+                                                    Enter your phone number to receive a login code for <strong>{newUserbotLabel}</strong>.
+                                                    <br />
+                                                    <span className="text-xs text-gray-500">API Credentials are already saved.</span>
+                                                </p>
+                                            </div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Phone Number <span className="text-red-500">*</span>
+                                            </label>
+                                            <input
+                                                type="tel"
+                                                value={newUserbotPhone}
+                                                onChange={(e) => setNewUserbotPhone(e.target.value)}
+                                                placeholder="+1234567890"
+                                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none font-mono"
+                                            />
+                                        </div>
+
+                                        <div className="flex gap-3 pt-2">
+                                            <button
+                                                onClick={handleStartConnection}
+                                                disabled={isLoading || !newUserbotPhone}
+                                                className={`flex-1 py-3 rounded-lg font-medium text-white transition-all ${isLoading || !newUserbotPhone
+                                                    ? 'bg-green-300 cursor-not-allowed'
+                                                    : 'bg-green-600 hover:bg-green-700 shadow-md'
+                                                    }`}
+                                            >
+                                                {isLoading ? 'Sending Code...' : 'Send Login Code'}
                                             </button>
                                             <button
                                                 onClick={resetForm}
@@ -638,8 +715,8 @@ const TelegramSettings = () => {
                                                 onClick={handleVerifyCode}
                                                 disabled={isLoading || !password}
                                                 className={`flex-1 py-3 rounded-lg font-medium text-white transition-all ${isLoading || !password
-                                                        ? 'bg-green-300 cursor-not-allowed'
-                                                        : 'bg-green-600 hover:bg-green-700 shadow-md'
+                                                    ? 'bg-green-300 cursor-not-allowed'
+                                                    : 'bg-green-600 hover:bg-green-700 shadow-md'
                                                     }`}
                                             >
                                                 {isLoading ? 'Verifying...' : 'Complete Login'}

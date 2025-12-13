@@ -137,6 +137,16 @@ class TelegramUserbotService {
             console.log(`🔌 [_getClient] Connecting...`);
             await client.connect();
 
+            // Save updated session string if detailed (DC/Auth Key) changed to prevent invalidation
+            const newSessionString = client.session.save();
+            if (newSessionString !== sessionString) {
+                console.log(`💾 [_getClient] Session string updated/migrated. Saving to DB for ${userbotConfigId}...`);
+                await this.prisma.telegramConfig.update({
+                    where: { id: userbotConfigId },
+                    data: { sessionString: newSessionString, isActive: true }
+                });
+            }
+
             // Update memory
             this.clients.set(userbotConfigId, client);
             console.log(`✅ [_getClient] Client restored and connected.`);
@@ -452,6 +462,82 @@ class TelegramUserbotService {
             }
         } catch (error) {
             return this._handleAuthError(error, userbotConfigId, companyId);
+        }
+    }
+
+    async downloadMedia(userbotConfigId, companyId, chatId, messageId) {
+        console.log(`[Media] Downloading media for ${chatId}, Msg ${messageId}`);
+        try {
+            const client = await this._getClient(userbotConfigId, companyId);
+
+            // Resolve entity - try cache first, then populate cache if needed
+            let entity;
+            const numericChatId = typeof chatId === 'string' ? BigInt(chatId) : chatId;
+
+            try {
+                entity = await client.getEntity(numericChatId);
+            } catch (e) {
+                console.log(`[Media] Entity ${chatId} not found in cache. Fetching dialogs...`);
+                // If not found (e.g. after server restart), fetch dialogs to populate cache
+                await client.getDialogs({ limit: 100 });
+                try {
+                    entity = await client.getEntity(numericChatId);
+                } catch (e2) {
+                    console.error('[Media] Failed to resolve entity:', e2);
+                    // Last resort: try looking by string if it wasn't a number
+                    try {
+                        entity = await client.getEntity(chatId);
+                    } catch (e3) {
+                        return { success: false, error: "Chat Entity not found. Please refresh chats." };
+                    }
+                }
+            }
+
+            // Get the message
+            // Note: messageId from frontend might be string, ensure int
+            const ids = [parseInt(messageId)];
+            const messages = await client.getMessages(entity, { ids: ids });
+
+            if (!messages || messages.length === 0 || !messages[0]) {
+                console.warn(`[Media] Message ${messageId} not found in chat ${chatId}`);
+                return { success: false, error: "Message not found" };
+            }
+
+            const message = messages[0];
+            if (!message.media) {
+                console.warn(`[Media] Message ${messageId} has no media`);
+                return { success: false, error: "Message has no media" };
+            }
+
+            // Download media (returns Buffer)
+            console.log(`[Media] Found message, downloading...`);
+            const buffer = await client.downloadMedia(message);
+
+            if (!buffer) {
+                console.error(`[Media] Download failed (empty buffer)`);
+                return { success: false, error: "Download returned empty" };
+            }
+
+            // Try to determine mime type
+            let mimeType = 'application/octet-stream';
+            if (message.media) {
+                if (message.media.document) {
+                    mimeType = message.media.document.mimeType;
+                } else if (message.media.photo) {
+                    mimeType = 'image/jpeg';
+                }
+            }
+
+            console.log(`[Media] Download success, size: ${buffer.length}, type: ${mimeType}`);
+            return { success: true, buffer, mimeType };
+
+        } catch (error) {
+            console.error('[Media] Error in downloadMedia:', error);
+            // Check for specific auth error or generic
+            if (error.message && error.message.includes('AUTH_KEY')) {
+                return this._handleAuthError(error, userbotConfigId, companyId);
+            }
+            return { success: false, error: error.message };
         }
     }
 

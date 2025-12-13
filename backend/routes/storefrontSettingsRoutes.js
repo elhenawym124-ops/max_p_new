@@ -17,6 +17,22 @@ router.post('/test-facebook-pixel', requireAuth, storefrontSettingsController.te
 router.post('/test-facebook-capi', requireAuth, storefrontSettingsController.testFacebookCapi);
 router.post('/validate-pixel-id', requireAuth, storefrontSettingsController.validatePixelId);
 
+// 🔧 Diagnostics & Troubleshooting routes
+router.get('/pixel-diagnostics', requireAuth, storefrontSettingsController.getPixelDiagnostics);
+router.post('/check-token-permissions', requireAuth, storefrontSettingsController.checkTokenPermissions);
+router.post('/validate-event-data', requireAuth, storefrontSettingsController.validateEventData);
+
+// 🎯 Multiple Pixels Support routes
+router.get('/pixels', requireAuth, storefrontSettingsController.getPixels);
+router.post('/pixels', requireAuth, storefrontSettingsController.addPixel);
+router.put('/pixels/:id', requireAuth, storefrontSettingsController.updatePixel);
+router.delete('/pixels/:id', requireAuth, storefrontSettingsController.deletePixel);
+router.post('/pixels/:id/test', requireAuth, storefrontSettingsController.testPixel);
+
+// 🆕 Create Pixel & Business Accounts routes
+router.post('/create-pixel', requireAuth, storefrontSettingsController.createFacebookPixel);
+router.get('/business-accounts', requireAuth, storefrontSettingsController.getBusinessAccounts);
+
 // Public route (لا تحتاج مصادقة - للواجهة العامة)
 router.get('/:companyId', storefrontSettingsController.getPublicStorefrontSettings);
 

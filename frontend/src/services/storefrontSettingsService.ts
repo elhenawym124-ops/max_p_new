@@ -762,6 +762,111 @@ export const storefrontSettingsService = {
   clearCache: (companyId: string) => {
     const CACHE_KEY = `storefront_settings_${companyId}`;
     localStorage.removeItem(CACHE_KEY);
+  },
+
+  // ============================================
+  // 🔧 DIAGNOSTICS & TROUBLESHOOTING
+  // ============================================
+
+  /**
+   * تشخيص شامل لاتصال Facebook Pixel و CAPI
+   */
+  getPixelDiagnostics: async () => {
+    const response = await apiClient.get('/storefront-settings/pixel-diagnostics');
+    return response.data;
+  },
+
+  /**
+   * فحص صلاحيات Access Token
+   */
+  checkTokenPermissions: async () => {
+    const response = await apiClient.post('/storefront-settings/check-token-permissions', {});
+    return response.data;
+  },
+
+  /**
+   * التحقق من صحة البيانات المُرسلة
+   */
+  validateEventData: async (eventName: string, eventData: any) => {
+    const response = await apiClient.post('/storefront-settings/validate-event-data', { eventName, eventData });
+    return response.data;
+  },
+
+  // ============================================
+  // 🎯 MULTIPLE PIXELS SUPPORT
+  // ============================================
+
+  /**
+   * جلب جميع Pixels للشركة
+   */
+  getPixels: async () => {
+    const response = await apiClient.get('/storefront-settings/pixels');
+    return response.data;
+  },
+
+  /**
+   * إضافة Pixel جديد
+   */
+  addPixel: async (pixelData: {
+    pixelId: string;
+    pixelName: string;
+    accessToken?: string;
+    isPrimary?: boolean;
+    trackPageView?: boolean;
+    trackViewContent?: boolean;
+    trackAddToCart?: boolean;
+    trackInitiateCheckout?: boolean;
+    trackPurchase?: boolean;
+    trackSearch?: boolean;
+    trackAddToWishlist?: boolean;
+    trackLead?: boolean;
+    trackCompleteRegistration?: boolean;
+  }) => {
+    const response = await apiClient.post('/storefront-settings/pixels', pixelData);
+    return response.data;
+  },
+
+  /**
+   * تحديث Pixel
+   */
+  updatePixel: async (id: string, pixelData: any) => {
+    const response = await apiClient.put(`/storefront-settings/pixels/${id}`, pixelData);
+    return response.data;
+  },
+
+  /**
+   * حذف Pixel
+   */
+  deletePixel: async (id: string) => {
+    const response = await apiClient.delete(`/storefront-settings/pixels/${id}`);
+    return response.data;
+  },
+
+  /**
+   * اختبار Pixel محدد
+   */
+  testPixelById: async (id: string) => {
+    const response = await apiClient.post(`/storefront-settings/pixels/${id}/test`, {});
+    return response.data;
+  },
+
+  /**
+   * 🆕 إنشاء Pixel جديد على Facebook
+   */
+  createFacebookPixel: async (pixelName: string, businessId?: string) => {
+    const response = await apiClient.post('/storefront-settings/create-pixel', {
+      pixelName,
+      businessId
+    });
+    return response.data;
+  },
+
+  /**
+   * 🏢 جلب Business Accounts المتاحة
+   */
+  getBusinessAccounts: async () => {
+    const response = await apiClient.get('/storefront-settings/business-accounts');
+    return response.data;
   }
 };
 

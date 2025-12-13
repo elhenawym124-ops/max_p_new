@@ -11,6 +11,12 @@ import {
   DocumentTextIcon,
   RocketLaunchIcon,
   ChevronDownIcon,
+  WrenchScrewdriverIcon,
+  PlusIcon,
+  TrashIcon,
+  StarIcon,
+  ExclamationTriangleIcon,
+  BeakerIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { storefrontSettingsService } from '../../services/storefrontSettingsService';
@@ -53,6 +59,66 @@ interface FacebookPixelSettings {
   lastCapiTest?: string;
 }
 
+interface PixelConfig {
+  id: string;
+  pixelId: string;
+  pixelName: string;
+  accessToken?: string;
+  isActive: boolean;
+  isPrimary: boolean;
+  trackPageView: boolean;
+  trackViewContent: boolean;
+  trackAddToCart: boolean;
+  trackInitiateCheckout: boolean;
+  trackPurchase: boolean;
+  trackSearch: boolean;
+  trackAddToWishlist: boolean;
+  trackLead: boolean;
+  trackCompleteRegistration: boolean;
+  lastTestAt?: string;
+  lastTestResult?: string;
+  totalEventsSent: number;
+  errorCount: number;
+  lastError?: string;
+  tokenStatus?: string;
+  eventMatchQuality?: number;
+}
+
+interface DiagnosticsData {
+  timestamp: string;
+  overall: {
+    status: string;
+    score: number;
+    issues: Array<{ type: string; code: string; message: string }>;
+    recommendations: Array<{ priority: string; message: string }>;
+  };
+  pixel: {
+    configured: boolean;
+    status: string;
+    pixelId: string | null;
+    lastTest: string | null;
+    issues: Array<{ type: string; code: string; message: string }>;
+  };
+  capi: {
+    configured: boolean;
+    status: string;
+    hasToken: boolean;
+    tokenStatus: string;
+    lastTest: string | null;
+    issues: Array<{ type: string; code: string; message: string }>;
+  };
+  events: {
+    pixelEvents: string[];
+    capiEvents: string[];
+    deduplicationEnabled: boolean;
+  };
+  multiplePixels: {
+    enabled: boolean;
+    count: number;
+    pixels: PixelConfig[];
+  };
+}
+
 const FacebookPixelSettings: React.FC = () => {
   const [settings, setSettings] = useState<Partial<FacebookPixelSettings>>({
     facebookPixelEnabled: false,
@@ -87,6 +153,43 @@ const FacebookPixelSettings: React.FC = () => {
   const [fetchingPixels, setFetchingPixels] = useState(false);
   const [showManualSetup, setShowManualSetup] = useState(false);
   const { user } = useAuth();
+
+  // 🔧 Diagnostics States
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsData | null>(null);
+  const [loadingDiagnostics, setLoadingDiagnostics] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [checkingToken, setCheckingToken] = useState(false);
+  const [tokenPermissions, setTokenPermissions] = useState<any>(null);
+
+  // 🎯 Multiple Pixels States
+  const [multiplePixels, setMultiplePixels] = useState<PixelConfig[]>([]);
+  const [showMultiplePixels, setShowMultiplePixels] = useState(false);
+  const [showAddPixelModal, setShowAddPixelModal] = useState(false);
+  const [newPixel, setNewPixel] = useState({
+    pixelId: '',
+    pixelName: '',
+    accessToken: '',
+    isPrimary: false,
+    trackPageView: true,
+    trackViewContent: true,
+    trackAddToCart: true,
+    trackInitiateCheckout: true,
+    trackPurchase: true,
+    trackSearch: true,
+    trackAddToWishlist: false,
+    trackLead: false,
+    trackCompleteRegistration: false
+  });
+  const [addingPixel, setAddingPixel] = useState(false);
+  const [testingPixelId, setTestingPixelId] = useState<string | null>(null);
+
+  // 🆕 Create Pixel States
+  const [showCreatePixelModal, setShowCreatePixelModal] = useState(false);
+  const [creatingPixel, setCreatingPixel] = useState(false);
+  const [newPixelName, setNewPixelName] = useState('');
+  const [businessAccounts, setBusinessAccounts] = useState<{id: string; name: string}[]>([]);
+  const [selectedBusinessId, setSelectedBusinessId] = useState('');
+  const [loadingBusinessAccounts, setLoadingBusinessAccounts] = useState(false);
 
   // Track if settings have been loaded to prevent multiple calls
   const hasLoadedSettings = useRef(false);
@@ -155,24 +258,18 @@ const FacebookPixelSettings: React.FC = () => {
     hasLoadedSettings.current = false;
   }, [user?.companyId]);
   
-  useEffect(() => {
-    // Only fetch if:
-    // 1. Settings are loaded (!loading)
-    // 2. Not currently fetching
-    // 3. Pixel selector is not already shown
-    // 4. Manual setup is not shown
-    // 5. We haven't attempted to fetch yet (prevent multiple calls)
-    // 6. User is available
-    if (!loading && !fetchingPixels && !showPixelSelector && !showManualSetup && !hasAttemptedFetch.current && user?.companyId) {
-      hasAttemptedFetch.current = true;
-      // جلب Pixels تلقائياً بعد تحميل الإعدادات (إذا كان Token موجود)
-      const timer = setTimeout(() => {
-        fetchPixels();
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, fetchingPixels, showPixelSelector, showManualSetup, user?.companyId]);
+  // ❌ تم إلغاء الـ auto-fetch - البيانات محفوظة في قاعدة البيانات
+  // المستخدم يمكنه الربط يدوياً عبر زر "ربط سهل مع Facebook" إذا أراد
+  // useEffect(() => {
+  //   if (!loading && !fetchingPixels && !showPixelSelector && !showManualSetup && !hasAttemptedFetch.current && user?.companyId) {
+  //     hasAttemptedFetch.current = true;
+  //     const timer = setTimeout(() => {
+  //       fetchPixels();
+  //     }, 1500);
+  //     return () => clearTimeout(timer);
+  //   }
+  //   return undefined;
+  // }, [loading, fetchingPixels, showPixelSelector, showManualSetup, user?.companyId]);
 
   const loadSettings = async (skipGuard: boolean = false) => {
     try {
@@ -185,7 +282,7 @@ const FacebookPixelSettings: React.FC = () => {
       const response = await storefrontSettingsService.getSettings();
       console.log('📥 Raw response:', response);
       // API returns { success: true, data: {...} }, so we need to extract data.data
-      const settingsData = response.data?.data || response.data;
+      const settingsData = (response as any).data?.data || (response as any).data;
       console.log('📥 Settings data:', settingsData);
       if (settingsData) {
         // Important: settingsData should override default values
@@ -326,7 +423,7 @@ const FacebookPixelSettings: React.FC = () => {
     }
   };
 
-  const fetchPixels = async () => {
+  const fetchPixels = async (autoRedirect: boolean = false) => {
     try {
       setFetchingPixels(true);
       const response = await apiClient.get('/facebook-oauth/pixels', {
@@ -338,62 +435,62 @@ const FacebookPixelSettings: React.FC = () => {
         setShowPixelSelector(true);
         toast.success(`✅ تم العثور على ${response.data.pixels.length} Pixel`);
       } else if (response.data.needsAuth || response.data.noBusinesses) {
-        // Need to authenticate - استخدم Pixel OAuth endpoint
-        if (response.data.noBusinesses) {
-          toast.error('⚠️ لم يتم العثور على Businesses. قد تكون مسجل بحساب آخر. سيتم إعادة التوجيه لتسجيل الدخول بالحساب الصحيح...', {
-            duration: 4000
-          });
-          // تأخير صغير لإظهار الرسالة ثم إعادة التوجيه
-          setTimeout(() => {
-            handleEasyConnect();
-          }, 1000);
-        } else if (response.data.missingPermissions) {
-          // صلاحيات مفقودة
-          const missingPerms = response.data.missingPermissions.join(' و ');
-          toast.error(`⚠️ الصلاحيات المطلوبة غير متوفرة: ${missingPerms}. سيتم إعادة التوجيه لإعادة الربط...`, {
-            duration: 6000
-          });
-          setTimeout(() => {
-            handleEasyConnect();
-          }, 1500);
+        // Need to authenticate - لكن فقط إذا طلب المستخدم ذلك
+        if (autoRedirect) {
+          if (response.data.noBusinesses) {
+            toast.error('⚠️ لم يتم العثور على Businesses. قد تكون مسجل بحساب آخر.', {
+              duration: 4000
+            });
+            setTimeout(() => {
+              handleEasyConnect();
+            }, 1000);
+          } else if (response.data.missingPermissions) {
+            const missingPerms = response.data.missingPermissions.join(' و ');
+            toast.error(`⚠️ الصلاحيات المطلوبة غير متوفرة: ${missingPerms}`, {
+              duration: 6000
+            });
+            setTimeout(() => {
+              handleEasyConnect();
+            }, 1500);
+          } else {
+            toast.success(response.data.message || 'يرجى الربط مع Facebook...', {
+              duration: 3000
+            });
+            const authResponse = await apiClient.get('/facebook-oauth/pixel-authorize', {
+              params: { companyId: user?.companyId }
+            });
+            window.location.href = authResponse.data.authUrl;
+          }
         } else {
-          // إعادة توجيه مباشرة لـ OAuth
-          toast.success(response.data.message || 'يرجى إعادة الربط مع Facebook...', {
-            duration: 3000
-          });
-          const authResponse = await apiClient.get('/facebook-oauth/pixel-authorize', {
-            params: { companyId: user?.companyId }
-          });
-          window.location.href = authResponse.data.authUrl;
+          // لا تحويل تلقائي - فقط أظهر رسالة
+          console.log('📌 No Facebook connection - user can connect manually');
         }
       } else {
-        toast.success('لم يتم العثور على Pixels. استخدم الطريقة اليدوية.');
-        setShowManualSetup(true);
+        // لا توجد Pixels - لا تفعل شيء تلقائياً
+        console.log('📌 No Pixels found - user can add manually');
       }
     } catch (error: any) {
       console.error('Error fetching pixels:', error);
       
-      // إذا كان الخطأ يحتاج re-auth، اذهب مباشرة لـ OAuth
+      // إذا كان الخطأ يحتاج re-auth، فقط أظهر رسالة (لا تحويل تلقائي)
       if (error.response?.data?.needsAuth || error.response?.data?.missingPermissions) {
-        const missingPerms = error.response?.data?.missingPermissions;
-        
-        if (missingPerms && missingPerms.length > 0) {
-          const missingPermsText = missingPerms.join(' و ');
-          toast.error(`⚠️ الصلاحيات المطلوبة غير متوفرة: ${missingPermsText}. سيتم إعادة التوجيه...`, {
-            duration: 4000
-          });
+        if (autoRedirect) {
+          const missingPerms = error.response?.data?.missingPermissions;
+          if (missingPerms && missingPerms.length > 0) {
+            const missingPermsText = missingPerms.join(' و ');
+            toast.error(`⚠️ الصلاحيات المطلوبة غير متوفرة: ${missingPermsText}`, {
+              duration: 4000
+            });
+          }
+          setTimeout(() => {
+            handleEasyConnect();
+          }, 1000);
         } else {
-          toast.success(error.response?.data?.message || 'يرجى إعادة الربط مع Facebook...', {
-            duration: 3000
-          });
+          console.log('📌 Auth needed - user can connect manually');
         }
-        
-        setTimeout(() => {
-          handleEasyConnect();
-        }, 1000);
       } else {
-        toast.error('فشل جلب Pixels');
-        setShowManualSetup(true);
+        // خطأ آخر - لا تفعل شيء
+        console.log('📌 Error fetching pixels:', error.message);
       }
     } finally {
       setFetchingPixels(false);
@@ -426,10 +523,10 @@ const FacebookPixelSettings: React.FC = () => {
         facebookPixelId: pixel.pixelId,
         facebookPixelEnabled: true,
         facebookConvApiEnabled: !!accessToken,
-        facebookConvApiToken: accessToken || settings.facebookConvApiToken
+        facebookConvApiToken: accessToken || settings.facebookConvApiToken || ''
       };
 
-      await storefrontSettingsService.updateSettings(newSettings);
+      await storefrontSettingsService.updateSettings(newSettings as any);
       setSettings(newSettings);
       setShowPixelSelector(false);
       
@@ -440,6 +537,205 @@ const FacebookPixelSettings: React.FC = () => {
     } catch (error: any) {
       console.error('Error selecting pixel:', error);
       toast.error('فشل ربط Pixel');
+    }
+  };
+
+  // 🔧 Diagnostics Functions
+  const loadDiagnostics = async () => {
+    try {
+      setLoadingDiagnostics(true);
+      const response = await storefrontSettingsService.getPixelDiagnostics();
+      if (response.success) {
+        setDiagnostics(response.data);
+      }
+    } catch (error) {
+      console.error('Error loading diagnostics:', error);
+      toast.error('فشل تحميل التشخيص');
+    } finally {
+      setLoadingDiagnostics(false);
+    }
+  };
+
+  const handleCheckTokenPermissions = async () => {
+    try {
+      setCheckingToken(true);
+      const response = await storefrontSettingsService.checkTokenPermissions();
+      if (response.success) {
+        setTokenPermissions(response.data);
+        if (response.data.valid) {
+          toast.success('✅ Token صالح');
+        } else {
+          toast.error('❌ Token غير صالح أو منتهي الصلاحية');
+        }
+      }
+    } catch (error: any) {
+      console.error('Error checking token:', error);
+      toast.error(error.response?.data?.message || 'فشل فحص Token');
+    } finally {
+      setCheckingToken(false);
+    }
+  };
+
+  // 🎯 Multiple Pixels Functions
+  const loadMultiplePixels = async () => {
+    try {
+      const response = await storefrontSettingsService.getPixels();
+      if (response.success) {
+        setMultiplePixels(response.data.pixels || []);
+      }
+    } catch (error) {
+      console.error('Error loading pixels:', error);
+    }
+  };
+
+  const handleAddPixel = async () => {
+    if (!newPixel.pixelId || !newPixel.pixelName) {
+      toast.error('يرجى إدخال Pixel ID واسم Pixel');
+      return;
+    }
+
+    if (!/^\d{16}$/.test(newPixel.pixelId)) {
+      toast.error('Pixel ID يجب أن يكون 16 رقم');
+      return;
+    }
+
+    try {
+      setAddingPixel(true);
+      const response = await storefrontSettingsService.addPixel(newPixel);
+      if (response.success) {
+        toast.success('✅ تم إضافة Pixel بنجاح');
+        setShowAddPixelModal(false);
+        setNewPixel({
+          pixelId: '',
+          pixelName: '',
+          accessToken: '',
+          isPrimary: false,
+          trackPageView: true,
+          trackViewContent: true,
+          trackAddToCart: true,
+          trackInitiateCheckout: true,
+          trackPurchase: true,
+          trackSearch: true,
+          trackAddToWishlist: false,
+          trackLead: false,
+          trackCompleteRegistration: false
+        });
+        await loadMultiplePixels();
+      }
+    } catch (error: any) {
+      console.error('Error adding pixel:', error);
+      toast.error(error.response?.data?.message || 'فشل إضافة Pixel');
+    } finally {
+      setAddingPixel(false);
+    }
+  };
+
+  const handleDeletePixel = async (pixelId: string) => {
+    if (!confirm('هل أنت متأكد من حذف هذا Pixel؟')) return;
+
+    try {
+      const response = await storefrontSettingsService.deletePixel(pixelId);
+      if (response.success) {
+        toast.success('✅ تم حذف Pixel بنجاح');
+        await loadMultiplePixels();
+      }
+    } catch (error: any) {
+      console.error('Error deleting pixel:', error);
+      toast.error(error.response?.data?.message || 'فشل حذف Pixel');
+    }
+  };
+
+  const handleTestPixelById = async (pixelId: string) => {
+    try {
+      setTestingPixelId(pixelId);
+      const response = await storefrontSettingsService.testPixelById(pixelId);
+      if (response.success && response.data.success) {
+        toast.success('✅ اختبار Pixel ناجح');
+      } else {
+        toast.error('❌ فشل اختبار Pixel');
+      }
+      await loadMultiplePixels();
+    } catch (error: any) {
+      console.error('Error testing pixel:', error);
+      toast.error(error.response?.data?.message || 'فشل اختبار Pixel');
+    } finally {
+      setTestingPixelId(null);
+    }
+  };
+
+  const handleSetPrimary = async (pixelId: string) => {
+    try {
+      const response = await storefrontSettingsService.updatePixel(pixelId, { isPrimary: true });
+      if (response.success) {
+        toast.success('✅ تم تعيين Pixel كأساسي');
+        await loadMultiplePixels();
+        await loadSettings(true);
+      }
+    } catch (error: any) {
+      console.error('Error setting primary:', error);
+      toast.error(error.response?.data?.message || 'فشل تعيين Pixel كأساسي');
+    }
+  };
+
+  // 🆕 Create Pixel Functions
+  const loadBusinessAccounts = async () => {
+    try {
+      setLoadingBusinessAccounts(true);
+      const response = await storefrontSettingsService.getBusinessAccounts();
+      if (response.success) {
+        setBusinessAccounts(response.data.businesses || []);
+        if (response.data.businesses?.length > 0) {
+          setSelectedBusinessId(response.data.businesses[0].id);
+        }
+      }
+    } catch (error: any) {
+      console.error('Error loading business accounts:', error);
+      if (error.response?.data?.needsAuth) {
+        toast.error('يجب ربط حساب Facebook أولاً');
+      } else {
+        toast.error('فشل جلب Business Accounts');
+      }
+    } finally {
+      setLoadingBusinessAccounts(false);
+    }
+  };
+
+  const handleOpenCreatePixelModal = async () => {
+    setShowCreatePixelModal(true);
+    setNewPixelName('');
+    await loadBusinessAccounts();
+  };
+
+  const handleCreatePixel = async () => {
+    if (!newPixelName.trim()) {
+      toast.error('يرجى إدخال اسم Pixel');
+      return;
+    }
+
+    if (!selectedBusinessId) {
+      toast.error('يرجى اختيار Business Account');
+      return;
+    }
+
+    try {
+      setCreatingPixel(true);
+      const response = await storefrontSettingsService.createFacebookPixel(newPixelName, selectedBusinessId);
+      if (response.success) {
+        toast.success(`✅ تم إنشاء Pixel بنجاح! ID: ${response.data.pixelId}`);
+        setShowCreatePixelModal(false);
+        setNewPixelName('');
+        await loadMultiplePixels();
+        await loadSettings(true);
+      }
+    } catch (error: any) {
+      console.error('Error creating pixel:', error);
+      if (error.response?.data?.needsAuth) {
+        toast.error('يجب ربط حساب Facebook أولاً');
+      } else {
+        toast.error(error.response?.data?.message || 'فشل إنشاء Pixel');
+      }
+    } finally {
+      setCreatingPixel(false);
     }
   };
 
@@ -943,6 +1239,520 @@ const FacebookPixelSettings: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* 🔧 Diagnostics & Troubleshooting Section */}
+        <div className="bg-white shadow rounded-lg p-6">
+          <button
+            onClick={() => {
+              setShowDiagnostics(!showDiagnostics);
+              if (!showDiagnostics && !diagnostics) {
+                loadDiagnostics();
+              }
+            }}
+            className="w-full flex items-center justify-between text-right"
+          >
+            <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+              <WrenchScrewdriverIcon className="h-6 w-6 text-orange-600 ml-2" />
+              🔧 التشخيص واستكشاف الأخطاء
+            </h2>
+            <ChevronDownIcon className={`h-5 w-5 text-gray-400 transition-transform ${showDiagnostics ? 'rotate-180' : ''}`} />
+          </button>
+
+          {showDiagnostics && (
+            <div className="mt-6 space-y-4">
+              {loadingDiagnostics ? (
+                <div className="flex justify-center py-8">
+                  <ArrowPathIcon className="h-8 w-8 animate-spin text-indigo-600" />
+                </div>
+              ) : diagnostics ? (
+                <>
+                  {/* Overall Score */}
+                  <div className={`p-4 rounded-lg border-2 ${
+                    diagnostics.overall.status === 'excellent' ? 'bg-green-50 border-green-300' :
+                    diagnostics.overall.status === 'good' ? 'bg-blue-50 border-blue-300' :
+                    diagnostics.overall.status === 'fair' ? 'bg-yellow-50 border-yellow-300' :
+                    'bg-red-50 border-red-300'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="font-semibold text-gray-900">النتيجة الإجمالية</h3>
+                        <p className="text-sm text-gray-600 mt-1">
+                          {diagnostics.overall.status === 'excellent' ? '🌟 ممتاز' :
+                           diagnostics.overall.status === 'good' ? '✅ جيد' :
+                           diagnostics.overall.status === 'fair' ? '⚠️ مقبول' :
+                           '❌ يحتاج تحسين'}
+                        </p>
+                      </div>
+                      <div className="text-4xl font-bold text-indigo-600">
+                        {diagnostics.overall.score}/100
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Pixel Status */}
+                  <div className="p-4 border border-gray-200 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-medium text-gray-900">🎯 Facebook Pixel</h4>
+                      {diagnostics.pixel.configured ? (
+                        <span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">مُكوّن</span>
+                      ) : (
+                        <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-full">غير مُكوّن</span>
+                      )}
+                    </div>
+                    {diagnostics.pixel.pixelId && (
+                      <p className="text-sm text-gray-600">Pixel ID: {diagnostics.pixel.pixelId}</p>
+                    )}
+                    {diagnostics.pixel.issues.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {diagnostics.pixel.issues.map((issue, idx) => (
+                          <div key={idx} className={`text-xs p-2 rounded ${
+                            issue.type === 'error' ? 'bg-red-50 text-red-700' :
+                            issue.type === 'warning' ? 'bg-yellow-50 text-yellow-700' :
+                            'bg-blue-50 text-blue-700'
+                          }`}>
+                            {issue.type === 'error' ? '❌' : issue.type === 'warning' ? '⚠️' : 'ℹ️'} {issue.message}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* CAPI Status */}
+                  <div className="p-4 border border-gray-200 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-medium text-gray-900">🚀 Conversions API</h4>
+                      {diagnostics.capi.configured ? (
+                        <span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">مُكوّن</span>
+                      ) : (
+                        <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-full">غير مُكوّن</span>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      Token: {diagnostics.capi.hasToken ? '✅ موجود' : '❌ مفقود'}
+                    </p>
+                    {diagnostics.capi.issues.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {diagnostics.capi.issues.map((issue, idx) => (
+                          <div key={idx} className={`text-xs p-2 rounded ${
+                            issue.type === 'error' ? 'bg-red-50 text-red-700' :
+                            issue.type === 'warning' ? 'bg-yellow-50 text-yellow-700' :
+                            'bg-blue-50 text-blue-700'
+                          }`}>
+                            {issue.type === 'error' ? '❌' : issue.type === 'warning' ? '⚠️' : 'ℹ️'} {issue.message}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Events */}
+                  <div className="p-4 border border-gray-200 rounded-lg">
+                    <h4 className="font-medium text-gray-900 mb-2">📊 الأحداث المفعلة</h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Pixel Events:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {diagnostics.events.pixelEvents.map((event, idx) => (
+                            <span key={idx} className="px-2 py-0.5 text-xs bg-indigo-100 text-indigo-700 rounded">
+                              {event}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">CAPI Events:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {diagnostics.events.capiEvents.map((event, idx) => (
+                            <span key={idx} className="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded">
+                              {event}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-600 mt-2">
+                      Deduplication: {diagnostics.events.deduplicationEnabled ? '✅ مفعل' : '❌ غير مفعل'}
+                    </p>
+                  </div>
+
+                  {/* Recommendations */}
+                  {diagnostics.overall.recommendations.length > 0 && (
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <h4 className="font-medium text-blue-900 mb-2">💡 التوصيات</h4>
+                      <ul className="space-y-1">
+                        {diagnostics.overall.recommendations.map((rec, idx) => (
+                          <li key={idx} className="text-sm text-blue-800 flex items-start">
+                            <span className={`ml-2 ${rec.priority === 'high' ? 'text-red-600' : 'text-yellow-600'}`}>
+                              {rec.priority === 'high' ? '🔴' : '🟡'}
+                            </span>
+                            {rec.message}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Token Check Button */}
+                  {settings.facebookConvApiToken && (
+                    <div className="flex gap-3">
+                      <button
+                        onClick={handleCheckTokenPermissions}
+                        disabled={checkingToken}
+                        className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center gap-2"
+                      >
+                        {checkingToken ? (
+                          <>
+                            <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                            جاري الفحص...
+                          </>
+                        ) : (
+                          <>
+                            <BeakerIcon className="h-4 w-4" />
+                            فحص صلاحيات Token
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={loadDiagnostics}
+                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                      >
+                        <ArrowPathIcon className="h-4 w-4" />
+                        تحديث التشخيص
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Token Permissions Result */}
+                  {tokenPermissions && (
+                    <div className={`p-4 rounded-lg ${tokenPermissions.valid ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                      <h4 className="font-medium mb-2">{tokenPermissions.valid ? '✅ Token صالح' : '❌ Token غير صالح'}</h4>
+                      {tokenPermissions.permissions?.length > 0 && (
+                        <div className="mb-2">
+                          <p className="text-xs text-gray-600 mb-1">الصلاحيات:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {tokenPermissions.permissions.map((perm: string, idx: number) => (
+                              <span key={idx} className="px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded">
+                                {perm}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {tokenPermissions.expiresAt && (
+                        <p className="text-xs text-gray-600">
+                          ينتهي في: {new Date(tokenPermissions.expiresAt).toLocaleDateString('ar-EG')}
+                        </p>
+                      )}
+                      {tokenPermissions.issues?.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          {tokenPermissions.issues.map((issue: any, idx: number) => (
+                            <div key={idx} className={`text-xs p-2 rounded ${
+                              issue.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
+                            }`}>
+                              {issue.message}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <WrenchScrewdriverIcon className="h-12 w-12 mx-auto mb-2 text-gray-400" />
+                  <p>اضغط لتحميل التشخيص</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 🎯 Multiple Pixels Section */}
+        <div className="bg-white shadow rounded-lg p-6">
+          <button
+            onClick={() => {
+              setShowMultiplePixels(!showMultiplePixels);
+              if (!showMultiplePixels && multiplePixels.length === 0) {
+                loadMultiplePixels();
+              }
+            }}
+            className="w-full flex items-center justify-between text-right"
+          >
+            <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+              <ChartBarIcon className="h-6 w-6 text-purple-600 ml-2" />
+              🎯 إدارة Pixels متعددة
+            </h2>
+            <ChevronDownIcon className={`h-5 w-5 text-gray-400 transition-transform ${showMultiplePixels ? 'rotate-180' : ''}`} />
+          </button>
+
+          {showMultiplePixels && (
+            <div className="mt-6 space-y-4">
+              {/* Add/Create Pixel Buttons */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <button
+                  onClick={() => setShowAddPixelModal(true)}
+                  className="p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-colors flex items-center justify-center gap-2 text-gray-600 hover:text-purple-600"
+                >
+                  <PlusIcon className="h-5 w-5" />
+                  إضافة Pixel موجود
+                </button>
+                <button
+                  onClick={handleOpenCreatePixelModal}
+                  className="p-4 border-2 border-dashed border-green-300 rounded-lg hover:border-green-500 hover:bg-green-50 transition-colors flex items-center justify-center gap-2 text-gray-600 hover:text-green-600"
+                >
+                  <RocketLaunchIcon className="h-5 w-5" />
+                  إنشاء Pixel جديد على Facebook
+                </button>
+              </div>
+
+              {/* Pixels List */}
+              {multiplePixels.length > 0 ? (
+                <div className="space-y-3">
+                  {multiplePixels.map((pixel) => (
+                    <div key={pixel.id} className={`p-4 border rounded-lg ${pixel.isPrimary ? 'border-purple-300 bg-purple-50' : 'border-gray-200'}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-medium text-gray-900">{pixel.pixelName}</h4>
+                          {pixel.isPrimary && (
+                            <span className="px-2 py-0.5 text-xs bg-purple-600 text-white rounded-full flex items-center gap-1">
+                              <StarIcon className="h-3 w-3" />
+                              أساسي
+                            </span>
+                          )}
+                          {pixel.isActive ? (
+                            <span className="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">نشط</span>
+                          ) : (
+                            <span className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full">غير نشط</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {!pixel.isPrimary && (
+                            <button
+                              onClick={() => handleSetPrimary(pixel.id)}
+                              className="p-1.5 text-purple-600 hover:bg-purple-100 rounded"
+                              title="تعيين كأساسي"
+                            >
+                              <StarIcon className="h-4 w-4" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleTestPixelById(pixel.id)}
+                            disabled={testingPixelId === pixel.id}
+                            className="p-1.5 text-blue-600 hover:bg-blue-100 rounded disabled:opacity-50"
+                            title="اختبار"
+                          >
+                            {testingPixelId === pixel.id ? (
+                              <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <BeakerIcon className="h-4 w-4" />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => handleDeletePixel(pixel.id)}
+                            className="p-1.5 text-red-600 hover:bg-red-100 rounded"
+                            title="حذف"
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-sm text-gray-600">ID: {pixel.pixelId}</p>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {pixel.trackPageView && <span className="px-1.5 py-0.5 text-xs bg-gray-100 rounded">PageView</span>}
+                        {pixel.trackViewContent && <span className="px-1.5 py-0.5 text-xs bg-gray-100 rounded">ViewContent</span>}
+                        {pixel.trackAddToCart && <span className="px-1.5 py-0.5 text-xs bg-gray-100 rounded">AddToCart</span>}
+                        {pixel.trackPurchase && <span className="px-1.5 py-0.5 text-xs bg-gray-100 rounded">Purchase</span>}
+                      </div>
+                      {pixel.lastTestResult && (
+                        <p className="text-xs text-gray-500 mt-2">
+                          آخر اختبار: {pixel.lastTestResult === 'success' ? '✅ ناجح' : '❌ فشل'}
+                          {pixel.lastTestAt && ` - ${new Date(pixel.lastTestAt).toLocaleDateString('ar-EG')}`}
+                        </p>
+                      )}
+                      {pixel.errorCount > 0 && (
+                        <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
+                          <ExclamationTriangleIcon className="h-3 w-3" />
+                          {pixel.errorCount} أخطاء
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <ChartBarIcon className="h-12 w-12 mx-auto mb-2 text-gray-400" />
+                  <p>لا توجد Pixels إضافية</p>
+                  <p className="text-sm">أضف Pixels متعددة لتتبع أحداث مختلفة</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Add Pixel Modal */}
+        {showAddPixelModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">إضافة Pixel جديد</h3>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">اسم Pixel</label>
+                  <input
+                    type="text"
+                    value={newPixel.pixelName}
+                    onChange={(e) => setNewPixel({...newPixel, pixelName: e.target.value})}
+                    placeholder="مثال: Pixel للمبيعات"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Pixel ID</label>
+                  <input
+                    type="text"
+                    value={newPixel.pixelId}
+                    onChange={(e) => setNewPixel({...newPixel, pixelId: e.target.value})}
+                    placeholder="1234567890123456"
+                    maxLength={16}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Access Token (اختياري)</label>
+                  <input
+                    type="password"
+                    value={newPixel.accessToken}
+                    onChange={(e) => setNewPixel({...newPixel, accessToken: e.target.value})}
+                    placeholder="EAAxxxxxxxxx"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={newPixel.isPrimary}
+                    onChange={(e) => setNewPixel({...newPixel, isPrimary: e.target.checked})}
+                    className="h-4 w-4 text-purple-600 rounded"
+                  />
+                  <span className="text-sm text-gray-700">تعيين كـ Pixel أساسي</span>
+                </label>
+              </div>
+              
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={handleAddPixel}
+                  disabled={addingPixel}
+                  className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {addingPixel ? (
+                    <>
+                      <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                      جاري الإضافة...
+                    </>
+                  ) : (
+                    <>
+                      <PlusIcon className="h-4 w-4" />
+                      إضافة
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => setShowAddPixelModal(false)}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Create Pixel Modal */}
+        {showCreatePixelModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <RocketLaunchIcon className="h-5 w-5 text-green-600" />
+                إنشاء Pixel جديد على Facebook
+              </h3>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">اسم Pixel</label>
+                  <input
+                    type="text"
+                    value={newPixelName}
+                    onChange={(e) => setNewPixelName(e.target.value)}
+                    placeholder="مثال: Pixel متجري الرئيسي"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">سيتم إنشاء Pixel جديد بهذا الاسم على Facebook</p>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Business Account</label>
+                  {loadingBusinessAccounts ? (
+                    <div className="flex items-center gap-2 text-gray-500 py-2">
+                      <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                      جاري التحميل...
+                    </div>
+                  ) : businessAccounts.length > 0 ? (
+                    <select
+                      value={selectedBusinessId}
+                      onChange={(e) => setSelectedBusinessId(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
+                    >
+                      {businessAccounts.map((business) => (
+                        <option key={business.id} value={business.id}>
+                          {business.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="text-sm text-red-600 py-2">
+                      لا توجد Business Accounts. يرجى ربط حساب Facebook أولاً.
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-sm text-blue-800">
+                    💡 سيتم إنشاء Pixel جديد على Facebook وربطه تلقائياً بمتجرك مع تفعيل Conversions API
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={handleCreatePixel}
+                  disabled={creatingPixel || !newPixelName.trim() || !selectedBusinessId}
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {creatingPixel ? (
+                    <>
+                      <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                      جاري الإنشاء...
+                    </>
+                  ) : (
+                    <>
+                      <RocketLaunchIcon className="h-4 w-4" />
+                      إنشاء Pixel
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => setShowCreatePixelModal(false)}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Documentation */}
         <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-6">
