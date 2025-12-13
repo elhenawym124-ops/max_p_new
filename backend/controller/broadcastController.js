@@ -129,6 +129,21 @@ exports.createCampaign = async (req, res) => {
     console.log('💡 [CREATE CAMPAIGN] سيتم حساب المستلمين النشطاء تلقائياً وقت الإرسال (آخر 24 ساعة)');
 
     console.log('💾 [CREATE CAMPAIGN] إنشاء الحملة في قاعدة البيانات');
+    // تحويل tags و images إلى JSON strings أو null
+    let tagsString = null;
+    if (tags) {
+      if (Array.isArray(tags)) {
+        tagsString = tags.length > 0 ? JSON.stringify(tags) : null;
+      } else if (typeof tags === 'string' && tags.trim() !== '') {
+        tagsString = tags;
+      }
+    }
+
+    let imagesString = null;
+    if (images && Array.isArray(images) && images.length > 0) {
+      imagesString = JSON.stringify(images);
+    }
+
     // إنشاء الحملة
     const campaign = await getSharedPrismaClient().broadcastCampaign.create({
       data: {
@@ -136,12 +151,12 @@ exports.createCampaign = async (req, res) => {
         message,
         targetAudience,
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
-        tags: tags || [],
+        tags: tagsString,
         priority: priority || 'medium',
         includeImages: (includeImages === true || includeImages === 'true'),
         trackClicks: trackClicks !== false,
         autoResend: (autoResend === true || autoResend === 'true'),
-        images: images || [],
+        images: imagesString,
         status: sendNow ? 'sending' : (scheduledAt ? 'scheduled' : 'draft'),
         recipientCount: 0, // سيتم حسابه وقت الإرسال بناءً على النشاط في آخر 24 ساعة
         companyId,
@@ -335,12 +350,39 @@ exports.updateCampaign = async (req, res) => {
     }
 
     console.log('🔄 [UPDATE CAMPAIGN] تحديث بيانات الحملة في قاعدة البيانات');
+    
+    // تحويل tags و images إلى JSON strings أو null إذا كانت موجودة
+    const processedData = { ...updateData };
+    
+    if ('tags' in processedData) {
+      if (Array.isArray(processedData.tags)) {
+        processedData.tags = processedData.tags.length > 0 ? JSON.stringify(processedData.tags) : null;
+      } else if (typeof processedData.tags === 'string' && processedData.tags.trim() === '') {
+        processedData.tags = null;
+      }
+      // إذا كان string غير فارغ، نتركه كما هو
+    }
+    
+    if ('images' in processedData) {
+      if (Array.isArray(processedData.images)) {
+        processedData.images = processedData.images.length > 0 ? JSON.stringify(processedData.images) : null;
+      } else if (typeof processedData.images === 'string' && processedData.images.trim() === '') {
+        processedData.images = null;
+      }
+      // إذا كان string غير فارغ، نتركه كما هو
+    }
+    
+    if (processedData.scheduledAt) {
+      processedData.scheduledAt = new Date(processedData.scheduledAt);
+    } else if ('scheduledAt' in processedData && processedData.scheduledAt === null) {
+      processedData.scheduledAt = null;
+    } else {
+      delete processedData.scheduledAt;
+    }
+    
     const campaign = await getSharedPrismaClient().broadcastCampaign.update({
       where: { id: campaignId },
-      data: {
-        ...updateData,
-        scheduledAt: updateData.scheduledAt ? new Date(updateData.scheduledAt) : undefined
-      }
+      data: processedData
     });
 
     console.log(`✅ [UPDATE CAMPAIGN] تم تحديث الحملة بنجاح`);
