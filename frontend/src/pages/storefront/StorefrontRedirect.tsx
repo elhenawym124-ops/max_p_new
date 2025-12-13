@@ -49,11 +49,11 @@ const StorefrontRedirect: React.FC = () => {
       // حفظ في localStorage للمرات القادمة
       localStorage.setItem('storefront_companyId', companyId);
       
-      // التوجيه للمتجر
-      console.log('🚀 [StorefrontRedirect] Redirecting to shop with companyId:', companyId);
+      // التوجيه للمتجر بدون companyId في URL
+      console.log('🚀 [StorefrontRedirect] Redirecting to shop (companyId saved to localStorage):', companyId);
       
       // استخدام replace بدلاً من navigate لتجنب الرجوع
-      window.location.href = `/shop?companyId=${companyId}`;
+      window.location.href = '/shop';
     } else {
       // إذا لم يكن هناك companyId، اعرض رسالة
       console.error('❌ [StorefrontRedirect] No companyId found');

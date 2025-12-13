@@ -48,11 +48,15 @@ export const buildStoreUrl = (identifier: string, path: string = '/'): string =>
   const baseDomain = getBaseDomain();
   const protocol = window.location.protocol;
   
+  // حفظ identifier في localStorage إذا كان موجوداً
+  if (identifier) {
+    localStorage.setItem('storefront_companyId', identifier);
+  }
+  
   // في Development أو إذا كان identifier يبدو كـ ID طويل (أكثر من 20 حرف)
-  // استخدم query parameter كـ fallback
+  // استخدم path بسيط بدون companyId في URL
   if (baseDomain.includes('localhost') || identifier.length > 20) {
-    const separator = path.includes('?') ? '&' : '?';
-    return `${path}${separator}companyId=${identifier}`;
+    return path;
   }
   
   // في Production مع slug قصير، استخدم subdomain
@@ -62,77 +66,63 @@ export const buildStoreUrl = (identifier: string, path: string = '/'): string =>
 
 /**
  * Build shop link (for navigation)
- * @param companyId - Company ID or slug
+ * @param companyId - Company ID or slug (optional, will be saved to localStorage)
  * @returns URL for shop page
  */
-export const buildShopLink = (companyId: string): string => {
-  // في Production مع subdomain، استخدم path بسيط
-  if (isSubdomain()) {
-    return '/shop';
+export const buildShopLink = (companyId?: string): string => {
+  // حفظ companyId في localStorage إذا كان موجوداً
+  if (companyId) {
+    localStorage.setItem('storefront_companyId', companyId);
   }
   
-  // Fallback: استخدم query parameter
-  return `/shop?companyId=${companyId}`;
+  // دائماً استخدم path بسيط بدون companyId في URL
+  return '/shop';
 };
 
 /**
  * Build product link
  * @param productId - Product ID
- * @param companyId - Company ID (optional if on subdomain)
+ * @param companyId - Company ID (optional, will be saved to localStorage)
  * @returns URL for product details page
  */
 export const buildProductLink = (productId: string, companyId?: string): string => {
-  const basePath = `/product/${productId}`;
-  
-  // إذا كنا على subdomain، استخدم path بسيط
-  if (isSubdomain()) {
-    return basePath;
-  }
-  
-  // إذا كان لدينا companyId، أضفه
+  // حفظ companyId في localStorage إذا كان موجوداً
   if (companyId) {
-    return `${basePath}?companyId=${companyId}`;
+    localStorage.setItem('storefront_companyId', companyId);
   }
   
-  return basePath;
+  // دائماً استخدم path بسيط بدون companyId في URL
+  return `/product/${productId}`;
 };
 
 /**
  * Build cart link
- * @param companyId - Company ID (optional if on subdomain)
+ * @param companyId - Company ID (optional, will be saved to localStorage)
  * @returns URL for cart page
  */
 export const buildCartLink = (companyId?: string): string => {
-  const basePath = '/cart';
-  
-  if (isSubdomain()) {
-    return basePath;
-  }
-  
+  // حفظ companyId في localStorage إذا كان موجوداً
   if (companyId) {
-    return `${basePath}?companyId=${companyId}`;
+    localStorage.setItem('storefront_companyId', companyId);
   }
   
-  return basePath;
+  // دائماً استخدم path بسيط بدون companyId في URL
+  return '/cart';
 };
 
 /**
  * Build checkout link
- * @param companyId - Company ID (optional if on subdomain)
+ * @param companyId - Company ID (optional, will be saved to localStorage)
  * @returns URL for checkout page
  */
 export const buildCheckoutLink = (companyId?: string): string => {
-  const basePath = '/checkout';
-  
-  if (isSubdomain()) {
-    return basePath;
-  }
-  
+  // حفظ companyId في localStorage إذا كان موجوداً
   if (companyId) {
-    return `${basePath}?companyId=${companyId}`;
+    localStorage.setItem('storefront_companyId', companyId);
   }
   
-  return basePath;
+  // دائماً استخدم path بسيط بدون companyId في URL
+  return '/checkout';
 };
 
 /**
@@ -176,9 +166,11 @@ export const navigateToStore = (slug: string, path: string = '/shop'): void => {
 export const getShareableStoreUrl = (slug: string): string => {
   const baseDomain = getBaseDomain();
   
-  if (baseDomain.includes('localhost')) {
-    return `${window.location.origin}/shop?companyId=${slug}`;
+  // في Production، استخدم subdomain
+  if (!baseDomain.includes('localhost')) {
+    return `https://${slug}.${baseDomain}/shop`;
   }
   
-  return `https://${slug}.${baseDomain}/shop`;
+  // في Development، استخدم path بسيط (companyId سيُحفظ في localStorage عند الزيارة)
+  return `${window.location.origin}/shop`;
 };

@@ -143,7 +143,16 @@ const StorefrontNav: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link to={`/home?companyId=${getCompanyId()}`} className="flex items-center">
+          <Link 
+            to="/home" 
+            className="flex items-center"
+            onClick={() => {
+              const companyId = getCompanyId();
+              if (companyId) {
+                localStorage.setItem('storefront_companyId', companyId);
+              }
+            }}
+          >
             <div className="text-2xl font-bold text-blue-600">
               🏪 المتجر
             </div>
@@ -152,26 +161,50 @@ const StorefrontNav: React.FC = () => {
           {/* Navigation Links */}
           <div className="hidden md:flex items-center space-x-8 space-x-reverse">
             <Link 
-              to={`/home?companyId=${getCompanyId()}`}
+              to="/home"
+              onClick={() => {
+                const companyId = getCompanyId();
+                if (companyId) {
+                  localStorage.setItem('storefront_companyId', companyId);
+                }
+              }}
               className="text-gray-700 hover:text-blue-600 font-medium transition-colors"
             >
               الرئيسية
             </Link>
             <Link 
-              to={`/shop?companyId=${getCompanyId()}`}
+              to="/shop"
+              onClick={() => {
+                const companyId = getCompanyId();
+                if (companyId) {
+                  localStorage.setItem('storefront_companyId', companyId);
+                }
+              }}
               className="text-gray-700 hover:text-blue-600 font-medium transition-colors"
             >
               المنتجات
             </Link>
             <Link 
-              to={`/shop/track-order?companyId=${getCompanyId()}`}
+              to="/shop/track-order"
+              onClick={() => {
+                const companyId = getCompanyId();
+                if (companyId) {
+                  localStorage.setItem('storefront_companyId', companyId);
+                }
+              }}
               className="text-gray-700 hover:text-blue-600 font-medium transition-colors"
             >
               تتبع الطلب
             </Link>
             {storefrontSettings?.wishlistEnabled && (
               <Link 
-                to={`/shop/wishlist?companyId=${getCompanyId()}`}
+                to="/shop/wishlist"
+                onClick={() => {
+                  const companyId = getCompanyId();
+                  if (companyId) {
+                    localStorage.setItem('storefront_companyId', companyId);
+                  }
+                }}
                 className="text-gray-700 hover:text-blue-600 font-medium transition-colors"
               >
                 المفضلة
@@ -200,7 +233,13 @@ const StorefrontNav: React.FC = () => {
             {/* Cart Icon */}
             <div className="relative">
               <button
-                onClick={() => navigate(`/shop/cart?companyId=${getCompanyId()}`)}
+                onClick={() => {
+                  const companyId = getCompanyId();
+                  if (companyId) {
+                    localStorage.setItem('storefront_companyId', companyId);
+                  }
+                  navigate('/shop/cart');
+                }}
                 onMouseEnter={() => setShowCartPreview(true)}
                 onMouseLeave={() => setShowCartPreview(false)}
                 className="relative flex items-center gap-3 px-4 py-2 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
@@ -292,7 +331,13 @@ const StorefrontNav: React.FC = () => {
                     </div>
                     
                     <button
-                      onClick={() => navigate(`/shop/cart?companyId=${getCompanyId()}`)}
+                      onClick={() => {
+                        const companyId = getCompanyId();
+                        if (companyId) {
+                          localStorage.setItem('storefront_companyId', companyId);
+                        }
+                        navigate('/shop/cart');
+                      }}
                       className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors"
                     >
                       عرض السلة

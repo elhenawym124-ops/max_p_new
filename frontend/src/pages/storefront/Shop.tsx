@@ -67,7 +67,7 @@ const Shop: React.FC = () => {
 
   // التحقق من وجود companyId عند التحميل
   useEffect(() => {
-    // جرب من searchParams أولاً (React Router)
+    // قراءة companyId من URL أولاً (للدعم العكسي)
     let companyId = searchParams.get('companyId');
     
     // إذا لم يوجد في searchParams، جرب من window.location.search مباشرة
@@ -76,8 +76,17 @@ const Shop: React.FC = () => {
       companyId = urlParams.get('companyId');
     }
     
-    // إذا لم يوجد، جرب من getCompanyId (الذي يفحص localStorage أيضاً)
-    if (!companyId) {
+    // إذا كان موجوداً في URL، احفظه في localStorage ثم أزلّه من URL
+    if (companyId) {
+      localStorage.setItem('storefront_companyId', companyId);
+      // إزالة companyId من URL
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('companyId');
+      if (newParams.toString() !== searchParams.toString()) {
+        setSearchParams(newParams, { replace: true });
+      }
+    } else {
+      // إذا لم يوجد في URL، جرب من getCompanyId (الذي يفحص localStorage/subdomain)
       companyId = getCompanyId();
     }
     
@@ -97,12 +106,6 @@ const Shop: React.FC = () => {
       toast.error('⚠️ يجب زيارة المتجر من رابط صحيح يحتوي على معرف الشركة');
       console.error('❌ [Shop] No companyId found. Please visit with ?companyId=xxx or use subdomain');
     } else {
-      // حفظ companyId في searchParams إذا لم يكن موجوداً
-      if (!searchParams.get('companyId')) {
-        const newParams = new URLSearchParams(searchParams);
-        newParams.set('companyId', companyId);
-        setSearchParams(newParams, { replace: true });
-      }
       fetchStorefrontSettings();
     }
   }, [searchParams, setSearchParams]);
@@ -602,7 +605,12 @@ const Shop: React.FC = () => {
                   
                   return (
                   <div key={product.id} className="bg-white rounded-lg shadow hover:shadow-lg transition-shadow relative group">
-                    <Link to={`/shop/products/${product.id}?companyId=${companyId}`}>
+                    <Link to={`/shop/products/${product.id}`} onClick={() => {
+                      // حفظ companyId في localStorage قبل الانتقال
+                      if (companyId) {
+                        localStorage.setItem('storefront_companyId', companyId);
+                      }
+                    }}>
                       <div className="relative h-48 bg-gray-100 rounded-t-lg overflow-hidden">
                         {productImages.length > 0 && productImages[0] ? (
                           <img
@@ -716,8 +724,12 @@ const Shop: React.FC = () => {
                     
                     <div className="p-4">
                       <Link 
-                        to={`/shop/products/${product.id}?companyId=${companyId}`}
+                        to={`/shop/products/${product.id}`}
                         onClick={() => {
+                          // حفظ companyId في localStorage قبل الانتقال
+                          if (companyId) {
+                            localStorage.setItem('storefront_companyId', companyId);
+                          }
                           // Track ViewContent event when clicking on product
                           if (storefrontSettings?.facebookPixelEnabled && storefrontSettings?.pixelTrackViewContent !== false) {
                             try {
