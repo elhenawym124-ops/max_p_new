@@ -10,11 +10,20 @@ import {
 import { buildApiUrl } from '../../utils/urlHelper';
 import { useAuth } from '../../hooks/useAuthSimple';
 
+interface ConversationInfo {
+  id: string;
+  customerName: string;
+  customerId: string | null;
+  customerEmail: string | null;
+  customerPhone: string | null;
+}
+
 interface ExternalMessagesStats {
   date: string;
   totalMessages: number;
   uniqueConversations: number;
   hourlyDistribution: Array<{ hour: number; count: number }>;
+  conversations?: ConversationInfo[];
 }
 
 const ExternalMessagesStats: React.FC = () => {
@@ -181,6 +190,47 @@ const ExternalMessagesStats: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {/* Conversations List */}
+            {stats.conversations && stats.conversations.length > 0 && (
+              <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-6">
+                  المحادثات ({stats.conversations.length})
+                </h2>
+                <div className="space-y-3">
+                  {stats.conversations.map((conversation) => (
+                    <div
+                      key={conversation.id}
+                      className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 flex-1">
+                        <div className="bg-blue-100 rounded-full p-2">
+                          <ChatBubbleLeftRightIcon className="h-5 w-5 text-blue-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-900">
+                            {conversation.customerName}
+                          </p>
+                          {conversation.customerEmail && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              {conversation.customerEmail}
+                            </p>
+                          )}
+                          {conversation.customerPhone && (
+                            <p className="text-xs text-gray-500">
+                              {conversation.customerPhone}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-400 font-mono">
+                        {conversation.id.slice(0, 8)}...
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Hourly Distribution Chart */}
             {stats.hourlyDistribution && stats.hourlyDistribution.length > 0 && (

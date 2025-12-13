@@ -4468,6 +4468,39 @@ const getExternalMessagesStats = async (req, res) => {
 
     const uniqueConversations = messagesWithConversations.length;
 
+    // 2.1 Get conversations details with customer names
+    const conversationIds = messagesWithConversations.map(m => m.conversationId);
+    const conversations = await prisma.conversation.findMany({
+      where: {
+        id: {
+          in: conversationIds
+        }
+      },
+      select: {
+        id: true,
+        customer: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true
+          }
+        }
+      }
+    });
+
+    // Format conversations list with customer names
+    const conversationsList = conversations.map(conv => ({
+      id: conv.id,
+      customerName: conv.customer 
+        ? `${conv.customer.firstName || ''} ${conv.customer.lastName || ''}`.trim() || conv.customer.email || 'عميل غير معروف'
+        : 'عميل غير معروف',
+      customerId: conv.customer?.id || null,
+      customerEmail: conv.customer?.email || null,
+      customerPhone: conv.customer?.phone || null
+    }));
+
     // 3. Get hourly distribution
     const messages = await prisma.message.findMany({
       where: whereClause,
@@ -4496,7 +4529,8 @@ const getExternalMessagesStats = async (req, res) => {
         date: targetDate.toISOString().split('T')[0],
         totalMessages,
         uniqueConversations,
-        hourlyDistribution
+        hourlyDistribution,
+        conversations: conversationsList
       }
     });
 
