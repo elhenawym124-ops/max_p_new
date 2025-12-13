@@ -12,8 +12,24 @@ const getPrisma = () => getSharedPrismaClient();
  */
 const getAllPages = async (req, res) => {
   try {
-    const { companyId } = req.params;
+    const { companyId } = req.body;
     const { includeInactive } = req.query;
+    const userCompanyId = req.user?.companyId;
+
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        error: 'معرف الشركة مطلوب'
+      });
+    }
+
+    // Check if user has access to this company
+    if (req.user?.role !== 'SUPER_ADMIN' && companyId !== userCompanyId) {
+      return res.status(403).json({
+        success: false,
+        error: 'ليس لديك صلاحية للوصول لهذه الشركة'
+      });
+    }
 
     // Determine if companyId is actually a slug or an ID
     let actualCompanyId = companyId;
@@ -64,7 +80,24 @@ const getAllPages = async (req, res) => {
  */
 const getPageById = async (req, res) => {
   try {
-    const { companyId, pageId } = req.params;
+    const { companyId } = req.body;
+    const { pageId } = req.params;
+    const userCompanyId = req.user?.companyId;
+
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        error: 'معرف الشركة مطلوب'
+      });
+    }
+
+    // Check if user has access to this company
+    if (req.user?.role !== 'SUPER_ADMIN' && companyId !== userCompanyId) {
+      return res.status(403).json({
+        success: false,
+        error: 'ليس لديك صلاحية للوصول لهذه الشركة'
+      });
+    }
 
     const page = await getPrisma().storePage.findFirst({
       where: {
@@ -153,8 +186,8 @@ const getPageBySlug = async (req, res) => {
  */
 const createPage = async (req, res) => {
   try {
-    const { companyId } = req.params;
     const {
+      companyId,
       title,
       slug,
       content,
@@ -166,8 +199,24 @@ const createPage = async (req, res) => {
       metaTitle,
       metaDescription
     } = req.body;
+    const userCompanyId = req.user?.companyId;
 
     // Validate required fields
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        error: 'معرف الشركة مطلوب'
+      });
+    }
+
+    // Check if user has access to this company
+    if (req.user?.role !== 'SUPER_ADMIN' && companyId !== userCompanyId) {
+      return res.status(403).json({
+        success: false,
+        error: 'ليس لديك صلاحية للوصول لهذه الشركة'
+      });
+    }
+
     if (!title || !slug || !content) {
       return res.status(400).json({
         success: false,
@@ -226,8 +275,9 @@ const createPage = async (req, res) => {
  */
 const updatePage = async (req, res) => {
   try {
-    const { companyId, pageId } = req.params;
+    const { pageId } = req.params;
     const {
+      companyId,
       title,
       slug,
       content,
@@ -239,6 +289,22 @@ const updatePage = async (req, res) => {
       metaTitle,
       metaDescription
     } = req.body;
+    const userCompanyId = req.user?.companyId;
+
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        error: 'معرف الشركة مطلوب'
+      });
+    }
+
+    // Check if user has access to this company
+    if (req.user?.role !== 'SUPER_ADMIN' && companyId !== userCompanyId) {
+      return res.status(403).json({
+        success: false,
+        error: 'ليس لديك صلاحية للوصول لهذه الشركة'
+      });
+    }
 
     // Check if page exists
     const existingPage = await getPrisma().storePage.findFirst({
@@ -310,7 +376,24 @@ const updatePage = async (req, res) => {
  */
 const deletePage = async (req, res) => {
   try {
-    const { companyId, pageId } = req.params;
+    const { companyId } = req.body;
+    const { pageId } = req.params;
+    const userCompanyId = req.user?.companyId;
+
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        error: 'معرف الشركة مطلوب'
+      });
+    }
+
+    // Check if user has access to this company
+    if (req.user?.role !== 'SUPER_ADMIN' && companyId !== userCompanyId) {
+      return res.status(403).json({
+        success: false,
+        error: 'ليس لديك صلاحية للوصول لهذه الشركة'
+      });
+    }
 
     // Check if page exists
     const existingPage = await getPrisma().storePage.findFirst({
@@ -350,7 +433,24 @@ const deletePage = async (req, res) => {
  */
 const togglePageStatus = async (req, res) => {
   try {
-    const { companyId, pageId } = req.params;
+    const { companyId } = req.body;
+    const { pageId } = req.params;
+    const userCompanyId = req.user?.companyId;
+
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        error: 'معرف الشركة مطلوب'
+      });
+    }
+
+    // Check if user has access to this company
+    if (req.user?.role !== 'SUPER_ADMIN' && companyId !== userCompanyId) {
+      return res.status(403).json({
+        success: false,
+        error: 'ليس لديك صلاحية للوصول لهذه الشركة'
+      });
+    }
 
     const page = await getPrisma().storePage.findFirst({
       where: {
@@ -391,7 +491,23 @@ const togglePageStatus = async (req, res) => {
  */
 const initializeDefaultPages = async (req, res) => {
   try {
-    const { companyId } = req.params;
+    const { companyId } = req.body;
+    const userCompanyId = req.user?.companyId;
+
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        error: 'معرف الشركة مطلوب'
+      });
+    }
+
+    // Check if user has access to this company
+    if (req.user?.role !== 'SUPER_ADMIN' && companyId !== userCompanyId) {
+      return res.status(403).json({
+        success: false,
+        error: 'ليس لديك صلاحية للوصول لهذه الشركة'
+      });
+    }
 
     // Check if company already has pages
     const existingPages = await getPrisma().storePage.count({

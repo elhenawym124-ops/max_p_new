@@ -65,10 +65,13 @@ const StorePages: React.FC = () => {
   const fetchPages = async () => {
     try {
       const token = localStorage.getItem('accessToken');
-      const response = await fetch(`${getApiUrl()}/store-pages/${user?.companyId}?includeInactive=true`, {
+      const response = await fetch(`${getApiUrl()}/store-pages/list?includeInactive=true`, {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ companyId: user?.companyId }),
       });
       const data = await response.json();
       if (data.success) {
@@ -84,11 +87,13 @@ const StorePages: React.FC = () => {
   const initializeDefaultPages = async () => {
     try {
       const token = localStorage.getItem('accessToken');
-      const response = await fetch(`${getApiUrl()}/store-pages/${user?.companyId}/initialize`, {
+      const response = await fetch(`${getApiUrl()}/store-pages/initialize`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ companyId: user?.companyId }),
       });
       const data = await response.json();
       if (data.success) {
@@ -108,8 +113,8 @@ const StorePages: React.FC = () => {
     try {
       const token = localStorage.getItem('accessToken');
       const url = editingPage
-        ? `${getApiUrl()}/store-pages/${user?.companyId}/page/${editingPage.id}`
-        : `${getApiUrl()}/store-pages/${user?.companyId}`;
+        ? `${getApiUrl()}/store-pages/page/${editingPage.id}`
+        : `${getApiUrl()}/store-pages/`;
       
       const response = await fetch(url, {
         method: editingPage ? 'PUT' : 'POST',
@@ -117,7 +122,7 @@ const StorePages: React.FC = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ ...formData, companyId: user?.companyId }),
       });
 
       const data = await response.json();
@@ -157,11 +162,13 @@ const StorePages: React.FC = () => {
 
     try {
       const token = localStorage.getItem('accessToken');
-      const response = await fetch(`${getApiUrl()}/store-pages/${user?.companyId}/page/${pageId}`, {
+      const response = await fetch(`${getApiUrl()}/store-pages/page/${pageId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ companyId: user?.companyId }),
       });
 
       const data = await response.json();
@@ -180,11 +187,13 @@ const StorePages: React.FC = () => {
   const toggleStatus = async (pageId: string) => {
     try {
       const token = localStorage.getItem('accessToken');
-      const response = await fetch(`${getApiUrl()}/store-pages/${user?.companyId}/page/${pageId}/toggle`, {
+      const response = await fetch(`${getApiUrl()}/store-pages/page/${pageId}/toggle`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ companyId: user?.companyId }),
       });
 
       const data = await response.json();
