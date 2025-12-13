@@ -170,6 +170,13 @@ jobs:
                 cp /var/www/backend2/.env /tmp/backend_env_backup.env
               fi
               
+              # Save uploads folder if it exists in backend2 (preserve user uploads)
+              if [ -d "/var/www/backend2/uploads" ]; then
+                echo "💾 Saving uploads folder from backend2..."
+                cp -r /var/www/backend2/uploads /tmp/backend_uploads_backup
+                echo "✅ Uploads folder saved"
+              fi
+              
               rm -rf /var/www/backend2
               mv /var/www/backend /var/www/backend2
               
@@ -183,6 +190,14 @@ jobs:
                 echo "✅ .env file restored from backup"
               else
                 echo "⚠️ No .env file found - you may need to create it manually"
+              fi
+              
+              # Restore uploads folder (preserve user uploads)
+              if [ -d "/tmp/backend_uploads_backup" ]; then
+                echo "💾 Restoring uploads folder..."
+                rm -rf /var/www/backend2/uploads
+                mv /tmp/backend_uploads_backup /var/www/backend2/uploads
+                echo "✅ Uploads folder restored"
               fi
               
               echo "✅ Backend moved successfully"
