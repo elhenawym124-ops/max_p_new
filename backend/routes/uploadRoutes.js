@@ -251,6 +251,75 @@ const conversationUpload = multer({
   }
 });
 
+// Create media directory for general media uploads (images and videos)
+const mediaDir = path.join(uploadsDir, 'media');
+if (!fs.existsSync(mediaDir)) {
+  fs.mkdirSync(mediaDir, { recursive: true });
+}
+
+// Configure multer for media uploads (images and videos)
+const mediaStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, mediaDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = uuidv4();
+    const extension = path.extname(file.originalname);
+    cb(null, `media-${uniqueSuffix}${extension}`);
+  }
+});
+
+const mediaFileFilter = (req, file, cb) => {
+  // Accept both images and videos
+  if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
+    cb(null, true);
+  } else {
+    cb(new Error('Only image and video files are allowed!'), false);
+  }
+};
+
+const mediaUpload = multer({
+  storage: mediaStorage,
+  fileFilter: mediaFileFilter,
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100MB limit for videos
+    files: 10
+  }
+});
+
+// Upload single media file (image or video) - for Facebook posts, etc.
+router.post('/media', mediaUpload.single('media'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'No file uploaded'
+      });
+    }
+
+    const mediaUrl = `/uploads/media/${req.file.filename}`;
+    const isVideo = req.file.mimetype.startsWith('video/');
+
+    res.json({
+      success: true,
+      data: {
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        size: req.file.size,
+        url: mediaUrl,
+        fullUrl: `${req.protocol}://${req.get('host')}${mediaUrl}`,
+        type: isVideo ? 'video' : 'image'
+      }
+    });
+  } catch (error) {
+    console.error('Error uploading media:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to upload media'
+    });
+  }
+});
+
 // Upload image for conversation
 router.post('/conversation-image', conversationUpload.single('image'), (req, res) => {
   try {
